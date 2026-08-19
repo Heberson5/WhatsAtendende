@@ -1,0 +1,87 @@
+import { Router } from "express";
+import { z } from "zod";
+import rateLimit from "express-rate-limit";
+import { asyncHandler } from "../../lib/async-handler";
+import { env } from "../../config/env";
+import { requireAuth } from "../../middleware/auth";
+import { toUserDTO } from "../users/users.mapper";
+import * as authService from "./auth.service";
+import { refreshCookieOptions } from "./auth.service";
+import { prisma } from "../../lib/prisma";
+
+export const authRouter = Router();
+
+const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false });
+
+const loginSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1),
+});
+
+authRouter.post(
+  "/login",
+  loginLimiter,
+  asyncHandler(async (req, res) => {
+    const { email, password } = loginSchema.parse(req.body);
+    const { accessToken, refreshToken, user } = await authService.login(email, password, req.ip ?? null);
+    res.cookie("refreshToken", refreshToken, refreshCookieOptions());
+    res.json({ accessToken, user: toUserDTO(user) });
+  })
+);
+
+authRouter.post(
+  "/refresh",
+  asyncHandler(async (req, res) => {
+    const token = req.cookies?.refreshToken as string | undefined;
+    if (!token) return res.status(401).json({ error: "UNAUTHORIZED", message: "Sessao nao encontrada" });
+    const { accessToken, refreshToken, user } = await authService.refresh(token);
+    res.cookie("refreshToken", refreshToken, refreshCookieOptions());
+    res.json({ accessToken, user: toUserDTO(user) });
+  })
+);
+
+authRouter.post(
+  "/logout",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const token = req.cookies?.refreshToken as string | undefined;
+    await authService.logout(token, req.auth!.userId, req.ip ?? null);
+    res.clearCookie("refreshToken", { path: "/api/auth" });
+    res.status(204).end();
+  })
+);
+
+authRouter.get(
+  "/me",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: req.auth!.userId } });
+    res.json(toUserDTO(user));
+  })
+);
+
+const forgotSchema = z.object({ email: z.string().email() });
+authRouter.post(
+  "/forgot-password",
+  asyncHandler(async (req, res) => {
+    const { email } = forgotSchema.parse(req.body);
+    const result = await authService.requestPasswordReset(email);
+    // Response is intentionally identical whether or not the e-mail exists.
+    // devToken is only surfaced outside production, where there is no e-mail
+    // delivery configured, so the reset flow can still be exercised/tested.
+    res.json({
+      message: "Se o e-mail existir, um link de redefinicao foi enviado.",
+      devToken: env.NODE_ENV !== "production" ? result?.token : undefined,
+    });
+  })
+);
+
+const resetSchema = z.object({ token: z.string().min(1), password: z.string().min(8) });
+authRouter.post(
+  "/reset-password",
+  asyncHandler(async (req, res) => {
+    const { token, password } = resetSchema.parse(req.body);
+    await authService.resetPassword(token, password);
+    res.json({ message: "Senha redefinida com sucesso." });
+  })
+);
