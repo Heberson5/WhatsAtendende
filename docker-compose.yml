@@ -1,0 +1,68 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: whatsatendende
+      POSTGRES_PASSWORD: whatsatendende
+      POSTGRES_DB: whatsatendende
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U whatsatendende"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  api:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: postgresql://whatsatendende:whatsatendende@postgres:5432/whatsatendende
+      REDIS_URL: redis://redis:6379
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?set a random secret in .env}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?set a random secret in .env}
+      WHATSAPP_PROVIDER: ${WHATSAPP_PROVIDER:-mock}
+      WHATSAPP_AUTH_DIR: /data/whatsapp-sessions
+      WEB_APP_URL: ${WEB_APP_URL:-http://localhost:8080}
+      UPLOAD_DIR: /data/uploads
+    volumes:
+      - api_uploads:/data/uploads
+      - whatsapp_sessions:/data/whatsapp-sessions
+    ports:
+      - "4000:4000"
+
+  web:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.web
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "8080:80"
+
+volumes:
+  postgres_data:
+  redis_data:
+  api_uploads:
+  whatsapp_sessions:
