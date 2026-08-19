@@ -1,0 +1,89 @@
+import clsx from "clsx";
+import { formatDistanceToNow } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import type { ConversationListItemDTO } from "@whatsatendende/types";
+
+function initials(name: string) {
+  return name
+    .split(" ")
+    .slice(0, 2)
+    .map((p) => p[0])
+    .join("")
+    .toUpperCase();
+}
+
+export function ConversationCard({
+  conversation,
+  selected,
+  onSelect,
+  onAccept,
+  accepting,
+}: {
+  conversation: ConversationListItemDTO;
+  selected?: boolean;
+  onSelect?: () => void;
+  onAccept?: () => void;
+  accepting?: boolean;
+}) {
+  const displayName = conversation.contact.name || conversation.contact.phone;
+
+  return (
+    <div
+      role={onSelect ? "button" : undefined}
+      tabIndex={onSelect ? 0 : undefined}
+      onClick={onSelect}
+      onKeyDown={(e) => onSelect && e.key === "Enter" && onSelect()}
+      className={clsx(
+        "focus-ring flex cursor-pointer items-start gap-3 rounded-card border p-3 transition-colors",
+        selected ? "border-primary bg-primary/5" : "border-border hover:bg-surface-alt"
+      )}
+    >
+      <div className="relative shrink-0">
+        {conversation.contact.photoUrl ? (
+          <img src={conversation.contact.photoUrl} alt="" className="h-11 w-11 rounded-full object-cover" />
+        ) : (
+          <div className="flex h-11 w-11 items-center justify-center rounded-full bg-surface-alt text-sm font-semibold text-muted">
+            {initials(displayName)}
+          </div>
+        )}
+        {conversation.isNew && (
+          <span className="absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full border-2 border-surface bg-secondary" />
+        )}
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center justify-between gap-2">
+          <p className="truncate text-sm font-semibold">{displayName}</p>
+          <span className="shrink-0 text-xs text-muted">
+            {formatDistanceToNow(new Date(conversation.enteredQueueAt), { locale: ptBR, addSuffix: false })}
+          </span>
+        </div>
+
+        {conversation.transfer && (
+          <div className="mt-1 inline-flex items-center rounded-full bg-secondary/40 px-2 py-0.5 text-[11px] font-medium text-secondary-fg">
+            Transferido de {conversation.transfer.fromAgentName}
+          </div>
+        )}
+
+        {conversation.lastMessagePreview ? (
+          <p className="mt-0.5 truncate text-xs text-muted">{conversation.lastMessagePreview}</p>
+        ) : (
+          <p className="mt-0.5 text-xs text-muted">{onAccept ? "Nova conversa" : "Em atendimento"}</p>
+        )}
+
+        {onAccept && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onAccept();
+            }}
+            disabled={accepting}
+            className="focus-ring mt-2 w-full rounded-card bg-primary py-1.5 text-xs font-semibold text-primary-fg disabled:opacity-60"
+          >
+            {accepting ? "Aceitando..." : "ACEITAR"}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
