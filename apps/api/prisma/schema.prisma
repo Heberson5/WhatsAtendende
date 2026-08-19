@@ -1,0 +1,332 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Identity / RBAC
+// ---------------------------------------------------------------------------
+
+enum Role {
+  ADMIN
+  MANAGER
+  AGENT
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum AgentPresence {
+  ONLINE
+  AWAY
+  OFFLINE
+}
+
+model User {
+  id            String        @id @default(uuid())
+  fullName      String
+  displayName   String
+  email         String        @unique
+  passwordHash  String
+  role          Role          @default(AGENT)
+  status        UserStatus    @default(ACTIVE)
+  presence      AgentPresence @default(OFFLINE)
+  themePreference String      @default("AUTO") // LIGHT | DARK | AUTO
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  lastAccessAt  DateTime?
+
+  passwordResetTokens     PasswordResetToken[]
+  refreshTokens           RefreshToken[]
+  assignedConversations   Conversation[]           @relation("AssignedAgent")
+  assignmentsFrom         ConversationAssignment[]  @relation("AssignmentFromAgent")
+  assignmentsTo           ConversationAssignment[]  @relation("AssignmentToAgent")
+  transfersInitiated      ConversationTransfer[]    @relation("TransferInitiatedBy")
+  transfersFrom           ConversationTransfer[]    @relation("TransferFromAgent")
+  transfersTo             ConversationTransfer[]    @relation("TransferToAgent")
+  messages                Message[]                 @relation("SentByAgent")
+  messageReactions        MessageReaction[]
+  auditLogs               AuditLog[]
+  notifications           Notification[]
+
+  @@index([role])
+  @@index([status])
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model RefreshToken {
+  id         String    @id @default(uuid())
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     String
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// WhatsApp connection
+// ---------------------------------------------------------------------------
+
+enum WhatsAppConnectionStatus {
+  DISCONNECTED
+  CONNECTING
+  QR_PENDING
+  CONNECTED
+}
+
+model WhatsAppConnection {
+  id              String                   @id @default(uuid())
+  status          WhatsAppConnectionStatus @default(DISCONNECTED)
+  connectedNumber String?
+  lastConnectedAt DateTime?
+  lastQrAt        DateTime?
+  updatedAt       DateTime                 @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Contacts / Conversations
+// ---------------------------------------------------------------------------
+
+model Contact {
+  id                   String   @id @default(uuid())
+  phone                String   @unique
+  name                 String?
+  photoUrl             String?
+  firstConversationAt  DateTime @default(now())
+  lastInteractionAt    DateTime @default(now())
+
+  conversations Conversation[]
+
+  @@index([phone])
+}
+
+enum ConversationStatus {
+  NEW
+  WAITING
+  IN_PROGRESS
+  TRANSFERRED
+  CLOSED
+  ABANDONED
+}
+
+model Conversation {
+  id               String              @id @default(uuid())
+  contact          Contact             @relation(fields: [contactId], references: [id])
+  contactId        String
+  status           ConversationStatus  @default(WAITING)
+  assignedAgent    User?               @relation("AssignedAgent", fields: [assignedAgentId], references: [id])
+  assignedAgentId  String?
+
+  enteredQueueAt   DateTime            @default(now())
+  acceptedAt       DateTime?
+  firstResponseAt  DateTime?
+  closedAt         DateTime?
+  closedByUserId   String?
+
+  lastMessageAt    DateTime            @default(now())
+  lastMessageDirection String?
+
+  // optimistic-lock version, used together with a conditional UPDATE to
+  // guarantee only one agent can accept a conversation (see conversations
+  // service `acceptConversation`).
+  version          Int                 @default(0)
+
+  messages         Message[]
+  assignments      ConversationAssignment[]
+  transfers        ConversationTransfer[]
+  events           ConversationEvent[]
+
+  createdAt        DateTime            @default(now())
+
+  @@index([status])
+  @@index([assignedAgentId])
+  @@index([contactId])
+  @@index([enteredQueueAt])
+}
+
+model ConversationAssignment {
+  id              String   @id @default(uuid())
+  conversation    Conversation @relation(fields: [conversationId], references: [id])
+  conversationId  String
+  fromAgent       User?    @relation("AssignmentFromAgent", fields: [fromAgentId], references: [id])
+  fromAgentId     String?
+  toAgent         User     @relation("AssignmentToAgent", fields: [toAgentId], references: [id])
+  toAgentId       String
+  reason          String   // ACCEPT | TRANSFER | REOPEN
+  createdAt       DateTime @default(now())
+
+  @@index([conversationId])
+}
+
+model ConversationTransfer {
+  id              String   @id @default(uuid())
+  conversation    Conversation @relation(fields: [conversationId], references: [id])
+  conversationId  String
+  fromAgent       User     @relation("TransferFromAgent", fields: [fromAgentId], references: [id])
+  fromAgentId     String
+  toAgent         User     @relation("TransferToAgent", fields: [toAgentId], references: [id])
+  toAgentId       String
+  initiatedBy     User     @relation("TransferInitiatedBy", fields: [initiatedById], references: [id])
+  initiatedById   String
+  note            String?
+  createdAt       DateTime @default(now())
+
+  @@index([conversationId])
+}
+
+model ConversationEvent {
+  id              String   @id @default(uuid())
+  conversation    Conversation @relation(fields: [conversationId], references: [id])
+  conversationId  String
+  type            String   // CREATED | ACCEPTED | TRANSFERRED | CLOSED | REOPENED | ACCEPT_CONFLICT
+  payload         Json?
+  createdAt       DateTime @default(now())
+
+  @@index([conversationId])
+}
+
+// ---------------------------------------------------------------------------
+// Messages
+// ---------------------------------------------------------------------------
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  VIDEO
+  AUDIO
+  DOCUMENT
+  LOCATION
+  CONTACT
+  SYSTEM
+}
+
+enum MessageStatus {
+  PENDING
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+model Message {
+  id                    String            @id @default(uuid())
+  conversation          Conversation      @relation(fields: [conversationId], references: [id])
+  conversationId        String
+  direction             MessageDirection
+  type                  MessageType
+  status                MessageStatus     @default(PENDING)
+  body                  String?
+  providerMessageId     String?           @unique
+  senderAgent           User?             @relation("SentByAgent", fields: [senderAgentId], references: [id])
+  senderAgentId         String?
+  replyToMessage        Message?          @relation("MessageReplies", fields: [replyToMessageId], references: [id])
+  replyToMessageId      String?
+  replies               Message[]         @relation("MessageReplies")
+
+  createdAt             DateTime          @default(now())
+  deliveredAt           DateTime?
+  readAt                DateTime?
+
+  attachments MessageAttachment[]
+  reactions   MessageReaction[]
+
+  @@index([conversationId, createdAt])
+  @@index([providerMessageId])
+}
+
+model MessageAttachment {
+  id         String      @id @default(uuid())
+  message    Message     @relation(fields: [messageId], references: [id])
+  messageId  String
+  fileName   String
+  mimeType   String
+  sizeBytes  Int
+  storageKey String
+  kind       MessageType
+  latitude   Float?
+  longitude  Float?
+  vcard      String?
+  createdAt  DateTime    @default(now())
+
+  @@index([messageId])
+}
+
+model MessageReaction {
+  id         String   @id @default(uuid())
+  message    Message  @relation(fields: [messageId], references: [id])
+  messageId  String
+  user       User?    @relation(fields: [userId], references: [id])
+  userId     String?
+  fromCustomer Boolean @default(false)
+  emoji      String
+  createdAt  DateTime @default(now())
+
+  @@unique([messageId, userId, fromCustomer])
+  @@index([messageId])
+}
+
+// ---------------------------------------------------------------------------
+// Cross-cutting
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  user       User?    @relation(fields: [userId], references: [id])
+  userId     String?
+  action     String
+  entity     String
+  entityId   String?
+  ipAddress  String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([entity, entityId])
+  @@index([createdAt])
+}
+
+model SystemSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+model Notification {
+  id         String   @id @default(uuid())
+  user       User     @relation(fields: [userId], references: [id])
+  userId     String
+  type       String
+  title      String
+  body       String?
+  entityType String?
+  entityId   String?
+  readAt     DateTime?
+  createdAt  DateTime @default(now())
+
+  @@index([userId, readAt])
+}
