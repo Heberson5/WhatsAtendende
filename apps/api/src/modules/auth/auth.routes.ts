@@ -12,6 +12,10 @@ import { prisma } from "../../lib/prisma";
 export const authRouter = Router();
 
 const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false });
+// Password-reset endpoints are unauthenticated by nature — without their
+// own limiter they'd let an attacker spam e-mails to arbitrary addresses
+// (forgot-password) or brute-force reset tokens (reset-password).
+const passwordResetLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false });
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -63,15 +67,17 @@ authRouter.get(
 const forgotSchema = z.object({ email: z.string().email() });
 authRouter.post(
   "/forgot-password",
+  passwordResetLimiter,
   asyncHandler(async (req, res) => {
     const { email } = forgotSchema.parse(req.body);
     const result = await authService.requestPasswordReset(email);
     // Response is intentionally identical whether or not the e-mail exists.
-    // devToken is only surfaced outside production, where there is no e-mail
-    // delivery configured, so the reset flow can still be exercised/tested.
+    // devToken is only surfaced outside production, and only when SMTP
+    // isn't configured (so the e-mail genuinely wasn't sent) — once e-mail
+    // delivery works, the token never appears in the API response.
     res.json({
       message: "Se o e-mail existir, um link de redefinicao foi enviado.",
-      devToken: env.NODE_ENV !== "production" ? result?.token : undefined,
+      devToken: env.NODE_ENV !== "production" && !result?.emailSent ? result?.token : undefined,
     });
   })
 );
@@ -79,6 +85,7 @@ authRouter.post(
 const resetSchema = z.object({ token: z.string().min(1), password: z.string().min(8) });
 authRouter.post(
   "/reset-password",
+  passwordResetLimiter,
   asyncHandler(async (req, res) => {
     const { token, password } = resetSchema.parse(req.body);
     await authService.resetPassword(token, password);

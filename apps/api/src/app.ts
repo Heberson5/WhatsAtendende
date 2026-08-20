@@ -23,6 +23,14 @@ import { whatsappRouter } from "./modules/whatsapp/whatsapp.routes";
 export function createApp() {
   const app = express();
 
+  // Belt-and-suspenders: Express doesn't send X-Powered-By by default once
+  // this is set, removing a free hint of the backend stack to a scanner.
+  app.disable("x-powered-by");
+
+  // Only meaningful (and only safe) when a trusted reverse proxy is the
+  // sole path to this process — see the TRUST_PROXY comment in env.ts/.env.example.
+  if (env.TRUST_PROXY) app.set("trust proxy", 1);
+
   app.use(helmet());
   app.use(
     cors({
@@ -33,7 +41,20 @@ export function createApp() {
   app.use(compression());
   app.use(express.json({ limit: "2mb" }));
   app.use(cookieParser());
-  app.use(pinoHttp({ logger, autoLogging: env.NODE_ENV !== "test" }));
+  app.use(
+    pinoHttp({
+      logger,
+      autoLogging: env.NODE_ENV !== "test",
+      // Access/refresh tokens and session cookies must never land in logs
+      // — a log line is a much easier thing to accidentally expose (shipped
+      // to a log aggregator, a support ticket, a screen share) than the
+      // request itself.
+      redact: {
+        paths: ["req.headers.authorization", "req.headers.cookie", 'res.headers["set-cookie"]'],
+        remove: true,
+      },
+    })
+  );
 
   app.use(
     rateLimit({

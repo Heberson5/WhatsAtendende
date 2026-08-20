@@ -55,6 +55,20 @@ describe("auth", () => {
     expect(user.passwordHash).not.toBe(TEST_PASSWORD);
     expect(user.passwordHash.startsWith("$2")).toBe(true); // bcrypt hash prefix
   });
+
+  it("survives two concurrent refresh calls with the same cookie without erroring (regression: minting two refresh JWTs in the same second used to collide on the unique tokenHash)", async () => {
+    await createTestUser({ email: "admin@test.dev", role: "ADMIN" });
+    const loginRes = await request(app).post("/api/auth/login").send({ email: "admin@test.dev", password: TEST_PASSWORD });
+    const cookie = loginRes.headers["set-cookie"][0];
+
+    const [first, second] = await Promise.all([
+      request(app).post("/api/auth/refresh").set("Cookie", cookie),
+      request(app).post("/api/auth/refresh").set("Cookie", cookie),
+    ]);
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+  });
 });
 
 describe("role-based access control", () => {
