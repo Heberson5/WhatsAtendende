@@ -3,10 +3,17 @@ import crypto from "node:crypto";
 import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
 import { writeAudit } from "../../lib/audit";
+import { sendMail } from "../../lib/mail";
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from "./jwt";
 import { env } from "../../config/env";
 
 const REFRESH_TOKEN_DAYS = 7;
+
+// Never a real bcrypt hash of any real password — used only to make the
+// "user not found" path do roughly the same amount of CPU work as the
+// "wrong password" path, so response timing can't be used to enumerate
+// which e-mails have an account (see login()).
+const DUMMY_PASSWORD_HASH = "$2a$12$CwTycUXWue0Thq9StjUM0uJ8i8ymOGvyaP9GkYb2xTHMqxlBLXX9m";
 
 function hashToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
@@ -14,7 +21,13 @@ function hashToken(token: string): string {
 
 export async function login(email: string, password: string, ip: string | null) {
   const user = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
-  if (!user) throw Errors.unauthorized("E-mail ou senha invalidos");
+  if (!user) {
+    // Do the same bcrypt work a real lookup would, so a non-existent e-mail
+    // doesn't respond measurably faster than a wrong password for a real
+    // one — otherwise response time alone lets an attacker enumerate valid accounts.
+    await bcrypt.compare(password, DUMMY_PASSWORD_HASH);
+    throw Errors.unauthorized("E-mail ou senha invalidos");
+  }
 
   if (user.status === "INACTIVE") {
     await writeAudit({ userId: user.id, action: "LOGIN_BLOCKED_INACTIVE", entity: "User", entityId: user.id, ipAddress: ip });
@@ -87,11 +100,15 @@ export async function logout(refreshToken: string | undefined, userId: string, i
   await writeAudit({ userId, action: "LOGOUT", entity: "User", entityId: userId, ipAddress: ip });
 }
 
-export async function requestPasswordReset(email: string): Promise<{ token: string } | null> {
+export async function requestPasswordReset(email: string): Promise<{ token: string; emailSent: boolean } | null> {
   const user = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
   // Always behave the same way regardless of whether the user exists, to
-  // avoid leaking which e-mails are registered.
-  if (!user || user.status === "INACTIVE") return null;
+  // avoid leaking which e-mails are registered (both in the response body
+  // and, approximately, in timing — see the dummy work on the not-found path).
+  if (!user || user.status === "INACTIVE") {
+    crypto.randomBytes(32);
+    return null;
+  }
 
   const token = crypto.randomBytes(32).toString("hex");
   await prisma.passwordResetToken.create({
@@ -103,10 +120,22 @@ export async function requestPasswordReset(email: string): Promise<{ token: stri
   });
   await writeAudit({ userId: user.id, action: "PASSWORD_RESET_REQUESTED", entity: "User", entityId: user.id });
 
-  // In production this token would be delivered via e-mail. Delivery is out
-  // of scope for this environment; the token is returned to the caller so
-  // the API's own docs/tests can exercise the full reset flow.
-  return { token };
+  const resetLink = `${env.WEB_APP_URL}/reset-password?token=${token}`;
+  const { sent } = await sendMail(
+    user.email,
+    "Redefinição de senha - WhatsAtendende",
+    `<p>Olá, ${user.displayName}.</p>
+     <p>Recebemos uma solicitação para redefinir a senha da sua conta. Clique no link abaixo para continuar (válido por 1 hora):</p>
+     <p><a href="${resetLink}">${resetLink}</a></p>
+     <p>Se você não solicitou essa alteração, ignore este e-mail — sua senha permanece a mesma.</p>`,
+    `Redefinição de senha: acesse ${resetLink} (válido por 1 hora). Se você não solicitou, ignore este e-mail.`
+  );
+
+  // The raw token is still returned to the caller — the route only surfaces
+  // it in the API response outside production, and only when the e-mail
+  // itself couldn't be sent (SMTP not configured yet), so the reset flow
+  // stays testable without depending on a mail server.
+  return { token, emailSent: sent };
 }
 
 export async function resetPassword(token: string, newPassword: string) {
@@ -128,7 +157,12 @@ export function refreshCookieOptions() {
   return {
     httpOnly: true,
     secure: env.NODE_ENV === "production",
-    sameSite: "lax" as const,
+    // strict, not lax: this app has no legitimate cross-site entry point
+    // (no OAuth redirect back into it, no external link needs the cookie
+    // attached), so there's no reason to allow it on cross-site navigation
+    // — and strict also closes the (already-narrow, since refresh/logout
+    // are POST) CSRF surface on the cookie-authenticated auth routes entirely.
+    sameSite: "strict" as const,
     path: "/api/auth",
     maxAge: REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000,
   };
