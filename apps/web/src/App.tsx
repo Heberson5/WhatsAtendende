@@ -4,6 +4,7 @@ import { useAuthStore } from "./store/auth-store";
 import { ProtectedRoute, RoleRoute } from "./components/layout/ProtectedRoute";
 import { AppLayout } from "./components/layout/AppLayout";
 import LoginPage from "./pages/login/LoginPage";
+import ResetPasswordPage from "./pages/login/ResetPasswordPage";
 import AtendimentoPage from "./pages/atendimento/AtendimentoPage";
 import GestaoPage from "./pages/gestao/GestaoPage";
 import DashboardPage from "./pages/dashboard/DashboardPage";
@@ -29,6 +30,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
 
       <Route element={<ProtectedRoute />}>
         <Route element={<AppLayout />}>

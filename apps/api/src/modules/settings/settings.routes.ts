@@ -4,9 +4,11 @@ import path from "node:path";
 import fs from "node:fs";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import rateLimit from "express-rate-limit";
 import { asyncHandler } from "../../lib/async-handler";
 import { requireAuth, requireRole } from "../../middleware/auth";
 import { writeAudit } from "../../lib/audit";
+import { sendMail } from "../../lib/mail";
 import { env } from "../../config/env";
 import * as service from "./settings.service";
 
@@ -15,11 +17,22 @@ export const settingsRouter = Router();
 const brandingAssetDir = path.join(env.UPLOAD_DIR, "branding");
 fs.mkdirSync(brandingAssetDir, { recursive: true });
 
+// SVG is intentionally excluded: an uploaded SVG can embed <script>, and
+// even though it's only ever rendered via <img src>, that's not a
+// guarantee every browser honors — raster formats have no such risk.
+const ALLOWED_BRANDING_MIME_TO_EXT: Record<string, string> = {
+  "image/png": ".png",
+  "image/jpeg": ".jpg",
+  "image/webp": ".webp",
+  "image/x-icon": ".ico",
+  "image/vnd.microsoft.icon": ".ico",
+};
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 2 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    if (!["image/png", "image/jpeg", "image/svg+xml", "image/x-icon", "image/vnd.microsoft.icon"].includes(file.mimetype)) {
+    if (!(file.mimetype in ALLOWED_BRANDING_MIME_TO_EXT)) {
       return cb(new Error("Formato de imagem nao suportado"));
     }
     cb(null, true);
@@ -59,7 +72,9 @@ settingsRouter.post(
   upload.single("file"),
   asyncHandler(async (req, res) => {
     if (!req.file) return res.status(400).json({ error: "BAD_REQUEST", message: "Nenhum arquivo enviado" });
-    const fileName = `logo-${randomUUID()}${path.extname(req.file.originalname)}`;
+    // The stored extension is derived from the validated MIME type, never
+    // from the client-supplied filename — closes off any path/extension trickery at the source.
+    const fileName = `logo-${randomUUID()}${ALLOWED_BRANDING_MIME_TO_EXT[req.file.mimetype]}`;
     fs.writeFileSync(path.join(brandingAssetDir, fileName), req.file.buffer);
     const branding = await service.updateBranding({ logoUrl: `/uploads/branding/${fileName}` });
     await writeAudit({ userId: req.auth!.userId, action: "SETTINGS_LOGO_UPLOADED", entity: "SystemSetting", entityId: "branding", ipAddress: req.ip ?? null });
@@ -73,13 +88,32 @@ settingsRouter.post(
   upload.single("file"),
   asyncHandler(async (req, res) => {
     if (!req.file) return res.status(400).json({ error: "BAD_REQUEST", message: "Nenhum arquivo enviado" });
-    const fileName = `favicon-${randomUUID()}${path.extname(req.file.originalname)}`;
+    const fileName = `favicon-${randomUUID()}${ALLOWED_BRANDING_MIME_TO_EXT[req.file.mimetype]}`;
     fs.writeFileSync(path.join(brandingAssetDir, fileName), req.file.buffer);
     const branding = await service.updateBranding({ faviconUrl: `/uploads/branding/${fileName}` });
     await writeAudit({ userId: req.auth!.userId, action: "SETTINGS_FAVICON_UPLOADED", entity: "SystemSetting", entityId: "branding", ipAddress: req.ip ?? null });
     res.json(branding);
   })
 );
+
+const businessSettingsSchema = z
+  .object({
+    inactivityTimeoutMinutes: z.number().int().positive().max(1440).optional(),
+    autoCloseEnabled: z.boolean().optional(),
+    reopenTarget: z.enum(["QUEUE", "LAST_AGENT"]).optional(),
+    uploadMaxSizeMb: z.number().int().positive().max(100).optional(),
+    notificationSoundEnabled: z.boolean().optional(),
+    businessHours: z
+      .object({ start: z.string(), end: z.string(), days: z.array(z.number().int().min(0).max(6)) })
+      .nullable()
+      .optional(),
+    greetingMessage: z.string().max(1000).nullable().optional(),
+    awayMessage: z.string().max(1000).nullable().optional(),
+  })
+  // Rejects unknown keys — this is an admin-only endpoint, but without
+  // .strict() it would still happily persist arbitrary attacker-shaped JSON
+  // into system_settings.
+  .strict();
 
 settingsRouter.get(
   "/business",
@@ -93,8 +127,9 @@ settingsRouter.patch(
   "/business",
   requireRole("ADMIN"),
   asyncHandler(async (req, res) => {
-    const settings = await service.updateBusinessSettings(req.body ?? {});
-    await writeAudit({ userId: req.auth!.userId, action: "SETTINGS_BUSINESS_UPDATED", entity: "SystemSetting", entityId: "business", ipAddress: req.ip ?? null, metadata: req.body });
+    const patch = businessSettingsSchema.parse(req.body ?? {});
+    const settings = await service.updateBusinessSettings(patch);
+    await writeAudit({ userId: req.auth!.userId, action: "SETTINGS_BUSINESS_UPDATED", entity: "SystemSetting", entityId: "business", ipAddress: req.ip ?? null, metadata: patch });
     res.json(settings);
   })
 );
@@ -106,5 +141,63 @@ settingsRouter.patch(
     const { theme } = themeSchema.parse(req.body);
     await service.setUserThemePreference(req.auth!.userId, theme);
     res.json({ theme });
+  })
+);
+
+// ---------------------------------------------------------------------------
+// E-mail / SMTP (used to deliver the password-reset link — section 5/56).
+// ---------------------------------------------------------------------------
+
+const emailTestLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false });
+
+settingsRouter.get(
+  "/email",
+  requireRole("ADMIN"),
+  asyncHandler(async (_req, res) => {
+    res.json(await service.getEmailSettingsMasked());
+  })
+);
+
+const emailSchema = z.object({
+  host: z.string().min(1).optional(),
+  port: z.coerce.number().int().min(1).max(65535).optional(),
+  secure: z.boolean().optional(),
+  username: z.string().nullable().optional(),
+  password: z.string().optional(),
+  fromName: z.string().min(1).max(120).optional(),
+  fromEmail: z.string().email().optional(),
+});
+
+settingsRouter.patch(
+  "/email",
+  requireRole("ADMIN"),
+  asyncHandler(async (req, res) => {
+    const patch = emailSchema.parse(req.body ?? {});
+    const settings = await service.updateEmailSettings(patch);
+    // Never audit-log the password itself.
+    const { password: _password, ...safeMetadata } = patch;
+    await writeAudit({ userId: req.auth!.userId, action: "SETTINGS_EMAIL_UPDATED", entity: "SystemSetting", entityId: "email", ipAddress: req.ip ?? null, metadata: { ...safeMetadata, passwordChanged: Boolean(patch.password) } });
+    res.json(settings);
+  })
+);
+
+const emailTestSchema = z.object({ to: z.string().email() });
+settingsRouter.post(
+  "/email/test",
+  requireRole("ADMIN"),
+  emailTestLimiter,
+  asyncHandler(async (req, res) => {
+    const { to } = emailTestSchema.parse(req.body);
+    const result = await sendMail(
+      to,
+      "Teste de configuração SMTP - WhatsAtendende",
+      "<p>Este é um e-mail de teste. Se você o recebeu, a configuração de SMTP está funcionando corretamente.</p>",
+      "Este é um e-mail de teste. Se você o recebeu, a configuração de SMTP está funcionando corretamente."
+    );
+    await writeAudit({ userId: req.auth!.userId, action: "SETTINGS_EMAIL_TEST_SENT", entity: "SystemSetting", entityId: "email", ipAddress: req.ip ?? null, metadata: { to, sent: result.sent } });
+    if (!result.sent) {
+      return res.status(400).json({ error: "SMTP_TEST_FAILED", message: result.reason ?? "Falha ao enviar e-mail de teste" });
+    }
+    res.json({ message: "E-mail de teste enviado com sucesso." });
   })
 );
