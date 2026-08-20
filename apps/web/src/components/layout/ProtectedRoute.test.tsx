@@ -36,7 +36,19 @@ describe("ProtectedRoute", () => {
   it("renders the protected content when a user is authenticated", () => {
     useAuthStore.setState({
       accessToken: "token",
-      user: { id: "1", fullName: "A", displayName: "A", email: "a@a.com", role: "AGENT", status: "ACTIVE", presence: "ONLINE", createdAt: "", lastAccessAt: null },
+      user: {
+        id: "1",
+        fullName: "A",
+        displayName: "A",
+        email: "a@a.com",
+        role: "AGENT",
+        status: "ACTIVE",
+        presence: "ONLINE",
+        createdAt: "",
+        lastAccessAt: null,
+        whatsappConnectionId: null,
+        whatsappConnectionName: null,
+      },
       hydrated: true,
     });
     render(
@@ -55,7 +67,19 @@ describe("ProtectedRoute", () => {
   it("RoleRoute blocks an AGENT from an ADMIN-only route and redirects home", () => {
     useAuthStore.setState({
       accessToken: "token",
-      user: { id: "1", fullName: "A", displayName: "A", email: "a@a.com", role: "AGENT", status: "ACTIVE", presence: "ONLINE", createdAt: "", lastAccessAt: null },
+      user: {
+        id: "1",
+        fullName: "A",
+        displayName: "A",
+        email: "a@a.com",
+        role: "AGENT",
+        status: "ACTIVE",
+        presence: "ONLINE",
+        createdAt: "",
+        lastAccessAt: null,
+        whatsappConnectionId: null,
+        whatsappConnectionName: null,
+      },
       hydrated: true,
     });
     render(

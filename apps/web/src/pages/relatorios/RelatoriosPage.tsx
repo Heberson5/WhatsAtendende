@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Download } from "lucide-react";
 import { api } from "../../lib/api";
 import { PeriodFilter, type PeriodValue } from "../../components/common/PeriodFilter";
+import { ConnectionFilter } from "../../components/common/ConnectionFilter";
 
 type ReportKind = "attendance" | "per-agent" | "messages";
 
@@ -15,12 +16,18 @@ const TABS: { key: ReportKind; label: string }[] = [
 export default function RelatoriosPage() {
   const [tab, setTab] = useState<ReportKind>("attendance");
   const [period, setPeriod] = useState<PeriodValue>({ period: "month" });
+  const [connectionIds, setConnectionIds] = useState<string[]>([]);
 
   const { data, isLoading } = useQuery({
-    queryKey: ["report", tab, period],
+    queryKey: ["report", tab, period, connectionIds],
     queryFn: async () => {
       const res = await api.get(`/reports/${tab}`, {
-        params: { period: period.period, from: period.from, to: period.to },
+        params: {
+          period: period.period,
+          from: period.from,
+          to: period.to,
+          connectionId: connectionIds.length ? connectionIds : undefined,
+        },
       });
       return res.data;
     },
@@ -28,7 +35,13 @@ export default function RelatoriosPage() {
 
   async function download() {
     const res = await api.get(`/reports/${tab}`, {
-      params: { period: period.period, from: period.from, to: period.to, format: "csv" },
+      params: {
+        period: period.period,
+        from: period.from,
+        to: period.to,
+        connectionId: connectionIds.length ? connectionIds : undefined,
+        format: "csv",
+      },
       responseType: "blob",
     });
     const url = window.URL.createObjectURL(new Blob([res.data]));
@@ -60,6 +73,7 @@ export default function RelatoriosPage() {
 
         <div className="flex items-center gap-3">
           <PeriodFilter value={period} onChange={setPeriod} />
+          <ConnectionFilter value={connectionIds} onChange={setConnectionIds} />
           {tab !== "messages" && (
             <button
               onClick={download}

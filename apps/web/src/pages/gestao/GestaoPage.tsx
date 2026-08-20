@@ -6,6 +6,7 @@ import { Eye } from "lucide-react";
 import type { ConversationListItemDTO } from "@whatsatendende/types";
 import { api } from "../../lib/api";
 import { PeriodFilter, type PeriodValue } from "../../components/common/PeriodFilter";
+import { ConnectionFilter } from "../../components/common/ConnectionFilter";
 import { ReadOnlyConversationDrawer } from "../../components/gestao/ReadOnlyConversationDrawer";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -36,6 +37,7 @@ export default function GestaoPage() {
   const [agentId, setAgentId] = useState("all");
   const [status, setStatus] = useState("all");
   const [search, setSearch] = useState("");
+  const [connectionIds, setConnectionIds] = useState<string[]>([]);
   const [selected, setSelected] = useState<ConversationListItemDTO | null>(null);
 
   const { data: agents } = useQuery({
@@ -44,7 +46,7 @@ export default function GestaoPage() {
   });
 
   const { data: conversations, isLoading } = useQuery({
-    queryKey: ["oversight", period, agentId, status, search],
+    queryKey: ["oversight", period, agentId, status, search, connectionIds],
     queryFn: async () =>
       (
         await api.get<ConversationListItemDTO[]>("/conversations/oversight", {
@@ -54,6 +56,7 @@ export default function GestaoPage() {
             agentId: agentId === "all" ? undefined : agentId,
             status: status === "all" ? undefined : status,
             q: search || undefined,
+            connectionId: connectionIds.length ? connectionIds : undefined,
           },
         })
       ).data,
@@ -88,6 +91,8 @@ export default function GestaoPage() {
           placeholder="Buscar por nome ou telefone..."
           className="focus-ring flex-1 min-w-[200px] rounded-card border border-border bg-surface px-3 py-2 text-sm"
         />
+
+        <ConnectionFilter value={connectionIds} onChange={setConnectionIds} />
       </div>
 
       <div className="shadow-soft flex-1 overflow-auto rounded-card border border-border bg-surface">
@@ -96,6 +101,7 @@ export default function GestaoPage() {
             <tr>
               <th className="px-4 py-3">Cliente</th>
               <th className="px-4 py-3">Atendente</th>
+              <th className="px-4 py-3">Conexão</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3">Entrada na fila</th>
               <th className="px-4 py-3">Aceite</th>
@@ -105,14 +111,14 @@ export default function GestaoPage() {
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-muted">
+                <td colSpan={7} className="px-4 py-8 text-center text-muted">
                   Carregando...
                 </td>
               </tr>
             )}
             {!isLoading && conversations?.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-muted">
+                <td colSpan={7} className="px-4 py-8 text-center text-muted">
                   Nenhuma conversa encontrada para os filtros selecionados.
                 </td>
               </tr>
@@ -124,6 +130,7 @@ export default function GestaoPage() {
                   <div className="text-xs text-muted">{c.contact.phone}</div>
                 </td>
                 <td className="px-4 py-3">{c.assignedAgentName ?? "-"}</td>
+                <td className="px-4 py-3 text-muted">{c.whatsappConnectionName}</td>
                 <td className="px-4 py-3">
                   <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLOR[c.status]}`}>{STATUS_LABEL[c.status]}</span>
                 </td>

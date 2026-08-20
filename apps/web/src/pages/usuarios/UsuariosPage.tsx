@@ -78,6 +78,7 @@ export default function UsuariosPage() {
               <th className="px-4 py-3">Nome</th>
               <th className="px-4 py-3">E-mail</th>
               <th className="px-4 py-3">Perfil</th>
+              <th className="px-4 py-3">Conexão WhatsApp</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3">Último acesso</th>
               <th className="px-4 py-3 text-right">Ações</th>
@@ -86,7 +87,7 @@ export default function UsuariosPage() {
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-muted">
+                <td colSpan={7} className="px-4 py-8 text-center text-muted">
                   Carregando...
                 </td>
               </tr>
@@ -99,6 +100,7 @@ export default function UsuariosPage() {
                 </td>
                 <td className="px-4 py-3">{u.email}</td>
                 <td className="px-4 py-3">{ROLE_LABEL[u.role]}</td>
+                <td className="px-4 py-3 text-muted">{u.whatsappConnectionName ?? "-"}</td>
                 <td className="px-4 py-3">
                   <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${u.status === "ACTIVE" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}`}>
                     {u.status === "ACTIVE" ? "Ativo" : "Inativo"}

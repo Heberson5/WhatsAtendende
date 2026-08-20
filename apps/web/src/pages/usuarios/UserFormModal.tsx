@@ -1,6 +1,8 @@
 import { useState, type FormEvent } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import type { UserDTO, Role } from "@whatsatendende/types";
+import { api } from "../../lib/api";
 
 export interface UserFormValues {
   fullName: string;
@@ -9,6 +11,12 @@ export interface UserFormValues {
   password?: string;
   confirmPassword?: string;
   role: Role;
+  whatsappConnectionId: string | null;
+}
+
+interface ConnectionOption {
+  id: string;
+  name: string;
 }
 
 export function UserFormModal({
@@ -20,6 +28,11 @@ export function UserFormModal({
   onClose: () => void;
   onSubmit: (values: UserFormValues) => Promise<void>;
 }) {
+  const { data: connections } = useQuery({
+    queryKey: ["whatsapp-connections"],
+    queryFn: async () => (await api.get<ConnectionOption[]>("/whatsapp/connections")).data,
+  });
+
   const [values, setValues] = useState<UserFormValues>({
     fullName: user?.fullName ?? "",
     displayName: user?.displayName ?? "",
@@ -27,6 +40,7 @@ export function UserFormModal({
     password: "",
     confirmPassword: "",
     role: user?.role ?? "AGENT",
+    whatsappConnectionId: user?.whatsappConnectionId ?? null,
   });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -36,6 +50,10 @@ export function UserFormModal({
     setError(null);
     if (!user && values.password !== values.confirmPassword) {
       setError("As senhas não coincidem");
+      return;
+    }
+    if (values.role === "AGENT" && !values.whatsappConnectionId) {
+      setError("Selecione a conexão de WhatsApp deste atendente");
       return;
     }
     setLoading(true);
@@ -70,12 +88,39 @@ export function UserFormModal({
             <input required type="email" value={values.email} onChange={(e) => setValues((v) => ({ ...v, email: e.target.value }))} className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm" />
           </Field>
           <Field label="Perfil">
-            <select value={values.role} onChange={(e) => setValues((v) => ({ ...v, role: e.target.value as Role }))} className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm">
+            <select
+              value={values.role}
+              onChange={(e) => setValues((v) => ({ ...v, role: e.target.value as Role }))}
+              className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm"
+            >
               <option value="AGENT">Atendente</option>
               <option value="MANAGER">Gestor</option>
               <option value="ADMIN">Administrador</option>
             </select>
           </Field>
+
+          {values.role === "AGENT" && (
+            <Field label="Conexão de WhatsApp">
+              <select
+                required
+                value={values.whatsappConnectionId ?? ""}
+                onChange={(e) => setValues((v) => ({ ...v, whatsappConnectionId: e.target.value || null }))}
+                className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm"
+              >
+                <option value="" disabled>
+                  Selecione...
+                </option>
+                {connections?.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+              {connections?.length === 0 && (
+                <p className="mt-1 text-xs text-muted">Nenhuma conexão cadastrada — crie uma em Configurações → WhatsApp primeiro.</p>
+              )}
+            </Field>
+          )}
 
           {!user && (
             <>
