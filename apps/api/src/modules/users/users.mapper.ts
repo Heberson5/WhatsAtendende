@@ -1,7 +1,9 @@
-import type { User } from "@prisma/client";
+import type { User, WhatsAppConnection } from "@prisma/client";
 import type { UserDTO } from "@whatsatendende/types";
 
-export function toUserDTO(user: User): UserDTO {
+type UserWithConnection = User & { whatsappConnection: WhatsAppConnection | null };
+
+export function toUserDTO(user: UserWithConnection): UserDTO {
   return {
     id: user.id,
     fullName: user.fullName,
@@ -10,6 +12,8 @@ export function toUserDTO(user: User): UserDTO {
     role: user.role,
     status: user.status,
     presence: user.presence,
+    whatsappConnectionId: user.whatsappConnectionId,
+    whatsappConnectionName: user.whatsappConnection?.name ?? null,
     createdAt: user.createdAt.toISOString(),
     lastAccessAt: user.lastAccessAt ? user.lastAccessAt.toISOString() : null,
   };

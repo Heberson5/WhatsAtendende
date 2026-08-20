@@ -99,7 +99,13 @@ messagesRouter.post(
       replyToProviderMessageId = original?.providerMessageId ?? undefined;
     }
 
-    const dto = await whatsappService.sendOutboundText(message.id, conversation.contact.phone, body, replyToProviderMessageId);
+    const dto = await whatsappService.sendOutboundText(
+      conversation.whatsappConnectionId,
+      message.id,
+      conversation.contact.phone,
+      body,
+      replyToProviderMessageId
+    );
     realtimeEvents.newMessage(conversation.id, req.auth!.userId);
     res.status(201).json(dto);
   })
@@ -132,6 +138,7 @@ messagesRouter.post(
     });
 
     const dto = await whatsappService.sendOutboundFile(
+      conversation.whatsappConnectionId,
       message.id,
       conversation.contact.phone,
       req.file.buffer,
@@ -165,7 +172,7 @@ messagesRouter.post(
       latitude,
       longitude,
     });
-    const dto = await whatsappService.sendOutboundLocation(message.id, conversation.contact.phone, latitude, longitude);
+    const dto = await whatsappService.sendOutboundLocation(conversation.whatsappConnectionId, message.id, conversation.contact.phone, latitude, longitude);
     realtimeEvents.newMessage(conversation.id, req.auth!.userId);
     res.status(201).json(dto);
   })
@@ -181,7 +188,7 @@ messagesRouter.post(
     const conversation = await loadConversationForAgent(message.conversationId, req.auth!.userId);
     const updated = await service.toggleReaction(req.params.messageId, req.auth!.userId, emoji);
     if (message.providerMessageId) {
-      await whatsappService.sendReaction(conversation.contact.phone, message.providerMessageId, emoji).catch(() => undefined);
+      await whatsappService.sendReaction(conversation.whatsappConnectionId, conversation.contact.phone, message.providerMessageId, emoji).catch(() => undefined);
     }
     realtimeEvents.messageStatusChanged(conversation.id);
     res.json(toMessageDTO(updated));

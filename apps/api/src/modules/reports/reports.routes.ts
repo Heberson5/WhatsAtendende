@@ -3,6 +3,7 @@ import { z } from "zod";
 import { asyncHandler } from "../../lib/async-handler";
 import { requireAuth, requireRole } from "../../middleware/auth";
 import { resolvePeriod } from "../../lib/period";
+import { parseListParam } from "../../lib/parse-list-param";
 import * as service from "./reports.service";
 
 export const reportsRouter = Router();
@@ -13,6 +14,7 @@ const querySchema = z.object({
   from: z.coerce.date().optional(),
   to: z.coerce.date().optional(),
   agentId: z.string().uuid().optional(),
+  connectionId: z.union([z.string(), z.array(z.string())]).optional(),
   format: z.enum(["json", "csv"]).default("json"),
 });
 
@@ -31,7 +33,7 @@ reportsRouter.get(
   asyncHandler(async (req, res) => {
     const query = querySchema.parse(req.query);
     const { from, to } = resolvePeriod(query.period, query.from, query.to);
-    const rows = await service.getAttendanceReport({ from, to, agentId: query.agentId });
+    const rows = await service.getAttendanceReport({ from, to, agentId: query.agentId, connectionIds: parseListParam(query.connectionId) });
     respond(res, rows, query.format, "relatorio-atendimentos.csv");
   })
 );
@@ -41,7 +43,7 @@ reportsRouter.get(
   asyncHandler(async (req, res) => {
     const query = querySchema.parse(req.query);
     const { from, to } = resolvePeriod(query.period, query.from, query.to);
-    const rows = await service.getPerAgentReport({ from, to });
+    const rows = await service.getPerAgentReport({ from, to, connectionIds: parseListParam(query.connectionId) });
     respond(res, rows, query.format, "relatorio-por-atendente.csv");
   })
 );
@@ -51,7 +53,7 @@ reportsRouter.get(
   asyncHandler(async (req, res) => {
     const query = querySchema.parse(req.query);
     const { from, to } = resolvePeriod(query.period, query.from, query.to);
-    const data = await service.getMessagesReport({ from, to, agentId: query.agentId });
+    const data = await service.getMessagesReport({ from, to, agentId: query.agentId, connectionIds: parseListParam(query.connectionId) });
     res.json(data);
   })
 );

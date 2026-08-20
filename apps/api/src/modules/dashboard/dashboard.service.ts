@@ -9,6 +9,8 @@ export interface DashboardParams {
   from: Date;
   to: Date;
   agentId?: string;
+  /** Empty/undefined = every WhatsApp connection — see PROMPT: filtro podendo selecionar várias ou todas. */
+  connectionIds?: string[];
 }
 
 /**
@@ -16,10 +18,12 @@ export interface DashboardParams {
  * least one conversation created inside the window — a contact who wrote 30
  * messages in the same conversation still counts once.
  */
-export async function getDashboard({ from, to, agentId }: DashboardParams) {
+export async function getDashboard({ from, to, agentId, connectionIds }: DashboardParams) {
+  const connectionFilter = connectionIds?.length ? { in: connectionIds } : undefined;
   const whereBase = {
     createdAt: { gte: from, lte: to },
     ...(agentId ? { assignedAgentId: agentId } : {}),
+    ...(connectionFilter ? { whatsappConnectionId: connectionFilter } : {}),
   };
 
   const [conversationsInPeriod, messages] = await Promise.all([
@@ -38,7 +42,13 @@ export async function getDashboard({ from, to, agentId }: DashboardParams) {
     }),
     prisma.message.groupBy({
       by: ["direction"],
-      where: { createdAt: { gte: from, lte: to }, ...(agentId ? { conversation: { assignedAgentId: agentId } } : {}) },
+      where: {
+        createdAt: { gte: from, lte: to },
+        conversation: {
+          ...(agentId ? { assignedAgentId: agentId } : {}),
+          ...(connectionFilter ? { whatsappConnectionId: connectionFilter } : {}),
+        },
+      },
       _count: true,
     }),
   ]);
@@ -65,7 +75,7 @@ export async function getDashboard({ from, to, agentId }: DashboardParams) {
   const received = messages.find((m) => m.direction === "INBOUND")?._count ?? 0;
   const sent = messages.find((m) => m.direction === "OUTBOUND")?._count ?? 0;
 
-  const perAgent = await getPerAgentBreakdown(from, to);
+  const perAgent = await getPerAgentBreakdown(from, to, connectionFilter);
 
   return {
     conversations: {
@@ -86,17 +96,21 @@ export async function getDashboard({ from, to, agentId }: DashboardParams) {
   };
 }
 
-async function getPerAgentBreakdown(from: Date, to: Date) {
+async function getPerAgentBreakdown(from: Date, to: Date, connectionFilter?: { in: string[] }) {
   const agents = await prisma.user.findMany({ where: { role: "AGENT" }, select: { id: true, displayName: true } });
 
   const results = await Promise.all(
     agents.map(async (agent) => {
       const conversations = await prisma.conversation.findMany({
-        where: { assignedAgentId: agent.id, createdAt: { gte: from, lte: to } },
+        where: { assignedAgentId: agent.id, createdAt: { gte: from, lte: to }, ...(connectionFilter ? { whatsappConnectionId: connectionFilter } : {}) },
         select: { id: true, acceptedAt: true, closedAt: true, enteredQueueAt: true },
       });
       const sentCount = await prisma.message.count({
-        where: { senderAgentId: agent.id, createdAt: { gte: from, lte: to } },
+        where: {
+          senderAgentId: agent.id,
+          createdAt: { gte: from, lte: to },
+          ...(connectionFilter ? { conversation: { whatsappConnectionId: connectionFilter } } : {}),
+        },
       });
       const handlingDiffs = conversations
         .filter((c) => c.acceptedAt && c.closedAt)

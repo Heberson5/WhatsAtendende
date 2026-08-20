@@ -11,12 +11,16 @@ agentsRouter.get(
   "/transfer-targets",
   requireRole("AGENT"),
   asyncHandler(async (req, res) => {
+    // Any active agent is a valid target, regardless of their WhatsApp
+    // connection — see PROMPT: "poderá transferir a conversa para
+    // qualquer atendente". The connection name is included so the modal
+    // can flag when a transfer crosses connections.
     const agents = await prisma.user.findMany({
       where: { role: "AGENT", status: "ACTIVE", id: { not: req.auth!.userId } },
-      select: { id: true, displayName: true, presence: true },
+      select: { id: true, displayName: true, presence: true, whatsappConnection: { select: { name: true } } },
       orderBy: { displayName: "asc" },
     });
-    res.json(agents);
+    res.json(agents.map((a) => ({ id: a.id, displayName: a.displayName, presence: a.presence, whatsappConnectionName: a.whatsappConnection?.name ?? null })));
   })
 );
 
@@ -26,9 +30,9 @@ agentsRouter.get(
   asyncHandler(async (_req, res) => {
     const agents = await prisma.user.findMany({
       where: { role: "AGENT" },
-      select: { id: true, displayName: true, presence: true, status: true },
+      select: { id: true, displayName: true, presence: true, status: true, whatsappConnection: { select: { name: true } } },
       orderBy: { displayName: "asc" },
     });
-    res.json(agents);
+    res.json(agents.map((a) => ({ id: a.id, displayName: a.displayName, presence: a.presence, status: a.status, whatsappConnectionName: a.whatsappConnection?.name ?? null })));
   })
 );

@@ -36,6 +36,7 @@ CREATE TABLE "User" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
     "lastAccessAt" TIMESTAMP(3),
+    "whatsappConnectionId" TEXT,
 
     CONSTRAINT "User_pkey" PRIMARY KEY ("id")
 );
@@ -67,10 +68,12 @@ CREATE TABLE "RefreshToken" (
 -- CreateTable
 CREATE TABLE "WhatsAppConnection" (
     "id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
     "status" "WhatsAppConnectionStatus" NOT NULL DEFAULT 'DISCONNECTED',
     "connectedNumber" TEXT,
     "lastConnectedAt" TIMESTAMP(3),
     "lastQrAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "WhatsAppConnection_pkey" PRIMARY KEY ("id")
@@ -79,6 +82,7 @@ CREATE TABLE "WhatsAppConnection" (
 -- CreateTable
 CREATE TABLE "Contact" (
     "id" TEXT NOT NULL,
+    "whatsappConnectionId" TEXT NOT NULL,
     "phone" TEXT NOT NULL,
     "name" TEXT,
     "photoUrl" TEXT,
@@ -91,6 +95,7 @@ CREATE TABLE "Contact" (
 -- CreateTable
 CREATE TABLE "Conversation" (
     "id" TEXT NOT NULL,
+    "whatsappConnectionId" TEXT NOT NULL,
     "contactId" TEXT NOT NULL,
     "status" "ConversationStatus" NOT NULL DEFAULT 'WAITING',
     "assignedAgentId" TEXT,
@@ -99,6 +104,8 @@ CREATE TABLE "Conversation" (
     "firstResponseAt" TIMESTAMP(3),
     "closedAt" TIMESTAMP(3),
     "closedByUserId" TEXT,
+    "assignedAgentReadAt" TIMESTAMP(3),
+    "pendingTransferDeadline" TIMESTAMP(3),
     "lastMessageAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "lastMessageDirection" TEXT,
     "version" INTEGER NOT NULL DEFAULT 0,
@@ -238,6 +245,9 @@ CREATE INDEX "User_role_idx" ON "User"("role");
 CREATE INDEX "User_status_idx" ON "User"("status");
 
 -- CreateIndex
+CREATE INDEX "User_whatsappConnectionId_idx" ON "User"("whatsappConnectionId");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "PasswordResetToken_tokenHash_key" ON "PasswordResetToken"("tokenHash");
 
 -- CreateIndex
@@ -250,10 +260,16 @@ CREATE UNIQUE INDEX "RefreshToken_tokenHash_key" ON "RefreshToken"("tokenHash");
 CREATE INDEX "RefreshToken_userId_idx" ON "RefreshToken"("userId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Contact_phone_key" ON "Contact"("phone");
+CREATE UNIQUE INDEX "WhatsAppConnection_name_key" ON "WhatsAppConnection"("name");
+
+-- CreateIndex
+CREATE INDEX "WhatsAppConnection_status_idx" ON "WhatsAppConnection"("status");
 
 -- CreateIndex
 CREATE INDEX "Contact_phone_idx" ON "Contact"("phone");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Contact_phone_whatsappConnectionId_key" ON "Contact"("phone", "whatsappConnectionId");
 
 -- CreateIndex
 CREATE INDEX "Conversation_status_idx" ON "Conversation"("status");
@@ -266,6 +282,12 @@ CREATE INDEX "Conversation_contactId_idx" ON "Conversation"("contactId");
 
 -- CreateIndex
 CREATE INDEX "Conversation_enteredQueueAt_idx" ON "Conversation"("enteredQueueAt");
+
+-- CreateIndex
+CREATE INDEX "Conversation_whatsappConnectionId_idx" ON "Conversation"("whatsappConnectionId");
+
+-- CreateIndex
+CREATE INDEX "Conversation_pendingTransferDeadline_idx" ON "Conversation"("pendingTransferDeadline");
 
 -- CreateIndex
 CREATE INDEX "ConversationAssignment_conversationId_idx" ON "ConversationAssignment"("conversationId");
@@ -307,10 +329,19 @@ CREATE INDEX "AuditLog_createdAt_idx" ON "AuditLog"("createdAt");
 CREATE INDEX "Notification_userId_readAt_idx" ON "Notification"("userId", "readAt");
 
 -- AddForeignKey
+ALTER TABLE "User" ADD CONSTRAINT "User_whatsappConnectionId_fkey" FOREIGN KEY ("whatsappConnectionId") REFERENCES "WhatsAppConnection"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "PasswordResetToken" ADD CONSTRAINT "PasswordResetToken_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "RefreshToken" ADD CONSTRAINT "RefreshToken_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Contact" ADD CONSTRAINT "Contact_whatsappConnectionId_fkey" FOREIGN KEY ("whatsappConnectionId") REFERENCES "WhatsAppConnection"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Conversation" ADD CONSTRAINT "Conversation_whatsappConnectionId_fkey" FOREIGN KEY ("whatsappConnectionId") REFERENCES "WhatsAppConnection"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Conversation" ADD CONSTRAINT "Conversation_contactId_fkey" FOREIGN KEY ("contactId") REFERENCES "Contact"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

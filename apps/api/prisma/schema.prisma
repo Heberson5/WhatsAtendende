@@ -42,6 +42,15 @@ model User {
   updatedAt     DateTime      @updatedAt
   lastAccessAt  DateTime?
 
+  // An agent's "home" WhatsApp connection: which queue they see and can
+  // accept from. Required in practice for role=AGENT (enforced in the
+  // users service, not the DB, since ADMIN/MANAGER never need one — they
+  // see every connection through oversight). A transferred conversation
+  // can still land on an agent regardless of this value — see
+  // conversations.service.ts `transferConversation`.
+  whatsappConnection      WhatsAppConnection?      @relation(fields: [whatsappConnectionId], references: [id])
+  whatsappConnectionId    String?
+
   passwordResetTokens     PasswordResetToken[]
   refreshTokens           RefreshToken[]
   assignedConversations   Conversation[]           @relation("AssignedAgent")
@@ -57,6 +66,7 @@ model User {
 
   @@index([role])
   @@index([status])
+  @@index([whatsappConnectionId])
 }
 
 model PasswordResetToken {
@@ -94,13 +104,26 @@ enum WhatsAppConnectionStatus {
   CONNECTED
 }
 
+// One row per connected WhatsApp number/session. An organization using
+// several numbers (e.g. "Suporte", "Vendas") creates one named connection
+// per number here; each is backed by its own WhatsAppProvider instance
+// (see apps/api/src/modules/whatsapp/whatsapp.service.ts) so they connect,
+// disconnect, and hold their own QR code independently of one another.
 model WhatsAppConnection {
   id              String                   @id @default(uuid())
+  name            String                   @unique
   status          WhatsAppConnectionStatus @default(DISCONNECTED)
   connectedNumber String?
   lastConnectedAt DateTime?
   lastQrAt        DateTime?
+  createdAt       DateTime                 @default(now())
   updatedAt       DateTime                 @updatedAt
+
+  agents        User[]
+  contacts      Contact[]
+  conversations Conversation[]
+
+  @@index([status])
 }
 
 // ---------------------------------------------------------------------------
@@ -109,7 +132,12 @@ model WhatsAppConnection {
 
 model Contact {
   id                   String   @id @default(uuid())
-  phone                String   @unique
+  // Scoped per connection, not globally: the same phone number talking to
+  // two different connected WhatsApp numbers is two separate customer
+  // relationships (different business/department), so it's two Contact rows.
+  whatsappConnection   WhatsAppConnection @relation(fields: [whatsappConnectionId], references: [id])
+  whatsappConnectionId String
+  phone                String
   name                 String?
   photoUrl             String?
   firstConversationAt  DateTime @default(now())
@@ -117,6 +145,7 @@ model Contact {
 
   conversations Conversation[]
 
+  @@unique([phone, whatsappConnectionId])
   @@index([phone])
 }
 
@@ -131,6 +160,12 @@ enum ConversationStatus {
 
 model Conversation {
   id               String              @id @default(uuid())
+  // Denormalized from contact.whatsappConnectionId at creation time — kept
+  // directly on the conversation (rather than only reachable via a join)
+  // so the queue, oversight, dashboard, and report filters can filter by
+  // connection with a plain WHERE instead of joining through Contact every time.
+  whatsappConnection   WhatsAppConnection @relation(fields: [whatsappConnectionId], references: [id])
+  whatsappConnectionId String
   contact          Contact             @relation(fields: [contactId], references: [id])
   contactId        String
   status           ConversationStatus  @default(WAITING)
@@ -146,6 +181,13 @@ model Conversation {
   // Reset to null on accept/transfer; set to now() when the assigned agent
   // opens the conversation. Unread badge = inbound messages newer than this.
   assignedAgentReadAt DateTime?
+
+  // Set on transfer only when the receiving agent is not online at that
+  // moment; cleared the moment that agent logs in, or once the deadline is
+  // processed. A background sweep (see conversations.service.ts
+  // `revertExpiredTransfers`) reassigns the conversation back to whoever
+  // transferred it if this passes with no login in between.
+  pendingTransferDeadline DateTime?
 
   lastMessageAt    DateTime            @default(now())
   lastMessageDirection String?
@@ -166,6 +208,8 @@ model Conversation {
   @@index([assignedAgentId])
   @@index([contactId])
   @@index([enteredQueueAt])
+  @@index([whatsappConnectionId])
+  @@index([pendingTransferDeadline])
 }
 
 model ConversationAssignment {

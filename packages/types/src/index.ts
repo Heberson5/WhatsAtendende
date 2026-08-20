@@ -76,8 +76,20 @@ export interface UserDTO {
   role: Role;
   status: UserStatus;
   presence: AgentPresence;
+  whatsappConnectionId: string | null;
+  whatsappConnectionName: string | null;
   createdAt: string;
   lastAccessAt: string | null;
+}
+
+export interface WhatsAppConnectionSummaryDTO {
+  id: string;
+  name: string;
+  state: WhatsAppConnectionStatus;
+  qrCodeDataUrl: string | null;
+  connectedNumber: string | null;
+  lastConnectedAt: string | null;
+  agentCount: number;
 }
 
 export interface ContactDTO {
@@ -95,12 +107,15 @@ export interface ConversationListItemDTO {
   status: ConversationStatus;
   assignedAgentId: string | null;
   assignedAgentName: string | null;
+  whatsappConnectionId: string;
+  whatsappConnectionName: string;
   enteredQueueAt: string;
   acceptedAt: string | null;
   lastMessageAt: string;
   lastMessagePreview: string | null; // omitted entirely by API while WAITING
   unreadCount: number;
   isNew: boolean;
+  pendingTransferDeadline: string | null;
   transfer: {
     fromAgentName: string;
     toAgentName: string;

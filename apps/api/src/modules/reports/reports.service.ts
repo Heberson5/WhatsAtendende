@@ -4,18 +4,26 @@ export interface ReportParams {
   from: Date;
   to: Date;
   agentId?: string;
+  /** Empty/undefined = every WhatsApp connection — see PROMPT: filtro podendo selecionar várias ou todas. */
+  connectionIds?: string[];
 }
 
 function minutes(ms: number | null): number | null {
   return ms === null ? null : Math.round(ms / 60000);
 }
 
-export async function getAttendanceReport({ from, to, agentId }: ReportParams) {
+export async function getAttendanceReport({ from, to, agentId, connectionIds }: ReportParams) {
+  const connectionFilter = connectionIds?.length ? { in: connectionIds } : undefined;
   const conversations = await prisma.conversation.findMany({
-    where: { createdAt: { gte: from, lte: to }, assignedAgentId: agentId },
+    where: {
+      createdAt: { gte: from, lte: to },
+      assignedAgentId: agentId,
+      ...(connectionFilter ? { whatsappConnectionId: connectionFilter } : {}),
+    },
     include: {
       contact: true,
       assignedAgent: true,
+      whatsappConnection: true,
       messages: { select: { direction: true } },
       transfers: true,
     },
@@ -31,6 +39,7 @@ export async function getAttendanceReport({ from, to, agentId }: ReportParams) {
 
     return {
       date: c.createdAt.toISOString(),
+      connection: c.whatsappConnection.name,
       clientName: c.contact.name ?? c.contact.phone,
       phone: c.contact.phone,
       agentName: c.assignedAgent?.displayName ?? "-",
@@ -48,17 +57,28 @@ export async function getAttendanceReport({ from, to, agentId }: ReportParams) {
   });
 }
 
-export async function getPerAgentReport({ from, to }: ReportParams) {
+export async function getPerAgentReport({ from, to, connectionIds }: ReportParams) {
+  const connectionFilter = connectionIds?.length ? { in: connectionIds } : undefined;
   const agents = await prisma.user.findMany({ where: { role: "AGENT" }, orderBy: { displayName: "asc" } });
 
   return Promise.all(
     agents.map(async (agent) => {
       const conversations = await prisma.conversation.findMany({
-        where: { assignedAgentId: agent.id, createdAt: { gte: from, lte: to } },
+        where: { assignedAgentId: agent.id, createdAt: { gte: from, lte: to }, ...(connectionFilter ? { whatsappConnectionId: connectionFilter } : {}) },
       });
-      const messagesSent = await prisma.message.count({ where: { senderAgentId: agent.id, createdAt: { gte: from, lte: to } } });
-      const transfersReceived = await prisma.conversationTransfer.count({ where: { toAgentId: agent.id, createdAt: { gte: from, lte: to } } });
-      const transfersMade = await prisma.conversationTransfer.count({ where: { fromAgentId: agent.id, createdAt: { gte: from, lte: to } } });
+      const messagesSent = await prisma.message.count({
+        where: {
+          senderAgentId: agent.id,
+          createdAt: { gte: from, lte: to },
+          ...(connectionFilter ? { conversation: { whatsappConnectionId: connectionFilter } } : {}),
+        },
+      });
+      const transfersReceived = await prisma.conversationTransfer.count({
+        where: { toAgentId: agent.id, createdAt: { gte: from, lte: to }, ...(connectionFilter ? { conversation: { whatsappConnectionId: connectionFilter } } : {}) },
+      });
+      const transfersMade = await prisma.conversationTransfer.count({
+        where: { fromAgentId: agent.id, createdAt: { gte: from, lte: to }, ...(connectionFilter ? { conversation: { whatsappConnectionId: connectionFilter } } : {}) },
+      });
 
       const acceptDiffs = conversations.filter((c) => c.acceptedAt).map((c) => c.acceptedAt!.getTime() - c.enteredQueueAt.getTime());
       const firstResponseDiffs = conversations
@@ -82,10 +102,15 @@ export async function getPerAgentReport({ from, to }: ReportParams) {
   );
 }
 
-export async function getMessagesReport({ from, to, agentId }: ReportParams) {
+export async function getMessagesReport({ from, to, agentId, connectionIds }: ReportParams) {
+  const connectionFilter = connectionIds?.length ? { in: connectionIds } : undefined;
+  const conversationFilter = {
+    ...(agentId ? { assignedAgentId: agentId } : {}),
+    ...(connectionFilter ? { whatsappConnectionId: connectionFilter } : {}),
+  };
   const [received, sent] = await Promise.all([
-    prisma.message.count({ where: { direction: "INBOUND", createdAt: { gte: from, lte: to }, conversation: { assignedAgentId: agentId } } }),
-    prisma.message.count({ where: { direction: "OUTBOUND", createdAt: { gte: from, lte: to }, conversation: { assignedAgentId: agentId } } }),
+    prisma.message.count({ where: { direction: "INBOUND", createdAt: { gte: from, lte: to }, conversation: conversationFilter } }),
+    prisma.message.count({ where: { direction: "OUTBOUND", createdAt: { gte: from, lte: to }, conversation: conversationFilter } }),
   ]);
   return { received, sent, total: received + sent };
 }

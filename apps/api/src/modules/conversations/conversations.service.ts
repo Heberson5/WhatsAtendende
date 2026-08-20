@@ -1,11 +1,16 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
+import { writeAudit } from "../../lib/audit";
+import { realtimeEvents } from "../../realtime/realtime";
 import type { Role } from "@prisma/client";
+
+const TRANSFER_OFFLINE_GRACE_MS = 2 * 60 * 60 * 1000; // 2h — see PROMPT: transfer to an offline agent auto-reverts if they don't log in in time.
 
 const conversationInclude = {
   contact: true,
   assignedAgent: true,
+  whatsappConnection: true,
   transfers: { orderBy: { createdAt: "desc" as const }, take: 1, include: { fromAgent: true, toAgent: true } },
 };
 
@@ -31,9 +36,15 @@ async function getUnreadCounts(conversationIds: string[]): Promise<Map<string, n
   return new Map(rows.map((r) => [r.conversationId, Number(r.count)]));
 }
 
-/** Contact resolution: WhatsApp is the source of truth for phone -> identity. */
-export async function findOrCreateContact(phone: string, name: string | null) {
-  const existing = await prisma.contact.findUnique({ where: { phone } });
+/**
+ * Contact resolution: WhatsApp is the source of truth for phone -> identity,
+ * scoped per connection — the same phone number talking to two different
+ * connected WhatsApp numbers is two separate customer relationships.
+ */
+export async function findOrCreateContact(connectionId: string, phone: string, name: string | null) {
+  const existing = await prisma.contact.findUnique({
+    where: { phone_whatsappConnectionId: { phone, whatsappConnectionId: connectionId } },
+  });
   if (existing) {
     return prisma.contact.update({
       where: { id: existing.id },
@@ -46,7 +57,7 @@ export async function findOrCreateContact(phone: string, name: string | null) {
       },
     });
   }
-  return prisma.contact.create({ data: { phone, name } });
+  return prisma.contact.create({ data: { phone, name, whatsappConnectionId: connectionId } });
 }
 
 /**
@@ -58,7 +69,7 @@ export async function findOrCreateContact(phone: string, name: string | null) {
  * the agent an explicit new queue card. Default routing target is the
  * queue (not the last agent), per spec section 28's default.
  */
-export async function findOrOpenConversationForInboundMessage(contactId: string) {
+export async function findOrOpenConversationForInboundMessage(connectionId: string, contactId: string) {
   const active = await prisma.conversation.findFirst({
     where: { contactId, status: { in: ["NEW", "WAITING", "IN_PROGRESS", "TRANSFERRED"] } },
     orderBy: { createdAt: "desc" },
@@ -66,7 +77,7 @@ export async function findOrOpenConversationForInboundMessage(contactId: string)
   if (active) return { conversation: active, isNewConversation: false };
 
   const conversation = await prisma.conversation.create({
-    data: { contactId, status: "NEW", enteredQueueAt: new Date(), lastMessageAt: new Date() },
+    data: { contactId, whatsappConnectionId: connectionId, status: "NEW", enteredQueueAt: new Date(), lastMessageAt: new Date() },
   });
   await prisma.conversationEvent.create({
     data: { conversationId: conversation.id, type: "CREATED" },
@@ -74,9 +85,10 @@ export async function findOrOpenConversationForInboundMessage(contactId: string)
   return { conversation, isNewConversation: true };
 }
 
-export async function listQueue() {
+/** An agent only ever sees the queue for their own WhatsApp connection. */
+export async function listQueue(connectionId: string) {
   const conversations = await prisma.conversation.findMany({
-    where: { status: { in: ["NEW", "WAITING"] } },
+    where: { whatsappConnectionId: connectionId, status: { in: ["NEW", "WAITING"] } },
     include: conversationInclude,
     orderBy: { enteredQueueAt: "asc" },
   });
@@ -108,6 +120,8 @@ export interface OversightFilters {
   agentId?: string;
   status?: string;
   contactSearch?: string;
+  /** Empty/undefined = all connections — see PROMPT: filtro podendo selecionar várias ou todas. */
+  connectionIds?: string[];
 }
 
 /** Gestão/Admin oversight listing — full visibility, but callers must still enforce read-only in the route layer. */
@@ -117,6 +131,7 @@ export async function listAllConversations(filters: OversightFilters) {
       createdAt: filters.from || filters.to ? { gte: filters.from, lte: filters.to } : undefined,
       assignedAgentId: filters.agentId,
       status: filters.status ? (filters.status as any) : undefined,
+      whatsappConnectionId: filters.connectionIds?.length ? { in: filters.connectionIds } : undefined,
       contact: filters.contactSearch
         ? {
             OR: [
@@ -185,6 +200,14 @@ export async function acceptConversation(conversationId: string, agentId: string
   return getConversationOrThrow(conversationId);
 }
 
+/**
+ * Transfer target may be any active agent, regardless of which WhatsApp
+ * connection they normally work — see PROMPT: "poderá transferir a
+ * conversa para qualquer atendente". If that agent isn't online right now,
+ * the conversation gets a 2h pendingTransferDeadline: if they haven't
+ * logged in by then, `revertExpiredTransfers` bounces it back to whoever
+ * transferred it (see below).
+ */
 export async function transferConversation(
   conversationId: string,
   fromAgentId: string,
@@ -199,11 +222,13 @@ export async function transferConversation(
     throw Errors.badRequest("Atendente de destino invalido");
   }
 
+  const pendingTransferDeadline = target.presence === "ONLINE" ? null : new Date(Date.now() + TRANSFER_OFFLINE_GRACE_MS);
+
   const result = await prisma.conversation.updateMany({
     where: { id: conversationId, assignedAgentId: fromAgentId, status: { in: ["IN_PROGRESS", "TRANSFERRED"] } },
-    // The new agent hasn't read anything yet — clearing this makes every
-    // message (including history) count toward their unread badge again.
-    data: { status: "TRANSFERRED", assignedAgentId: toAgentId, acceptedAt: new Date(), assignedAgentReadAt: null },
+    // The new agent hasn't read anything yet — clearing assignedAgentReadAt
+    // makes every message (including history) count toward their unread badge again.
+    data: { status: "TRANSFERRED", assignedAgentId: toAgentId, acceptedAt: new Date(), assignedAgentReadAt: null, pendingTransferDeadline },
   });
   if (result.count === 0) throw Errors.conflict("Nao foi possivel transferir: conversa ja foi alterada");
 
@@ -215,7 +240,7 @@ export async function transferConversation(
       data: { conversationId, fromAgentId, toAgentId, reason: "TRANSFER" },
     }),
     prisma.conversationEvent.create({
-      data: { conversationId, type: "TRANSFERRED", payload: { fromAgentId, toAgentId, note } },
+      data: { conversationId, type: "TRANSFERRED", payload: { fromAgentId, toAgentId, note, targetWasOffline: pendingTransferDeadline !== null } },
     }),
   ]);
 
@@ -225,10 +250,70 @@ export async function transferConversation(
 export async function closeConversation(conversationId: string, agentId: string) {
   const result = await prisma.conversation.updateMany({
     where: { id: conversationId, assignedAgentId: agentId, status: { in: ["IN_PROGRESS", "TRANSFERRED"] } },
-    data: { status: "CLOSED", closedAt: new Date(), closedByUserId: agentId },
+    data: { status: "CLOSED", closedAt: new Date(), closedByUserId: agentId, pendingTransferDeadline: null },
   });
   if (result.count === 0) throw Errors.conflict("Nao foi possivel encerrar esta conversa");
 
   await prisma.conversationEvent.create({ data: { conversationId, type: "CLOSED", payload: { agentId } } });
   return getConversationOrThrow(conversationId);
+}
+
+/**
+ * Logging in proves the agent is back — cancels the 2h countdown on any
+ * conversation transferred to them while they were offline, so
+ * revertExpiredTransfers leaves those alone from now on.
+ */
+export async function clearPendingTransferDeadlines(agentId: string): Promise<void> {
+  await prisma.conversation.updateMany({
+    where: { assignedAgentId: agentId, pendingTransferDeadline: { not: null } },
+    data: { pendingTransferDeadline: null },
+  });
+}
+
+/**
+ * Background sweep (see server.ts) — bounces a transferred conversation
+ * back to whoever transferred it if the receiving agent never logged in
+ * within the 2h grace window. Origin agent = fromAgentId on the most
+ * recent transfer record for that conversation.
+ */
+export async function revertExpiredTransfers(): Promise<void> {
+  const expired = await prisma.conversation.findMany({
+    where: { status: "TRANSFERRED", pendingTransferDeadline: { lte: new Date() } },
+    include: { transfers: { orderBy: { createdAt: "desc" }, take: 1 } },
+  });
+
+  for (const conversation of expired) {
+    const lastTransfer = conversation.transfers[0];
+    if (!lastTransfer) continue; // defensive — should never happen for a TRANSFERRED conversation
+
+    const expiredAgentId = conversation.assignedAgentId;
+    const result = await prisma.conversation.updateMany({
+      where: { id: conversation.id, status: "TRANSFERRED", pendingTransferDeadline: { lte: new Date() } },
+      data: {
+        assignedAgentId: lastTransfer.fromAgentId,
+        status: "IN_PROGRESS",
+        pendingTransferDeadline: null,
+        assignedAgentReadAt: null,
+      },
+    });
+    if (result.count === 0) continue; // someone else (e.g. a login) already resolved it
+
+    await prisma.conversationEvent.create({
+      data: {
+        conversationId: conversation.id,
+        type: "TRANSFER_REVERTED",
+        payload: { revertedToAgentId: lastTransfer.fromAgentId, expiredAgentId },
+      },
+    });
+    await writeAudit({
+      userId: null,
+      action: "CONVERSATION_TRANSFER_REVERTED",
+      entity: "Conversation",
+      entityId: conversation.id,
+      metadata: { revertedToAgentId: lastTransfer.fromAgentId, expiredAgentId, reason: "recipient did not log in within 2h" },
+    });
+    if (expiredAgentId) {
+      realtimeEvents.transferReverted(conversation.id, lastTransfer.fromAgentId, expiredAgentId);
+    }
+  }
 }
