@@ -46,7 +46,7 @@ export default function RelatoriosPage() {
   return (
     <div className="flex h-full flex-col overflow-hidden p-6">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex gap-1 rounded-card border border-border bg-surface p-1">
+        <div className="shadow-soft flex gap-1 rounded-card border border-border bg-surface p-1">
           {TABS.map((t) => (
             <button
               key={t.key}
@@ -74,7 +74,7 @@ export default function RelatoriosPage() {
       {tab === "messages" && data && (
         <div className="grid grid-cols-3 gap-4">
           {Object.entries(data as Record<string, number>).map(([key, value]) => (
-            <div key={key} className="rounded-card border border-border bg-surface p-4">
+            <div key={key} className="shadow-soft rounded-card border border-border bg-surface p-4">
               <p className="text-xs uppercase text-muted">{key}</p>
               <p className="mt-1 text-2xl font-semibold">{value}</p>
             </div>
@@ -83,7 +83,7 @@ export default function RelatoriosPage() {
       )}
 
       {tab !== "messages" && (
-        <div className="flex-1 overflow-auto rounded-card border border-border bg-surface">
+        <div className="shadow-soft flex-1 overflow-auto rounded-card border border-border bg-surface">
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-surface-alt text-left text-xs uppercase tracking-wide text-muted">
               <tr>{rows[0] && Object.keys(rows[0]).map((key) => <th key={key} className="whitespace-nowrap px-4 py-3">{key}</th>)}</tr>

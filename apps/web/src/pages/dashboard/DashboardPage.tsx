@@ -87,7 +87,7 @@ export default function DashboardPage() {
 
           <section>
             <h2 className="mb-3 text-sm font-semibold text-muted">Atendimentos por atendente</h2>
-            <div className="rounded-card border border-border bg-surface p-4">
+            <div className="shadow-soft rounded-card border border-border bg-surface p-4">
               {data.perAgent.length === 0 ? (
                 <p className="py-8 text-center text-sm text-muted">Sem dados no período selecionado.</p>
               ) : (

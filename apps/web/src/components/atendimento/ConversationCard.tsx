@@ -34,7 +34,7 @@ export function ConversationCard({
       onClick={onSelect}
       onKeyDown={(e) => onSelect && e.key === "Enter" && onSelect()}
       className={clsx(
-        "focus-ring flex cursor-pointer items-start gap-3 rounded-card border p-3 transition-colors",
+        "focus-ring shadow-soft flex cursor-pointer items-start gap-3 rounded-card border p-3 transition-colors",
         selected ? "border-primary bg-primary/5" : "border-border hover:bg-surface-alt"
       )}
     >

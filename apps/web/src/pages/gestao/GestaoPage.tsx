@@ -90,7 +90,7 @@ export default function GestaoPage() {
         />
       </div>
 
-      <div className="flex-1 overflow-auto rounded-card border border-border bg-surface">
+      <div className="shadow-soft flex-1 overflow-auto rounded-card border border-border bg-surface">
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-surface-alt text-left text-xs uppercase tracking-wide text-muted">
             <tr>
