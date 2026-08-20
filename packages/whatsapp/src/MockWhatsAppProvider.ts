@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
 import type {
+  ConnectOptions,
   ContactInfo,
   DeliveryEvent,
   InboundMessageEvent,
@@ -22,6 +23,16 @@ const DEFAULT_SEED_CONTACTS: MockContactSeed[] = [
   { phone: "5511966665555", name: null },
 ];
 
+// The phone's full address book — a superset of DEFAULT_SEED_CONTACTS (which
+// only seeds inbound chatter). "Start a new conversation" picks from this list.
+const DEVICE_CONTACTS: MockContactSeed[] = [
+  ...DEFAULT_SEED_CONTACTS,
+  { phone: "5511955554444", name: "Ana Ribeiro" },
+  { phone: "5511944443333", name: "Bruno Alves" },
+  { phone: "5511933332222", name: "Fernanda Costa" },
+  { phone: "5511922221111", name: "Rafael Lima" },
+];
+
 /**
  * Fully functional simulator used in development/demo/test environments
  * (WHATSAPP_PROVIDER=mock). It behaves like a real provider from the rest
@@ -34,23 +45,32 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
   private status: WhatsAppStatusSnapshot = {
     state: "DISCONNECTED",
     qrCodeDataUrl: null,
+    pairingCode: null,
     connectedNumber: null,
     lastConnectedAt: null,
   };
   private autoMessageTimer: NodeJS.Timeout | null = null;
 
-  async connect(): Promise<void> {
+  async connect(options?: ConnectOptions): Promise<void> {
     this.setStatus({ ...this.status, state: "CONNECTING" });
     await delay(400);
-    const fakeQr = `MOCK-QR-${randomUUID()}`;
-    this.setStatus({ ...this.status, state: "QR_PENDING", qrCodeDataUrl: fakeQr });
 
-    // Simulate the operator scanning the QR after a short delay.
+    if (options?.phoneNumber) {
+      // WhatsApp-Web-style "link with phone number" — a short code instead of a QR scan.
+      const fakeCode = randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase();
+      this.setStatus({ ...this.status, state: "CODE_PENDING", pairingCode: `${fakeCode.slice(0, 4)}-${fakeCode.slice(4)}` });
+    } else {
+      const fakeQr = `MOCK-QR-${randomUUID()}`;
+      this.setStatus({ ...this.status, state: "QR_PENDING", qrCodeDataUrl: fakeQr });
+    }
+
+    // Simulate the operator scanning the QR / typing the code after a short delay.
     await delay(1500);
     this.setStatus({
       state: "CONNECTED",
       qrCodeDataUrl: null,
-      connectedNumber: "5511900000000",
+      pairingCode: null,
+      connectedNumber: options?.phoneNumber ?? "5511900000000",
       lastConnectedAt: new Date(),
     });
 
@@ -62,6 +82,7 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
     this.setStatus({
       state: "DISCONNECTED",
       qrCodeDataUrl: null,
+      pairingCode: null,
       connectedNumber: null,
       lastConnectedAt: this.status.lastConnectedAt,
     });
@@ -114,6 +135,11 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
 
   async getContactPhoto(): Promise<string | null> {
     return null;
+  }
+
+  async listContacts(): Promise<ContactInfo[]> {
+    if (this.status.state !== "CONNECTED") return [];
+    return DEVICE_CONTACTS.map((c) => ({ phone: c.phone, name: c.name, photoUrl: null }));
   }
 
   async syncHistory(): Promise<void> {

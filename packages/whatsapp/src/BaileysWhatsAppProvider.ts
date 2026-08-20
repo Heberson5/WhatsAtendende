@@ -9,6 +9,7 @@ import makeWASocket, {
   type WAMessage,
 } from "@whiskeysockets/baileys";
 import type {
+  ConnectOptions,
   ContactInfo,
   DeliveryEvent,
   InboundMessageEvent,
@@ -50,14 +51,21 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
   private status: WhatsAppStatusSnapshot = {
     state: "DISCONNECTED",
     qrCodeDataUrl: null,
+    pairingCode: null,
     connectedNumber: null,
     lastConnectedAt: null,
   };
   private logger = pino({ level: process.env.WHATSAPP_LOG_LEVEL ?? "silent" });
+  // Populated from Baileys' contacts.upsert/contacts.update events as they
+  // arrive (no makeInMemoryStore dependency needed for just this). Backs
+  // listContacts() — the phone's address book, used by "start a new conversation".
+  private contacts = new Map<string, ContactInfo>();
+  private lastConnectOptions: ConnectOptions | undefined;
 
   constructor(private options: BaileysProviderOptions) {}
 
-  async connect(): Promise<void> {
+  async connect(connectOptions?: ConnectOptions): Promise<void> {
+    this.lastConnectOptions = connectOptions;
     this.setStatus({ ...this.status, state: "CONNECTING" });
     const { state, saveCreds } = await useMultiFileAuthState(this.options.authStateDir);
 
@@ -65,16 +73,28 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
       auth: state,
       logger: this.logger as any,
       syncFullHistory: false,
+      // Pairing-code linking and QR linking are mutually exclusive per
+      // Baileys session: suppress the QR event entirely when a phone number
+      // was given, since we're about to request a code instead.
       printQRInTerminal: false,
     });
     this.socket = socket;
 
     socket.ev.on("creds.update", saveCreds);
 
+    if (connectOptions?.phoneNumber && !state.creds.registered) {
+      try {
+        const code = await socket.requestPairingCode(connectOptions.phoneNumber.replace(/\D/g, ""));
+        this.setStatus({ ...this.status, state: "CODE_PENDING", pairingCode: code });
+      } catch (err) {
+        this.logger.error({ err }, "failed to request WhatsApp pairing code");
+      }
+    }
+
     socket.ev.on("connection.update", async (update) => {
       const { connection, qr, lastDisconnect } = update;
 
-      if (qr) {
+      if (qr && !connectOptions?.phoneNumber) {
         const qrCodeDataUrl = await QRCode.toDataURL(qr);
         this.setStatus({ ...this.status, state: "QR_PENDING", qrCodeDataUrl });
       }
@@ -84,6 +104,7 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
         this.setStatus({
           state: "CONNECTED",
           qrCodeDataUrl: null,
+          pairingCode: null,
           connectedNumber,
           lastConnectedAt: new Date(),
         });
@@ -95,11 +116,12 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
         this.setStatus({
           state: "DISCONNECTED",
           qrCodeDataUrl: null,
+          pairingCode: null,
           connectedNumber: null,
           lastConnectedAt: this.status.lastConnectedAt,
         });
         if (shouldReconnect) {
-          await this.connect();
+          await this.connect(this.lastConnectOptions);
         }
       }
     });
@@ -110,6 +132,9 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
         await this.handleIncomingMessage(message);
       }
     });
+
+    socket.ev.on("contacts.upsert", (contacts) => this.upsertContacts(contacts));
+    socket.ev.on("contacts.update", (contacts) => this.upsertContacts(contacts));
 
     socket.ev.on("messages.update", (updates) => {
       for (const update of updates) {
@@ -142,9 +167,11 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
   async disconnect(): Promise<void> {
     await this.socket?.logout().catch(() => undefined);
     this.socket = null;
+    this.contacts.clear();
     this.setStatus({
       state: "DISCONNECTED",
       qrCodeDataUrl: null,
+      pairingCode: null,
       connectedNumber: null,
       lastConnectedAt: this.status.lastConnectedAt,
     });
@@ -231,6 +258,10 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
     }
   }
 
+  async listContacts(): Promise<ContactInfo[]> {
+    return Array.from(this.contacts.values());
+  }
+
   async syncHistory(): Promise<void> {
     // Baileys can sync history via syncFullHistory during pairing; on-demand
     // backfill for an already-linked session is intentionally not enabled
@@ -264,6 +295,19 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
   private setStatus(status: WhatsAppStatusSnapshot) {
     this.status = status;
     this.emitter.emit("connection", status);
+  }
+
+  private upsertContacts(contacts: Array<{ id?: string; name?: string | null; notify?: string | null; imgUrl?: string | null }>) {
+    for (const c of contacts) {
+      if (!c.id || isNonCustomerChat(c.id)) continue;
+      const phone = c.id.split("@")[0];
+      const existing = this.contacts.get(phone);
+      this.contacts.set(phone, {
+        phone,
+        name: c.name ?? c.notify ?? existing?.name ?? null,
+        photoUrl: (c.imgUrl && c.imgUrl !== "changed" ? c.imgUrl : existing?.photoUrl) ?? null,
+      });
+    }
   }
 
   private async handleIncomingMessage(message: WAMessage): Promise<void> {
