@@ -19,6 +19,7 @@ Plataforma Web multiusuário de atendimento ao cliente via WhatsApp — semelhan
 - [Docker](#docker)
 - [Integração com WhatsApp](#integração-com-whatsapp)
 - [Usuários padrão de desenvolvimento](#usuários-padrão-de-desenvolvimento)
+- [Recuperação de senha por e-mail](#recuperação-de-senha-por-e-mail)
 - [Regras de negócio](#regras-de-negócio)
 - [Segurança e permissões](#segurança-e-permissões)
 - [Tempo real](#tempo-real)
@@ -153,7 +154,8 @@ Principais variáveis da API:
 | `WHATSAPP_PROVIDER` | `mock` (padrão, sem WhatsApp real) ou `baileys` (conexão real) |
 | `WHATSAPP_AUTH_DIR` | Diretório onde o Baileys persiste a sessão pareada |
 | `UPLOAD_DIR` / `UPLOAD_MAX_SIZE_MB` | Armazenamento local de anexos e limite de tamanho |
-| `WEB_APP_URL` | Origem permitida no CORS e nos cookies |
+| `WEB_APP_URL` | Origem permitida no CORS e nos cookies; também usada para montar o link de redefinição de senha enviado por e-mail |
+| `TRUST_PROXY` | `false` por padrão — só ativar atrás de um proxy reverso confiável (ver comentário em `.env.example`) |
 
 ## Banco de dados e migrações
 
@@ -213,6 +215,10 @@ Criados por `npm run prisma:seed -w apps/api` — **trocar todas as senhas antes
 | Atendente | `joao@whatsatendende.dev` | `Agente@123` |
 | Atendente | `maria@whatsatendende.dev` | `Agente@123` |
 
+## Recuperação de senha por e-mail
+
+Em **Configurações → E-mail** (perfil Administrador), configure um servidor SMTP (host, porta, TLS, usuário/senha, remetente) e use **Testar** para confirmar a entrega antes de depender dele. Com o SMTP configurado, "Recuperar senha" na tela de login envia um e-mail real com um link para `/reset-password?token=...`, onde o usuário define a nova senha (`ResetPasswordPage`). Sem SMTP configurado (padrão em desenvolvimento), a API não consegue entregar o e-mail — fora de produção, o token continua disponível na própria resposta da requisição (`devToken`) só para permitir testar o fluxo end-to-end sem um servidor de e-mail. A senha do SMTP nunca é devolvida pela API depois de salva.
+
 ## Regras de negócio
 
 - **Fila e aceite exclusivo:** conversa nasce `NEW`/`WAITING`. Antes do aceite, a fila mostra apenas foto, nome/telefone e horário de entrada — nunca conteúdo de mensagem (aplicado no mapper do backend, `revealPreview=false`, não apenas ocultado por CSS). O primeiro `POST /conversations/:id/accept` bem-sucedido muda o status para `IN_PROGRESS` e atribui `assignedAgentId`; qualquer tentativa concorrente recebe `409` com a mensagem "Esta conversa já foi assumida por outro atendente." — testado em `apps/api/tests/conversations.test.ts`.
@@ -222,16 +228,23 @@ Criados por `npm run prisma:seed -w apps/api` — **trocar todas as senhas antes
 - **Conversas únicas:** contadas por `contactId` distinto dentro do período filtrado (não por mensagem), calculado em `dashboard.service.ts`.
 - **Gestão é somente leitura:** as rotas de aceitar/responder/transferir/encerrar exigem `role=AGENT`; um Gestor/Administrador autenticado que tente chamá-las recebe `403` mesmo tendo acesso de visualização à mesma conversa via `/conversations/oversight` — testado.
 - **Nome de exibição:** nunca é inserido no texto enviado ao WhatsApp; é um elemento puramente visual do balão de mensagem no frontend (`MessageBubble.tsx`).
+- **Não lidas e notificações:** cada conversa guarda `assignedAgentReadAt` (zerado no aceite/transferência, atualizado quando o atendente abre a conversa via `POST /conversations/:id/read`). O card na lista "Meus atendimentos" mostra a contagem de mensagens recebidas depois desse marcador. Uma nova conversa na fila emite `queue:new-conversation` (toast para todos os atendentes); uma nova mensagem numa conversa já aceita emite `message:inbound-notification` só para o atendente responsável, e só quando ele não está com aquela conversa aberta no momento.
 
 ## Segurança e permissões
 
 - Senhas com hash `bcrypt` (custo 12), nunca armazenadas em texto puro.
-- Autenticação por JWT de acesso de curta duração + refresh token rotativo em cookie `httpOnly`/`SameSite=Lax`; usuário inativo é bloqueado no login mesmo com senha correta.
+- Autenticação por JWT de acesso de curta duração + refresh token rotativo em cookie `httpOnly`/`SameSite=Strict`; usuário inativo é bloqueado no login mesmo com senha correta.
+- **Tokens JWT com algoritmo fixo** (`HS256` explícito em sign/verify — evita confusão de algoritmo) e **`jti` aleatório no refresh token** (duas emissões no mesmo segundo nunca colidem no hash único salvo no banco — corrigiu uma falha real encontrada durante os testes deste projeto: recarregar a página podia derrubar a sessão por colisão de hash).
+- **Sem enumeração de usuário por tempo de resposta**: login e "esqueci minha senha" fazem o mesmo trabalho de bcrypt/crypto tanto para e-mail existente quanto inexistente, para que o tempo de resposta não revele quais contas existem.
 - Toda rota sensível usa `requireAuth` + `requireRole(...)` no backend — o menu lateral apenas *esconde* itens que o usuário não pode acessar; a proteção real está nas rotas Express.
-- Cabeçalhos de segurança via `helmet`; rate limiting global e um limite mais agressivo no login (`express-rate-limit`).
-- Upload de anexos valida MIME type e extensão contra uma allowlist e respeita um tamanho máximo configurável (`UPLOAD_MAX_SIZE_MB`).
-- Prisma usa consultas parametrizadas (sem SQL bruto concatenado) — mitiga SQL injection por construção.
-- Toda ação sensível é gravada em `audit_logs` (login, logout, criação/edição de usuário, aceite, transferência, encerramento, alteração de configurações, conexão/desconexão do WhatsApp) com usuário, IP, entidade e metadados.
+- Cabeçalhos de segurança via `helmet` (com `X-Powered-By` também desabilitado explicitamente); rate limiting global, limite mais agressivo no login, e limite dedicado em `forgot-password`/`reset-password`/teste de SMTP (`express-rate-limit`).
+- **Logs nunca contêm segredos**: `Authorization`, `Cookie` e `Set-Cookie` são redigidos nos logs de requisição (`pino-http` com `redact`) — sem isso, o access/refresh token de cada request apareceria em texto puro no log.
+- `TRUST_PROXY` desligado por padrão — só deve ser ativado quando a API é alcançável exclusivamente através de um proxy reverso confiável (evita que um cliente falsifique seu próprio IP para burlar o rate limit ou poluir a auditoria).
+- Upload de anexos valida MIME type contra uma allowlist e respeita um tamanho máximo configurável (`UPLOAD_MAX_SIZE_MB`); uploads de identidade visual (logo/favicon) usam uma allowlist só de formatos raster (SVG é recusado — evita o vetor de XSS de SVG com `<script>` embutido) e o nome do arquivo salvo é derivado do MIME type validado, nunca do nome enviado pelo cliente.
+- Prisma usa consultas parametrizadas (sem SQL bruto concatenado); a única query raw do projeto (contagem de não lidas) usa `Prisma.sql`/`Prisma.join` parametrizados.
+- Configurações de negócio (`PATCH /settings/business`) e de e-mail (`PATCH /settings/email`) são validadas com Zod (`.strict()` no primeiro caso) — não persistem JSON arbitrário enviado pelo cliente.
+- Senha de SMTP nunca é devolvida pela API (a resposta de `GET /settings/email` só informa `hasPassword: true/false`); ainda assim, hoje ela é armazenada em texto puro no `system_settings` — ver [Pendências](#pendências--roadmap).
+- Toda ação sensível é gravada em `audit_logs` (login, logout, criação/edição de usuário, aceite, transferência, encerramento, alteração de configurações, conexão/desconexão do WhatsApp) com usuário, IP, entidade e metadados — nunca com senha/segredo no metadata.
 
 ## Tempo real
 
@@ -249,14 +262,16 @@ npm run test -w apps/api
 npm run test -w apps/web
 ```
 
-Cobertura atual (14 testes de backend + 7 de frontend, todos passando neste repositório):
+Cobertura atual (17 testes de backend + 7 de frontend, todos passando neste repositório):
 
 - Login com credenciais corretas/incorretas, bloqueio de usuário inativo, ausência de enumeração de usuário, hash de senha.
+- **Regressão de concorrência no refresh token** (dois `POST /auth/refresh` simultâneos com o mesmo cookie → ambos `200`, sem colisão de hash).
 - RBAC: Atendente não acessa rotas de Administrador; Gestor não aceita/responde conversas.
 - **Concorrência no aceite** (dois `accept` simultâneos → um `200`, um `409`, exatamente um registro de atribuição no banco).
 - Privacidade da fila (conteúdo de mensagem nunca trafega antes do aceite).
 - Isolamento por atendente (outro atendente não abre uma conversa já atribuída).
-- Transferência (some da origem, aparece com selo "transferido" no destino).
+- Transferência (some da origem, aparece com selo "transferido" no destino, zera o marcador de leitura do novo atendente).
+- Badge de não lidas (conta mensagens recebidas após o último acesso, zera ao marcar como lida).
 - Encerramento (sai da lista ativa).
 - Gestão somente leitura (visualiza, mas `accept` retorna 403).
 - Frontend: renderização e submissão do login, alternância de visibilidade de senha, proteção de rotas por autenticação e por perfil.
@@ -288,7 +303,9 @@ Para produção: `docker compose up --build` (ver [Docker](#docker)) ou build ma
 Itens abaixo **não** estão implementados ou estão implementados apenas parcialmente — listados aqui em vez de omitidos, conforme a diretriz de nunca declarar algo pronto sem estar:
 
 - **Validação de conexão Baileys com um número real** — implementado contra a API documentada, mas não exercitado ponta a ponta neste ambiente (ver [Integração com WhatsApp](#integração-com-whatsapp)).
-- **Entrega de e-mail** (recuperação de senha, senha temporária gerada por um Administrador): os fluxos existem e geram o token/senha corretos, mas a entrega é apenas retornada na resposta da API em ambiente não-produtivo — não há um provedor de e-mail configurado.
+- **Senha de SMTP em texto puro no banco** (`system_settings`, chave `email`): a API nunca a devolve ao cliente, mas ela não está criptografada em repouso. Para produção, mover para um secrets manager (ou ao menos criptografar o campo antes de persistir) é o próximo passo — a interface de `EmailSettings` já isola esse detalhe num único lugar (`settings.service.ts`) para facilitar a troca.
+- **Senha temporária de reset por Administrador** (`POST /users/:id/reset-password`) não força troca no próximo login — o usuário pode continuar usando a temporária indefinidamente. Uma flag `mustChangePassword` é o próximo passo natural.
+- **`react-router-dom` com 2 avisos moderados do `npm audit`** (redirecionamento aberto via `<Link>`/`useNavigate` e um problema de hidratação SSR): avaliados e considerados de baixo risco *nesta aplicação* — é uma SPA 100% client-side (sem SSR, então a segunda CVE não se aplica) e nenhum `to`/`navigate` no código usa valor vindo do usuário (todos são caminhos fixos), então o redirecionamento aberto não tem um "sink" alcançável hoje. Ainda assim, é uma dependência desatualizada; atualizar para a v7 é uma mudança de major (breaking) que não foi feita nesta rodada para não arriscar regressão em todo o roteamento já testado — fica como próximo passo dedicado.
 - **Persistência de mídia recebida do WhatsApp para armazenamento em disco** — o evento de mensagem com mídia é recebido e a mensagem é criada, mas a gravação do binário em `UPLOAD_DIR` para mídia *recebida* (diferente de mídia *enviada* pelo atendente, que já é salva) está sinalizada como próximo passo em `whatsapp.service.ts` para não bloquear o callback de eventos do provedor com I/O de disco.
 - **Regras configuráveis de negócio** (seção 52): o *storage* (`system_settings`, tabela `business`) e a API (`GET/PATCH /settings/business`) já existem para tempo de inatividade, encerramento automático, horário de atendimento, mensagem de saudação/ausência etc., mas a *aplicação* dessas regras (ex.: encerrar automaticamente após X minutos) ainda não está implementada — arquitetura preparada, comportamento pendente.
 - **Exportação de relatórios em Excel/PDF** — CSV está implementado e testado; XLSX/PDF não.
