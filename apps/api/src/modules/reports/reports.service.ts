@@ -10,8 +10,27 @@ export interface ReportParams {
   connectionIds?: string[];
 }
 
-function minutes(ms: number | null): number | null {
-  return ms === null ? null : Math.round(ms / 60000);
+// Every report row is built with Portuguese keys directly — those keys
+// double as the column headers for CSV/XLSX/PDF (Object.keys(rows[0])) and
+// as the <th> labels in the on-screen table, so translating here is the one
+// place that fixes all of them at once. See PROMPT: "os cabeçalhos do
+// relatório e as informações devem estar tudo em português".
+const STATUS_LABEL: Record<string, string> = {
+  NEW: "Nova",
+  WAITING: "Aguardando",
+  IN_PROGRESS: "Em atendimento",
+  TRANSFERRED: "Transferida",
+  CLOSED: "Encerrada",
+  ABANDONED: "Abandonada",
+};
+
+function minutes(ms: number | null): number | string {
+  return ms === null ? "-" : Math.round(ms / 60000);
+}
+
+function formatDateTime(d: Date | null): string {
+  if (!d) return "-";
+  return d.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).replace(",", "");
 }
 
 export async function getAttendanceReport({ from, to, agentId, connectionIds }: ReportParams) {
@@ -40,21 +59,21 @@ export async function getAttendanceReport({ from, to, agentId, connectionIds }: 
     const totalMs = c.closedAt ? c.closedAt.getTime() - c.enteredQueueAt.getTime() : null;
 
     return {
-      date: c.createdAt.toISOString(),
-      connection: c.whatsappConnection.name,
-      clientName: c.contact.name ?? c.contact.phone,
-      phone: c.contact.phone,
-      agentName: c.assignedAgent?.displayName ?? "-",
-      enteredQueueAt: c.enteredQueueAt.toISOString(),
-      acceptedAt: c.acceptedAt ? c.acceptedAt.toISOString() : null,
-      acceptMinutes: minutes(acceptMs),
-      firstResponseMinutes: minutes(firstResponseMs),
-      closedAt: c.closedAt ? c.closedAt.toISOString() : null,
-      totalMinutes: minutes(totalMs),
-      messagesReceived: received,
-      messagesSent: sent,
-      transfersCount: c.transfers.length,
-      status: c.status,
+      Data: formatDateTime(c.createdAt),
+      Conexão: c.whatsappConnection.name,
+      Cliente: c.contact.name ?? c.contact.phone,
+      Telefone: c.contact.phone,
+      Atendente: c.assignedAgent?.displayName ?? "-",
+      "Entrada na fila": formatDateTime(c.enteredQueueAt),
+      Aceite: formatDateTime(c.acceptedAt),
+      "Até aceite (min)": minutes(acceptMs),
+      "Até 1ª resposta (min)": minutes(firstResponseMs),
+      Encerramento: formatDateTime(c.closedAt),
+      "Duração total (min)": minutes(totalMs),
+      "Mensagens recebidas": received,
+      "Mensagens enviadas": sent,
+      Transferências: c.transfers.length,
+      Status: STATUS_LABEL[c.status] ?? c.status,
     };
   });
 }
@@ -88,17 +107,17 @@ export async function getPerAgentReport({ from, to, connectionIds }: ReportParam
         .map((c) => c.firstResponseAt!.getTime() - c.acceptedAt!.getTime());
       const handlingDiffs = conversations.filter((c) => c.acceptedAt && c.closedAt).map((c) => c.closedAt!.getTime() - c.acceptedAt!.getTime());
 
-      const avg = (arr: number[]) => (arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length / 60000) : null);
+      const avg = (arr: number[]): number | string => (arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length / 60000) : "-");
 
       return {
-        agentName: agent.displayName,
-        conversations: conversations.length,
-        messagesSent,
-        avgAcceptMinutes: avg(acceptDiffs),
-        avgFirstResponseMinutes: avg(firstResponseDiffs),
-        avgHandlingMinutes: avg(handlingDiffs),
-        transfersReceived,
-        transfersMade,
+        Atendente: agent.displayName,
+        Conversas: conversations.length,
+        "Mensagens enviadas": messagesSent,
+        "Tempo médio até aceite (min)": avg(acceptDiffs),
+        "Tempo médio até 1ª resposta (min)": avg(firstResponseDiffs),
+        "Tempo médio de atendimento (min)": avg(handlingDiffs),
+        "Transferências recebidas": transfersReceived,
+        "Transferências realizadas": transfersMade,
       };
     })
   );
@@ -114,7 +133,7 @@ export async function getMessagesReport({ from, to, agentId, connectionIds }: Re
     prisma.message.count({ where: { direction: "INBOUND", createdAt: { gte: from, lte: to }, conversation: conversationFilter } }),
     prisma.message.count({ where: { direction: "OUTBOUND", createdAt: { gte: from, lte: to }, conversation: conversationFilter } }),
   ]);
-  return { received, sent, total: received + sent };
+  return { Recebidas: received, Enviadas: sent, Total: received + sent };
 }
 
 export function toCsv(rows: Record<string, unknown>[]): string {
@@ -137,7 +156,17 @@ export async function toXlsx(rows: Record<string, unknown>[], sheetName: string)
 
   if (rows.length > 0) {
     const headers = Object.keys(rows[0]);
-    sheet.columns = headers.map((h) => ({ header: h, key: h, width: Math.min(Math.max(h.length + 4, 14), 40) }));
+    // Content-aware width (not just the header text) so a long client name
+    // or connection name isn't left visually squeezed — see PROMPT: "as
+    // linhas devem aparecer corretamente os dados, não pode cortar as informações".
+    sheet.columns = headers.map((h) => {
+      const longestValue = rows.reduce((max, row) => {
+        const value = row[h];
+        const len = value === null || value === undefined ? 0 : String(value).length;
+        return Math.max(max, len);
+      }, 0);
+      return { header: h, key: h, width: Math.min(Math.max(h.length, longestValue) + 4, 45) };
+    });
     const headerRow = sheet.getRow(1);
     headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
     headerRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0097B4" } };
@@ -163,41 +192,69 @@ export function toPdf(rows: Record<string, unknown>[], title: string): Promise<B
     doc.moveDown();
 
     if (rows.length === 0) {
-      doc.fontSize(11).fillColor("#14202b").text("Nenhum dado para o periodo selecionado.");
+      doc.fontSize(11).fillColor("#14202b").text("Nenhum dado para o período selecionado.");
       doc.end();
       return;
     }
 
     const headers = Object.keys(rows[0]);
+    const cellRows = rows.map((row) => headers.map((h) => (row[h] === null || row[h] === undefined ? "-" : String(row[h]))));
     const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
-    const colWidth = pageWidth / headers.length;
-    const rowHeight = 20;
+    const cellPadding = 8;
+    const fontSize = headers.length > 10 ? 7 : 8;
+    doc.fontSize(fontSize);
+
+    // Content-aware column widths (header + every cell in that column, up to
+    // a per-column cap) instead of an equal split — a wall of narrow columns
+    // is exactly what forced the old ellipsis truncation. Any column still
+    // too narrow for its content wraps onto extra lines below instead of
+    // cutting text, so nothing is ever lost — see PROMPT: "não pode cortar
+    // as informações".
+    const maxColWidth = pageWidth / Math.max(3, headers.length - 2);
+    const naturalWidths = headers.map((h, i) => {
+      const headerWidth = doc.font("Helvetica-Bold").widthOfString(h);
+      const contentWidth = cellRows.reduce((max, cells) => Math.max(max, doc.font("Helvetica").widthOfString(cells[i])), 0);
+      return Math.min(Math.max(headerWidth, contentWidth) + cellPadding * 2, maxColWidth);
+    });
+    const totalNatural = naturalWidths.reduce((a, b) => a + b, 0);
+    // Stretch columns to fill the page when there's room to spare; shrink
+    // proportionally (not by cutting) when the natural widths overflow it.
+    const scale = totalNatural > 0 ? pageWidth / totalNatural : 1;
+    const colWidths = naturalWidths.map((w) => w * scale);
+    const colX = colWidths.reduce<number[]>((acc, w, i) => [...acc, i === 0 ? doc.page.margins.left : acc[i - 1] + colWidths[i - 1]], []);
+
     let y = doc.y;
 
+    function rowHeightFor(cells: string[], bold: boolean): number {
+      doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(fontSize);
+      const lineHeights = cells.map((text, i) => doc.heightOfString(text, { width: colWidths[i] - cellPadding * 2 }));
+      return Math.max(...lineHeights, fontSize + 4) + cellPadding;
+    }
+
     const drawRow = (values: string[], opts: { header?: boolean; shaded?: boolean }) => {
+      const height = rowHeightFor(values, Boolean(opts.header));
       if (opts.header) {
-        doc.rect(doc.page.margins.left, y, pageWidth, rowHeight).fill("#0097B4");
+        doc.rect(doc.page.margins.left, y, pageWidth, height).fill("#0097B4");
       } else if (opts.shaded) {
-        doc.rect(doc.page.margins.left, y, pageWidth, rowHeight).fill("#f4f7f9");
+        doc.rect(doc.page.margins.left, y, pageWidth, height).fill("#f4f7f9");
       }
-      doc.fontSize(8).fillColor(opts.header ? "#ffffff" : "#14202b");
+      doc.font(opts.header ? "Helvetica-Bold" : "Helvetica").fontSize(fontSize).fillColor(opts.header ? "#ffffff" : "#14202b");
       values.forEach((value, i) => {
-        doc.text(value, doc.page.margins.left + i * colWidth + 4, y + 6, { width: colWidth - 8, height: rowHeight, ellipsis: true });
+        doc.text(value, colX[i] + cellPadding / 2, y + cellPadding / 2, { width: colWidths[i] - cellPadding });
       });
-      y += rowHeight;
+      y += height;
     };
 
     drawRow(headers, { header: true });
     rows.forEach((row, idx) => {
-      if (y + rowHeight > doc.page.height - doc.page.margins.bottom) {
+      const cells = cellRows[idx];
+      const height = rowHeightFor(cells, false);
+      if (y + height > doc.page.height - doc.page.margins.bottom) {
         doc.addPage();
         y = doc.page.margins.top;
         drawRow(headers, { header: true });
       }
-      drawRow(
-        headers.map((h) => (row[h] === null || row[h] === undefined ? "-" : String(row[h]))),
-        { shaded: idx % 2 === 1 }
-      );
+      drawRow(cells, { shaded: idx % 2 === 1 });
     });
 
     doc.end();

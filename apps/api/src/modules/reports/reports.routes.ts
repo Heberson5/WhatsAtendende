@@ -52,7 +52,7 @@ reportsRouter.get(
     const query = querySchema.parse(req.query);
     const { from, to } = resolvePeriod(query.period, query.from, query.to);
     const rows = await service.getAttendanceReport({ from, to, agentId: query.agentId, connectionIds: parseListParam(query.connectionId) });
-    await respond(res, rows, query.format, "relatorio-atendimentos", "Relatorio de Atendimentos");
+    await respond(res, rows, query.format, "relatorio-atendimentos", "Relatório de Atendimentos");
   })
 );
 
@@ -62,7 +62,7 @@ reportsRouter.get(
     const query = querySchema.parse(req.query);
     const { from, to } = resolvePeriod(query.period, query.from, query.to);
     const rows = await service.getPerAgentReport({ from, to, connectionIds: parseListParam(query.connectionId) });
-    await respond(res, rows, query.format, "relatorio-por-atendente", "Relatorio por Atendente");
+    await respond(res, rows, query.format, "relatorio-por-atendente", "Relatório por Atendente");
   })
 );
 
@@ -74,6 +74,6 @@ reportsRouter.get(
     const data = await service.getMessagesReport({ from, to, agentId: query.agentId, connectionIds: parseListParam(query.connectionId) });
     if (query.format === "json") return res.json(data);
     // The other export formats need rows, not a single stats object — wrap it as one row.
-    await respond(res, [data], query.format, "relatorio-mensagens", "Relatorio de Mensagens");
+    await respond(res, [data], query.format, "relatorio-mensagens", "Relatório de Mensagens");
   })
 );
