@@ -269,7 +269,7 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
   private async handleIncomingMessage(message: WAMessage): Promise<void> {
     if (message.key.fromMe) return;
     const chatId = message.key.remoteJid ?? "";
-    if (!chatId || chatId.endsWith("@g.us")) return; // ignore group chats
+    if (!chatId || isNonCustomerChat(chatId)) return; // ignore groups, status updates, broadcast lists, channels
 
     const content = message.message;
     if (!content) return;
@@ -342,6 +342,17 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
       }
     }
   }
+}
+
+/**
+ * The queue must only ever contain 1:1 conversations with real customers.
+ * WhatsApp's JID suffix tells us the chat's kind: "@g.us" is a group,
+ * "@broadcast" covers both Status/Stories updates (chatId === "status@broadcast")
+ * and broadcast lists, and "@newsletter" is a channel — none of these are a
+ * customer waiting for an agent, so they must never reach findOrCreateContact.
+ */
+function isNonCustomerChat(chatId: string): boolean {
+  return chatId.endsWith("@g.us") || chatId.endsWith("@broadcast") || chatId.endsWith("@newsletter");
 }
 
 function mapBaileysReceiptToStatus(receipt: number): DeliveryEvent["status"] | null {
