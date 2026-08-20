@@ -30,7 +30,7 @@ export async function initWhatsAppProvider(): Promise<void> {
   provider.onMessage(async (event) => {
     try {
       const contact = await conversationsService.findOrCreateContact(event.phone, event.contactName);
-      const { conversation } = await conversationsService.findOrOpenConversationForInboundMessage(contact.id);
+      const { conversation, isNewConversation } = await conversationsService.findOrOpenConversationForInboundMessage(contact.id);
 
       const message = await messagesService.createInboundMessage({
         conversationId: conversation.id,
@@ -70,7 +70,16 @@ export async function initWhatsAppProvider(): Promise<void> {
         });
       }
 
-      realtimeEvents.newMessage(conversation.id, conversation.assignedAgentId);
+      const contactLabel = contact.name ?? contact.phone;
+      if (isNewConversation) {
+        realtimeEvents.newQueueConversation(conversation.id, contactLabel);
+      } else {
+        realtimeEvents.newMessage(conversation.id, conversation.assignedAgentId);
+        if (conversation.assignedAgentId) {
+          const preview = event.body ?? (event.type === "LOCATION" ? "Localizacao" : event.type === "CONTACT" ? "Contato" : "Anexo recebido");
+          realtimeEvents.inboundMessageNotification(conversation.id, conversation.assignedAgentId, contactLabel, preview);
+        }
+      }
     } catch (err) {
       logger.error({ err }, "failed to process inbound whatsapp message");
     }

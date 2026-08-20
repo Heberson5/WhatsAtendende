@@ -131,4 +131,46 @@ describe("conversation queue and acceptance", () => {
     const acceptAttempt = await request(app).post(`/api/conversations/${conversation.id}/accept`).set("Authorization", `Bearer ${gestorToken}`);
     expect(acceptAttempt.status).toBe(403);
   });
+
+  it("shows an unread badge for new inbound messages and clears it once the agent marks it read", async () => {
+    await createTestUser({ email: "joao@test.dev", role: "AGENT", displayName: "Joao" });
+    const token = await loginAs("joao@test.dev");
+    const { conversation } = await createWaitingConversation("5511999996666");
+    await request(app).post(`/api/conversations/${conversation.id}/accept`).set("Authorization", `Bearer ${token}`);
+
+    // Two more inbound messages arrive after acceptance (simulating provider events directly at the DB level).
+    await prisma.message.createMany({
+      data: [
+        { conversationId: conversation.id, direction: "INBOUND", type: "TEXT", status: "DELIVERED", body: "oi" },
+        { conversationId: conversation.id, direction: "INBOUND", type: "TEXT", status: "DELIVERED", body: "tudo bem?" },
+      ],
+    });
+
+    const before = await request(app).get("/api/conversations/mine").set("Authorization", `Bearer ${token}`);
+    const item = before.body.find((c: { id: string }) => c.id === conversation.id);
+    expect(item.unreadCount).toBe(2);
+
+    const readRes = await request(app).post(`/api/conversations/${conversation.id}/read`).set("Authorization", `Bearer ${token}`);
+    expect(readRes.status).toBe(204);
+
+    const after = await request(app).get("/api/conversations/mine").set("Authorization", `Bearer ${token}`);
+    expect(after.body.find((c: { id: string }) => c.id === conversation.id).unreadCount).toBe(0);
+  });
+
+  it("resets the unread marker on transfer so the new agent sees the full history as unread", async () => {
+    await createTestUser({ email: "joao@test.dev", role: "AGENT", displayName: "Joao" });
+    const maria = await createTestUser({ email: "maria@test.dev", role: "AGENT", displayName: "Maria" });
+    const joaoToken = await loginAs("joao@test.dev");
+    const { conversation } = await createWaitingConversation("5511999997777");
+    await prisma.message.create({
+      data: { conversationId: conversation.id, direction: "INBOUND", type: "TEXT", status: "DELIVERED", body: "oi" },
+    });
+    await request(app).post(`/api/conversations/${conversation.id}/accept`).set("Authorization", `Bearer ${joaoToken}`);
+    await request(app).post(`/api/conversations/${conversation.id}/read`).set("Authorization", `Bearer ${joaoToken}`);
+    await request(app).post(`/api/conversations/${conversation.id}/transfer`).set("Authorization", `Bearer ${joaoToken}`).send({ toAgentId: maria.id });
+
+    const mariaToken = await loginAs("maria@test.dev");
+    const mine = await request(app).get("/api/conversations/mine").set("Authorization", `Bearer ${mariaToken}`);
+    expect(mine.body.find((c: { id: string }) => c.id === conversation.id).unreadCount).toBeGreaterThan(0);
+  });
 });

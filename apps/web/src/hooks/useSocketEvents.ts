@@ -12,6 +12,10 @@ export function useSocketEvents(activeConversationId: string | null) {
     if (!socket) return;
 
     const onQueueUpdated = () => queryClient.invalidateQueries({ queryKey: ["queue"] });
+    const onNewQueueConversation = (payload: { conversationId: string; contactName: string }) => {
+      queryClient.invalidateQueries({ queryKey: ["queue"] });
+      toast.info(`Nova conversa na fila: ${payload.contactName}`);
+    };
     const onAssigned = () => {
       queryClient.invalidateQueries({ queryKey: ["mine"] });
       queryClient.invalidateQueries({ queryKey: ["queue"] });
@@ -26,6 +30,13 @@ export function useSocketEvents(activeConversationId: string | null) {
       queryClient.invalidateQueries({ queryKey: ["mine"] });
       queryClient.invalidateQueries({ queryKey: ["messages", payload.conversationId] });
     };
+    // Distinct from onMessageNew: only fires for inbound customer messages
+    // on a conversation the agent already owns, and only toasts if they
+    // aren't already looking at that conversation (it's visible live there).
+    const onInboundNotification = (payload: { conversationId: string; contactName: string; preview: string }) => {
+      if (payload.conversationId === activeConversationId) return;
+      toast.message(payload.contactName, { description: payload.preview });
+    };
     const onMessageStatus = (payload: { conversationId: string }) => {
       queryClient.invalidateQueries({ queryKey: ["messages", payload.conversationId] });
     };
@@ -33,25 +44,29 @@ export function useSocketEvents(activeConversationId: string | null) {
     const onWhatsappStatus = () => queryClient.invalidateQueries({ queryKey: ["whatsapp-status"] });
 
     socket.on("queue:updated", onQueueUpdated);
+    socket.on("queue:new-conversation", onNewQueueConversation);
     socket.on("conversation:assigned", onAssigned);
     socket.on("conversation:removed", onRemoved);
     socket.on("conversation:transferred-in", onTransferredIn);
     socket.on("message:new", onMessageNew);
+    socket.on("message:inbound-notification", onInboundNotification);
     socket.on("message:status", onMessageStatus);
     socket.on("oversight:updated", onOversightUpdated);
     socket.on("whatsapp:status", onWhatsappStatus);
 
     return () => {
       socket.off("queue:updated", onQueueUpdated);
+      socket.off("queue:new-conversation", onNewQueueConversation);
       socket.off("conversation:assigned", onAssigned);
       socket.off("conversation:removed", onRemoved);
       socket.off("conversation:transferred-in", onTransferredIn);
       socket.off("message:new", onMessageNew);
+      socket.off("message:inbound-notification", onInboundNotification);
       socket.off("message:status", onMessageStatus);
       socket.off("oversight:updated", onOversightUpdated);
       socket.off("whatsapp:status", onWhatsappStatus);
     };
-  }, [queryClient]);
+  }, [queryClient, activeConversationId]);
 
   useEffect(() => {
     const socket = getSocket();

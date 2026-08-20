@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
 import type { Role } from "@prisma/client";
@@ -7,6 +8,28 @@ const conversationInclude = {
   assignedAgent: true,
   transfers: { orderBy: { createdAt: "desc" as const }, take: 1, include: { fromAgent: true, toAgent: true } },
 };
+
+/**
+ * Unread badge count per conversation: inbound messages newer than the
+ * assigned agent's last "read" marker (or all inbound messages if they
+ * have never opened it). One query for the whole list instead of N+1 —
+ * the JOIN compares each message against its own conversation's cutoff.
+ */
+async function getUnreadCounts(conversationIds: string[]): Promise<Map<string, number>> {
+  if (conversationIds.length === 0) return new Map();
+  const rows = await prisma.$queryRaw<{ conversationId: string; count: bigint }[]>(
+    Prisma.sql`
+      SELECT m."conversationId" AS "conversationId", COUNT(*)::bigint AS count
+      FROM "Message" m
+      JOIN "Conversation" c ON c.id = m."conversationId"
+      WHERE m."conversationId" IN (${Prisma.join(conversationIds)})
+        AND m.direction = 'INBOUND'
+        AND (c."assignedAgentReadAt" IS NULL OR m."createdAt" > c."assignedAgentReadAt")
+      GROUP BY m."conversationId"
+    `
+  );
+  return new Map(rows.map((r) => [r.conversationId, Number(r.count)]));
+}
 
 /** Contact resolution: WhatsApp is the source of truth for phone -> identity. */
 export async function findOrCreateContact(phone: string, name: string | null) {
@@ -61,11 +84,22 @@ export async function listQueue() {
 }
 
 export async function listMyConversations(agentId: string) {
-  return prisma.conversation.findMany({
+  const conversations = await prisma.conversation.findMany({
     where: { assignedAgentId: agentId, status: { in: ["IN_PROGRESS", "TRANSFERRED"] } },
     include: conversationInclude,
     orderBy: { lastMessageAt: "desc" },
   });
+  const unreadCounts = await getUnreadCounts(conversations.map((c) => c.id));
+  return conversations.map((c) => Object.assign(c, { _unreadCount: unreadCounts.get(c.id) ?? 0 }));
+}
+
+/** Marks a conversation as read by its assigned agent — clears the unread badge. */
+export async function markConversationRead(conversationId: string, agentId: string) {
+  const result = await prisma.conversation.updateMany({
+    where: { id: conversationId, assignedAgentId: agentId },
+    data: { assignedAgentReadAt: new Date() },
+  });
+  if (result.count === 0) throw Errors.forbidden("Esta conversa nao pertence a este atendente");
 }
 
 export interface OversightFilters {
@@ -167,7 +201,9 @@ export async function transferConversation(
 
   const result = await prisma.conversation.updateMany({
     where: { id: conversationId, assignedAgentId: fromAgentId, status: { in: ["IN_PROGRESS", "TRANSFERRED"] } },
-    data: { status: "TRANSFERRED", assignedAgentId: toAgentId, acceptedAt: new Date() },
+    // The new agent hasn't read anything yet — clearing this makes every
+    // message (including history) count toward their unread badge again.
+    data: { status: "TRANSFERRED", assignedAgentId: toAgentId, acceptedAt: new Date(), assignedAgentReadAt: null },
   });
   if (result.count === 0) throw Errors.conflict("Nao foi possivel transferir: conversa ja foi alterada");
 

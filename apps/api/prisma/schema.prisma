@@ -143,6 +143,10 @@ model Conversation {
   closedAt         DateTime?
   closedByUserId   String?
 
+  // Reset to null on accept/transfer; set to now() when the assigned agent
+  // opens the conversation. Unread badge = inbound messages newer than this.
+  assignedAgentReadAt DateTime?
+
   lastMessageAt    DateTime            @default(now())
   lastMessageDirection String?
 
