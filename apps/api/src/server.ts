@@ -1,17 +1,25 @@
 import http from "node:http";
 import { createApp } from "./app";
 import { createSocketServer } from "./realtime/socket-server";
-import { initWhatsAppProvider } from "./modules/whatsapp/whatsapp.service";
+import { initWhatsAppConnections } from "./modules/whatsapp/whatsapp.service";
+import { revertExpiredTransfers } from "./modules/conversations/conversations.service";
 import { env } from "./config/env";
 import { logger } from "./lib/logger";
 import { prisma } from "./lib/prisma";
+
+const TRANSFER_SWEEP_INTERVAL_MS = 5 * 60 * 1000; // see PROMPT: revert an unaccepted offline transfer after 2h
 
 async function main() {
   const app = createApp();
   const httpServer = http.createServer(app);
   createSocketServer(httpServer);
 
-  await initWhatsAppProvider();
+  await initWhatsAppConnections();
+
+  const transferSweepTimer = setInterval(() => {
+    revertExpiredTransfers().catch((err) => logger.error({ err }, "failed to sweep expired transfers"));
+  }, TRANSFER_SWEEP_INTERVAL_MS);
+  transferSweepTimer.unref(); // never keeps the process alive by itself
 
   httpServer.listen(env.PORT, () => {
     logger.info(`API listening on port ${env.PORT} (env=${env.NODE_ENV}, whatsapp=${env.WHATSAPP_PROVIDER})`);
@@ -19,6 +27,7 @@ async function main() {
 
   const shutdown = async (signal: string) => {
     logger.info(`${signal} received, shutting down`);
+    clearInterval(transferSweepTimer);
     httpServer.close();
     await prisma.$disconnect();
     process.exit(0);

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import request from "supertest";
 import { createApp } from "../src/app";
 import { prisma } from "../src/lib/prisma";
-import { resetDatabase, createTestUser, createWaitingConversation, TEST_PASSWORD } from "./helpers";
+import { resetDatabase, createTestUser, createTestConnection, createWaitingConversation, TEST_PASSWORD } from "./helpers";
 
 const app = createApp();
 
@@ -12,8 +12,11 @@ async function loginAs(email: string) {
 }
 
 describe("conversation queue and acceptance", () => {
+  let connectionId: string;
+
   beforeEach(async () => {
     await resetDatabase();
+    connectionId = (await createTestConnection("Suporte")).id;
   });
 
   afterAll(async () => {
@@ -21,11 +24,11 @@ describe("conversation queue and acceptance", () => {
   });
 
   it("only lets one of two simultaneous accepts win (no double-assignment)", async () => {
-    await createTestUser({ email: "joao@test.dev", role: "AGENT", displayName: "Joao" });
-    await createTestUser({ email: "maria@test.dev", role: "AGENT", displayName: "Maria" });
+    await createTestUser({ email: "joao@test.dev", role: "AGENT", displayName: "Joao", whatsappConnectionId: connectionId });
+    await createTestUser({ email: "maria@test.dev", role: "AGENT", displayName: "Maria", whatsappConnectionId: connectionId });
     const [joaoToken, mariaToken] = await Promise.all([loginAs("joao@test.dev"), loginAs("maria@test.dev")]);
 
-    const { conversation } = await createWaitingConversation("5511999990000");
+    const { conversation } = await createWaitingConversation("5511999990000", connectionId);
 
     const [joaoRes, mariaRes] = await Promise.all([
       request(app).post(`/api/conversations/${conversation.id}/accept`).set("Authorization", `Bearer ${joaoToken}`),
@@ -49,9 +52,9 @@ describe("conversation queue and acceptance", () => {
   });
 
   it("hides message preview and content from the queue before acceptance", async () => {
-    await createTestUser({ email: "joao@test.dev", role: "AGENT", displayName: "Joao" });
+    await createTestUser({ email: "joao@test.dev", role: "AGENT", displayName: "Joao", whatsappConnectionId: connectionId });
     const token = await loginAs("joao@test.dev");
-    const { conversation, contact } = await createWaitingConversation("5511999991111");
+    const { conversation, contact } = await createWaitingConversation("5511999991111", connectionId);
     await prisma.message.create({
       data: { conversationId: conversation.id, direction: "INBOUND", type: "TEXT", status: "DELIVERED", body: "informação confidencial do cliente" },
     });
@@ -65,12 +68,22 @@ describe("conversation queue and acceptance", () => {
     expect(item.contact.phone).toBe(contact.phone);
   });
 
+  it("never shows another connection's queue to an agent", async () => {
+    const otherConnectionId = (await createTestConnection("Vendas")).id;
+    await createTestUser({ email: "joao@test.dev", role: "AGENT", displayName: "Joao", whatsappConnectionId: connectionId });
+    const token = await loginAs("joao@test.dev");
+    await createWaitingConversation("5511999998888", otherConnectionId); // belongs to Vendas, not Joao's Suporte
+
+    const res = await request(app).get("/api/conversations/queue").set("Authorization", `Bearer ${token}`);
+    expect(res.body).toHaveLength(0);
+  });
+
   it("blocks a second agent from opening a conversation already assigned to someone else", async () => {
-    await createTestUser({ email: "joao@test.dev", role: "AGENT", displayName: "Joao" });
-    await createTestUser({ email: "maria@test.dev", role: "AGENT", displayName: "Maria" });
+    await createTestUser({ email: "joao@test.dev", role: "AGENT", displayName: "Joao", whatsappConnectionId: connectionId });
+    await createTestUser({ email: "maria@test.dev", role: "AGENT", displayName: "Maria", whatsappConnectionId: connectionId });
     const joaoToken = await loginAs("joao@test.dev");
     const mariaToken = await loginAs("maria@test.dev");
-    const { conversation } = await createWaitingConversation("5511999992222");
+    const { conversation } = await createWaitingConversation("5511999992222", connectionId);
 
     await request(app).post(`/api/conversations/${conversation.id}/accept`).set("Authorization", `Bearer ${joaoToken}`);
 
@@ -78,11 +91,13 @@ describe("conversation queue and acceptance", () => {
     expect(res.status).toBe(403);
   });
 
-  it("transfers a conversation: it disappears from the old agent and appears for the new one", async () => {
-    await createTestUser({ email: "joao@test.dev", role: "AGENT", displayName: "Joao" });
-    const maria = await createTestUser({ email: "maria@test.dev", role: "AGENT", displayName: "Maria" });
+  it("transfers a conversation across connections: it disappears from the old agent and appears for the new one", async () => {
+    const vendasId = (await createTestConnection("Vendas")).id;
+    await createTestUser({ email: "joao@test.dev", role: "AGENT", displayName: "Joao", whatsappConnectionId: connectionId });
+    // Maria's home connection is different from the conversation's — a transfer must still be allowed.
+    const maria = await createTestUser({ email: "maria@test.dev", role: "AGENT", displayName: "Maria", whatsappConnectionId: vendasId, presence: "ONLINE" });
     const joaoToken = await loginAs("joao@test.dev");
-    const { conversation } = await createWaitingConversation("5511999993333");
+    const { conversation } = await createWaitingConversation("5511999993333", connectionId);
     await request(app).post(`/api/conversations/${conversation.id}/accept`).set("Authorization", `Bearer ${joaoToken}`);
 
     const transferRes = await request(app)
@@ -103,10 +118,47 @@ describe("conversation queue and acceptance", () => {
     expect(transferred.transfer.fromAgentName).toBe("Joao");
   });
 
+  it("flags a conversation transferred to an offline agent with a 2h pending deadline, and clears it once they log in", async () => {
+    await createTestUser({ email: "joao@test.dev", role: "AGENT", displayName: "Joao", whatsappConnectionId: connectionId });
+    const maria = await createTestUser({ email: "maria@test.dev", role: "AGENT", displayName: "Maria", whatsappConnectionId: connectionId, presence: "OFFLINE" });
+    const joaoToken = await loginAs("joao@test.dev");
+    const { conversation } = await createWaitingConversation("5511999990001", connectionId);
+    await request(app).post(`/api/conversations/${conversation.id}/accept`).set("Authorization", `Bearer ${joaoToken}`);
+    await request(app).post(`/api/conversations/${conversation.id}/transfer`).set("Authorization", `Bearer ${joaoToken}`).send({ toAgentId: maria.id });
+
+    const persisted = await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } });
+    expect(persisted.pendingTransferDeadline).not.toBeNull();
+
+    // Maria logging in should cancel the countdown.
+    await loginAs("maria@test.dev");
+    const afterLogin = await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } });
+    expect(afterLogin.pendingTransferDeadline).toBeNull();
+  });
+
+  it("reverts an expired offline transfer back to the agent who transferred it", async () => {
+    await createTestUser({ email: "joao@test.dev", role: "AGENT", displayName: "Joao", whatsappConnectionId: connectionId });
+    const maria = await createTestUser({ email: "maria@test.dev", role: "AGENT", displayName: "Maria", whatsappConnectionId: connectionId, presence: "OFFLINE" });
+    const joaoToken = await loginAs("joao@test.dev");
+    const { conversation } = await createWaitingConversation("5511999990002", connectionId);
+    await request(app).post(`/api/conversations/${conversation.id}/accept`).set("Authorization", `Bearer ${joaoToken}`);
+    await request(app).post(`/api/conversations/${conversation.id}/transfer`).set("Authorization", `Bearer ${joaoToken}`).send({ toAgentId: maria.id });
+
+    // Simulate the 2h deadline already having passed, without waiting for it.
+    await prisma.conversation.update({ where: { id: conversation.id }, data: { pendingTransferDeadline: new Date(Date.now() - 1000) } });
+
+    const { revertExpiredTransfers } = await import("../src/modules/conversations/conversations.service");
+    await revertExpiredTransfers();
+
+    const reverted = await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } });
+    expect(reverted.status).toBe("IN_PROGRESS");
+    expect(reverted.assignedAgentId).toBe((await prisma.user.findUniqueOrThrow({ where: { email: "joao@test.dev" } })).id);
+    expect(reverted.pendingTransferDeadline).toBeNull();
+  });
+
   it("closes a conversation and removes it from the agent's active list", async () => {
-    await createTestUser({ email: "joao@test.dev", role: "AGENT", displayName: "Joao" });
+    await createTestUser({ email: "joao@test.dev", role: "AGENT", displayName: "Joao", whatsappConnectionId: connectionId });
     const token = await loginAs("joao@test.dev");
-    const { conversation } = await createWaitingConversation("5511999994444");
+    const { conversation } = await createWaitingConversation("5511999994444", connectionId);
     await request(app).post(`/api/conversations/${conversation.id}/accept`).set("Authorization", `Bearer ${token}`);
 
     const closeRes = await request(app).post(`/api/conversations/${conversation.id}/close`).set("Authorization", `Bearer ${token}`);
@@ -117,12 +169,12 @@ describe("conversation queue and acceptance", () => {
     expect(mine.body.find((c: { id: string }) => c.id === conversation.id)).toBeUndefined();
   });
 
-  it("lets a MANAGER view (but never mutate) any conversation via oversight", async () => {
-    await createTestUser({ email: "joao@test.dev", role: "AGENT", displayName: "Joao" });
+  it("lets a MANAGER view (but never mutate) any conversation via oversight, optionally filtered by connection", async () => {
+    await createTestUser({ email: "joao@test.dev", role: "AGENT", displayName: "Joao", whatsappConnectionId: connectionId });
     await createTestUser({ email: "gestor@test.dev", role: "MANAGER" });
     const joaoToken = await loginAs("joao@test.dev");
     const gestorToken = await loginAs("gestor@test.dev");
-    const { conversation } = await createWaitingConversation("5511999995555");
+    const { conversation } = await createWaitingConversation("5511999995555", connectionId);
     await request(app).post(`/api/conversations/${conversation.id}/accept`).set("Authorization", `Bearer ${joaoToken}`);
 
     const viewRes = await request(app).get(`/api/conversations/${conversation.id}`).set("Authorization", `Bearer ${gestorToken}`);
@@ -130,12 +182,19 @@ describe("conversation queue and acceptance", () => {
 
     const acceptAttempt = await request(app).post(`/api/conversations/${conversation.id}/accept`).set("Authorization", `Bearer ${gestorToken}`);
     expect(acceptAttempt.status).toBe(403);
+
+    const otherConnectionId = (await createTestConnection("Vendas")).id;
+    const filtered = await request(app)
+      .get("/api/conversations/oversight")
+      .query({ connectionId: otherConnectionId })
+      .set("Authorization", `Bearer ${gestorToken}`);
+    expect(filtered.body.find((c: { id: string }) => c.id === conversation.id)).toBeUndefined();
   });
 
   it("shows an unread badge for new inbound messages and clears it once the agent marks it read", async () => {
-    await createTestUser({ email: "joao@test.dev", role: "AGENT", displayName: "Joao" });
+    await createTestUser({ email: "joao@test.dev", role: "AGENT", displayName: "Joao", whatsappConnectionId: connectionId });
     const token = await loginAs("joao@test.dev");
-    const { conversation } = await createWaitingConversation("5511999996666");
+    const { conversation } = await createWaitingConversation("5511999996666", connectionId);
     await request(app).post(`/api/conversations/${conversation.id}/accept`).set("Authorization", `Bearer ${token}`);
 
     // Two more inbound messages arrive after acceptance (simulating provider events directly at the DB level).
@@ -158,10 +217,10 @@ describe("conversation queue and acceptance", () => {
   });
 
   it("resets the unread marker on transfer so the new agent sees the full history as unread", async () => {
-    await createTestUser({ email: "joao@test.dev", role: "AGENT", displayName: "Joao" });
-    const maria = await createTestUser({ email: "maria@test.dev", role: "AGENT", displayName: "Maria" });
+    await createTestUser({ email: "joao@test.dev", role: "AGENT", displayName: "Joao", whatsappConnectionId: connectionId });
+    const maria = await createTestUser({ email: "maria@test.dev", role: "AGENT", displayName: "Maria", whatsappConnectionId: connectionId, presence: "ONLINE" });
     const joaoToken = await loginAs("joao@test.dev");
-    const { conversation } = await createWaitingConversation("5511999997777");
+    const { conversation } = await createWaitingConversation("5511999997777", connectionId);
     await prisma.message.create({
       data: { conversationId: conversation.id, direction: "INBOUND", type: "TEXT", status: "DELIVERED", body: "oi" },
     });

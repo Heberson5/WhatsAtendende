@@ -3,6 +3,7 @@ import { z } from "zod";
 import { asyncHandler } from "../../lib/async-handler";
 import { requireAuth, requireRole } from "../../middleware/auth";
 import { resolvePeriod } from "../../lib/period";
+import { parseListParam } from "../../lib/parse-list-param";
 import { getDashboard } from "./dashboard.service";
 
 export const dashboardRouter = Router();
@@ -13,6 +14,7 @@ const querySchema = z.object({
   from: z.coerce.date().optional(),
   to: z.coerce.date().optional(),
   agentId: z.string().uuid().optional(),
+  connectionId: z.union([z.string(), z.array(z.string())]).optional(),
 });
 
 dashboardRouter.get(
@@ -20,7 +22,7 @@ dashboardRouter.get(
   asyncHandler(async (req, res) => {
     const query = querySchema.parse(req.query);
     const { from, to } = resolvePeriod(query.period, query.from, query.to);
-    const data = await getDashboard({ from, to, agentId: query.agentId });
+    const data = await getDashboard({ from, to, agentId: query.agentId, connectionIds: parseListParam(query.connectionId) });
     res.json(data);
   })
 );

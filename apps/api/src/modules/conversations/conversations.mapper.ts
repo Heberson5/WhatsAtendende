@@ -1,9 +1,10 @@
-import type { Conversation, Contact, ConversationTransfer, User } from "@prisma/client";
+import type { Conversation, Contact, ConversationTransfer, User, WhatsAppConnection } from "@prisma/client";
 import type { ConversationListItemDTO } from "@whatsatendende/types";
 
 type ConversationWithRelations = Conversation & {
   contact: Contact;
   assignedAgent: User | null;
+  whatsappConnection: WhatsAppConnection;
   transfers: (ConversationTransfer & { fromAgent: User; toAgent: User })[];
   _lastMessageBody?: string | null;
   _unreadCount?: number;
@@ -33,12 +34,15 @@ export function toConversationListItemDTO(
     status: conversation.status,
     assignedAgentId: conversation.assignedAgentId,
     assignedAgentName: conversation.assignedAgent?.displayName ?? null,
+    whatsappConnectionId: conversation.whatsappConnectionId,
+    whatsappConnectionName: conversation.whatsappConnection.name,
     enteredQueueAt: conversation.enteredQueueAt.toISOString(),
     acceptedAt: conversation.acceptedAt ? conversation.acceptedAt.toISOString() : null,
     lastMessageAt: conversation.lastMessageAt.toISOString(),
     lastMessagePreview: revealPreview ? (conversation._lastMessageBody ?? null) : null,
     unreadCount: conversation._unreadCount ?? 0,
     isNew: conversation.status === "NEW",
+    pendingTransferDeadline: revealPreview && conversation.pendingTransferDeadline ? conversation.pendingTransferDeadline.toISOString() : null,
     transfer:
       revealPreview && latestTransfer && conversation.status === "TRANSFERRED"
         ? {

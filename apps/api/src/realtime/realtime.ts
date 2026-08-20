@@ -11,16 +11,17 @@ function getIO(): SocketIOServer | null {
 }
 
 export const ROOMS = {
-  queue: () => "queue", // all agents watch the shared queue
+  // Agents only ever see the queue for their own WhatsApp connection — see
+  // PROMPT: "cada usuário atenderá somente a uma determinada conexão".
+  queue: (connectionId: string) => `queue:${connectionId}`,
   user: (userId: string) => `user:${userId}`,
   conversation: (conversationId: string) => `conversation:${conversationId}`,
-  oversight: () => "oversight", // managers/admins watching everything
+  oversight: () => "oversight", // managers/admins watching everything, across all connections
 };
 
 export const realtimeEvents = {
-  queueUpdated: () => getIO()?.to(ROOMS.queue()).emit("queue:updated"),
-  conversationAccepted: (conversationId: string, agentId: string) => {
-    getIO()?.to(ROOMS.queue()).emit("queue:updated");
+  conversationAccepted: (conversationId: string, connectionId: string, agentId: string) => {
+    getIO()?.to(ROOMS.queue(connectionId)).emit("queue:updated");
     getIO()?.to(ROOMS.oversight()).emit("oversight:updated");
     getIO()?.to(ROOMS.user(agentId)).emit("conversation:assigned", { conversationId });
   },
@@ -38,10 +39,10 @@ export const realtimeEvents = {
     if (agentId) getIO()?.to(ROOMS.user(agentId)).emit("message:new", { conversationId });
     getIO()?.to(ROOMS.oversight()).emit("oversight:updated");
   },
-  /** A brand-new conversation entered the shared queue — notifies every agent watching it. */
-  newQueueConversation: (conversationId: string, contactName: string) => {
-    getIO()?.to(ROOMS.queue()).emit("queue:updated");
-    getIO()?.to(ROOMS.queue()).emit("queue:new-conversation", { conversationId, contactName });
+  /** A brand-new conversation entered a connection's queue — notifies only the agents watching that connection. */
+  newQueueConversation: (connectionId: string, conversationId: string, contactName: string) => {
+    getIO()?.to(ROOMS.queue(connectionId)).emit("queue:updated");
+    getIO()?.to(ROOMS.queue(connectionId)).emit("queue:new-conversation", { conversationId, contactName });
     getIO()?.to(ROOMS.oversight()).emit("oversight:updated");
   },
   /** A new inbound message landed in a conversation the agent already owns — used for the toast, separate from the generic refresh-only newMessage. */
@@ -51,7 +52,13 @@ export const realtimeEvents = {
   messageStatusChanged: (conversationId: string) => {
     getIO()?.to(ROOMS.conversation(conversationId)).emit("message:status", { conversationId });
   },
-  whatsappStatusChanged: (status: unknown) => {
-    getIO()?.emit("whatsapp:status", status);
+  whatsappStatusChanged: (connectionId: string, status: unknown) => {
+    getIO()?.emit("whatsapp:status", { connectionId, status });
+  },
+  /** A pending transfer expired without the receiving agent logging in — it bounced back to whoever transferred it. */
+  transferReverted: (conversationId: string, revertedToAgentId: string, expiredAgentId: string) => {
+    getIO()?.to(ROOMS.user(expiredAgentId)).emit("conversation:removed", { conversationId });
+    getIO()?.to(ROOMS.user(revertedToAgentId)).emit("conversation:transferred-in", { conversationId });
+    getIO()?.to(ROOMS.oversight()).emit("oversight:updated");
   },
 };

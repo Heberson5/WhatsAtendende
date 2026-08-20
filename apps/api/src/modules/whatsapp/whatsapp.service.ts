@@ -1,16 +1,22 @@
+import path from "node:path";
 import { createWhatsAppProvider, type WhatsAppProvider, type WhatsAppStatusSnapshot } from "@whatsatendende/whatsapp";
 import { env } from "../../config/env";
 import { prisma } from "../../lib/prisma";
 import { logger } from "../../lib/logger";
+import { Errors } from "../../lib/http-error";
 import { realtimeEvents } from "../../realtime/realtime";
 import * as conversationsService from "../conversations/conversations.service";
 import * as messagesService from "../messages/messages.service";
 import { toMessageDTO } from "../messages/messages.mapper";
 
-let provider: WhatsAppProvider | null = null;
+// One WhatsAppProvider instance per named connection (see PROMPT: "poderá
+// conectar vários WhatsApp"). Each instance owns its own session/QR/status
+// independently — nothing here assumes there's only one.
+const providers = new Map<string, WhatsAppProvider>();
 
-export function getProvider(): WhatsAppProvider {
-  if (!provider) throw new Error("WhatsApp provider not initialized");
+function getProvider(connectionId: string): WhatsAppProvider {
+  const provider = providers.get(connectionId);
+  if (!provider) throw Errors.notFound("Conexao de WhatsApp nao encontrada ou nao inicializada");
   return provider;
 }
 
@@ -18,19 +24,37 @@ function toChatId(phone: string): string {
   return phone.includes("@") ? phone : `${phone}@s.whatsapp.net`;
 }
 
-/** Wires the abstract WhatsAppProvider to the rest of the app. Called once at boot — see server.ts. */
-export async function initWhatsAppProvider(): Promise<void> {
-  provider = createWhatsAppProvider({ provider: env.WHATSAPP_PROVIDER, authStateDir: env.WHATSAPP_AUTH_DIR });
+/** Boots a provider instance for every existing connection row. Called once at startup — see server.ts. */
+export async function initWhatsAppConnections(): Promise<void> {
+  const rows = await prisma.whatsAppConnection.findMany();
+  for (const row of rows) {
+    bootstrapConnection(row.id);
+  }
+}
 
+function bootstrapConnection(connectionId: string): WhatsAppProvider {
+  const provider = createWhatsAppProvider({
+    provider: env.WHATSAPP_PROVIDER,
+    authStateDir: path.join(env.WHATSAPP_AUTH_DIR, connectionId),
+  });
+  providers.set(connectionId, provider);
+  wireProviderEvents(connectionId, provider);
+  return provider;
+}
+
+function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
   provider.onConnectionUpdate(async (status) => {
-    await persistConnectionStatus(status);
-    realtimeEvents.whatsappStatusChanged(status);
+    await persistConnectionStatus(connectionId, status);
+    realtimeEvents.whatsappStatusChanged(connectionId, status);
   });
 
   provider.onMessage(async (event) => {
     try {
-      const contact = await conversationsService.findOrCreateContact(event.phone, event.contactName);
-      const { conversation, isNewConversation } = await conversationsService.findOrOpenConversationForInboundMessage(contact.id);
+      const contact = await conversationsService.findOrCreateContact(connectionId, event.phone, event.contactName);
+      const { conversation, isNewConversation } = await conversationsService.findOrOpenConversationForInboundMessage(
+        connectionId,
+        contact.id
+      );
 
       const message = await messagesService.createInboundMessage({
         conversationId: conversation.id,
@@ -72,7 +96,7 @@ export async function initWhatsAppProvider(): Promise<void> {
 
       const contactLabel = contact.name ?? contact.phone;
       if (isNewConversation) {
-        realtimeEvents.newQueueConversation(conversation.id, contactLabel);
+        realtimeEvents.newQueueConversation(connectionId, conversation.id, contactLabel);
       } else {
         realtimeEvents.newMessage(conversation.id, conversation.assignedAgentId);
         if (conversation.assignedAgentId) {
@@ -81,7 +105,7 @@ export async function initWhatsAppProvider(): Promise<void> {
         }
       }
     } catch (err) {
-      logger.error({ err }, "failed to process inbound whatsapp message");
+      logger.error({ err, connectionId }, "failed to process inbound whatsapp message");
     }
   });
 
@@ -104,49 +128,104 @@ export async function initWhatsAppProvider(): Promise<void> {
   });
 }
 
-async function persistConnectionStatus(status: WhatsAppStatusSnapshot) {
-  const existing = await prisma.whatsAppConnection.findFirst();
-  const data = {
-    status: status.state,
-    connectedNumber: status.connectedNumber,
-    lastConnectedAt: status.lastConnectedAt,
-    lastQrAt: status.qrCodeDataUrl ? new Date() : undefined,
-  };
-  if (existing) {
-    await prisma.whatsAppConnection.update({ where: { id: existing.id }, data });
-  } else {
-    await prisma.whatsAppConnection.create({ data });
-  }
+async function persistConnectionStatus(connectionId: string, status: WhatsAppStatusSnapshot) {
+  await prisma.whatsAppConnection.update({
+    where: { id: connectionId },
+    data: {
+      status: status.state,
+      connectedNumber: status.connectedNumber,
+      lastConnectedAt: status.lastConnectedAt,
+      lastQrAt: status.qrCodeDataUrl ? new Date() : undefined,
+    },
+  });
 }
 
-export async function getConnectionStatus() {
-  const status = getProvider().getStatus();
-  const record = await prisma.whatsAppConnection.findFirst();
+export interface ConnectionSummaryDTO {
+  id: string;
+  name: string;
+  state: string;
+  qrCodeDataUrl: string | null;
+  connectedNumber: string | null;
+  lastConnectedAt: string | null;
+  agentCount: number;
+}
+
+function toConnectionSummary(row: { id: string; name: string; status: string; connectedNumber: string | null; lastConnectedAt: Date | null; _count: { agents: number } }): ConnectionSummaryDTO {
+  const runtime = providers.get(row.id)?.getStatus();
   return {
-    state: status.state,
-    qrCodeDataUrl: status.qrCodeDataUrl,
-    connectedNumber: status.connectedNumber,
-    lastConnectedAt: (status.lastConnectedAt ?? record?.lastConnectedAt ?? null)?.toISOString?.() ?? null,
+    id: row.id,
+    name: row.name,
+    state: runtime?.state ?? row.status,
+    qrCodeDataUrl: runtime?.qrCodeDataUrl ?? null,
+    connectedNumber: runtime?.connectedNumber ?? row.connectedNumber,
+    lastConnectedAt: (runtime?.lastConnectedAt ?? row.lastConnectedAt)?.toISOString?.() ?? null,
+    agentCount: row._count.agents,
   };
 }
 
-export async function connect() {
-  await getProvider().connect();
+export async function listConnections(): Promise<ConnectionSummaryDTO[]> {
+  const rows = await prisma.whatsAppConnection.findMany({
+    orderBy: { name: "asc" },
+    include: { _count: { select: { agents: true } } },
+  });
+  return rows.map(toConnectionSummary);
 }
 
-export async function disconnect() {
-  await getProvider().disconnect();
+export async function getConnectionSummary(connectionId: string): Promise<ConnectionSummaryDTO> {
+  const row = await prisma.whatsAppConnection.findUnique({
+    where: { id: connectionId },
+    include: { _count: { select: { agents: true } } },
+  });
+  if (!row) throw Errors.notFound("Conexao de WhatsApp nao encontrada");
+  return toConnectionSummary(row);
+}
+
+export async function createConnection(name: string): Promise<ConnectionSummaryDTO> {
+  const existing = await prisma.whatsAppConnection.findUnique({ where: { name } });
+  if (existing) throw Errors.conflict("Ja existe uma conexao com este nome");
+  const row = await prisma.whatsAppConnection.create({ data: { name } });
+  bootstrapConnection(row.id);
+  return getConnectionSummary(row.id);
+}
+
+export async function renameConnection(connectionId: string, name: string): Promise<ConnectionSummaryDTO> {
+  const clash = await prisma.whatsAppConnection.findUnique({ where: { name } });
+  if (clash && clash.id !== connectionId) throw Errors.conflict("Ja existe uma conexao com este nome");
+  await prisma.whatsAppConnection.update({ where: { id: connectionId }, data: { name } });
+  return getConnectionSummary(connectionId);
+}
+
+export async function deleteConnection(connectionId: string): Promise<void> {
+  const provider = providers.get(connectionId);
+  if (provider && provider.getStatus().state !== "DISCONNECTED") {
+    throw Errors.badRequest("Desconecte o WhatsApp antes de excluir esta conexao");
+  }
+  const agentCount = await prisma.user.count({ where: { whatsappConnectionId: connectionId } });
+  if (agentCount > 0) {
+    throw Errors.badRequest("Existem atendentes vinculados a esta conexao — reatribua-os antes de excluir");
+  }
+  providers.delete(connectionId);
+  await prisma.whatsAppConnection.delete({ where: { id: connectionId } });
+}
+
+export async function connect(connectionId: string) {
+  await getProvider(connectionId).connect();
+}
+
+export async function disconnect(connectionId: string) {
+  await getProvider(connectionId).disconnect();
 }
 
 /** Sends a text/reply through the provider and reflects the result on the stored Message row. */
 export async function sendOutboundText(
+  connectionId: string,
   messageId: string,
   contactPhone: string,
   text: string,
   replyToProviderMessageId?: string
 ) {
   try {
-    const result = await getProvider().sendText(toChatId(contactPhone), text, { replyToProviderMessageId });
+    const result = await getProvider(connectionId).sendText(toChatId(contactPhone), text, { replyToProviderMessageId });
     const message = await messagesService.markMessageSent(messageId, result.providerMessageId);
     return toMessageDTO(message);
   } catch (err) {
@@ -157,6 +236,7 @@ export async function sendOutboundText(
 }
 
 export async function sendOutboundFile(
+  connectionId: string,
   messageId: string,
   contactPhone: string,
   buffer: Buffer,
@@ -165,7 +245,7 @@ export async function sendOutboundFile(
   caption?: string
 ) {
   try {
-    const result = await getProvider().sendFile(toChatId(contactPhone), buffer, fileName, mimeType, caption);
+    const result = await getProvider(connectionId).sendFile(toChatId(contactPhone), buffer, fileName, mimeType, caption);
     const message = await messagesService.markMessageSent(messageId, result.providerMessageId);
     return toMessageDTO(message);
   } catch (err) {
@@ -175,9 +255,9 @@ export async function sendOutboundFile(
   }
 }
 
-export async function sendOutboundLocation(messageId: string, contactPhone: string, lat: number, lng: number) {
+export async function sendOutboundLocation(connectionId: string, messageId: string, contactPhone: string, lat: number, lng: number) {
   try {
-    const result = await getProvider().sendLocation(toChatId(contactPhone), lat, lng);
+    const result = await getProvider(connectionId).sendLocation(toChatId(contactPhone), lat, lng);
     const message = await messagesService.markMessageSent(messageId, result.providerMessageId);
     return toMessageDTO(message);
   } catch (err) {
@@ -187,6 +267,6 @@ export async function sendOutboundLocation(messageId: string, contactPhone: stri
   }
 }
 
-export async function sendReaction(contactPhone: string, providerMessageId: string, emoji: string | null) {
-  await getProvider().sendReaction(toChatId(contactPhone), providerMessageId, emoji);
+export async function sendReaction(connectionId: string, contactPhone: string, providerMessageId: string, emoji: string | null) {
+  await getProvider(connectionId).sendReaction(toChatId(contactPhone), providerMessageId, emoji);
 }

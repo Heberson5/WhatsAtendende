@@ -4,6 +4,7 @@ import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
 import { writeAudit } from "../../lib/audit";
 import { sendMail } from "../../lib/mail";
+import { clearPendingTransferDeadlines } from "../conversations/conversations.service";
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from "./jwt";
 import { env } from "../../config/env";
 
@@ -20,7 +21,7 @@ function hashToken(token: string): string {
 }
 
 export async function login(email: string, password: string, ip: string | null) {
-  const user = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+  const user = await prisma.user.findUnique({ where: { email: email.toLowerCase() }, include: { whatsappConnection: true } });
   if (!user) {
     // Do the same bcrypt work a real lookup would, so a non-existent e-mail
     // doesn't respond measurably faster than a wrong password for a real
@@ -53,6 +54,9 @@ export async function login(email: string, password: string, ip: string | null) 
 
   await prisma.user.update({ where: { id: user.id }, data: { lastAccessAt: new Date(), presence: "ONLINE" } });
   await writeAudit({ userId: user.id, action: "LOGIN_SUCCESS", entity: "User", entityId: user.id, ipAddress: ip });
+  // Logging in proves this agent is back — cancels the 2h auto-revert
+  // countdown on any conversation transferred to them while offline.
+  await clearPendingTransferDeadlines(user.id);
 
   return { accessToken, refreshToken, user };
 }
@@ -71,7 +75,7 @@ export async function refresh(refreshToken: string) {
     throw Errors.unauthorized("Sessao expirada, faca login novamente");
   }
 
-  const user = await prisma.user.findUnique({ where: { id: payload.sub } });
+  const user = await prisma.user.findUnique({ where: { id: payload.sub }, include: { whatsappConnection: true } });
   if (!user || user.status === "INACTIVE") throw Errors.unauthorized("Sessao invalida");
 
   // Rotate refresh token to limit replay window.

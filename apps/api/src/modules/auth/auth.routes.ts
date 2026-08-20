@@ -59,7 +59,7 @@ authRouter.get(
   "/me",
   requireAuth,
   asyncHandler(async (req, res) => {
-    const user = await prisma.user.findUniqueOrThrow({ where: { id: req.auth!.userId } });
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: req.auth!.userId }, include: { whatsappConnection: true } });
     res.json(toUserDTO(user));
   })
 );

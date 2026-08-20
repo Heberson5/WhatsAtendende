@@ -21,7 +21,18 @@ export async function resetDatabase() {
   await prisma.whatsAppConnection.deleteMany();
 }
 
-export async function createTestUser(input: { email: string; role: Role; displayName?: string; status?: "ACTIVE" | "INACTIVE" }) {
+export async function createTestConnection(name: string) {
+  return prisma.whatsAppConnection.create({ data: { name } });
+}
+
+export async function createTestUser(input: {
+  email: string;
+  role: Role;
+  displayName?: string;
+  status?: "ACTIVE" | "INACTIVE";
+  presence?: "ONLINE" | "AWAY" | "OFFLINE";
+  whatsappConnectionId?: string;
+}) {
   const passwordHash = await bcrypt.hash("Test@1234", 4);
   return prisma.user.create({
     data: {
@@ -30,15 +41,17 @@ export async function createTestUser(input: { email: string; role: Role; display
       displayName: input.displayName ?? input.email,
       role: input.role,
       status: input.status ?? "ACTIVE",
+      presence: input.presence ?? "OFFLINE",
       passwordHash,
+      whatsappConnectionId: input.whatsappConnectionId,
     },
   });
 }
 
-export async function createWaitingConversation(phone: string) {
-  const contact = await prisma.contact.create({ data: { phone, name: `Cliente ${phone}` } });
+export async function createWaitingConversation(phone: string, connectionId: string) {
+  const contact = await prisma.contact.create({ data: { phone, name: `Cliente ${phone}`, whatsappConnectionId: connectionId } });
   const conversation = await prisma.conversation.create({
-    data: { contactId: contact.id, status: "WAITING", enteredQueueAt: new Date(), lastMessageAt: new Date() },
+    data: { contactId: contact.id, whatsappConnectionId: connectionId, status: "WAITING", enteredQueueAt: new Date(), lastMessageAt: new Date() },
   });
   return { contact, conversation };
 }

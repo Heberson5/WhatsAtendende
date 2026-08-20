@@ -25,6 +25,9 @@ const createSchema = z.object({
   password: z.string().min(8),
   confirmPassword: z.string().min(8),
   role: z.enum(["ADMIN", "MANAGER", "AGENT"]),
+  // Required for role=AGENT (validated in the service, since it depends on
+  // the role also present in this same payload); ignored for ADMIN/MANAGER.
+  whatsappConnectionId: z.string().uuid().nullable().optional(),
 });
 
 usersRouter.post(
@@ -45,6 +48,7 @@ const updateSchema = z.object({
   displayName: z.string().min(1).optional(),
   email: z.string().email().optional(),
   role: z.enum(["ADMIN", "MANAGER", "AGENT"]).optional(),
+  whatsappConnectionId: z.string().uuid().nullable().optional(),
 });
 
 usersRouter.patch(
