@@ -41,19 +41,31 @@ export function Sidebar() {
   return (
     <aside
       className={clsx(
-        "flex h-screen flex-col border-r border-border bg-surface transition-all duration-200",
+        "shadow-soft relative z-10 flex h-screen flex-col border-r border-border bg-surface transition-all duration-200",
         collapsed ? "w-[72px]" : "w-64"
       )}
     >
-      <div className="flex h-16 items-center gap-3 border-b border-border px-4">
-        {branding?.logoUrl ? (
-          <img src={branding.logoUrl} alt={branding.companyName} className="h-8 w-8 rounded object-contain" />
-        ) : (
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-fg">
-            {(branding?.companyName ?? "WA").slice(0, 2).toUpperCase()}
-          </div>
+      <div className={clsx("flex h-16 items-center border-b border-border px-4", collapsed ? "justify-center" : "gap-3")}>
+        {!collapsed && (
+          <>
+            {branding?.logoUrl ? (
+              <img src={branding.logoUrl} alt={branding.companyName} className="h-8 w-8 shrink-0 rounded object-contain" />
+            ) : (
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-fg">
+                {(branding?.companyName ?? "WA").slice(0, 2).toUpperCase()}
+              </div>
+            )}
+            <span className="flex-1 truncate font-semibold">{branding?.companyName ?? "WhatsAtendende"}</span>
+          </>
         )}
-        {!collapsed && <span className="truncate font-semibold">{branding?.companyName ?? "WhatsAtendende"}</span>}
+        <button
+          type="button"
+          onClick={() => setCollapsed((c) => !c)}
+          className="focus-ring flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted shadow-soft hover:text-[var(--color-text)]"
+          aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
+        >
+          {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+        </button>
       </div>
 
       <nav className="flex-1 space-y-1 overflow-y-auto p-3" aria-label="Menu principal">
@@ -64,7 +76,7 @@ export function Sidebar() {
             className={({ isActive }) =>
               clsx(
                 "focus-ring flex items-center gap-3 rounded-card px-3 py-2.5 text-sm font-medium transition-colors",
-                isActive ? "bg-primary text-primary-fg" : "text-muted hover:bg-surface-alt hover:text-[var(--color-text)]"
+                isActive ? "bg-primary text-primary-fg shadow-soft" : "text-muted hover:bg-surface-alt hover:text-[var(--color-text)]"
               )
             }
             title={collapsed ? item.label : undefined}
@@ -74,15 +86,6 @@ export function Sidebar() {
           </NavLink>
         ))}
       </nav>
-
-      <button
-        type="button"
-        onClick={() => setCollapsed((c) => !c)}
-        className="focus-ring flex items-center justify-center gap-2 border-t border-border py-3 text-muted hover:text-[var(--color-text)]"
-        aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
-      >
-        {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-      </button>
     </aside>
   );
 }

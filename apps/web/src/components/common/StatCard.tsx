@@ -2,7 +2,7 @@ import type { LucideIcon } from "lucide-react";
 
 export function StatCard({ label, value, icon: Icon, hint }: { label: string; value: string | number; icon: LucideIcon; hint?: string }) {
   return (
-    <div className="rounded-card border border-border bg-surface p-4">
+    <div className="shadow-soft rounded-card border border-border bg-surface p-4">
       <div className="flex items-center justify-between">
         <p className="text-xs font-medium uppercase tracking-wide text-muted">{label}</p>
         <Icon className="h-4 w-4 text-primary" />

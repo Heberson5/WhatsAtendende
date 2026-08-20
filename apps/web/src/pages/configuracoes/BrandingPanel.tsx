@@ -47,7 +47,7 @@ export function BrandingPanel() {
   });
 
   return (
-    <div className="max-w-xl space-y-6 rounded-card border border-border bg-surface p-6">
+    <div className="shadow-soft max-w-xl space-y-6 rounded-card border border-border bg-surface p-6">
       <h2 className="text-base font-semibold">Identidade visual</h2>
 
       <div className="flex items-center gap-6">

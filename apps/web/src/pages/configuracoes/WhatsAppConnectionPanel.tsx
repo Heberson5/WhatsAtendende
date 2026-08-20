@@ -63,7 +63,7 @@ export function WhatsAppConnectionPanel() {
   const state = status?.state ?? "DISCONNECTED";
 
   return (
-    <div className="max-w-xl rounded-card border border-border bg-surface p-6">
+    <div className="shadow-soft max-w-xl rounded-card border border-border bg-surface p-6">
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-base font-semibold">Conexão com o WhatsApp</h2>
         <span className={`rounded-full px-3 py-1 text-xs font-semibold ${STATE_COLOR[state]}`}>{STATE_LABEL[state]}</span>
