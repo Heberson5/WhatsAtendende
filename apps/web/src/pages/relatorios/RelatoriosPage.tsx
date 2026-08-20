@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Download } from "lucide-react";
+import { ChevronDown, Download, FileSpreadsheet, FileText } from "lucide-react";
 import { api } from "../../lib/api";
 import { PeriodFilter, type PeriodValue } from "../../components/common/PeriodFilter";
 import { ConnectionFilter } from "../../components/common/ConnectionFilter";
@@ -13,10 +13,17 @@ const TABS: { key: ReportKind; label: string }[] = [
   { key: "messages", label: "Mensagens" },
 ];
 
+const EXPORT_FORMATS: { key: "csv" | "pdf" | "xlsx"; label: string; icon: typeof Download }[] = [
+  { key: "csv", label: "CSV", icon: Download },
+  { key: "pdf", label: "PDF", icon: FileText },
+  { key: "xlsx", label: "Excel (XLSX)", icon: FileSpreadsheet },
+];
+
 export default function RelatoriosPage() {
   const [tab, setTab] = useState<ReportKind>("attendance");
   const [period, setPeriod] = useState<PeriodValue>({ period: "month" });
   const [connectionIds, setConnectionIds] = useState<string[]>([]);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["report", tab, period, connectionIds],
@@ -33,21 +40,24 @@ export default function RelatoriosPage() {
     },
   });
 
-  async function download() {
+  // See PROMPT: "Relatórios poder extrair em PDF e em xlsx" — alongside the
+  // pre-existing CSV export, same three formats on every tab.
+  async function download(format: "csv" | "pdf" | "xlsx") {
+    setExportMenuOpen(false);
     const res = await api.get(`/reports/${tab}`, {
       params: {
         period: period.period,
         from: period.from,
         to: period.to,
         connectionId: connectionIds.length ? connectionIds : undefined,
-        format: "csv",
+        format,
       },
       responseType: "blob",
     });
     const url = window.URL.createObjectURL(new Blob([res.data]));
     const link = document.createElement("a");
     link.href = url;
-    link.setAttribute("download", `relatorio-${tab}.csv`);
+    link.setAttribute("download", `relatorio-${tab}.${format}`);
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -74,14 +84,30 @@ export default function RelatoriosPage() {
         <div className="flex items-center gap-3">
           <PeriodFilter value={period} onChange={setPeriod} />
           <ConnectionFilter value={connectionIds} onChange={setConnectionIds} />
-          {tab !== "messages" && (
+          <div className="relative">
             <button
-              onClick={download}
+              onClick={() => setExportMenuOpen((o) => !o)}
               className="focus-ring flex items-center gap-1.5 rounded-card border border-border px-3 py-2 text-sm font-medium hover:bg-surface-alt"
             >
-              <Download className="h-4 w-4" /> Exportar CSV
+              <Download className="h-4 w-4" /> Exportar <ChevronDown className="h-3.5 w-3.5 text-muted" />
             </button>
-          )}
+            {exportMenuOpen && (
+              <>
+                <button className="fixed inset-0 z-10 cursor-default" onClick={() => setExportMenuOpen(false)} aria-label="Fechar menu de exportação" />
+                <div className="shadow-soft absolute right-0 top-full z-20 mt-1 w-44 rounded-card border border-border bg-surface p-1">
+                  {EXPORT_FORMATS.map((f) => (
+                    <button
+                      key={f.key}
+                      onClick={() => download(f.key)}
+                      className="focus-ring flex w-full items-center gap-2 rounded-card px-2.5 py-2 text-left text-sm hover:bg-surface-alt"
+                    >
+                      <f.icon className="h-4 w-4 text-muted" /> {f.label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 

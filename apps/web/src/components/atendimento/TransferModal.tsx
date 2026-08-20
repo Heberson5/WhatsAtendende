@@ -56,7 +56,7 @@ export function TransferModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="w-full max-w-md rounded-card border border-border bg-surface p-5 shadow-xl">
+      <div className="w-full max-w-md rounded-card border border-border bg-surface p-5 shadow-elevated">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-base font-semibold">Transferir atendimento</h2>
           <button onClick={onClose} className="focus-ring rounded-full p-1 text-muted hover:bg-surface-alt" aria-label="Fechar">

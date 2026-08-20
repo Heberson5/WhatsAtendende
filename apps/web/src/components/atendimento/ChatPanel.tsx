@@ -222,7 +222,7 @@ export function ChatPanel({ conversation, onClosed }: { conversation: Conversati
 
       {closeConfirmOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-sm rounded-card border border-border bg-surface p-5 shadow-xl">
+          <div className="w-full max-w-sm rounded-card border border-border bg-surface p-5 shadow-elevated">
             <h2 className="text-base font-semibold">Encerrar atendimento?</h2>
             <p className="mt-2 text-sm text-muted">
               Esta ação encerra a conversa com {displayName}. O histórico permanece disponível na gestão.

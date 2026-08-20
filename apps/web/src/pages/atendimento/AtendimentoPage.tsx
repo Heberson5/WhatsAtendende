@@ -1,25 +1,38 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Inbox, Radio, Users2 } from "lucide-react";
+import { Inbox, Plus, Radio, Users2 } from "lucide-react";
 import type { ConversationListItemDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { ConversationCard } from "../../components/atendimento/ConversationCard";
 import { ChatPanel } from "../../components/atendimento/ChatPanel";
+import { ConnectionFilter } from "../../components/common/ConnectionFilter";
+import { NovaConversaModal } from "../../components/atendimento/NovaConversaModal";
 import { useSocketEvents } from "../../hooks/useSocketEvents";
 import { useAuthStore } from "../../store/auth-store";
 
 export default function AtendimentoPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tab, setTab] = useState<"queue" | "mine">("mine");
+  const [connectionIds, setConnectionIds] = useState<string[]>([]);
+  const [novaConversaOpen, setNovaConversaOpen] = useState(false);
   const queryClient = useQueryClient();
   const user = useAuthStore((s) => s.user);
+  // AGENT always has a fixed connection (the server ignores this filter for
+  // them anyway); MANAGER/ADMIN have none, so they get a combined queue
+  // across every connection, narrowable with the same filter used elsewhere.
+  const hasFixedConnection = Boolean(user?.whatsappConnectionName);
 
   useSocketEvents(selectedId);
 
   const queueQuery = useQuery({
-    queryKey: ["queue"],
-    queryFn: async () => (await api.get<ConversationListItemDTO[]>("/conversations/queue")).data,
+    queryKey: ["queue", connectionIds],
+    queryFn: async () =>
+      (
+        await api.get<ConversationListItemDTO[]>("/conversations/queue", {
+          params: { connectionId: !hasFixedConnection && connectionIds.length ? connectionIds : undefined },
+        })
+      ).data,
     refetchInterval: 20_000,
   });
 
@@ -49,11 +62,24 @@ export default function AtendimentoPage() {
   return (
     <div className="grid h-full grid-cols-[340px_1fr] overflow-hidden">
       <div className="flex flex-col overflow-hidden border-r border-border bg-surface">
-        {user?.whatsappConnectionName && (
-          <div className="flex items-center gap-1.5 border-b border-border bg-surface-alt px-4 py-2 text-xs font-medium text-muted">
-            <Radio className="h-3.5 w-3.5 text-primary" /> Conexão: {user.whatsappConnectionName}
-          </div>
-        )}
+        <div className="flex items-center gap-1.5 border-b border-border bg-surface-alt px-3 py-2">
+          {hasFixedConnection ? (
+            <span className="flex flex-1 items-center gap-1.5 text-xs font-medium text-muted">
+              <Radio className="h-3.5 w-3.5 text-primary" /> Conexão: {user!.whatsappConnectionName}
+            </span>
+          ) : (
+            <div className="flex-1">
+              <ConnectionFilter value={connectionIds} onChange={setConnectionIds} />
+            </div>
+          )}
+          <button
+            onClick={() => setNovaConversaOpen(true)}
+            className="focus-ring flex shrink-0 items-center gap-1 rounded-card bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-fg hover:opacity-90"
+            title="Iniciar nova conversa a partir dos contatos do WhatsApp"
+          >
+            <Plus className="h-3.5 w-3.5" /> Nova conversa
+          </button>
+        </div>
         <div className="flex border-b border-border">
           <button
             onClick={() => setTab("mine")}
@@ -104,6 +130,19 @@ export default function AtendimentoPage() {
           </div>
         )}
       </div>
+
+      {novaConversaOpen && (
+        <NovaConversaModal
+          fixedConnectionId={hasFixedConnection ? user!.whatsappConnectionId : null}
+          onClose={() => setNovaConversaOpen(false)}
+          onStarted={(conversation) => {
+            queryClient.invalidateQueries({ queryKey: ["mine"] });
+            setSelectedId(conversation.id);
+            setTab("mine");
+            setNovaConversaOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 }

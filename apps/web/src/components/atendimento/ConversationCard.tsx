@@ -34,9 +34,10 @@ export function ConversationCard({
       onClick={onSelect}
       onKeyDown={(e) => onSelect && e.key === "Enter" && onSelect()}
       className={clsx(
-        "focus-ring shadow-soft flex cursor-pointer items-start gap-3 rounded-card border p-3 transition-colors",
+        "focus-ring shadow-soft flex cursor-pointer items-start gap-3 rounded-card border p-3 pl-2.5 transition-colors",
         selected ? "border-primary bg-primary/5" : "border-border hover:bg-surface-alt"
       )}
+      style={{ borderLeft: `4px solid ${conversation.whatsappConnectionColor}` }}
     >
       <div className="relative shrink-0">
         {conversation.contact.photoUrl ? (
@@ -64,11 +65,20 @@ export function ConversationCard({
           </span>
         </div>
 
-        {conversation.transfer && (
-          <div className="mt-1 inline-flex items-center rounded-full bg-secondary/40 px-2 py-0.5 text-[11px] font-medium text-secondary-fg">
-            Transferido de {conversation.transfer.fromAgentName}
-          </div>
-        )}
+        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+          <span
+            className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium"
+            style={{ backgroundColor: `${conversation.whatsappConnectionColor}1A`, color: conversation.whatsappConnectionColor }}
+          >
+            <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: conversation.whatsappConnectionColor }} />
+            {conversation.whatsappConnectionName}
+          </span>
+          {conversation.transfer && (
+            <span className="inline-flex items-center rounded-full bg-secondary/40 px-2 py-0.5 text-[11px] font-medium text-secondary-fg">
+              Transferido de {conversation.transfer.fromAgentName}
+            </span>
+          )}
+        </div>
 
         {conversation.lastMessagePreview ? (
           <p className="mt-0.5 truncate text-xs text-muted">{conversation.lastMessagePreview}</p>

@@ -36,7 +36,7 @@ export default function App() {
         <Route element={<AppLayout />}>
           <Route path="/" element={<RoleHome />} />
 
-          <Route element={<RoleRoute roles={["AGENT"]} />}>
+          <Route element={<RoleRoute roles={["AGENT", "MANAGER", "ADMIN"]} />}>
             <Route path="/atendimento" element={<AtendimentoPage />} />
           </Route>
 

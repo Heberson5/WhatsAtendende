@@ -21,7 +21,7 @@ export function ReadOnlyConversationDrawer({
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/30">
-      <div className="flex h-full w-full max-w-lg flex-col bg-surface shadow-xl">
+      <div className="flex h-full w-full max-w-lg flex-col bg-surface shadow-elevated">
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
           <div>
             <h2 className="text-base font-semibold">{displayName}</h2>
