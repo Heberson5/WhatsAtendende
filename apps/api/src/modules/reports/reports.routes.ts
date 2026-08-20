@@ -15,14 +15,32 @@ const querySchema = z.object({
   to: z.coerce.date().optional(),
   agentId: z.string().uuid().optional(),
   connectionId: z.union([z.string(), z.array(z.string())]).optional(),
-  format: z.enum(["json", "csv"]).default("json"),
+  format: z.enum(["json", "csv", "pdf", "xlsx"]).default("json"),
 });
 
-function respond(res: import("express").Response, rows: Record<string, unknown>[], format: "json" | "csv", filename: string) {
+// See PROMPT: "Relatórios poder extrair em PDF e em xlsx" — alongside the
+// existing CSV/JSON. `title`/`baseFilename` are per-report only for the
+// PDF heading and download filename; the row-to-document conversion itself
+// is shared.
+async function respond(res: import("express").Response, rows: Record<string, unknown>[], format: "json" | "csv" | "pdf" | "xlsx", baseFilename: string, title: string) {
   if (format === "csv") {
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
-    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("Content-Disposition", `attachment; filename="${baseFilename}.csv"`);
     res.send(service.toCsv(rows));
+    return;
+  }
+  if (format === "xlsx") {
+    const buffer = await service.toXlsx(rows, title);
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="${baseFilename}.xlsx"`);
+    res.send(buffer);
+    return;
+  }
+  if (format === "pdf") {
+    const buffer = await service.toPdf(rows, title);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${baseFilename}.pdf"`);
+    res.send(buffer);
     return;
   }
   res.json(rows);
@@ -34,7 +52,7 @@ reportsRouter.get(
     const query = querySchema.parse(req.query);
     const { from, to } = resolvePeriod(query.period, query.from, query.to);
     const rows = await service.getAttendanceReport({ from, to, agentId: query.agentId, connectionIds: parseListParam(query.connectionId) });
-    respond(res, rows, query.format, "relatorio-atendimentos.csv");
+    await respond(res, rows, query.format, "relatorio-atendimentos", "Relatorio de Atendimentos");
   })
 );
 
@@ -44,7 +62,7 @@ reportsRouter.get(
     const query = querySchema.parse(req.query);
     const { from, to } = resolvePeriod(query.period, query.from, query.to);
     const rows = await service.getPerAgentReport({ from, to, connectionIds: parseListParam(query.connectionId) });
-    respond(res, rows, query.format, "relatorio-por-atendente.csv");
+    await respond(res, rows, query.format, "relatorio-por-atendente", "Relatorio por Atendente");
   })
 );
 
@@ -54,6 +72,8 @@ reportsRouter.get(
     const query = querySchema.parse(req.query);
     const { from, to } = resolvePeriod(query.period, query.from, query.to);
     const data = await service.getMessagesReport({ from, to, agentId: query.agentId, connectionIds: parseListParam(query.connectionId) });
-    res.json(data);
+    if (query.format === "json") return res.json(data);
+    // The other export formats need rows, not a single stats object — wrap it as one row.
+    await respond(res, [data], query.format, "relatorio-mensagens", "Relatorio de Mensagens");
   })
 );

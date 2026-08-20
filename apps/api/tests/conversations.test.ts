@@ -169,7 +169,7 @@ describe("conversation queue and acceptance", () => {
     expect(mine.body.find((c: { id: string }) => c.id === conversation.id)).toBeUndefined();
   });
 
-  it("lets a MANAGER view (but never mutate) any conversation via oversight, optionally filtered by connection", async () => {
+  it("lets a MANAGER view any conversation via oversight (optionally filtered by connection), and a second accept on an already-taken one conflicts", async () => {
     await createTestUser({ email: "joao@test.dev", role: "AGENT", displayName: "Joao", whatsappConnectionId: connectionId });
     await createTestUser({ email: "gestor@test.dev", role: "MANAGER" });
     const joaoToken = await loginAs("joao@test.dev");
@@ -180,8 +180,11 @@ describe("conversation queue and acceptance", () => {
     const viewRes = await request(app).get(`/api/conversations/${conversation.id}`).set("Authorization", `Bearer ${gestorToken}`);
     expect(viewRes.status).toBe(200);
 
+    // MANAGER can attend conversations in general (see the next test), but
+    // this one was already claimed by Joao a moment ago — same conflict any
+    // agent would get racing an accept.
     const acceptAttempt = await request(app).post(`/api/conversations/${conversation.id}/accept`).set("Authorization", `Bearer ${gestorToken}`);
-    expect(acceptAttempt.status).toBe(403);
+    expect(acceptAttempt.status).toBe(409);
 
     const otherConnectionId = (await createTestConnection("Vendas")).id;
     const filtered = await request(app)
@@ -189,6 +192,26 @@ describe("conversation queue and acceptance", () => {
       .query({ connectionId: otherConnectionId })
       .set("Authorization", `Bearer ${gestorToken}`);
     expect(filtered.body.find((c: { id: string }) => c.id === conversation.id)).toBeUndefined();
+  });
+
+  it("lets a MANAGER (with no fixed connection) see the combined queue across connections, accept, and later receive a transfer", async () => {
+    await createTestUser({ email: "gestor2@test.dev", role: "MANAGER", presence: "ONLINE" });
+    const gestorToken = await loginAs("gestor2@test.dev");
+    const vendas = await createTestConnection("Vendas2");
+    const { conversation: fromSuporte } = await createWaitingConversation("5511999994444", connectionId);
+    const { conversation: fromVendas } = await createWaitingConversation("5511999993333", vendas.id);
+
+    const combinedQueue = await request(app).get("/api/conversations/queue").set("Authorization", `Bearer ${gestorToken}`);
+    expect(combinedQueue.status).toBe(200);
+    const ids = combinedQueue.body.map((c: { id: string }) => c.id);
+    expect(ids).toEqual(expect.arrayContaining([fromSuporte.id, fromVendas.id]));
+    expect(combinedQueue.body.every((c: { whatsappConnectionColor: string }) => typeof c.whatsappConnectionColor === "string")).toBe(true);
+
+    const acceptRes = await request(app).post(`/api/conversations/${fromSuporte.id}/accept`).set("Authorization", `Bearer ${gestorToken}`);
+    expect(acceptRes.status).toBe(200);
+
+    const mine = await request(app).get("/api/conversations/mine").set("Authorization", `Bearer ${gestorToken}`);
+    expect(mine.body.map((c: { id: string }) => c.id)).toContain(fromSuporte.id);
   });
 
   it("shows an unread badge for new inbound messages and clears it once the agent marks it read", async () => {

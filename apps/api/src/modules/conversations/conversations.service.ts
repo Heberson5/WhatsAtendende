@@ -85,14 +85,71 @@ export async function findOrOpenConversationForInboundMessage(connectionId: stri
   return { conversation, isNewConversation: true };
 }
 
-/** An agent only ever sees the queue for their own WhatsApp connection. */
-export async function listQueue(connectionId: string) {
+/**
+ * An AGENT only ever sees the queue for their own WhatsApp connection.
+ * MANAGER/ADMIN have no fixed connection — see PROMPT: "o gestor e
+ * administrador também devem ter o menu de atendimentos" — so they pass
+ * either a specific set of connections to look at, or undefined for every
+ * connection's queue combined (each conversation carries its own connection
+ * name/color so they stay distinguishable even mixed together).
+ */
+export async function listQueue(connectionIds?: string[]) {
   const conversations = await prisma.conversation.findMany({
-    where: { whatsappConnectionId: connectionId, status: { in: ["NEW", "WAITING"] } },
+    where: {
+      whatsappConnectionId: connectionIds?.length ? { in: connectionIds } : undefined,
+      status: { in: ["NEW", "WAITING"] },
+    },
     include: conversationInclude,
     orderBy: { enteredQueueAt: "asc" },
   });
   return conversations;
+}
+
+/**
+ * Agent/manager/admin-initiated conversation, from a contact picked out of
+ * the connection's device address book — see PROMPT: "adicionar uma nova
+ * conversa através dos contatos salvos no celular de cada instância".
+ * Unlike an inbound message, this skips the queue entirely: the initiator
+ * is assigning the conversation to themselves from the moment it exists.
+ */
+export async function startConversation(connectionId: string, phone: string, name: string | null, initiatorId: string) {
+  const normalizedPhone = phone.replace(/\D/g, "");
+  if (!normalizedPhone) throw Errors.badRequest("Numero de telefone invalido");
+
+  const contact = await findOrCreateContact(connectionId, normalizedPhone, name);
+
+  const active = await prisma.conversation.findFirst({
+    where: { contactId: contact.id, status: { in: ["NEW", "WAITING", "IN_PROGRESS", "TRANSFERRED"] } },
+    orderBy: { createdAt: "desc" },
+  });
+
+  if (active) {
+    if (active.assignedAgentId === initiatorId) return getConversationOrThrow(active.id);
+    if (active.assignedAgentId) {
+      const owner = await prisma.user.findUnique({ where: { id: active.assignedAgentId }, select: { displayName: true } });
+      throw Errors.conflict(`Ja existe uma conversa em andamento com este contato, atribuida a ${owner?.displayName ?? "outro atendente"}`);
+    }
+    // Unassigned (still NEW/WAITING) — starting it is equivalent to accepting it.
+    return acceptConversation(active.id, initiatorId);
+  }
+
+  const now = new Date();
+  const conversation = await prisma.conversation.create({
+    data: {
+      contactId: contact.id,
+      whatsappConnectionId: connectionId,
+      status: "IN_PROGRESS",
+      assignedAgentId: initiatorId,
+      enteredQueueAt: now,
+      acceptedAt: now,
+      lastMessageAt: now,
+    },
+  });
+  await prisma.$transaction([
+    prisma.conversationEvent.create({ data: { conversationId: conversation.id, type: "CREATED", payload: { startedByAgentId: initiatorId } } }),
+    prisma.conversationAssignment.create({ data: { conversationId: conversation.id, toAgentId: initiatorId, reason: "START" } }),
+  ]);
+  return getConversationOrThrow(conversation.id);
 }
 
 export async function listMyConversations(agentId: string) {
@@ -154,15 +211,18 @@ export async function getConversationOrThrow(id: string) {
 }
 
 /**
- * Enforces PROMPT section 10: only the assigned agent may open/respond to a
- * conversation; managers/admins may view (read-only) via the oversight
- * endpoints, never through this check.
+ * Enforces PROMPT section 10 (and the later "gestor e administrador também
+ * ... poderão atender"): only the assigned agent may open/respond to a
+ * conversation — but "agent" now means whichever active user (AGENT,
+ * MANAGER or ADMIN) it's actually assigned to, since managers/admins can
+ * accept and receive transfers too. Read-only oversight of everyone else's
+ * conversations still goes exclusively through the /oversight endpoints,
+ * never through this check.
  */
 export function assertAgentCanAccessConversation(
   conversation: { assignedAgentId: string | null },
   auth: { userId: string; role: Role }
 ) {
-  if (auth.role !== "AGENT") throw Errors.forbidden();
   if (conversation.assignedAgentId !== auth.userId) throw Errors.forbidden("Esta conversa pertence a outro atendente");
 }
 
@@ -182,6 +242,11 @@ export async function acceptConversation(conversationId: string, agentId: string
   });
 
   if (result.count === 0) {
+    // Distinguish "doesn't exist" from "someone beat you to it" — writing a
+    // ConversationEvent for a nonexistent conversationId would otherwise
+    // fail its own foreign key and surface as an opaque 500.
+    const exists = await prisma.conversation.findUnique({ where: { id: conversationId }, select: { id: true } });
+    if (!exists) throw Errors.notFound("Conversa nao encontrada");
     await prisma.conversationEvent.create({
       data: { conversationId, type: "ACCEPT_CONFLICT", payload: { attemptedBy: agentId } },
     });
@@ -201,7 +266,9 @@ export async function acceptConversation(conversationId: string, agentId: string
 }
 
 /**
- * Transfer target may be any active agent, regardless of which WhatsApp
+ * Transfer target may be any active user who can attend conversations
+ * (AGENT, MANAGER or ADMIN — see PROMPT: "o gestor e administrador também
+ * ... poderão ... receber transferências"), regardless of which WhatsApp
  * connection they normally work — see PROMPT: "poderá transferir a
  * conversa para qualquer atendente". If that agent isn't online right now,
  * the conversation gets a 2h pendingTransferDeadline: if they haven't
@@ -218,7 +285,7 @@ export async function transferConversation(
   if (fromAgentId === toAgentId) throw Errors.badRequest("Selecione um atendente diferente para transferir");
 
   const target = await prisma.user.findUnique({ where: { id: toAgentId } });
-  if (!target || target.status !== "ACTIVE" || target.role !== "AGENT") {
+  if (!target || target.status !== "ACTIVE") {
     throw Errors.badRequest("Atendente de destino invalido");
   }
 

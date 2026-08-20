@@ -1,3 +1,5 @@
+import ExcelJS from "exceljs";
+import PDFDocument from "pdfkit";
 import { prisma } from "../../lib/prisma";
 
 export interface ReportParams {
@@ -124,4 +126,80 @@ export function toCsv(rows: Record<string, unknown>[]): string {
   };
   const lines = [headers.join(","), ...rows.map((row) => headers.map((h) => escape(row[h])).join(","))];
   return lines.join("\n");
+}
+
+/** Spreadsheet export — see PROMPT: "Relatórios poder extrair em ... xlsx." */
+export async function toXlsx(rows: Record<string, unknown>[], sheetName: string): Promise<Buffer> {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "WhatsAtendende";
+  workbook.created = new Date();
+  const sheet = workbook.addWorksheet(sheetName.slice(0, 31)); // Excel's own sheet-name length limit
+
+  if (rows.length > 0) {
+    const headers = Object.keys(rows[0]);
+    sheet.columns = headers.map((h) => ({ header: h, key: h, width: Math.min(Math.max(h.length + 4, 14), 40) }));
+    const headerRow = sheet.getRow(1);
+    headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
+    headerRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0097B4" } };
+    rows.forEach((row) => sheet.addRow(row));
+    sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: headers.length } };
+  }
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  return Buffer.from(buffer);
+}
+
+/** PDF export — see PROMPT: "Relatórios poder extrair em PDF". A plain, readable tabular layout — no external headless-browser dependency. */
+export function toPdf(rows: Record<string, unknown>[], title: string): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ margin: 36, size: "A4", layout: "landscape" });
+    const chunks: Buffer[] = [];
+    doc.on("data", (chunk) => chunks.push(chunk));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+
+    doc.fontSize(16).fillColor("#14202b").text(title);
+    doc.fontSize(9).fillColor("#64748b").text(`Gerado em ${new Date().toLocaleString("pt-BR")}`);
+    doc.moveDown();
+
+    if (rows.length === 0) {
+      doc.fontSize(11).fillColor("#14202b").text("Nenhum dado para o periodo selecionado.");
+      doc.end();
+      return;
+    }
+
+    const headers = Object.keys(rows[0]);
+    const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+    const colWidth = pageWidth / headers.length;
+    const rowHeight = 20;
+    let y = doc.y;
+
+    const drawRow = (values: string[], opts: { header?: boolean; shaded?: boolean }) => {
+      if (opts.header) {
+        doc.rect(doc.page.margins.left, y, pageWidth, rowHeight).fill("#0097B4");
+      } else if (opts.shaded) {
+        doc.rect(doc.page.margins.left, y, pageWidth, rowHeight).fill("#f4f7f9");
+      }
+      doc.fontSize(8).fillColor(opts.header ? "#ffffff" : "#14202b");
+      values.forEach((value, i) => {
+        doc.text(value, doc.page.margins.left + i * colWidth + 4, y + 6, { width: colWidth - 8, height: rowHeight, ellipsis: true });
+      });
+      y += rowHeight;
+    };
+
+    drawRow(headers, { header: true });
+    rows.forEach((row, idx) => {
+      if (y + rowHeight > doc.page.height - doc.page.margins.bottom) {
+        doc.addPage();
+        y = doc.page.margins.top;
+        drawRow(headers, { header: true });
+      }
+      drawRow(
+        headers.map((h) => (row[h] === null || row[h] === undefined ? "-" : String(row[h]))),
+        { shaded: idx % 2 === 1 }
+      );
+    });
+
+    doc.end();
+  });
 }
