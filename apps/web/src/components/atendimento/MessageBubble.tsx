@@ -37,7 +37,11 @@ export function MessageBubble({
         )}
       >
         {isOutbound && message.senderAgentDisplayName && (
-          <p className="mb-0.5 text-xs font-bold opacity-90">{message.senderAgentDisplayName}</p>
+          <>
+            <p className="text-xs font-bold opacity-90">{message.senderAgentDisplayName}</p>
+            {/* Blank line separating the agent's name from the message itself (never part of the text sent to WhatsApp). */}
+            <div className="h-3" aria-hidden="true" />
+          </>
         )}
 
         {repliedMessage && (
