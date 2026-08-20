@@ -4,6 +4,7 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import { Inbox, MessageSquare, Timer, Users } from "lucide-react";
 import { api } from "../../lib/api";
 import { PeriodFilter, type PeriodValue } from "../../components/common/PeriodFilter";
+import { ConnectionFilter } from "../../components/common/ConnectionFilter";
 import { StatCard, formatMinutes } from "../../components/common/StatCard";
 
 interface AgentOption {
@@ -21,6 +22,7 @@ interface DashboardData {
 export default function DashboardPage() {
   const [period, setPeriod] = useState<PeriodValue>({ period: "today" });
   const [agentId, setAgentId] = useState("all");
+  const [connectionIds, setConnectionIds] = useState<string[]>([]);
 
   const { data: agents } = useQuery({
     queryKey: ["agents"],
@@ -28,11 +30,17 @@ export default function DashboardPage() {
   });
 
   const { data, isLoading } = useQuery({
-    queryKey: ["dashboard", period, agentId],
+    queryKey: ["dashboard", period, agentId, connectionIds],
     queryFn: async () =>
       (
         await api.get<DashboardData>("/dashboard", {
-          params: { period: period.period, from: period.from, to: period.to, agentId: agentId === "all" ? undefined : agentId },
+          params: {
+            period: period.period,
+            from: period.from,
+            to: period.to,
+            agentId: agentId === "all" ? undefined : agentId,
+            connectionId: connectionIds.length ? connectionIds : undefined,
+          },
         })
       ).data,
   });
@@ -49,6 +57,7 @@ export default function DashboardPage() {
             </option>
           ))}
         </select>
+        <ConnectionFilter value={connectionIds} onChange={setConnectionIds} />
       </div>
 
       {isLoading && <p className="text-sm text-muted">Carregando indicadores...</p>}

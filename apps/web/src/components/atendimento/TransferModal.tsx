@@ -1,15 +1,17 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { X } from "lucide-react";
+import { AlertTriangle, X } from "lucide-react";
 import { api } from "../../lib/api";
 
 interface AgentOption {
   id: string;
   displayName: string;
   presence: "ONLINE" | "AWAY" | "OFFLINE";
+  whatsappConnectionName: string | null;
 }
 
 const PRESENCE_DOT: Record<string, string> = { ONLINE: "bg-green-500", AWAY: "bg-yellow-500", OFFLINE: "bg-gray-400" };
+const PRESENCE_LABEL: Record<string, string> = { ONLINE: "Online", AWAY: "Ausente", OFFLINE: "Offline" };
 
 export function TransferModal({
   onClose,
@@ -25,8 +27,14 @@ export function TransferModal({
   const [selected, setSelected] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [loading, setLoading] = useState(false);
+  // Set only once the agent has clicked "Transferir" on an offline target —
+  // this second confirmation step is the alert required before transferring
+  // to someone who isn't online.
+  const [confirmingOffline, setConfirmingOffline] = useState(false);
 
-  async function handleConfirm() {
+  const selectedAgent = agents?.find((a) => a.id === selected) ?? null;
+
+  async function doTransfer() {
     if (!selected) return;
     setLoading(true);
     try {
@@ -35,6 +43,15 @@ export function TransferModal({
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleConfirmClick() {
+    if (!selectedAgent) return;
+    if (selectedAgent.presence !== "ONLINE" && !confirmingOffline) {
+      setConfirmingOffline(true);
+      return;
+    }
+    doTransfer();
   }
 
   return (
@@ -54,9 +71,21 @@ export function TransferModal({
               key={agent.id}
               className="focus-ring flex cursor-pointer items-center gap-3 rounded-card px-3 py-2 hover:bg-surface-alt"
             >
-              <input type="radio" name="agent" checked={selected === agent.id} onChange={() => setSelected(agent.id)} />
+              <input
+                type="radio"
+                name="agent"
+                checked={selected === agent.id}
+                onChange={() => {
+                  setSelected(agent.id);
+                  setConfirmingOffline(false);
+                }}
+              />
               <span className={`h-2 w-2 rounded-full ${PRESENCE_DOT[agent.presence]}`} />
-              <span className="text-sm">{agent.displayName}</span>
+              <span className="flex-1 text-sm">{agent.displayName}</span>
+              <span className="text-xs text-muted">
+                {PRESENCE_LABEL[agent.presence]}
+                {agent.whatsappConnectionName ? ` · ${agent.whatsappConnectionName}` : ""}
+              </span>
             </label>
           ))}
         </div>
@@ -71,16 +100,26 @@ export function TransferModal({
           placeholder="Motivo da transferência..."
         />
 
+        {confirmingOffline && selectedAgent && (
+          <div className="mt-3 flex items-start gap-2 rounded-card bg-secondary/30 px-3 py-2 text-sm text-secondary-fg">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              <strong>{selectedAgent.displayName}</strong> está offline agora. Se não fizer login em até 2 horas, o
+              atendimento volta automaticamente para você. Tem certeza que deseja transferir mesmo assim?
+            </span>
+          </div>
+        )}
+
         <div className="mt-4 flex gap-2">
           <button onClick={onClose} className="focus-ring flex-1 rounded-card border border-border py-2 text-sm">
             Cancelar
           </button>
           <button
-            onClick={handleConfirm}
+            onClick={handleConfirmClick}
             disabled={!selected || loading}
             className="focus-ring flex-1 rounded-card bg-primary py-2 text-sm font-semibold text-primary-fg disabled:opacity-60"
           >
-            {loading ? "Transferindo..." : "Confirmar transferência"}
+            {loading ? "Transferindo..." : confirmingOffline ? "Sim, transferir mesmo assim" : "Confirmar transferência"}
           </button>
         </div>
       </div>

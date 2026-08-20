@@ -1,17 +1,19 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Inbox, Users2 } from "lucide-react";
+import { Inbox, Radio, Users2 } from "lucide-react";
 import type { ConversationListItemDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { ConversationCard } from "../../components/atendimento/ConversationCard";
 import { ChatPanel } from "../../components/atendimento/ChatPanel";
 import { useSocketEvents } from "../../hooks/useSocketEvents";
+import { useAuthStore } from "../../store/auth-store";
 
 export default function AtendimentoPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tab, setTab] = useState<"queue" | "mine">("mine");
   const queryClient = useQueryClient();
+  const user = useAuthStore((s) => s.user);
 
   useSocketEvents(selectedId);
 
@@ -47,6 +49,11 @@ export default function AtendimentoPage() {
   return (
     <div className="grid h-full grid-cols-[340px_1fr] overflow-hidden">
       <div className="flex flex-col overflow-hidden border-r border-border bg-surface">
+        {user?.whatsappConnectionName && (
+          <div className="flex items-center gap-1.5 border-b border-border bg-surface-alt px-4 py-2 text-xs font-medium text-muted">
+            <Radio className="h-3.5 w-3.5 text-primary" /> Conexão: {user.whatsappConnectionName}
+          </div>
+        )}
         <div className="flex border-b border-border">
           <button
             onClick={() => setTab("mine")}
