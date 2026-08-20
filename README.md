@@ -176,7 +176,7 @@ cp .env.example .env   # preencha JWT_ACCESS_SECRET e JWT_REFRESH_SECRET reais
 docker compose up --build
 ```
 
-Sobe: PostgreSQL, Redis, API (porta 4000) e Web servido por nginx (porta 8080), com nginx fazendo proxy de `/api` e `/socket.io` para a API. `docker compose config` foi validado neste repositório.
+Sobe: PostgreSQL, Redis, API e Web servido por nginx — apenas o Web (porta 8080) é publicado no host; PostgreSQL, Redis e a API ficam acessíveis somente pela rede interna do compose (nginx faz proxy de `/api`, `/uploads` e `/socket.io` para a API), o que evita expor banco de dados e cache diretamente numa VPS pública. `docker compose config` foi validado neste repositório.
 
 ## Integração com WhatsApp
 
