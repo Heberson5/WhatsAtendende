@@ -89,11 +89,23 @@ describe("role-based access control", () => {
     expect(res.status).toBe(403);
   });
 
-  it("forbids a MANAGER from accepting a conversation (AGENT-only route)", async () => {
+  it("returns 404 (not 403 or a 500) when accepting a conversation id that does not exist", async () => {
+    // MANAGER/ADMIN can attend conversations too — see PROMPT: "o gestor e
+    // administrador também devem ter o menu de atendimentos e poderão
+    // atender" — so this route is no longer AGENT-only; a nonexistent id
+    // should fail cleanly regardless of who asks.
     await createTestUser({ email: "manager@test.dev", role: "MANAGER" });
     const token = await loginAs("manager@test.dev");
 
-    const res = await request(app).post("/api/conversations/some-id/accept").set("Authorization", `Bearer ${token}`);
+    const res = await request(app).post("/api/conversations/00000000-0000-0000-0000-000000000000/accept").set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(404);
+  });
+
+  it("forbids a MANAGER from renaming/deleting a WhatsApp connection (ADMIN-only route)", async () => {
+    await createTestUser({ email: "manager2@test.dev", role: "MANAGER" });
+    const token = await loginAs("manager2@test.dev");
+
+    const res = await request(app).post("/api/whatsapp/connections").set("Authorization", `Bearer ${token}`).send({ name: "Nova" });
     expect(res.status).toBe(403);
   });
 

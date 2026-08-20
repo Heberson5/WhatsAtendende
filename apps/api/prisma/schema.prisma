@@ -101,6 +101,7 @@ enum WhatsAppConnectionStatus {
   DISCONNECTED
   CONNECTING
   QR_PENDING
+  CODE_PENDING
   CONNECTED
 }
 
@@ -112,6 +113,10 @@ enum WhatsAppConnectionStatus {
 model WhatsAppConnection {
   id              String                   @id @default(uuid())
   name            String                   @unique
+  // Distinguishes this connection's conversations at a glance — every
+  // conversation card is tinted with its originating connection's color, so
+  // an agent can tell them apart even after a cross-connection transfer.
+  color           String                   @default("#0097B4")
   status          WhatsAppConnectionStatus @default(DISCONNECTED)
   connectedNumber String?
   lastConnectedAt DateTime?

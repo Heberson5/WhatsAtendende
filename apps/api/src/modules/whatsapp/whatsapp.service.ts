@@ -44,7 +44,17 @@ function bootstrapConnection(connectionId: string): WhatsAppProvider {
 
 function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
   provider.onConnectionUpdate(async (status) => {
-    await persistConnectionStatus(connectionId, status);
+    try {
+      await persistConnectionStatus(connectionId, status);
+    } catch (err) {
+      // The connection row can vanish out from under an in-flight
+      // connect/reconnect (deleted by an admin, or — only ever in
+      // tests — a database reset); a stale async status update landing
+      // afterwards is not an error worth crashing over.
+      if ((err as { code?: string }).code !== "P2025") throw err;
+      logger.warn({ connectionId }, "dropped a status update for a WhatsApp connection that no longer exists");
+      return;
+    }
     realtimeEvents.whatsappStatusChanged(connectionId, status);
   });
 
@@ -135,7 +145,7 @@ async function persistConnectionStatus(connectionId: string, status: WhatsAppSta
       status: status.state,
       connectedNumber: status.connectedNumber,
       lastConnectedAt: status.lastConnectedAt,
-      lastQrAt: status.qrCodeDataUrl ? new Date() : undefined,
+      lastQrAt: status.qrCodeDataUrl || status.pairingCode ? new Date() : undefined,
     },
   });
 }
@@ -143,20 +153,29 @@ async function persistConnectionStatus(connectionId: string, status: WhatsAppSta
 export interface ConnectionSummaryDTO {
   id: string;
   name: string;
+  color: string;
   state: string;
   qrCodeDataUrl: string | null;
+  pairingCode: string | null;
   connectedNumber: string | null;
   lastConnectedAt: string | null;
   agentCount: number;
 }
 
-function toConnectionSummary(row: { id: string; name: string; status: string; connectedNumber: string | null; lastConnectedAt: Date | null; _count: { agents: number } }): ConnectionSummaryDTO {
+// Distinct, readable-on-white swatches auto-assigned to new connections in
+// rotation so the admin doesn't have to pick a color for every one — still
+// changeable afterwards via PATCH /connections/:id.
+const COLOR_PALETTE = ["#0097B4", "#7C3AED", "#F97316", "#059669", "#DC2626", "#2563EB", "#DB2777", "#65A30D"];
+
+function toConnectionSummary(row: { id: string; name: string; color: string; status: string; connectedNumber: string | null; lastConnectedAt: Date | null; _count: { agents: number } }): ConnectionSummaryDTO {
   const runtime = providers.get(row.id)?.getStatus();
   return {
     id: row.id,
     name: row.name,
+    color: row.color,
     state: runtime?.state ?? row.status,
     qrCodeDataUrl: runtime?.qrCodeDataUrl ?? null,
+    pairingCode: runtime?.pairingCode ?? null,
     connectedNumber: runtime?.connectedNumber ?? row.connectedNumber,
     lastConnectedAt: (runtime?.lastConnectedAt ?? row.lastConnectedAt)?.toISOString?.() ?? null,
     agentCount: row._count.agents,
@@ -180,18 +199,23 @@ export async function getConnectionSummary(connectionId: string): Promise<Connec
   return toConnectionSummary(row);
 }
 
-export async function createConnection(name: string): Promise<ConnectionSummaryDTO> {
+export async function createConnection(name: string, color?: string): Promise<ConnectionSummaryDTO> {
   const existing = await prisma.whatsAppConnection.findUnique({ where: { name } });
   if (existing) throw Errors.conflict("Ja existe uma conexao com este nome");
-  const row = await prisma.whatsAppConnection.create({ data: { name } });
+  const existingCount = await prisma.whatsAppConnection.count();
+  const row = await prisma.whatsAppConnection.create({
+    data: { name, color: color ?? COLOR_PALETTE[existingCount % COLOR_PALETTE.length] },
+  });
   bootstrapConnection(row.id);
   return getConnectionSummary(row.id);
 }
 
-export async function renameConnection(connectionId: string, name: string): Promise<ConnectionSummaryDTO> {
-  const clash = await prisma.whatsAppConnection.findUnique({ where: { name } });
-  if (clash && clash.id !== connectionId) throw Errors.conflict("Ja existe uma conexao com este nome");
-  await prisma.whatsAppConnection.update({ where: { id: connectionId }, data: { name } });
+export async function updateConnection(connectionId: string, patch: { name?: string; color?: string }): Promise<ConnectionSummaryDTO> {
+  if (patch.name) {
+    const clash = await prisma.whatsAppConnection.findUnique({ where: { name: patch.name } });
+    if (clash && clash.id !== connectionId) throw Errors.conflict("Ja existe uma conexao com este nome");
+  }
+  await prisma.whatsAppConnection.update({ where: { id: connectionId }, data: { name: patch.name, color: patch.color } });
   return getConnectionSummary(connectionId);
 }
 
@@ -208,12 +232,17 @@ export async function deleteConnection(connectionId: string): Promise<void> {
   await prisma.whatsAppConnection.delete({ where: { id: connectionId } });
 }
 
-export async function connect(connectionId: string) {
-  await getProvider(connectionId).connect();
+export async function connect(connectionId: string, phoneNumber?: string) {
+  await getProvider(connectionId).connect(phoneNumber ? { phoneNumber } : undefined);
 }
 
 export async function disconnect(connectionId: string) {
   await getProvider(connectionId).disconnect();
+}
+
+/** Contacts saved on the linked phone — powers "start a new conversation" in Atendimento. */
+export async function listContacts(connectionId: string) {
+  return getProvider(connectionId).listContacts();
 }
 
 /** Sends a text/reply through the provider and reflects the result on the stored Message row. */
