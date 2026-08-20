@@ -94,6 +94,15 @@ conversationsRouter.post(
 );
 
 conversationsRouter.post(
+  "/:id/read",
+  requireRole("AGENT"),
+  asyncHandler(async (req, res) => {
+    await service.markConversationRead(req.params.id, req.auth!.userId);
+    res.status(204).end();
+  })
+);
+
+conversationsRouter.post(
   "/:id/close",
   requireRole("AGENT"),
   asyncHandler(async (req, res) => {

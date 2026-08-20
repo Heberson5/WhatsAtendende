@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { ArrowRightLeft, CheckCircle2, Phone } from "lucide-react";
 import type { ConversationListItemDTO, MessageDTO, PaginatedResult } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
+import { getSocket } from "../../lib/socket";
 import { MessageBubble } from "./MessageBubble";
 import { Composer } from "./Composer";
 import { TransferModal } from "./TransferModal";
@@ -31,10 +32,33 @@ export function ChatPanel({ conversation, onClosed }: { conversation: Conversati
     queryFn: () => fetchMessages(conversation.id),
   });
 
+  const markReadMutation = useMutation({
+    mutationFn: () => api.post(`/conversations/${conversation.id}/read`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["mine"] }),
+  });
+
   useEffect(() => {
     isFirstLoad.current = true;
     setMessages([]);
     setCursor(undefined);
+    // Opening a conversation clears its unread badge.
+    markReadMutation.mutate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversation.id]);
+
+  // While the conversation stays open, any further inbound message is
+  // immediately marked read too — the agent is already looking at it live.
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+    const handler = (payload: { conversationId: string }) => {
+      if (payload.conversationId === conversation.id) markReadMutation.mutate();
+    };
+    socket.on("message:new", handler);
+    return () => {
+      socket.off("message:new", handler);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversation.id]);
 
   useEffect(() => {

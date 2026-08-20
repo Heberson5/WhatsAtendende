@@ -38,6 +38,16 @@ export const realtimeEvents = {
     if (agentId) getIO()?.to(ROOMS.user(agentId)).emit("message:new", { conversationId });
     getIO()?.to(ROOMS.oversight()).emit("oversight:updated");
   },
+  /** A brand-new conversation entered the shared queue — notifies every agent watching it. */
+  newQueueConversation: (conversationId: string, contactName: string) => {
+    getIO()?.to(ROOMS.queue()).emit("queue:updated");
+    getIO()?.to(ROOMS.queue()).emit("queue:new-conversation", { conversationId, contactName });
+    getIO()?.to(ROOMS.oversight()).emit("oversight:updated");
+  },
+  /** A new inbound message landed in a conversation the agent already owns — used for the toast, separate from the generic refresh-only newMessage. */
+  inboundMessageNotification: (conversationId: string, agentId: string, contactName: string, preview: string) => {
+    getIO()?.to(ROOMS.user(agentId)).emit("message:inbound-notification", { conversationId, contactName, preview });
+  },
   messageStatusChanged: (conversationId: string) => {
     getIO()?.to(ROOMS.conversation(conversationId)).emit("message:status", { conversationId });
   },

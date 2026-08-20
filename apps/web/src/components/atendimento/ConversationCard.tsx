@@ -49,11 +49,16 @@ export function ConversationCard({
         {conversation.isNew && (
           <span className="absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full border-2 border-surface bg-secondary" />
         )}
+        {conversation.unreadCount > 0 && (
+          <span className="absolute -bottom-1 -right-1 flex h-5 min-w-[20px] items-center justify-center rounded-full border-2 border-surface bg-primary px-1 text-[10px] font-bold text-primary-fg">
+            {conversation.unreadCount > 99 ? "99+" : conversation.unreadCount}
+          </span>
+        )}
       </div>
 
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
-          <p className="truncate text-sm font-semibold">{displayName}</p>
+          <p className={clsx("truncate text-sm", conversation.unreadCount > 0 ? "font-bold" : "font-semibold")}>{displayName}</p>
           <span className="shrink-0 text-xs text-muted">
             {formatDistanceToNow(new Date(conversation.enteredQueueAt), { locale: ptBR, addSuffix: false })}
           </span>
