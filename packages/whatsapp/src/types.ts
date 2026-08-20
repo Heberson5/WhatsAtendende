@@ -1,10 +1,19 @@
-export type WhatsAppConnectionState = "DISCONNECTED" | "CONNECTING" | "QR_PENDING" | "CONNECTED";
+export type WhatsAppConnectionState = "DISCONNECTED" | "CONNECTING" | "QR_PENDING" | "CODE_PENDING" | "CONNECTED";
 
 export interface WhatsAppStatusSnapshot {
   state: WhatsAppConnectionState;
   qrCodeDataUrl: string | null;
+  // Set only while state === "CODE_PENDING" — the WhatsApp-Web-style linking
+  // code the operator types into Settings > Linked Devices > Link with phone
+  // number, as an alternative to scanning a QR code.
+  pairingCode: string | null;
   connectedNumber: string | null;
   lastConnectedAt: Date | null;
+}
+
+export interface ConnectOptions {
+  /** When set, requests a pairing code for this phone number instead of a QR code. */
+  phoneNumber?: string;
 }
 
 export interface InboundMessageEvent {
@@ -62,9 +71,12 @@ export interface ContactInfo {
  * class that implements this interface; nothing else changes.
  */
 export interface WhatsAppProvider {
-  connect(): Promise<void>;
+  connect(options?: ConnectOptions): Promise<void>;
   disconnect(): Promise<void>;
   getStatus(): WhatsAppStatusSnapshot;
+
+  /** Contacts saved on the linked phone — powers "start a new conversation" from Atendimento. Empty while not CONNECTED. */
+  listContacts(): Promise<ContactInfo[]>;
 
   sendText(chatId: string, text: string, options?: SendTextOptions): Promise<SendResult>;
   sendFile(

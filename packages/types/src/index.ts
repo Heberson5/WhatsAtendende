@@ -63,6 +63,7 @@ export const WHATSAPP_CONNECTION_STATUS = {
   DISCONNECTED: "DISCONNECTED",
   CONNECTING: "CONNECTING",
   QR_PENDING: "QR_PENDING",
+  CODE_PENDING: "CODE_PENDING",
   CONNECTED: "CONNECTED",
 } as const;
 export type WhatsAppConnectionStatus =
@@ -85,11 +86,20 @@ export interface UserDTO {
 export interface WhatsAppConnectionSummaryDTO {
   id: string;
   name: string;
+  color: string;
   state: WhatsAppConnectionStatus;
   qrCodeDataUrl: string | null;
+  pairingCode: string | null;
   connectedNumber: string | null;
   lastConnectedAt: string | null;
   agentCount: number;
+}
+
+/** A contact saved on the connection's linked phone — used by "start a new conversation". */
+export interface WhatsAppDeviceContactDTO {
+  phone: string;
+  name: string | null;
+  photoUrl: string | null;
 }
 
 export interface ContactDTO {
@@ -109,6 +119,7 @@ export interface ConversationListItemDTO {
   assignedAgentName: string | null;
   whatsappConnectionId: string;
   whatsappConnectionName: string;
+  whatsappConnectionColor: string;
   enteredQueueAt: string;
   acceptedAt: string | null;
   lastMessageAt: string;
