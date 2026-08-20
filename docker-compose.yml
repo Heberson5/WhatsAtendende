@@ -8,8 +8,11 @@ services:
       POSTGRES_USER: whatsatendende
       POSTGRES_PASSWORD: whatsatendende
       POSTGRES_DB: whatsatendende
-    ports:
-      - "5432:5432"
+    # No host port published: only the api container needs to reach this
+    # (over the compose network, by service name — see DATABASE_URL below),
+    # and this stack is meant to run on a public VPS where exposing Postgres
+    # to the internet would be a real, needless risk. For a local psql
+    # session use `docker compose exec postgres psql -U whatsatendende`.
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -21,8 +24,7 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    ports:
-      - "6379:6379"
+    # Same reasoning as postgres above — internal-only.
     volumes:
       - redis_data:/data
 
@@ -54,8 +56,13 @@ services:
     volumes:
       - api_uploads:/data/uploads
       - whatsapp_sessions:/data/whatsapp-sessions
-    ports:
-      - "4000:4000"
+    # No host port published: the web container's nginx already proxies
+    # /api, /uploads and /socket.io to this service internally (see
+    # infrastructure/docker/nginx.conf) — the browser never needs to reach
+    # it directly, so it stays off the public internet. If you need to
+    # reach it directly for debugging, use `docker compose exec api sh` or
+    # temporarily add back `ports: ["127.0.0.1:4000:4000"]` (loopback-only)
+    # and an SSH tunnel, rather than publishing it to 0.0.0.0.
 
   web:
     build:
