@@ -23,7 +23,7 @@ interface MenuItem {
 }
 
 const MENU_ITEMS: MenuItem[] = [
-  { to: "/atendimento", label: "Atendimento", icon: MessagesSquare, roles: ["AGENT"] },
+  { to: "/atendimento", label: "Atendimento", icon: MessagesSquare, roles: ["AGENT", "MANAGER", "ADMIN"] },
   { to: "/gestao", label: "Gestão", icon: Eye, roles: ["MANAGER", "ADMIN"] },
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["MANAGER", "ADMIN"] },
   { to: "/relatorios", label: "Relatórios", icon: FileBarChart, roles: ["MANAGER", "ADMIN"] },
@@ -51,7 +51,10 @@ export function Sidebar() {
             {branding?.logoUrl ? (
               <img src={branding.logoUrl} alt={branding.companyName} className="h-8 w-8 shrink-0 rounded object-contain" />
             ) : (
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-fg">
+              <div
+                className="shadow-soft flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-fg"
+                style={{ backgroundImage: "linear-gradient(145deg, rgba(255,255,255,0.28), rgba(255,255,255,0) 60%)" }}
+              >
                 {(branding?.companyName ?? "WA").slice(0, 2).toUpperCase()}
               </div>
             )}

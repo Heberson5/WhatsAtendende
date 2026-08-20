@@ -14,10 +14,15 @@
   --color-muted: #64748b;
   --color-text: #14202b;
   --color-bg: #eef2f4;
-  /* Shared "soft depth" used on every card/panel/elevated surface in the app, per design guideline: rounded corners everywhere + a subtle shadow instead of a flat, harsh edge. */
+  /* Shared "soft depth" used on every card/panel/elevated surface in the app, per design guideline: rounded corners everywhere + a subtle shadow instead of a flat, harsh edge — plus a faint inset top highlight for a slight 3D/embossed feel. */
   --shadow-soft:
-    0 1px 2px rgba(15, 23, 42, 0.04),
-    0 6px 16px rgba(15, 23, 42, 0.07);
+    0 1px 2px rgba(15, 23, 42, 0.05),
+    0 8px 20px rgba(15, 23, 42, 0.08);
+  /* Deeper variant for surfaces that float above everything else (modals, dropdowns, popovers). */
+  --shadow-elevated:
+    0 4px 10px rgba(15, 23, 42, 0.1),
+    0 20px 44px rgba(15, 23, 42, 0.18);
+  --shadow-inset-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.6);
 }
 
 .dark {
@@ -28,8 +33,12 @@
   --color-text: #e7edf2;
   --color-bg: #0b0f14;
   --shadow-soft:
-    0 1px 2px rgba(0, 0, 0, 0.35),
-    0 6px 16px rgba(0, 0, 0, 0.4);
+    0 1px 2px rgba(0, 0, 0, 0.4),
+    0 8px 20px rgba(0, 0, 0, 0.45);
+  --shadow-elevated:
+    0 4px 10px rgba(0, 0, 0, 0.5),
+    0 24px 52px rgba(0, 0, 0, 0.6);
+  --shadow-inset-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 html,
@@ -40,6 +49,7 @@ body,
 
 body {
   background-color: var(--color-bg);
+  background-image: radial-gradient(circle at top left, color-mix(in srgb, var(--color-primary) 6%, transparent), transparent 55%);
   color: var(--color-text);
   font-family:
     "Inter",
@@ -66,5 +76,56 @@ body {
 }
 
 .shadow-soft {
-  box-shadow: var(--shadow-soft);
+  box-shadow:
+    var(--shadow-soft),
+    var(--shadow-inset-highlight);
+}
+
+.shadow-elevated {
+  box-shadow:
+    var(--shadow-elevated),
+    var(--shadow-inset-highlight);
+}
+
+/* Tactile 3D press affordance on every primary-colored button system-wide —
+   a soft colored glow that lifts on hover and settles on click, tinted by
+   whatever brand color is active (custom or a preset palette) via color-mix
+   rather than a hardcoded shade. Browsers without color-mix() just skip the
+   tinted shadow declaration and keep the plain flat button — no breakage. */
+button.bg-primary:not(:disabled) {
+  box-shadow:
+    var(--shadow-inset-highlight),
+    0 2px 6px color-mix(in srgb, var(--color-primary) 45%, transparent);
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.12s ease,
+    filter 0.12s ease;
+}
+button.bg-primary:not(:disabled):hover {
+  transform: translateY(-1px);
+  filter: brightness(1.05);
+  box-shadow:
+    var(--shadow-inset-highlight),
+    0 6px 16px color-mix(in srgb, var(--color-primary) 55%, transparent);
+}
+button.bg-primary:not(:disabled):active {
+  transform: translateY(0);
+  filter: brightness(0.97);
+}
+
+/* Elevated cards/panels lift slightly on hover when they're interactive (a
+   clickable card, or a button styled as one) — reinforces the "soft depth"
+   system without affecting static containers like table wrappers. */
+.shadow-soft.cursor-pointer,
+button.shadow-soft:not(:disabled) {
+  transition:
+    transform 0.12s ease,
+    box-shadow 0.12s ease;
+}
+.shadow-soft.cursor-pointer:hover,
+button.shadow-soft:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow:
+    var(--shadow-elevated),
+    var(--shadow-inset-highlight);
 }
