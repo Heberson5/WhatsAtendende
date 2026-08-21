@@ -1,7 +1,8 @@
 import { Navigate, Route, Routes } from "react-router-dom";
+import { PERMISSION } from "@whatsatendende/types";
 import { useBootstrapSession } from "./hooks/useBootstrapSession";
 import { useAuthStore } from "./store/auth-store";
-import { ProtectedRoute, RoleRoute } from "./components/layout/ProtectedRoute";
+import { ProtectedRoute, PermissionRoute } from "./components/layout/ProtectedRoute";
 import { AppLayout } from "./components/layout/AppLayout";
 import LoginPage from "./pages/login/LoginPage";
 import ResetPasswordPage from "./pages/login/ResetPasswordPage";
@@ -13,11 +14,25 @@ import UsuariosPage from "./pages/usuarios/UsuariosPage";
 import ConfiguracoesPage from "./pages/configuracoes/ConfiguracoesPage";
 import MeuPerfilPage from "./pages/perfil/MeuPerfilPage";
 
+// Where "/" lands depends on what this user's role can actually reach —
+// picks the first permitted destination in this priority order rather than
+// assuming by role, since Configurações > Permissões can now grant/revoke
+// any of these independently of role.
+const HOME_PRIORITY: { permission: (typeof PERMISSION)[keyof typeof PERMISSION]; to: string }[] = [
+  { permission: PERMISSION.ATENDIMENTO_ACESSAR, to: "/atendimento" },
+  { permission: PERMISSION.DASHBOARD_ACESSAR, to: "/dashboard" },
+  { permission: PERMISSION.GESTAO_ACESSAR, to: "/gestao" },
+  { permission: PERMISSION.RELATORIOS_ACESSAR, to: "/relatorios" },
+  { permission: PERMISSION.USUARIOS_GERENCIAR, to: "/usuarios" },
+  { permission: PERMISSION.CONFIGURACOES_GERENCIAR, to: "/configuracoes" },
+];
+
 function RoleHome() {
   const user = useAuthStore((s) => s.user);
+  const permissions = useAuthStore((s) => s.permissions);
   if (!user) return null;
-  if (user.role === "AGENT") return <Navigate to="/atendimento" replace />;
-  return <Navigate to="/dashboard" replace />;
+  const first = HOME_PRIORITY.find((p) => permissions?.[p.permission]);
+  return <Navigate to={first?.to ?? "/perfil"} replace />;
 }
 
 export default function App() {
@@ -38,18 +53,24 @@ export default function App() {
           <Route path="/" element={<RoleHome />} />
           <Route path="/perfil" element={<MeuPerfilPage />} />
 
-          <Route element={<RoleRoute roles={["AGENT", "MANAGER", "ADMIN"]} />}>
+          <Route element={<PermissionRoute permission={PERMISSION.ATENDIMENTO_ACESSAR} />}>
             <Route path="/atendimento" element={<AtendimentoPage />} />
           </Route>
 
-          <Route element={<RoleRoute roles={["MANAGER", "ADMIN"]} />}>
+          <Route element={<PermissionRoute permission={PERMISSION.GESTAO_ACESSAR} />}>
             <Route path="/gestao" element={<GestaoPage />} />
+          </Route>
+          <Route element={<PermissionRoute permission={PERMISSION.DASHBOARD_ACESSAR} />}>
             <Route path="/dashboard" element={<DashboardPage />} />
+          </Route>
+          <Route element={<PermissionRoute permission={PERMISSION.RELATORIOS_ACESSAR} />}>
             <Route path="/relatorios" element={<RelatoriosPage />} />
           </Route>
 
-          <Route element={<RoleRoute roles={["ADMIN"]} />}>
+          <Route element={<PermissionRoute permission={PERMISSION.USUARIOS_GERENCIAR} />}>
             <Route path="/usuarios" element={<UsuariosPage />} />
+          </Route>
+          <Route element={<PermissionRoute permission={PERMISSION.CONFIGURACOES_GERENCIAR} />}>
             <Route path="/configuracoes" element={<ConfiguracoesPage />} />
           </Route>
         </Route>

@@ -12,7 +12,7 @@ import {
   ChevronRight,
   X,
 } from "lucide-react";
-import type { Role } from "@whatsatendende/types";
+import { PERMISSION, type Permission } from "@whatsatendende/types";
 import { useAuthStore } from "../../store/auth-store";
 import { useBranding } from "../../hooks/useBranding";
 
@@ -20,24 +20,28 @@ interface MenuItem {
   to: string;
   label: string;
   icon: typeof MessagesSquare;
-  roles: Role[];
+  permission: Permission;
 }
 
+// What's shown here is governed by Configurações > Permissões, not a fixed
+// role list — an ADMIN always sees everything (their permissions are always
+// all-true), while AGENT/MANAGER visibility follows whatever's configured.
 const MENU_ITEMS: MenuItem[] = [
-  { to: "/atendimento", label: "Atendimento", icon: MessagesSquare, roles: ["AGENT", "MANAGER", "ADMIN"] },
-  { to: "/gestao", label: "Gestão", icon: Eye, roles: ["MANAGER", "ADMIN"] },
-  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["MANAGER", "ADMIN"] },
-  { to: "/relatorios", label: "Relatórios", icon: FileBarChart, roles: ["MANAGER", "ADMIN"] },
-  { to: "/usuarios", label: "Usuários", icon: Users, roles: ["ADMIN"] },
-  { to: "/configuracoes", label: "Configurações", icon: Settings, roles: ["ADMIN"] },
+  { to: "/atendimento", label: "Atendimento", icon: MessagesSquare, permission: PERMISSION.ATENDIMENTO_ACESSAR },
+  { to: "/gestao", label: "Gestão", icon: Eye, permission: PERMISSION.GESTAO_ACESSAR },
+  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, permission: PERMISSION.DASHBOARD_ACESSAR },
+  { to: "/relatorios", label: "Relatórios", icon: FileBarChart, permission: PERMISSION.RELATORIOS_ACESSAR },
+  { to: "/usuarios", label: "Usuários", icon: Users, permission: PERMISSION.USUARIOS_GERENCIAR },
+  { to: "/configuracoes", label: "Configurações", icon: Settings, permission: PERMISSION.CONFIGURACOES_GERENCIAR },
 ];
 
 export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: boolean; onMobileClose?: () => void }) {
   const [collapsed, setCollapsed] = useState(false);
   const user = useAuthStore((s) => s.user);
+  const permissions = useAuthStore((s) => s.permissions);
   const { data: branding } = useBranding();
 
-  const visibleItems = MENU_ITEMS.filter((item) => user && item.roles.includes(user.role));
+  const visibleItems = MENU_ITEMS.filter((item) => user && permissions?.[item.permission]);
 
   return (
     <>

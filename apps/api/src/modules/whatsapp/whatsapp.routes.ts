@@ -2,6 +2,8 @@ import { Router } from "express";
 import { z } from "zod";
 import { asyncHandler } from "../../lib/async-handler";
 import { requireAuth, requireRole } from "../../middleware/auth";
+import { requirePermission } from "../../lib/permissions";
+import { PERMISSION } from "@whatsatendende/types";
 import { writeAudit } from "../../lib/audit";
 import { logger } from "../../lib/logger";
 import { prisma } from "../../lib/prisma";
@@ -26,7 +28,7 @@ const updateSchema = z.object({ name: z.string().trim().min(1).max(60).optional(
 
 whatsappRouter.post(
   "/connections",
-  requireRole("ADMIN"),
+  requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
   asyncHandler(async (req, res) => {
     const { name, color } = createSchema.parse(req.body);
     const connection = await service.createConnection(name, color);
@@ -37,7 +39,7 @@ whatsappRouter.post(
 
 whatsappRouter.patch(
   "/connections/:id",
-  requireRole("ADMIN"),
+  requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
   asyncHandler(async (req, res) => {
     const patch = updateSchema.parse(req.body);
     const connection = await service.updateConnection(req.params.id, patch);
@@ -48,7 +50,7 @@ whatsappRouter.patch(
 
 whatsappRouter.delete(
   "/connections/:id",
-  requireRole("ADMIN"),
+  requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
   asyncHandler(async (req, res) => {
     await service.deleteConnection(req.params.id);
     await writeAudit({ userId: req.auth!.userId, action: "WHATSAPP_CONNECTION_DELETED", entity: "WhatsAppConnection", entityId: req.params.id, ipAddress: req.ip ?? null });
@@ -60,7 +62,7 @@ const connectSchema = z.object({ phoneNumber: z.string().trim().regex(/^\d{8,15}
 
 whatsappRouter.post(
   "/connections/:id/connect",
-  requireRole("ADMIN"),
+  requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
   asyncHandler(async (req, res) => {
     // Connecting (QR/pairing-code generation, then the real handshake) takes
     // seconds — the client polls GET /connections (and listens for the
@@ -77,7 +79,7 @@ whatsappRouter.post(
 
 whatsappRouter.post(
   "/connections/:id/disconnect",
-  requireRole("ADMIN"),
+  requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
   asyncHandler(async (req, res) => {
     await service.disconnect(req.params.id);
     await writeAudit({ userId: req.auth!.userId, action: "WHATSAPP_DISCONNECTED", entity: "WhatsAppConnection", entityId: req.params.id, ipAddress: req.ip ?? null });
@@ -87,7 +89,7 @@ whatsappRouter.post(
 
 whatsappRouter.post(
   "/connections/:id/reconnect",
-  requireRole("ADMIN"),
+  requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
   asyncHandler(async (req, res) => {
     await service.disconnect(req.params.id);
     service.connect(req.params.id).catch((err) => logger.error({ err }, "whatsapp reconnect failed"));

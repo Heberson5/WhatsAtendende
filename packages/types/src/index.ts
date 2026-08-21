@@ -189,3 +189,114 @@ export interface ApiErrorBody {
   message: string;
   details?: unknown;
 }
+
+// ---------------------------------------------------------------------------
+// Granular per-role permissions (Configurações > Permissões).
+//
+// ADMIN is intentionally absent from PERMISSION_DEFINITIONS' editableRoles/
+// defaultAllowed: it always has every permission, hardcoded on the backend,
+// never stored or toggleable — otherwise an admin could accidentally lock
+// themselves (and everyone else) out of the permissions screen itself with
+// no way back in. AGENT/MANAGER defaults below reproduce exactly the
+// hardcoded role checks this feature replaces, so turning it on changes
+// nothing until an admin actually edits a toggle.
+// ---------------------------------------------------------------------------
+
+export const PERMISSION = {
+  ATENDIMENTO_ACESSAR: "atendimento.acessar",
+  ATENDIMENTO_TRANSFERIR: "atendimento.transferir",
+  ATENDIMENTO_ENCERRAR: "atendimento.encerrar",
+  GESTAO_ACESSAR: "gestao.acessar",
+  DASHBOARD_ACESSAR: "dashboard.acessar",
+  RELATORIOS_ACESSAR: "relatorios.acessar",
+  USUARIOS_GERENCIAR: "usuarios.gerenciar",
+  CONFIGURACOES_GERENCIAR: "configuracoes.gerenciar",
+  AUDITORIA_ACESSAR: "auditoria.acessar",
+} as const;
+export type Permission = (typeof PERMISSION)[keyof typeof PERMISSION];
+
+export interface PermissionDefinition {
+  key: Permission;
+  group: string;
+  label: string;
+  description: string;
+  editableRoles: Role[];
+  defaultAllowed: Partial<Record<Role, boolean>>;
+}
+
+export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
+  {
+    key: PERMISSION.ATENDIMENTO_ACESSAR,
+    group: "Atendimento",
+    label: "Acessar Atendimento",
+    description: "Ver a fila, aceitar conversas e enviar mensagens, arquivos e localização.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: true, MANAGER: true },
+  },
+  {
+    key: PERMISSION.ATENDIMENTO_TRANSFERIR,
+    group: "Atendimento",
+    label: "Transferir conversas",
+    description: "Transferir uma conversa em atendimento para outro atendente.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: true, MANAGER: true },
+  },
+  {
+    key: PERMISSION.ATENDIMENTO_ENCERRAR,
+    group: "Atendimento",
+    label: "Encerrar conversas",
+    description: "Encerrar uma conversa em atendimento.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: true, MANAGER: true },
+  },
+  {
+    key: PERMISSION.GESTAO_ACESSAR,
+    group: "Gestão",
+    label: "Acessar Gestão",
+    description: "Visualizar, em modo leitura, as conversas de todos os atendentes.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.DASHBOARD_ACESSAR,
+    group: "Dashboard",
+    label: "Acessar Dashboard",
+    description: "Visualizar indicadores e gráficos de desempenho.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.RELATORIOS_ACESSAR,
+    group: "Relatórios",
+    label: "Acessar Relatórios",
+    description: "Visualizar e exportar relatórios (CSV, PDF, Excel).",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.USUARIOS_GERENCIAR,
+    group: "Usuários",
+    label: "Gerenciar usuários",
+    description: "Criar, editar, desativar e redefinir senha de usuários.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: false },
+  },
+  {
+    key: PERMISSION.CONFIGURACOES_GERENCIAR,
+    group: "Configurações",
+    label: "Gerenciar configurações",
+    description: "Gerenciar conexões de WhatsApp, identidade visual e e-mail/SMTP.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: false },
+  },
+  {
+    key: PERMISSION.AUDITORIA_ACESSAR,
+    group: "Auditoria",
+    label: "Acessar log de auditoria",
+    description: "Visualizar o histórico de ações realizadas no sistema.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: false },
+  },
+];
+
+export type PermissionMap = Record<Permission, boolean>;

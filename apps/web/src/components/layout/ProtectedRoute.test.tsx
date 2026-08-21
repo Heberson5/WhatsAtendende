@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { ProtectedRoute, RoleRoute } from "./ProtectedRoute";
+import { PERMISSION } from "@whatsatendende/types";
+import { ProtectedRoute, PermissionRoute } from "./ProtectedRoute";
 import { useAuthStore } from "../../store/auth-store";
 
 function Secret() {
@@ -16,7 +17,7 @@ function Home() {
 
 describe("ProtectedRoute", () => {
   beforeEach(() => {
-    useAuthStore.setState({ accessToken: null, user: null, hydrated: true });
+    useAuthStore.setState({ accessToken: null, user: null, permissions: null, hydrated: true });
   });
 
   it("redirects to /login when there is no authenticated user", () => {
@@ -65,7 +66,7 @@ describe("ProtectedRoute", () => {
     expect(screen.getByText(/conteudo protegido/i)).toBeInTheDocument();
   });
 
-  it("RoleRoute blocks an AGENT from an ADMIN-only route and redirects home", () => {
+  it("PermissionRoute blocks a user lacking the required permission and redirects home", () => {
     useAuthStore.setState({
       accessToken: "token",
       user: {
@@ -82,13 +83,14 @@ describe("ProtectedRoute", () => {
         whatsappConnectionName: null,
         photoUrl: null,
       },
+      permissions: { [PERMISSION.USUARIOS_GERENCIAR]: false } as never,
       hydrated: true,
     });
     render(
       <MemoryRouter initialEntries={["/usuarios"]}>
         <Routes>
           <Route path="/" element={<Home />} />
-          <Route element={<RoleRoute roles={["ADMIN"]} />}>
+          <Route element={<PermissionRoute permission={PERMISSION.USUARIOS_GERENCIAR} />}>
             <Route path="/usuarios" element={<Secret />} />
           </Route>
         </Routes>

@@ -6,7 +6,9 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import rateLimit from "express-rate-limit";
 import { asyncHandler } from "../../lib/async-handler";
-import { requireAuth, requireRole } from "../../middleware/auth";
+import { requireAuth } from "../../middleware/auth";
+import { requirePermission } from "../../lib/permissions";
+import { PERMISSION } from "@whatsatendende/types";
 import { writeAudit } from "../../lib/audit";
 import { sendMail } from "../../lib/mail";
 import { env } from "../../config/env";
@@ -57,7 +59,7 @@ const brandingSchema = z.object({
 
 settingsRouter.patch(
   "/branding",
-  requireRole("ADMIN"),
+  requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
   asyncHandler(async (req, res) => {
     const patch = brandingSchema.parse(req.body);
     const branding = await service.updateBranding(patch);
@@ -68,7 +70,7 @@ settingsRouter.patch(
 
 settingsRouter.post(
   "/branding/logo",
-  requireRole("ADMIN"),
+  requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
   upload.single("file"),
   asyncHandler(async (req, res) => {
     if (!req.file) return res.status(400).json({ error: "BAD_REQUEST", message: "Nenhum arquivo enviado" });
@@ -84,7 +86,7 @@ settingsRouter.post(
 
 settingsRouter.post(
   "/branding/favicon",
-  requireRole("ADMIN"),
+  requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
   upload.single("file"),
   asyncHandler(async (req, res) => {
     if (!req.file) return res.status(400).json({ error: "BAD_REQUEST", message: "Nenhum arquivo enviado" });
@@ -117,7 +119,7 @@ const businessSettingsSchema = z
 
 settingsRouter.get(
   "/business",
-  requireRole("ADMIN"),
+  requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
   asyncHandler(async (_req, res) => {
     res.json(await service.getBusinessSettings());
   })
@@ -125,7 +127,7 @@ settingsRouter.get(
 
 settingsRouter.patch(
   "/business",
-  requireRole("ADMIN"),
+  requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
   asyncHandler(async (req, res) => {
     const patch = businessSettingsSchema.parse(req.body ?? {});
     const settings = await service.updateBusinessSettings(patch);
@@ -152,7 +154,7 @@ const emailTestLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, standard
 
 settingsRouter.get(
   "/email",
-  requireRole("ADMIN"),
+  requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
   asyncHandler(async (_req, res) => {
     res.json(await service.getEmailSettingsMasked());
   })
@@ -170,7 +172,7 @@ const emailSchema = z.object({
 
 settingsRouter.patch(
   "/email",
-  requireRole("ADMIN"),
+  requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
   asyncHandler(async (req, res) => {
     const patch = emailSchema.parse(req.body ?? {});
     const settings = await service.updateEmailSettings(patch);
@@ -184,7 +186,7 @@ settingsRouter.patch(
 const emailTestSchema = z.object({ to: z.string().email() });
 settingsRouter.post(
   "/email/test",
-  requireRole("ADMIN"),
+  requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
   emailTestLimiter,
   asyncHandler(async (req, res) => {
     const { to } = emailTestSchema.parse(req.body);

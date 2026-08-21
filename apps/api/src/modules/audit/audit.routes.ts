@@ -1,11 +1,13 @@
 import { Router } from "express";
 import { z } from "zod";
+import { PERMISSION } from "@whatsatendende/types";
 import { asyncHandler } from "../../lib/async-handler";
-import { requireAuth, requireRole } from "../../middleware/auth";
+import { requireAuth } from "../../middleware/auth";
+import { requirePermission } from "../../lib/permissions";
 import { prisma } from "../../lib/prisma";
 
 export const auditRouter = Router();
-auditRouter.use(requireAuth, requireRole("ADMIN"));
+auditRouter.use(requireAuth, requirePermission(PERMISSION.AUDITORIA_ACESSAR));
 
 const querySchema = z.object({
   cursor: z.string().uuid().optional(),
