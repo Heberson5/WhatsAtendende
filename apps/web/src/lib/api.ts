@@ -53,6 +53,20 @@ api.interceptors.response.use(
   }
 );
 
+/**
+ * Appends the current access token as a query param — needed for any URL
+ * handed to an <img>/<video>/<audio> tag or a plain download link, since
+ * those can't attach an Authorization header the way axios requests do.
+ * The corresponding route (message attachment download) accepts the token
+ * either way — see messages.routes.ts.
+ */
+export function withAuthToken(url: string): string {
+  const token = useAuthStore.getState().accessToken;
+  if (!token) return url;
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}token=${encodeURIComponent(token)}`;
+}
+
 export interface ApiErrorShape {
   error: string;
   message: string;

@@ -105,7 +105,12 @@ export default function AtendimentoPage() {
           {tab === "mine" &&
             (mineQuery.data?.length ? (
               mineQuery.data.map((c) => (
-                <ConversationCard key={c.id} conversation={c} selected={c.id === selectedId} onSelect={() => setSelectedId(c.id)} />
+                <ConversationCard
+                  key={c.id}
+                  conversation={c}
+                  selected={c.id === selectedId}
+                  onSelect={() => setSelectedId((current) => (current === c.id ? null : c.id))}
+                />
               ))
             ) : (
               <EmptyState message="Nenhum atendimento em andamento." />
