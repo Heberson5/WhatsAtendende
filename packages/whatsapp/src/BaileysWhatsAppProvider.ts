@@ -61,113 +61,158 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
   // listContacts() — the phone's address book, used by "start a new conversation".
   private contacts = new Map<string, ContactInfo>();
   private lastConnectOptions: ConnectOptions | undefined;
+  // Reconnect bookkeeping — see the "connection: close" handler below for
+  // why this exists: without it, a socket that can never actually reach
+  // WhatsApp (e.g. outbound network blocked on the host) reconnects in a
+  // tight loop forever, and a truly synchronous startup failure left the
+  // status stuck at CONNECTING with no way out (not even deletable — see
+  // whatsapp.service.ts deleteConnection).
+  private reconnectAttempts = 0;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private static readonly MAX_INITIAL_PAIRING_RETRIES = 3;
+  private static readonly BASE_RECONNECT_DELAY_MS = 3000;
+  private static readonly MAX_RECONNECT_DELAY_MS = 30_000;
 
   constructor(private options: BaileysProviderOptions) {}
 
   async connect(connectOptions?: ConnectOptions): Promise<void> {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     this.lastConnectOptions = connectOptions;
     this.setStatus({ ...this.status, state: "CONNECTING" });
-    const { state, saveCreds } = await useMultiFileAuthState(this.options.authStateDir);
 
-    const socket = makeWASocket({
-      auth: state,
-      logger: this.logger as any,
-      syncFullHistory: false,
-      // Pairing-code linking and QR linking are mutually exclusive per
-      // Baileys session: suppress the QR event entirely when a phone number
-      // was given, since we're about to request a code instead.
-      printQRInTerminal: false,
-    });
-    this.socket = socket;
+    try {
+      const { state, saveCreds } = await useMultiFileAuthState(this.options.authStateDir);
+      const wasAlreadyLinked = Boolean(state.creds.registered);
 
-    socket.ev.on("creds.update", saveCreds);
+      const socket = makeWASocket({
+        auth: state,
+        logger: this.logger as any,
+        syncFullHistory: false,
+        // Pairing-code linking and QR linking are mutually exclusive per
+        // Baileys session: suppress the QR event entirely when a phone number
+        // was given, since we're about to request a code instead.
+        printQRInTerminal: false,
+      });
+      this.socket = socket;
 
-    if (connectOptions?.phoneNumber && !state.creds.registered) {
-      try {
-        const code = await socket.requestPairingCode(connectOptions.phoneNumber.replace(/\D/g, ""));
-        this.setStatus({ ...this.status, state: "CODE_PENDING", pairingCode: code });
-      } catch (err) {
-        this.logger.error({ err }, "failed to request WhatsApp pairing code");
-      }
-    }
+      socket.ev.on("creds.update", saveCreds);
 
-    socket.ev.on("connection.update", async (update) => {
-      const { connection, qr, lastDisconnect } = update;
-
-      if (qr && !connectOptions?.phoneNumber) {
-        const qrCodeDataUrl = await QRCode.toDataURL(qr);
-        this.setStatus({ ...this.status, state: "QR_PENDING", qrCodeDataUrl });
-      }
-
-      if (connection === "open") {
-        const connectedNumber = socket.user?.id?.split(":")[0] ?? null;
-        this.setStatus({
-          state: "CONNECTED",
-          qrCodeDataUrl: null,
-          pairingCode: null,
-          connectedNumber,
-          lastConnectedAt: new Date(),
-        });
-      }
-
-      if (connection === "close") {
-        const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
-        const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-        this.setStatus({
-          state: "DISCONNECTED",
-          qrCodeDataUrl: null,
-          pairingCode: null,
-          connectedNumber: null,
-          lastConnectedAt: this.status.lastConnectedAt,
-        });
-        if (shouldReconnect) {
-          await this.connect(this.lastConnectOptions);
+      if (connectOptions?.phoneNumber && !state.creds.registered) {
+        try {
+          const code = await socket.requestPairingCode(connectOptions.phoneNumber.replace(/\D/g, ""));
+          this.setStatus({ ...this.status, state: "CODE_PENDING", pairingCode: code });
+        } catch (err) {
+          this.logger.error({ err }, "failed to request WhatsApp pairing code");
+          this.settleDisconnected();
+          return;
         }
       }
-    });
 
-    socket.ev.on("messages.upsert", async ({ messages, type }) => {
-      if (type !== "notify") return;
-      for (const message of messages) {
-        await this.handleIncomingMessage(message);
-      }
-    });
+      socket.ev.on("connection.update", async (update) => {
+        const { connection, qr, lastDisconnect } = update;
 
-    socket.ev.on("contacts.upsert", (contacts) => this.upsertContacts(contacts));
-    socket.ev.on("contacts.update", (contacts) => this.upsertContacts(contacts));
+        if (qr && !connectOptions?.phoneNumber) {
+          this.reconnectAttempts = 0;
+          const qrCodeDataUrl = await QRCode.toDataURL(qr);
+          this.setStatus({ ...this.status, state: "QR_PENDING", qrCodeDataUrl });
+        }
 
-    socket.ev.on("messages.update", (updates) => {
-      for (const update of updates) {
-        const receipt = (update.update as any)?.status;
-        if (!receipt) continue;
-        const status = mapBaileysReceiptToStatus(receipt);
-        if (!status) continue;
-        this.emitter.emit("delivery", {
-          providerMessageId: update.key.id ?? "",
-          chatId: update.key.remoteJid ?? "",
-          status,
-          timestamp: new Date(),
-        } satisfies DeliveryEvent);
-      }
-    });
+        if (connection === "open") {
+          this.reconnectAttempts = 0;
+          const connectedNumber = socket.user?.id?.split(":")[0] ?? null;
+          this.setStatus({
+            state: "CONNECTED",
+            qrCodeDataUrl: null,
+            pairingCode: null,
+            connectedNumber,
+            lastConnectedAt: new Date(),
+          });
+        }
 
-    socket.ev.on("messages.reaction", (reactions) => {
-      for (const r of reactions) {
-        this.emitter.emit("reaction", {
-          providerMessageId: r.key.id ?? "",
-          chatId: r.key.remoteJid ?? "",
-          emoji: r.reaction.text || null,
-          fromPhone: (r.reaction.key?.remoteJid ?? "").split("@")[0],
-          timestamp: new Date(),
-        } satisfies ReactionEvent);
-      }
-    });
+        if (connection === "close") {
+          const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
+          const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+          this.settleDisconnected();
+
+          if (!shouldReconnect) return; // explicit logout — never auto-retry
+
+          this.reconnectAttempts += 1;
+          // A session that was linked before and just dropped (network
+          // blip, WhatsApp-side restart) is worth retrying indefinitely
+          // with backoff — that's normal operation. A *fresh* pairing
+          // attempt that never got past QR/code generation is much more
+          // likely a real problem (e.g. no outbound network access to
+          // WhatsApp's servers from this host) — retrying that forever
+          // just hides the failure and leaves the admin stuck watching
+          // "Conectando..." with no explanation, so give up after a few
+          // tries and let the connection settle back to DISCONNECTED.
+          if (!wasAlreadyLinked && this.reconnectAttempts > BaileysWhatsAppProvider.MAX_INITIAL_PAIRING_RETRIES) {
+            this.logger.error(
+              "giving up on WhatsApp pairing after repeated failed attempts — check that this host has outbound network access to WhatsApp's servers"
+            );
+            return;
+          }
+          const delay = Math.min(
+            BaileysWhatsAppProvider.BASE_RECONNECT_DELAY_MS * 2 ** (this.reconnectAttempts - 1),
+            BaileysWhatsAppProvider.MAX_RECONNECT_DELAY_MS
+          );
+          this.reconnectTimer = setTimeout(() => {
+            this.connect(this.lastConnectOptions).catch((err) => this.logger.error({ err }, "WhatsApp reconnect attempt failed"));
+          }, delay);
+        }
+      });
+
+      socket.ev.on("messages.upsert", async ({ messages, type }) => {
+        if (type !== "notify") return;
+        for (const message of messages) {
+          await this.handleIncomingMessage(message);
+        }
+      });
+
+      socket.ev.on("contacts.upsert", (contacts) => this.upsertContacts(contacts));
+      socket.ev.on("contacts.update", (contacts) => this.upsertContacts(contacts));
+
+      socket.ev.on("messages.update", (updates) => {
+        for (const update of updates) {
+          const receipt = (update.update as any)?.status;
+          if (!receipt) continue;
+          const status = mapBaileysReceiptToStatus(receipt);
+          if (!status) continue;
+          this.emitter.emit("delivery", {
+            providerMessageId: update.key.id ?? "",
+            chatId: update.key.remoteJid ?? "",
+            status,
+            timestamp: new Date(),
+          } satisfies DeliveryEvent);
+        }
+      });
+
+      socket.ev.on("messages.reaction", (reactions) => {
+        for (const r of reactions) {
+          this.emitter.emit("reaction", {
+            providerMessageId: r.key.id ?? "",
+            chatId: r.key.remoteJid ?? "",
+            emoji: r.reaction.text || null,
+            fromPhone: (r.reaction.key?.remoteJid ?? "").split("@")[0],
+            timestamp: new Date(),
+          } satisfies ReactionEvent);
+        }
+      });
+    } catch (err) {
+      // A failure before the socket even got a chance to try connecting
+      // (e.g. can't write to WHATSAPP_AUTH_DIR) used to leave status stuck
+      // at CONNECTING forever, with no error surfaced anywhere the admin
+      // could see it, and no way to even delete the connection.
+      this.logger.error({ err }, "failed to start WhatsApp connection");
+      this.settleDisconnected();
+    }
   }
 
-  async disconnect(): Promise<void> {
-    await this.socket?.logout().catch(() => undefined);
-    this.socket = null;
-    this.contacts.clear();
+  /** Resets status to DISCONNECTED while preserving lastConnectedAt — shared by every "give up" path in connect(). */
+  private settleDisconnected() {
     this.setStatus({
       state: "DISCONNECTED",
       qrCodeDataUrl: null,
@@ -175,6 +220,17 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
       connectedNumber: null,
       lastConnectedAt: this.status.lastConnectedAt,
     });
+  }
+
+  async disconnect(): Promise<void> {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    await this.socket?.logout().catch(() => undefined);
+    this.socket = null;
+    this.contacts.clear();
+    this.settleDisconnected();
   }
 
   getStatus(): WhatsAppStatusSnapshot {

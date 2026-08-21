@@ -220,13 +220,20 @@ export async function updateConnection(connectionId: string, patch: { name?: str
 }
 
 export async function deleteConnection(connectionId: string): Promise<void> {
-  const provider = providers.get(connectionId);
-  if (provider && provider.getStatus().state !== "DISCONNECTED") {
-    throw Errors.badRequest("Desconecte o WhatsApp antes de excluir esta conexao");
-  }
   const agentCount = await prisma.user.count({ where: { whatsappConnectionId: connectionId } });
   if (agentCount > 0) {
     throw Errors.badRequest("Existem atendentes vinculados a esta conexao — reatribua-os antes de excluir");
+  }
+  const provider = providers.get(connectionId);
+  // Only an actually-linked session needs an explicit disconnect first — a
+  // stuck/failed pairing attempt (CONNECTING, QR_PENDING, CODE_PENDING) is
+  // safe to tear down directly, so a bad pairing attempt (e.g. no outbound
+  // network access to WhatsApp's servers) can never permanently block deletion.
+  if (provider && provider.getStatus().state === "CONNECTED") {
+    throw Errors.badRequest("Desconecte o WhatsApp antes de excluir esta conexao");
+  }
+  if (provider) {
+    await provider.disconnect().catch(() => undefined);
   }
   providers.delete(connectionId);
   await prisma.whatsAppConnection.delete({ where: { id: connectionId } });
