@@ -92,14 +92,21 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
       const socket = makeWASocket({
         auth: state,
         logger: this.logger as any,
-        // Baileys gates BOTH the phone's address book sync (contacts.upsert/
-        // chats.upsert) and past-message history sync (messaging-history.set,
-        // handled below) behind this single flag — with it off, neither ever
-        // fires, which is exactly why "start a new conversation" showed no
-        // saved contacts and why old conversations never appeared. It only
-        // costs a one-time sync burst right after pairing/reconnecting, not
-        // an ongoing cost.
-        syncFullHistory: true,
+        // REVERTED to false: turning this on destabilized an already-linked
+        // real account (sending/receiving/contacts all broke) — the
+        // `requireFullSync` flag Baileys sends the phone only applies at
+        // fresh pairing, but this flag *also* gates whether every reconnect
+        // processes the phone's history-sync payload (see
+        // "messaging-history.set" below), and doing that against a real
+        // account's full history apparently jammed the connection badly
+        // enough to break basic message delivery. Restoring the known-good
+        // default. Contacts still populate gradually via contacts.upsert/
+        // contacts.update as real conversations happen (those aren't gated
+        // by this flag) — just not as an upfront bulk address-book dump.
+        // Re-enabling bulk history/contacts sync needs a much more careful,
+        // chunked/rate-limited approach than a blanket flag flip; not
+        // attempting that again against a live account blind.
+        syncFullHistory: false,
         // Pairing-code linking and QR linking are mutually exclusive per
         // Baileys session: suppress the QR event entirely when a phone number
         // was given, since we're about to request a code instead.
