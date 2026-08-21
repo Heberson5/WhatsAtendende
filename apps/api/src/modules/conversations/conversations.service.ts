@@ -60,6 +60,88 @@ export async function findOrCreateContact(connectionId: string, phone: string, n
   return prisma.contact.create({ data: { phone, name, whatsappConnectionId: connectionId } });
 }
 
+export async function updateContactPhoto(contactId: string, photoUrl: string) {
+  return prisma.contact.update({ where: { id: contactId }, data: { photoUrl } });
+}
+
+export interface HistoricalMessageInput {
+  providerMessageId: string;
+  phone: string;
+  fromMe: boolean;
+  type: "TEXT" | "LOCATION" | "CONTACT" | "IMAGE" | "VIDEO" | "AUDIO" | "DOCUMENT";
+  body: string | null;
+  latitude?: number;
+  longitude?: number;
+  vcard?: string;
+  timestamp: Date;
+}
+
+/**
+ * Backfills messages handed over by a WhatsApp history sync (see
+ * BaileysWhatsAppProvider's onHistorySync) into whichever conversation
+ * already represents that contact — reusing an active one if the contact
+ * currently has one, otherwise archiving them into a new CLOSED conversation
+ * (browsable from Gestão, never surfaced in the live queue). Idempotent by
+ * providerMessageId so re-syncs (e.g. every reconnect) never duplicate.
+ */
+export async function importHistoricalMessages(connectionId: string, messages: HistoricalMessageInput[]): Promise<void> {
+  for (const m of messages) {
+    if (!m.providerMessageId) continue;
+    const existing = await prisma.message.findUnique({ where: { providerMessageId: m.providerMessageId } });
+    if (existing) continue;
+
+    const contact = await findOrCreateContact(connectionId, m.phone, null);
+    let conversation = await prisma.conversation.findFirst({ where: { contactId: contact.id }, orderBy: { createdAt: "desc" } });
+    if (!conversation) {
+      conversation = await prisma.conversation.create({
+        data: {
+          contactId: contact.id,
+          whatsappConnectionId: connectionId,
+          status: "CLOSED",
+          enteredQueueAt: m.timestamp,
+          closedAt: m.timestamp,
+          lastMessageAt: m.timestamp,
+          createdAt: m.timestamp,
+        },
+      });
+    }
+
+    await prisma.message.create({
+      data: {
+        conversationId: conversation.id,
+        direction: m.fromMe ? "OUTBOUND" : "INBOUND",
+        type: m.type,
+        status: m.fromMe ? "SENT" : "DELIVERED",
+        body: m.body,
+        providerMessageId: m.providerMessageId,
+        createdAt: m.timestamp,
+      },
+    });
+    if (m.latitude !== undefined && m.longitude !== undefined) {
+      const created = await prisma.message.findUniqueOrThrow({ where: { providerMessageId: m.providerMessageId } });
+      await prisma.messageAttachment.create({
+        data: { messageId: created.id, fileName: "location", mimeType: "application/geo+json", sizeBytes: 0, storageKey: "", kind: "LOCATION", latitude: m.latitude, longitude: m.longitude },
+      });
+    }
+    if (m.vcard) {
+      const created = await prisma.message.findUniqueOrThrow({ where: { providerMessageId: m.providerMessageId } });
+      await prisma.messageAttachment.create({
+        data: { messageId: created.id, fileName: "contact.vcf", mimeType: "text/vcard", sizeBytes: m.vcard.length, storageKey: "", kind: "CONTACT", vcard: m.vcard },
+      });
+    }
+
+    // Only ever push activity forward — an old imported message must never
+    // make an already-active conversation look "more recently active" than
+    // it actually is, or bump its ordering ahead of a genuinely newer one.
+    if (m.timestamp > conversation.lastMessageAt) {
+      await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { lastMessageAt: m.timestamp, lastMessageDirection: m.fromMe ? "OUTBOUND" : "INBOUND" },
+      });
+    }
+  }
+}
+
 /**
  * Finds the conversation a new inbound message belongs to, or opens a new
  * one. Section 28 (reabertura): once a conversation is CLOSED, any further

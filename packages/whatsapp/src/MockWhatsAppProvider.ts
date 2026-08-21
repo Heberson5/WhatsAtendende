@@ -142,10 +142,6 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
     return DEVICE_CONTACTS.map((c) => ({ phone: c.phone, name: c.name, photoUrl: null }));
   }
 
-  async syncHistory(): Promise<void> {
-    // Mock provider has no historical backlog to sync.
-  }
-
   onConnectionUpdate(listener: (status: WhatsAppStatusSnapshot) => void): void {
     this.emitter.on("connection", listener);
   }
@@ -160,6 +156,10 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
 
   onReaction(listener: (event: ReactionEvent) => void): void {
     this.emitter.on("reaction", listener);
+  }
+
+  onHistorySync(): void {
+    // Mock provider has no historical backlog to sync.
   }
 
   /** Test/demo helper: force an inbound message without waiting for the timer. */

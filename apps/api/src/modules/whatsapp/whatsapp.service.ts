@@ -1,4 +1,6 @@
 import path from "node:path";
+import fs from "node:fs";
+import { randomUUID } from "node:crypto";
 import { createWhatsAppProvider, type WhatsAppProvider, type WhatsAppStatusSnapshot } from "@whatsatendende/whatsapp";
 import { env } from "../../config/env";
 import { prisma } from "../../lib/prisma";
@@ -8,6 +10,28 @@ import { realtimeEvents } from "../../realtime/realtime";
 import * as conversationsService from "../conversations/conversations.service";
 import * as messagesService from "../messages/messages.service";
 import { toMessageDTO } from "../messages/messages.mapper";
+
+fs.mkdirSync(env.UPLOAD_DIR, { recursive: true });
+
+const MEDIA_EXT_BY_MIME: Record<string, string> = {
+  "image/jpeg": ".jpg",
+  "image/png": ".png",
+  "image/webp": ".webp",
+  "image/gif": ".gif",
+  "video/mp4": ".mp4",
+  "video/3gpp": ".3gp",
+  "audio/mpeg": ".mp3",
+  "audio/ogg": ".ogg",
+  "audio/webm": ".webm",
+  "audio/aac": ".aac",
+  "audio/mp4": ".m4a",
+  "application/pdf": ".pdf",
+};
+
+function extensionFor(mimeType: string, fileName?: string): string {
+  if (fileName && path.extname(fileName)) return path.extname(fileName);
+  return MEDIA_EXT_BY_MIME[mimeType] ?? "";
+}
 
 // One WhatsAppProvider instance per named connection (see PROMPT: "poderá
 // conectar vários WhatsApp"). Each instance owns its own session/QR/status
@@ -61,6 +85,15 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
   provider.onMessage(async (event) => {
     try {
       const contact = await conversationsService.findOrCreateContact(connectionId, event.phone, event.contactName);
+      if (!contact.photoUrl) {
+        // Fire-and-forget: a WhatsApp profile-picture lookup must never
+        // delay showing the message itself. Best-effort — getContactPhoto
+        // already swallows its own errors and resolves null.
+        provider
+          .getContactPhoto(event.chatId)
+          .then((photoUrl) => (photoUrl ? conversationsService.updateContactPhoto(contact.id, photoUrl) : undefined))
+          .catch(() => undefined);
+      }
       const { conversation, isNewConversation } = await conversationsService.findOrOpenConversationForInboundMessage(
         connectionId,
         contact.id
@@ -75,12 +108,17 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
       });
 
       if (event.mediaBuffer) {
-        // Real media persistence (disk/object storage) is wired the same
-        // way as agent-uploaded attachments — see messages.routes upload
-        // handler. Kept out of the hot inbound path here to avoid blocking
-        // on disk I/O inside the provider event callback; a background
-        // worker persists it and updates the attachment row (see docs).
-        logger.info({ messageId: message.id }, "inbound media received, persisting asynchronously");
+        const mimeType = event.mediaMimeType ?? "application/octet-stream";
+        const ext = extensionFor(mimeType, event.mediaFileName);
+        const storageKey = `${randomUUID()}${ext}`;
+        fs.writeFileSync(path.join(env.UPLOAD_DIR, storageKey), event.mediaBuffer);
+        await messagesService.addAttachment(message.id, {
+          fileName: event.mediaFileName ?? `arquivo${ext}`,
+          mimeType,
+          sizeBytes: event.mediaBuffer.length,
+          storageKey,
+          kind: event.type,
+        });
       }
       if (event.latitude && event.longitude) {
         await messagesService.addAttachment(message.id, {
@@ -122,6 +160,26 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
   provider.onDelivery(async (event) => {
     const message = await messagesService.updateMessageStatusByProviderId(event.providerMessageId, event.status);
     if (message) realtimeEvents.messageStatusChanged(message.conversationId);
+  });
+
+  provider.onHistorySync(async (event) => {
+    try {
+      for (const c of event.contacts) {
+        if (!c.photoUrl) continue;
+        // Best-effort: only touches contacts we already know about (created
+        // by a live message or by this same import) — never creates a
+        // Contact row just to hold a photo with no conversation behind it.
+        await prisma.contact
+          .updateMany({ where: { whatsappConnectionId: connectionId, phone: c.phone, photoUrl: null }, data: { photoUrl: c.photoUrl } })
+          .catch(() => undefined);
+      }
+      if (event.messages.length > 0) {
+        await conversationsService.importHistoricalMessages(connectionId, event.messages);
+        logger.info({ connectionId, count: event.messages.length }, "imported a WhatsApp history sync batch");
+      }
+    } catch (err) {
+      logger.error({ err, connectionId }, "failed to import WhatsApp history sync batch");
+    }
   });
 
   provider.onReaction(async (event) => {
@@ -223,6 +281,15 @@ export async function deleteConnection(connectionId: string): Promise<void> {
   const agentCount = await prisma.user.count({ where: { whatsappConnectionId: connectionId } });
   if (agentCount > 0) {
     throw Errors.badRequest("Existem atendentes vinculados a esta conexao — reatribua-os antes de excluir");
+  }
+  // Contacts/conversations/messages keep a foreign key to this connection
+  // (ON DELETE RESTRICT — the history must never silently disappear), so a
+  // connection that has ever exchanged a message can't actually be deleted.
+  // Checked explicitly here so the admin gets a clear message instead of a
+  // raw foreign-key-violation 500 from the DELETE below.
+  const contactCount = await prisma.contact.count({ where: { whatsappConnectionId: connectionId } });
+  if (contactCount > 0) {
+    throw Errors.badRequest("Esta conexao tem historico de conversas e não pode ser excluida — o historico é preservado para sempre.");
   }
   const provider = providers.get(connectionId);
   // Only an actually-linked session needs an explicit disconnect first — a

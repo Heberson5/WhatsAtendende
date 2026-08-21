@@ -9,7 +9,13 @@ export function connectSocket(accessToken: string): Socket {
   socket = io({
     path: "/socket.io",
     auth: { token: accessToken },
-    transports: ["websocket"],
+    // Websocket-only had no fallback: if any hop between the browser and the
+    // VPS (a carrier/corporate proxy, a misbehaving intermediary) strips the
+    // Upgrade header, the socket never connects and the whole app silently
+    // loses realtime — inbound messages, delivery/read ticks, queue updates
+    // — with nothing on screen to explain why. Polling first, then upgrading
+    // to a websocket, is socket.io's own default and degrades gracefully.
+    transports: ["polling", "websocket"],
   });
   return socket;
 }

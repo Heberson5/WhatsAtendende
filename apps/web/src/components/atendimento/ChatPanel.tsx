@@ -165,8 +165,12 @@ export function ChatPanel({ conversation, onClosed, onBack }: { conversation: Co
               <ArrowLeft className="h-4 w-4" />
             </button>
           )}
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-alt text-sm font-semibold text-muted">
-            {displayName.slice(0, 2).toUpperCase()}
+          <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full bg-surface-alt text-sm font-semibold text-muted">
+            {conversation.contact.photoUrl ? (
+              <img src={conversation.contact.photoUrl} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center">{displayName.slice(0, 2).toUpperCase()}</div>
+            )}
           </div>
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold">{displayName}</p>

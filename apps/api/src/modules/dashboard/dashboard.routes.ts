@@ -15,13 +15,14 @@ const querySchema = z.object({
   to: z.coerce.date().optional(),
   agentId: z.string().uuid().optional(),
   connectionId: z.union([z.string(), z.array(z.string())]).optional(),
+  tzOffsetMinutes: z.coerce.number().default(0),
 });
 
 dashboardRouter.get(
   "/",
   asyncHandler(async (req, res) => {
     const query = querySchema.parse(req.query);
-    const { from, to } = resolvePeriod(query.period, query.from, query.to);
+    const { from, to } = resolvePeriod(query.period, query.from, query.to, query.tzOffsetMinutes);
     const data = await getDashboard({ from, to, agentId: query.agentId, connectionIds: parseListParam(query.connectionId) });
     res.json(data);
   })
