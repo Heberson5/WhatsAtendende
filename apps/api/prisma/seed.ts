@@ -78,6 +78,25 @@ async function main() {
     whatsappConnectionId: vendas.id,
   });
 
+  // A real admin account, provisioned only from environment variables so
+  // its credentials never end up committed to the repo or printed in
+  // documentation — pass SEED_ADMIN_EMAIL/SEED_ADMIN_PASSWORD (and
+  // optionally SEED_ADMIN_NAME) when running this script. Upsert never
+  // touches passwordHash on an existing row (see upsertUser above), so
+  // re-running the seed can't silently reset a password that was already
+  // changed through the app.
+  if (process.env.SEED_ADMIN_EMAIL && process.env.SEED_ADMIN_PASSWORD) {
+    const name = process.env.SEED_ADMIN_NAME ?? "Administrador";
+    await upsertUser({
+      email: process.env.SEED_ADMIN_EMAIL,
+      fullName: name,
+      displayName: name,
+      role: "ADMIN",
+      password: process.env.SEED_ADMIN_PASSWORD,
+    });
+    console.log(`Admin provisionado a partir de variaveis de ambiente: ${process.env.SEED_ADMIN_EMAIL}`);
+  }
+
   console.log("Seed completed.");
 }
 

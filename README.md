@@ -204,16 +204,25 @@ WHATSAPP_AUTH_DIR=./whatsapp-sessions
 
 Depois, em **Configurações → WhatsApp** (perfil Administrador), clique em **Conectar WhatsApp** e escaneie o QR Code pelo aplicativo (Aparelhos conectados). A sessão fica persistida em `WHATSAPP_AUTH_DIR`.
 
-## Usuários padrão de desenvolvimento
+## Usuários de desenvolvimento e provisionamento de admin real
 
-Criados por `npm run prisma:seed -w apps/api` — **trocar todas as senhas antes de qualquer uso fora de desenvolvimento**:
+`npm run prisma:seed -w apps/api` cria alguns usuários e conexões de
+exemplo para desenvolvimento local — **as credenciais desses usuários de
+exemplo não ficam publicadas aqui**; consulte `apps/api/prisma/seed.ts` se
+precisar delas para testar localmente, e troque todas as senhas antes de
+qualquer uso fora de desenvolvimento.
 
-| Perfil | E-mail | Senha |
-|---|---|---|
-| Administrador | `admin@whatsatendende.dev` | `Admin@123` |
-| Gestor | `gestor@whatsatendende.dev` | `Gestor@123` |
-| Atendente | `joao@whatsatendende.dev` | `Agente@123` |
-| Atendente | `maria@whatsatendende.dev` | `Agente@123` |
+Para provisionar um administrador **real** (com e-mail e senha próprios,
+sem nada disso passar pelo Git), rode o seed com estas variáveis de
+ambiente:
+
+```bash
+SEED_ADMIN_EMAIL=seu-email@exemplo.com SEED_ADMIN_PASSWORD=sua-senha-forte \
+  npm run prisma:seed -w apps/api
+```
+
+Rodar de novo não sobrescreve a senha de um usuário que já existe — só cria
+os que ainda não existem no banco.
 
 ## Recuperação de senha por e-mail
 
