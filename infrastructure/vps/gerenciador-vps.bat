@@ -220,23 +220,34 @@ echo documentacao). Seguro rodar mais de uma vez: nao sobrescreve a
 echo senha de um usuario que ja existe.
 echo.
 echo Opcionalmente, informe abaixo um e-mail e senha REAIS para criar
-echo (se ainda nao existir) um administrador de verdade, sem que essa
+echo (ou corrigir a senha de) um administrador de verdade, sem que essa
 echo senha fique salva em nenhum arquivo. Deixe em branco para pular.
 echo Evite usar os caracteres %% ^ ^& " nessa senha (o Windows trata
 echo eles de forma especial). O texto digitado fica visivel na tela.
 echo.
 set ADMINEMAIL=
 set ADMINPASS=
+set FORCERESET=
 set /p ADMINEMAIL=E-mail do administrador real (ou Enter para pular):
-if not "%ADMINEMAIL%"=="" set /p ADMINPASS=Senha desse administrador:
+if "%ADMINEMAIL%"=="" goto SEED_RUN
+set /p ADMINPASS=Senha desse administrador:
+echo.
+echo Se esse e-mail JA EXISTE no banco e a senha nao esta batendo (foi
+echo o caso que te trouxe aqui), responda S para forcar a redefinicao.
+echo Se for a primeira vez cadastrando esse e-mail, pode responder N.
+set /p FORCERESET=Forcar redefinicao de senha se ja existir? (S/N):
 
+:SEED_RUN
 if "%ADMINEMAIL%"=="" (
     ssh -i "%KEY%" %USER%@%IP% "cd %PROJETO% && docker compose exec -T api npm run prisma:seed"
+) else if /I "%FORCERESET%"=="S" (
+    ssh -i "%KEY%" %USER%@%IP% "cd %PROJETO% && docker compose exec -T -e SEED_ADMIN_EMAIL=%ADMINEMAIL% -e SEED_ADMIN_PASSWORD=%ADMINPASS% -e SEED_ADMIN_FORCE_RESET=true api npm run prisma:seed"
 ) else (
     ssh -i "%KEY%" %USER%@%IP% "cd %PROJETO% && docker compose exec -T -e SEED_ADMIN_EMAIL=%ADMINEMAIL% -e SEED_ADMIN_PASSWORD=%ADMINPASS% api npm run prisma:seed"
 )
 set ADMINEMAIL=
 set ADMINPASS=
+set FORCERESET=
 
 pause
 goto MENU

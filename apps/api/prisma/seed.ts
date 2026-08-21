@@ -81,20 +81,24 @@ async function main() {
   // A real admin account, provisioned only from environment variables so
   // its credentials never end up committed to the repo or printed in
   // documentation — pass SEED_ADMIN_EMAIL/SEED_ADMIN_PASSWORD (and
-  // optionally SEED_ADMIN_NAME) when running this script. Upsert never
-  // touches passwordHash on an existing row (see upsertUser above), so
-  // re-running the seed can't silently reset a password that was already
-  // changed through the app.
+  // optionally SEED_ADMIN_NAME) when running this script. By default this
+  // never touches an existing row's passwordHash (same as upsertUser
+  // above), so re-running the seed can't silently reset a password that
+  // was already changed through the app — but if you genuinely need to
+  // reset a forgotten/mismatched password (e.g. bootstrapping the very
+  // first login on a fresh deploy), also pass SEED_ADMIN_FORCE_RESET=true
+  // to explicitly overwrite it.
   if (process.env.SEED_ADMIN_EMAIL && process.env.SEED_ADMIN_PASSWORD) {
+    const email = process.env.SEED_ADMIN_EMAIL;
     const name = process.env.SEED_ADMIN_NAME ?? "Administrador";
-    await upsertUser({
-      email: process.env.SEED_ADMIN_EMAIL,
-      fullName: name,
-      displayName: name,
-      role: "ADMIN",
-      password: process.env.SEED_ADMIN_PASSWORD,
+    const forceReset = process.env.SEED_ADMIN_FORCE_RESET === "true";
+    const passwordHash = await bcrypt.hash(process.env.SEED_ADMIN_PASSWORD, 12);
+    await prisma.user.upsert({
+      where: { email },
+      update: forceReset ? { passwordHash, role: "ADMIN", status: "ACTIVE" } : {},
+      create: { email, fullName: name, displayName: name, role: "ADMIN", passwordHash, status: "ACTIVE" },
     });
-    console.log(`Admin provisionado a partir de variaveis de ambiente: ${process.env.SEED_ADMIN_EMAIL}`);
+    console.log(`Admin provisionado a partir de variaveis de ambiente: ${email}${forceReset ? " (senha redefinida)" : ""}`);
   }
 
   console.log("Seed completed.");
