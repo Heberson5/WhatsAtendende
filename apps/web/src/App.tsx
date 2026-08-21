@@ -11,6 +11,7 @@ import DashboardPage from "./pages/dashboard/DashboardPage";
 import RelatoriosPage from "./pages/relatorios/RelatoriosPage";
 import UsuariosPage from "./pages/usuarios/UsuariosPage";
 import ConfiguracoesPage from "./pages/configuracoes/ConfiguracoesPage";
+import MeuPerfilPage from "./pages/perfil/MeuPerfilPage";
 
 function RoleHome() {
   const user = useAuthStore((s) => s.user);
@@ -35,6 +36,7 @@ export default function App() {
       <Route element={<ProtectedRoute />}>
         <Route element={<AppLayout />}>
           <Route path="/" element={<RoleHome />} />
+          <Route path="/perfil" element={<MeuPerfilPage />} />
 
           <Route element={<RoleRoute roles={["AGENT", "MANAGER", "ADMIN"]} />}>
             <Route path="/atendimento" element={<AtendimentoPage />} />

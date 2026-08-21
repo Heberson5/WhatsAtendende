@@ -48,6 +48,7 @@ describe("ProtectedRoute", () => {
         lastAccessAt: null,
         whatsappConnectionId: null,
         whatsappConnectionName: null,
+        photoUrl: null,
       },
       hydrated: true,
     });
@@ -79,6 +80,7 @@ describe("ProtectedRoute", () => {
         lastAccessAt: null,
         whatsappConnectionId: null,
         whatsappConnectionName: null,
+        photoUrl: null,
       },
       hydrated: true,
     });

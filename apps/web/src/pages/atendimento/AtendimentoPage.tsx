@@ -1,4 +1,5 @@
 import { useState } from "react";
+import clsx from "clsx";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Inbox, Plus, Radio, Users2 } from "lucide-react";
@@ -60,8 +61,13 @@ export default function AtendimentoPage() {
   const selectedConversation = mineQuery.data?.find((c) => c.id === selectedId) ?? null;
 
   return (
-    <div className="grid h-full grid-cols-[340px_1fr] overflow-hidden">
-      <div className="flex flex-col overflow-hidden border-r border-border bg-surface">
+    <div className="grid h-full overflow-hidden md:grid-cols-[340px_1fr]">
+      <div
+        className={clsx(
+          "flex-col overflow-hidden border-r border-border bg-surface md:flex",
+          selectedConversation ? "hidden" : "flex"
+        )}
+      >
         <div className="flex items-center gap-1.5 border-b border-border bg-surface-alt px-3 py-2">
           {hasFixedConnection ? (
             <span className="flex flex-1 items-center gap-1.5 text-xs font-medium text-muted">
@@ -121,9 +127,9 @@ export default function AtendimentoPage() {
         </div>
       </div>
 
-      <div className="overflow-hidden bg-[var(--color-bg)]">
+      <div className={clsx("overflow-hidden bg-[var(--color-bg)]", selectedConversation ? "block" : "hidden md:block")}>
         {selectedConversation ? (
-          <ChatPanel conversation={selectedConversation} onClosed={() => setSelectedId(null)} />
+          <ChatPanel conversation={selectedConversation} onClosed={() => setSelectedId(null)} onBack={() => setSelectedId(null)} />
         ) : (
           <div className="flex h-full items-center justify-center text-sm text-muted">
             Selecione um atendimento para visualizar a conversa

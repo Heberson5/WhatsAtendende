@@ -15,7 +15,7 @@ export default function ConfiguracoesPage() {
   const [tab, setTab] = useState<Tab>("whatsapp");
 
   return (
-    <div className="h-full overflow-auto p-6">
+    <div className="h-full overflow-auto p-3 sm:p-6">
       <div className="shadow-soft mb-6 flex w-fit gap-1 rounded-card border border-border bg-surface p-1">
         {TABS.map((t) => (
           <button

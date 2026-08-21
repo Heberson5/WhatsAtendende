@@ -53,7 +53,7 @@ export async function createUser(input: {
 
 export async function updateUser(
   id: string,
-  input: Partial<{ fullName: string; displayName: string; email: string; role: Role; whatsappConnectionId: string | null }>
+  input: Partial<{ fullName: string; displayName: string; email: string; role: Role; whatsappConnectionId: string | null; password: string }>
 ) {
   const current = await getUser(id);
   const nextRole = input.role ?? current.role;
@@ -64,16 +64,26 @@ export async function updateUser(
     "role" in input || "whatsappConnectionId" in input
       ? await resolveConnectionAssignment(nextRole, input.whatsappConnectionId ?? current.whatsappConnectionId)
       : undefined;
+  const passwordHash = input.password ? await bcrypt.hash(input.password, 12) : undefined;
 
-  return prisma.user.update({
+  const user = await prisma.user.update({
     where: { id },
     data: {
-      ...input,
+      fullName: input.fullName,
+      displayName: input.displayName,
+      role: input.role,
       email: input.email ? input.email.toLowerCase() : undefined,
       whatsappConnectionId,
+      passwordHash,
     },
     include: withConnection,
   });
+  // An admin setting a new password directly should also invalidate any
+  // existing sessions, same as the random-reset flow already does.
+  if (passwordHash) {
+    await prisma.refreshToken.updateMany({ where: { userId: id }, data: { revokedAt: new Date() } });
+  }
+  return user;
 }
 
 export async function setUserStatus(id: string, status: "ACTIVE" | "INACTIVE") {

@@ -60,7 +60,7 @@ export default function UsuariosPage() {
   }
 
   return (
-    <div className="flex h-full flex-col overflow-hidden p-6">
+    <div className="flex h-full flex-col overflow-hidden p-3 sm:p-6">
       <div className="mb-4 flex items-center justify-between">
         <p className="text-sm text-muted">Gerencie os atendentes, gestores e administradores do sistema.</p>
         <button

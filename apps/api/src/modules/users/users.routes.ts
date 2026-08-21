@@ -49,14 +49,26 @@ const updateSchema = z.object({
   email: z.string().email().optional(),
   role: z.enum(["ADMIN", "MANAGER", "AGENT"]).optional(),
   whatsappConnectionId: z.string().uuid().nullable().optional(),
+  password: z.string().min(8).optional(),
+  confirmPassword: z.string().min(8).optional(),
 });
 
 usersRouter.patch(
   "/:id",
   asyncHandler(async (req, res) => {
-    const input = updateSchema.parse(req.body);
+    const { confirmPassword, ...input } = updateSchema.parse(req.body);
+    if (input.password && input.password !== confirmPassword) {
+      return res.status(400).json({ error: "BAD_REQUEST", message: "As senhas nao coincidem" });
+    }
     const user = await usersService.updateUser(req.params.id, input);
-    await writeAudit({ userId: req.auth!.userId, action: "USER_UPDATED", entity: "User", entityId: user.id, ipAddress: req.ip ?? null, metadata: input });
+    await writeAudit({
+      userId: req.auth!.userId,
+      action: "USER_UPDATED",
+      entity: "User",
+      entityId: user.id,
+      ipAddress: req.ip ?? null,
+      metadata: { ...input, password: input.password ? "[alterada]" : undefined },
+    });
     res.json(toUserDTO(user));
   })
 );

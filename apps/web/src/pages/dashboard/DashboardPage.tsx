@@ -46,7 +46,7 @@ export default function DashboardPage() {
   });
 
   return (
-    <div className="h-full overflow-auto p-6">
+    <div className="h-full overflow-auto p-3 sm:p-6">
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <PeriodFilter value={period} onChange={setPeriod} />
         <select value={agentId} onChange={(e) => setAgentId(e.target.value)} className="focus-ring rounded-card border border-border bg-surface px-3 py-2 text-sm">

@@ -18,6 +18,11 @@ import { assertAgentCanAccessConversation, getConversationOrThrow } from "../con
 export const messagesRouter = Router();
 messagesRouter.use(requireAuth);
 
+// MANAGER/ADMIN can also own and work a conversation in Atendimento (see
+// conversations.routes.ts's own ATTENDANCE_ROLES) — restricting sending to
+// AGENT alone would let them accept a conversation but never reply in it.
+const ATTENDANCE_ROLES = ["AGENT", "MANAGER", "ADMIN"] as const;
+
 const ALLOWED_MIME_TYPES = new Set([
   "image/jpeg",
   "image/png",
@@ -80,7 +85,7 @@ messagesRouter.get(
 const sendTextSchema = z.object({ body: z.string().min(1).max(4096), replyToMessageId: z.string().uuid().optional() });
 messagesRouter.post(
   "/conversations/:conversationId/text",
-  requireRole("AGENT"),
+  requireRole(...ATTENDANCE_ROLES),
   asyncHandler(async (req, res) => {
     const conversation = await loadConversationForAgent(req.params.conversationId, req.auth!.userId);
     const { body, replyToMessageId } = sendTextSchema.parse(req.body);
@@ -113,7 +118,7 @@ messagesRouter.post(
 
 messagesRouter.post(
   "/conversations/:conversationId/file",
-  requireRole("AGENT"),
+  requireRole(...ATTENDANCE_ROLES),
   upload.single("file"),
   asyncHandler(async (req, res) => {
     const conversation = await loadConversationForAgent(req.params.conversationId, req.auth!.userId);
@@ -154,7 +159,7 @@ messagesRouter.post(
 const locationSchema = z.object({ latitude: z.number(), longitude: z.number() });
 messagesRouter.post(
   "/conversations/:conversationId/location",
-  requireRole("AGENT"),
+  requireRole(...ATTENDANCE_ROLES),
   asyncHandler(async (req, res) => {
     const conversation = await loadConversationForAgent(req.params.conversationId, req.auth!.userId);
     const { latitude, longitude } = locationSchema.parse(req.body);
@@ -181,7 +186,7 @@ messagesRouter.post(
 const reactionSchema = z.object({ emoji: z.string().max(8).nullable() });
 messagesRouter.post(
   "/:messageId/reaction",
-  requireRole("AGENT"),
+  requireRole(...ATTENDANCE_ROLES),
   asyncHandler(async (req, res) => {
     const { emoji } = reactionSchema.parse(req.body);
     const message = await service.getMessageWithConversation(req.params.messageId);

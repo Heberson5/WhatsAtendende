@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowRightLeft, CheckCircle2, Phone } from "lucide-react";
+import { ArrowLeft, ArrowRightLeft, CheckCircle2, Phone } from "lucide-react";
 import type { ConversationListItemDTO, MessageDTO, PaginatedResult } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { getSocket } from "../../lib/socket";
@@ -16,7 +16,7 @@ async function fetchMessages(conversationId: string, cursor?: string) {
   return res.data;
 }
 
-export function ChatPanel({ conversation, onClosed }: { conversation: ConversationListItemDTO; onClosed: () => void }) {
+export function ChatPanel({ conversation, onClosed, onBack }: { conversation: ConversationListItemDTO; onClosed: () => void; onBack?: () => void }) {
   const queryClient = useQueryClient();
   const [messages, setMessages] = useState<MessageDTO[]>([]);
   const [cursor, setCursor] = useState<string | undefined>(undefined);
@@ -63,8 +63,19 @@ export function ChatPanel({ conversation, onClosed }: { conversation: Conversati
 
   useEffect(() => {
     if (!messagesQuery.data) return;
-    setMessages(messagesQuery.data.items);
-    setCursor(messagesQuery.data.nextCursor ?? undefined);
+    // A realtime event (new message, status change) invalidates this query
+    // and it silently refetches page 1 (the most recent messages) in the
+    // background. Replacing `messages` wholesale on every such refetch would
+    // discard any older history the agent had already loaded by scrolling up
+    // via loadOlder — so only replace outright on the very first load for
+    // this conversation; afterwards, upsert page 1 into what's already there.
+    setMessages((prev) => {
+      if (prev.length === 0) return messagesQuery.data.items;
+      const byId = new Map(prev.map((m) => [m.id, m]));
+      for (const m of messagesQuery.data.items) byId.set(m.id, m);
+      return Array.from(byId.values()).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    });
+    setCursor((prev) => prev ?? messagesQuery.data.nextCursor ?? undefined);
   }, [messagesQuery.data]);
 
   useEffect(() => {
@@ -143,13 +154,22 @@ export function ChatPanel({ conversation, onClosed }: { conversation: Conversati
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b border-border bg-surface px-4 py-3">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-surface-alt text-sm font-semibold text-muted">
+      <div className="flex items-center justify-between gap-2 border-b border-border bg-surface px-2 py-3 sm:px-4">
+        <div className="flex min-w-0 items-center gap-3">
+          {onBack && (
+            <button
+              onClick={onBack}
+              className="focus-ring shrink-0 rounded-full p-1.5 text-muted hover:bg-surface-alt md:hidden"
+              aria-label="Voltar para a lista de atendimentos"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+          )}
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-alt text-sm font-semibold text-muted">
             {displayName.slice(0, 2).toUpperCase()}
           </div>
-          <div>
-            <p className="text-sm font-semibold">{displayName}</p>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold">{displayName}</p>
             <p className="flex items-center gap-1 text-xs text-muted">
               <Phone className="h-3 w-3" /> {conversation.contact.phone}
             </p>
@@ -160,18 +180,18 @@ export function ChatPanel({ conversation, onClosed }: { conversation: Conversati
             </span>
           )}
         </div>
-        <div className="flex gap-2">
+        <div className="flex shrink-0 gap-2">
           <button
             onClick={() => setTransferOpen(true)}
-            className="focus-ring flex items-center gap-1.5 rounded-card border border-border px-3 py-1.5 text-xs font-medium hover:bg-surface-alt"
+            className="focus-ring flex items-center gap-1.5 rounded-card border border-border px-2 py-1.5 text-xs font-medium hover:bg-surface-alt sm:px-3"
           >
-            <ArrowRightLeft className="h-3.5 w-3.5" /> Transferir
+            <ArrowRightLeft className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Transferir</span>
           </button>
           <button
             onClick={() => setCloseConfirmOpen(true)}
-            className="focus-ring flex items-center gap-1.5 rounded-card bg-primary px-3 py-1.5 text-xs font-medium text-primary-fg hover:opacity-90"
+            className="focus-ring flex items-center gap-1.5 rounded-card bg-primary px-2 py-1.5 text-xs font-medium text-primary-fg hover:opacity-90 sm:px-3"
           >
-            <CheckCircle2 className="h-3.5 w-3.5" /> Encerrar
+            <CheckCircle2 className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Encerrar</span>
           </button>
         </div>
       </div>

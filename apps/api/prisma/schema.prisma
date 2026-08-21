@@ -37,6 +37,7 @@ model User {
   role          Role          @default(AGENT)
   status        UserStatus    @default(ACTIVE)
   presence      AgentPresence @default(OFFLINE)
+  photoUrl      String?
   themePreference String      @default("AUTO") // LIGHT | DARK | AUTO
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt

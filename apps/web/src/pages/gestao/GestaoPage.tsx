@@ -63,7 +63,7 @@ export default function GestaoPage() {
   });
 
   return (
-    <div className="flex h-full flex-col overflow-hidden p-6">
+    <div className="flex h-full flex-col overflow-hidden p-3 sm:p-6">
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <PeriodFilter value={period} onChange={setPeriod} />
 
