@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Mic, Paperclip, Send, X, MapPin, Bold, Italic, Strikethrough } from "lucide-react";
+import { Mic, Paperclip, Send, X, MapPin, Bold, Italic, Strikethrough, Code } from "lucide-react";
 import type { MessageDTO } from "@whatsatendende/types";
 
 // A compact but representative slice of the WhatsApp Web emoji panel —
@@ -25,6 +25,62 @@ const EMOJI_GROUPS: { label: string; emojis: string[] }[] = [
 
 const MAX_TEXTAREA_LINES = 10;
 
+// Mirrors the textarea's own text box in an invisible off-screen div so we
+// can measure where a given character offset actually lands on screen —
+// textareas don't expose caret/selection pixel coordinates natively, only
+// character offsets. Used to position the floating formatting bubble right
+// above the selected text, the way Notion/Google Docs do it.
+const MIRRORED_STYLE_PROPS = [
+  "boxSizing",
+  "width",
+  "paddingTop",
+  "paddingRight",
+  "paddingBottom",
+  "paddingLeft",
+  "borderTopWidth",
+  "borderRightWidth",
+  "borderBottomWidth",
+  "borderLeftWidth",
+  "fontStyle",
+  "fontVariant",
+  "fontWeight",
+  "fontSize",
+  "lineHeight",
+  "fontFamily",
+  "textAlign",
+  "textTransform",
+  "letterSpacing",
+  "wordSpacing",
+  "whiteSpace",
+] as const;
+
+function getCaretRect(textarea: HTMLTextAreaElement, position: number): { top: number; left: number } {
+  const style = getComputedStyle(textarea);
+  const mirror = document.createElement("div");
+  mirror.style.position = "absolute";
+  mirror.style.visibility = "hidden";
+  mirror.style.whiteSpace = "pre-wrap";
+  mirror.style.wordWrap = "break-word";
+  mirror.style.top = "0";
+  mirror.style.left = "-9999px";
+  for (const prop of MIRRORED_STYLE_PROPS) mirror.style[prop] = style[prop];
+
+  mirror.textContent = textarea.value.slice(0, position);
+  const marker = document.createElement("span");
+  marker.textContent = textarea.value.slice(position) || ".";
+  mirror.appendChild(marker);
+  document.body.appendChild(mirror);
+
+  // Viewport-relative (not document-relative) — paired with the bubble
+  // being rendered with `position: fixed` below, so page scroll doesn't
+  // need accounting for separately.
+  const rect = textarea.getBoundingClientRect();
+  const top = rect.top + marker.offsetTop - textarea.scrollTop;
+  const left = rect.left + marker.offsetLeft - textarea.scrollLeft;
+  document.body.removeChild(mirror);
+  return { top, left };
+}
+
 export function Composer({
   onSendText,
   onSendFile,
@@ -47,6 +103,7 @@ export function Composer({
   const [recordSeconds, setRecordSeconds] = useState(0);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [caption, setCaption] = useState("");
+  const [selectionBubble, setSelectionBubble] = useState<{ top: number; left: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const emojiPanelRef = useRef<HTMLDivElement>(null);
@@ -84,6 +141,9 @@ export function Composer({
       await onSendText(text.trim(), replyTo?.id);
       setText("");
       onCancelReply();
+      // Otherwise focus lands nowhere after a send and the agent has to
+      // click back into the field before typing the next message.
+      requestAnimationFrame(() => textareaRef.current?.focus());
     } finally {
       setSending(false);
     }
@@ -105,6 +165,7 @@ export function Composer({
       await onSendFile(pendingFile, caption.trim() || undefined);
       setPendingFile(null);
       setCaption("");
+      requestAnimationFrame(() => textareaRef.current?.focus());
     } finally {
       setSending(false);
     }
@@ -161,8 +222,9 @@ export function Composer({
     setRecording(false);
   }
 
-  // WhatsApp Web's own formatting shortcuts: wrap the current selection (or
-  // insert empty markers at the caret) with the matching marker characters.
+  // WhatsApp Web's own formatting shortcuts/toolbar: wrap the current
+  // selection (or insert empty markers at the caret) with the matching
+  // marker characters.
   function wrapSelection(marker: string) {
     const el = textareaRef.current;
     if (!el) return;
@@ -170,11 +232,25 @@ export function Composer({
     const selected = value.slice(selectionStart, selectionEnd);
     const next = `${value.slice(0, selectionStart)}${marker}${selected}${marker}${value.slice(selectionEnd)}`;
     setText(next);
+    setSelectionBubble(null);
     requestAnimationFrame(() => {
       el.focus();
       const cursor = selected ? selectionEnd + marker.length * 2 : selectionStart + marker.length;
       el.setSelectionRange(cursor, cursor);
     });
+  }
+
+  // Shows a small floating "B I S" bubble right above the selected text —
+  // mirrors the selection toolbar in Notion/Google Docs — whenever the
+  // textarea's selection is non-empty; hides it otherwise.
+  function updateSelectionBubble() {
+    const el = textareaRef.current;
+    if (!el || el.selectionStart === el.selectionEnd) {
+      setSelectionBubble(null);
+      return;
+    }
+    const { top, left } = getCaretRect(el, el.selectionStart);
+    setSelectionBubble({ top: top - 44, left });
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -258,21 +334,71 @@ export function Composer({
     );
   }
 
+  const FORMAT_BUTTONS: { marker: string; label: string; Icon: typeof Bold; className?: string }[] = [
+    { marker: "*", label: "Negrito", Icon: Bold },
+    { marker: "_", label: "Itálico", Icon: Italic },
+    { marker: "~", label: "Riscado", Icon: Strikethrough },
+    { marker: "```", label: "Monoespaçado", Icon: Code, className: "text-[13px] font-mono" },
+  ];
+
   return (
-    <div className="border-t border-border bg-surface">
-      {replyTo && (
-        <div className="flex items-center justify-between border-b border-border bg-surface-alt px-4 py-2 text-xs">
-          <div className="min-w-0">
-            <p className="font-semibold">{replyTo.senderAgentDisplayName ?? "Cliente"}</p>
-            <p className="truncate text-muted">{replyTo.body ?? "Anexo"}</p>
-          </div>
-          <button onClick={onCancelReply} className="focus-ring shrink-0 rounded-full p-1 text-muted hover:bg-surface" aria-label="Cancelar resposta">
-            <X className="h-4 w-4" />
-          </button>
+    <>
+      {selectionBubble && (
+        <div
+          className="shadow-elevated fixed z-50 flex items-center gap-0.5 rounded-full border border-border bg-surface p-1"
+          style={{ top: selectionBubble.top, left: selectionBubble.left }}
+          // Keeps the textarea's selection alive — clicking the bubble
+          // would otherwise blur the textarea (collapsing the selection)
+          // before the button's onClick ever runs.
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          {FORMAT_BUTTONS.map(({ marker, label, Icon, className }) => (
+            <button
+              key={marker}
+              type="button"
+              onClick={() => wrapSelection(marker)}
+              className={`focus-ring rounded-full p-1.5 text-muted hover:bg-surface-alt hover:text-[var(--color-text)] ${className ?? ""}`}
+              aria-label={label}
+              title={label}
+            >
+              <Icon className="h-3.5 w-3.5" />
+            </button>
+          ))}
         </div>
       )}
 
-      <div className="flex items-end gap-1 px-3 py-2">
+      <div className="border-t border-border bg-surface">
+        {replyTo && (
+          <div className="flex items-center justify-between border-b border-border bg-surface-alt px-4 py-2 text-xs">
+            <div className="min-w-0">
+              <p className="font-semibold">{replyTo.senderAgentDisplayName ?? "Cliente"}</p>
+              <p className="truncate text-muted">{replyTo.body ?? "Anexo"}</p>
+            </div>
+            <button onClick={onCancelReply} className="focus-ring shrink-0 rounded-full p-1 text-muted hover:bg-surface" aria-label="Cancelar resposta">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+
+        {/* Always-visible formatting row, in addition to the bubble that
+            appears over an active selection — some agents never notice a
+            floating bubble, so the same controls stay reachable here too. */}
+        <div className="flex items-center gap-0.5 border-b border-border px-3 py-1" onMouseDown={(e) => e.preventDefault()}>
+          {FORMAT_BUTTONS.map(({ marker, label, Icon, className }) => (
+            <button
+              key={marker}
+              type="button"
+              onClick={() => wrapSelection(marker)}
+              className={`focus-ring rounded p-1.5 text-muted hover:bg-surface-alt hover:text-[var(--color-text)] ${className ?? ""}`}
+              aria-label={label}
+              title={label}
+            >
+              <Icon className="h-3.5 w-3.5" />
+            </button>
+          ))}
+        </div>
+
+        <div className="flex items-end gap-1 px-3 py-2">
         <div className="relative" ref={emojiPanelRef}>
           <button
             onClick={() => setShowEmoji((s) => !s)}
@@ -284,12 +410,6 @@ export function Composer({
           </button>
           {showEmoji && (
             <div className="shadow-elevated absolute bottom-12 left-0 z-10 w-72 rounded-card border border-border bg-surface p-2">
-              <div className="mb-1 flex items-center gap-2 border-b border-border px-1 pb-2 text-muted">
-                <Bold className="h-3.5 w-3.5" />
-                <Italic className="h-3.5 w-3.5" />
-                <Strikethrough className="h-3.5 w-3.5" />
-                <span className="ml-auto text-[10px]">Ctrl+B / Ctrl+I / Ctrl+Shift+X para formatar o texto</span>
-              </div>
               <div className="max-h-64 space-y-2 overflow-y-auto">
                 {EMOJI_GROUPS.map((group) => (
                   <div key={group.label}>
@@ -328,8 +448,14 @@ export function Composer({
         <textarea
           ref={textareaRef}
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value);
+            updateSelectionBubble();
+          }}
           onKeyDown={handleKeyDown}
+          onSelect={updateSelectionBubble}
+          onMouseUp={updateSelectionBubble}
+          onBlur={() => setSelectionBubble(null)}
           disabled={disabled}
           rows={1}
           placeholder="Digite uma mensagem"
@@ -351,7 +477,8 @@ export function Composer({
             <Mic className="h-5 w-5" />
           </button>
         )}
+        </div>
       </div>
-    </div>
+    </>
   );
 }
