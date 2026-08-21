@@ -160,7 +160,14 @@ export async function resetPassword(token: string, newPassword: string) {
 export function refreshCookieOptions() {
   return {
     httpOnly: true,
-    secure: env.NODE_ENV === "production",
+    // Secure must match how the app is actually served, not just NODE_ENV:
+    // a production deploy without its own TLS termination (e.g. this app's
+    // own docker-compose, published as plain http://<vps-ip>:8080) has
+    // browsers silently refuse to send a `Secure` cookie back, so every
+    // /auth/refresh call 401s and a page reload bounces the user to login.
+    // WEB_APP_URL already reflects the real public scheme (it's also used
+    // for CORS), so key off that instead of assuming production == https.
+    secure: env.WEB_APP_URL.startsWith("https://"),
     // strict, not lax: this app has no legitimate cross-site entry point
     // (no OAuth redirect back into it, no external link needs the cookie
     // attached), so there's no reason to allow it on cross-site navigation

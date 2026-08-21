@@ -67,7 +67,7 @@ export default function RelatoriosPage() {
   const rows: Record<string, unknown>[] = Array.isArray(data) ? data : [];
 
   return (
-    <div className="flex h-full flex-col overflow-hidden p-6">
+    <div className="flex h-full flex-col overflow-hidden p-3 sm:p-6">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="shadow-soft flex gap-1 rounded-card border border-border bg-surface p-1">
           {TABS.map((t) => (
@@ -81,7 +81,7 @@ export default function RelatoriosPage() {
           ))}
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <PeriodFilter value={period} onChange={setPeriod} />
           <ConnectionFilter value={connectionIds} onChange={setConnectionIds} />
           <div className="relative">

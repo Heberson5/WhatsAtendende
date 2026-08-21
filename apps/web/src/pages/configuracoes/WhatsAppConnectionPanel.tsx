@@ -117,22 +117,22 @@ export function WhatsAppConnectionPanel() {
   });
 
   return (
-    <div className="max-w-xl space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="space-y-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-base font-semibold">Conexões de WhatsApp</h2>
           <p className="text-sm text-muted">Cada conexão é um número de WhatsApp independente. Nomeie-as e atribua atendentes a cada uma em Usuários.</p>
         </div>
         <button
           onClick={() => setCreating(true)}
-          className="focus-ring flex items-center gap-1.5 rounded-card bg-primary px-3 py-2 text-sm font-semibold text-primary-fg hover:opacity-90"
+          className="focus-ring flex shrink-0 items-center gap-1.5 self-start rounded-card bg-primary px-3 py-2 text-sm font-semibold text-primary-fg hover:opacity-90"
         >
           <Plus className="h-4 w-4" /> Nova conexão
         </button>
       </div>
 
       {creating && (
-        <div className="shadow-soft flex items-center gap-2 rounded-card border border-border bg-surface p-4">
+        <div className="shadow-soft flex max-w-md flex-col items-stretch gap-2 rounded-card border border-border bg-surface p-4 sm:max-w-lg sm:flex-row sm:items-center">
           <input
             autoFocus
             value={newName}
@@ -167,9 +167,9 @@ export function WhatsAppConnectionPanel() {
         </div>
       )}
 
-      <div className="space-y-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {connections?.map((connection) => (
-          <div key={connection.id} className="shadow-soft rounded-card border border-border bg-surface p-5">
+          <div key={connection.id} className="shadow-soft flex flex-col rounded-card border border-border bg-surface p-5">
             <div className="mb-3 flex items-center justify-between gap-3">
               {renamingId === connection.id ? (
                 <div className="flex flex-1 items-center gap-2">

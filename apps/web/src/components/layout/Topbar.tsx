@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { LogOut, Moon, Sun, Monitor } from "lucide-react";
+import { LogOut, Moon, Sun, Monitor, UserCircle, Menu } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
@@ -8,7 +8,7 @@ import { disconnectSocket } from "../../lib/socket";
 
 const PRESENCE_LABEL: Record<string, string> = { ONLINE: "Online", AWAY: "Ausente", OFFLINE: "Offline" };
 
-export function Topbar({ title }: { title: string }) {
+export function Topbar({ title, onMenuClick }: { title: string; onMenuClick?: () => void }) {
   const user = useAuthStore((s) => s.user);
   const clearSession = useAuthStore((s) => s.clearSession);
   const navigate = useNavigate();
@@ -23,10 +23,20 @@ export function Topbar({ title }: { title: string }) {
   }
 
   return (
-    <header className="shadow-soft relative z-10 flex h-16 items-center justify-between border-b border-border bg-surface px-6">
-      <h1 className="text-lg font-semibold">{title}</h1>
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-1 rounded-full border border-border p-1">
+    <header className="shadow-soft relative z-10 flex h-16 items-center justify-between gap-2 border-b border-border bg-surface px-3 sm:px-6">
+      <div className="flex min-w-0 items-center gap-2">
+        <button
+          type="button"
+          onClick={onMenuClick}
+          className="focus-ring shrink-0 rounded-card p-1.5 text-muted hover:bg-surface-alt md:hidden"
+          aria-label="Abrir menu"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+        <h1 className="truncate text-lg font-semibold">{title}</h1>
+      </div>
+      <div className="flex shrink-0 items-center gap-2 sm:gap-4">
+        <div className="hidden items-center gap-1 rounded-full border border-border p-1 sm:flex">
           <button
             className={`focus-ring rounded-full p-1.5 ${preference === "LIGHT" ? "bg-secondary text-secondary-fg" : "text-muted"}`}
             onClick={() => setTheme("LIGHT")}
@@ -52,19 +62,32 @@ export function Topbar({ title }: { title: string }) {
 
         <div className="relative">
           <button
-            className="focus-ring flex items-center gap-2 rounded-card px-2 py-1.5 hover:bg-surface-alt"
+            className="focus-ring flex items-center gap-2 rounded-card px-1.5 py-1.5 hover:bg-surface-alt sm:px-2"
             onClick={() => setMenuOpen((o) => !o)}
           >
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-fg">
-              {user?.displayName.slice(0, 1).toUpperCase()}
+            <div className="h-8 w-8 shrink-0 overflow-hidden rounded-full bg-primary text-sm font-semibold text-primary-fg">
+              {user?.photoUrl ? (
+                <img src={user.photoUrl} alt={user.displayName} className="h-full w-full object-cover" />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center">{user?.displayName.slice(0, 1).toUpperCase()}</div>
+              )}
             </div>
-            <div className="text-left text-sm">
+            <div className="hidden text-left text-sm sm:block">
               <div className="font-medium">{user?.displayName}</div>
               <div className="text-xs text-muted">{user ? PRESENCE_LABEL[user.presence] : ""}</div>
             </div>
           </button>
           {menuOpen && (
             <div className="absolute right-0 top-12 z-20 w-44 rounded-card border border-border bg-surface py-1 shadow-lg">
+              <button
+                onClick={() => {
+                  setMenuOpen(false);
+                  navigate("/perfil");
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-surface-alt"
+              >
+                <UserCircle className="h-4 w-4" /> Meu Perfil
+              </button>
               <button
                 onClick={handleLogout}
                 className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-surface-alt"

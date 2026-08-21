@@ -19,6 +19,7 @@ import { reportsRouter } from "./modules/reports/reports.routes";
 import { settingsRouter } from "./modules/settings/settings.routes";
 import { auditRouter } from "./modules/audit/audit.routes";
 import { whatsappRouter } from "./modules/whatsapp/whatsapp.routes";
+import { profileRouter } from "./modules/profile/profile.routes";
 
 export function createApp() {
   const app = express();
@@ -66,6 +67,7 @@ export function createApp() {
   );
 
   app.use("/uploads/branding", express.static(path.join(env.UPLOAD_DIR, "branding")));
+  app.use("/uploads/profile", express.static(path.join(env.UPLOAD_DIR, "profile")));
 
   app.get("/api/health", (_req, res) => res.json({ status: "ok", timestamp: new Date().toISOString() }));
 
@@ -79,6 +81,7 @@ export function createApp() {
   app.use("/api/settings", settingsRouter);
   app.use("/api/audit-logs", auditRouter);
   app.use("/api/whatsapp", whatsappRouter);
+  app.use("/api/profile", profileRouter);
 
   app.use((req, res) => {
     res.status(404).json({ error: "NOT_FOUND", message: `Rota nao encontrada: ${req.method} ${req.path}` });

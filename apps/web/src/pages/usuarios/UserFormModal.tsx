@@ -44,12 +44,18 @@ export function UserFormModal({
   });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!user && values.password !== values.confirmPassword) {
+    const wantsPasswordChange = !user || changingPassword;
+    if (wantsPasswordChange && (values.password || values.confirmPassword) && values.password !== values.confirmPassword) {
       setError("As senhas não coincidem");
+      return;
+    }
+    if (!user && !values.password) {
+      setError("Informe uma senha");
       return;
     }
     if (values.role === "AGENT" && !values.whatsappConnectionId) {
@@ -58,7 +64,8 @@ export function UserFormModal({
     }
     setLoading(true);
     try {
-      await onSubmit(values);
+      const payload = wantsPasswordChange ? values : { ...values, password: undefined, confirmPassword: undefined };
+      await onSubmit(payload);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao salvar usuário");
@@ -131,6 +138,47 @@ export function UserFormModal({
                 <input required type="password" minLength={8} value={values.confirmPassword} onChange={(e) => setValues((v) => ({ ...v, confirmPassword: e.target.value }))} className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm" />
               </Field>
             </>
+          )}
+
+          {user && (
+            <div className="rounded-card border border-border p-3">
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <input
+                  type="checkbox"
+                  checked={changingPassword}
+                  onChange={(e) => {
+                    setChangingPassword(e.target.checked);
+                    if (!e.target.checked) setValues((v) => ({ ...v, password: "", confirmPassword: "" }));
+                  }}
+                  className="focus-ring h-4 w-4 rounded border-border"
+                />
+                Trocar senha
+              </label>
+              {changingPassword && (
+                <div className="mt-3 space-y-3">
+                  <Field label="Nova senha">
+                    <input
+                      required
+                      type="password"
+                      minLength={8}
+                      value={values.password}
+                      onChange={(e) => setValues((v) => ({ ...v, password: e.target.value }))}
+                      className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm"
+                    />
+                  </Field>
+                  <Field label="Confirmar nova senha">
+                    <input
+                      required
+                      type="password"
+                      minLength={8}
+                      value={values.confirmPassword}
+                      onChange={(e) => setValues((v) => ({ ...v, confirmPassword: e.target.value }))}
+                      className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm"
+                    />
+                  </Field>
+                </div>
+              )}
+            </div>
           )}
         </div>
 

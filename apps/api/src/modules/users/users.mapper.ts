@@ -12,6 +12,7 @@ export function toUserDTO(user: UserWithConnection): UserDTO {
     role: user.role,
     status: user.status,
     presence: user.presence,
+    photoUrl: user.photoUrl,
     whatsappConnectionId: user.whatsappConnectionId,
     whatsappConnectionName: user.whatsappConnection?.name ?? null,
     createdAt: user.createdAt.toISOString(),

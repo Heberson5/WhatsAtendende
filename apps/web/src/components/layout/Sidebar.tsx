@@ -10,6 +10,7 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
+  X,
 } from "lucide-react";
 import type { Role } from "@whatsatendende/types";
 import { useAuthStore } from "../../store/auth-store";
@@ -31,7 +32,7 @@ const MENU_ITEMS: MenuItem[] = [
   { to: "/configuracoes", label: "Configurações", icon: Settings, roles: ["ADMIN"] },
 ];
 
-export function Sidebar() {
+export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: boolean; onMobileClose?: () => void }) {
   const [collapsed, setCollapsed] = useState(false);
   const user = useAuthStore((s) => s.user);
   const { data: branding } = useBranding();
@@ -39,13 +40,18 @@ export function Sidebar() {
   const visibleItems = MENU_ITEMS.filter((item) => user && item.roles.includes(user.role));
 
   return (
-    <aside
-      className={clsx(
-        "shadow-soft relative z-10 flex h-screen flex-col border-r border-border bg-surface transition-all duration-200",
-        collapsed ? "w-[72px]" : "w-64"
-      )}
-    >
-      <div className={clsx("flex h-16 items-center border-b border-border px-4", collapsed ? "justify-center" : "gap-3")}>
+    <>
+      {/* Backdrop: only ever rendered (and interactive) on mobile, where the
+          sidebar becomes an off-canvas overlay instead of sitting in flow. */}
+      {mobileOpen && <div className="fixed inset-0 z-30 bg-black/40 md:hidden" onClick={onMobileClose} aria-hidden />}
+      <aside
+        className={clsx(
+          "shadow-soft fixed inset-y-0 left-0 z-40 flex h-screen w-64 flex-col overflow-hidden rounded-r-card border border-border bg-surface transition-transform duration-200 md:relative md:inset-auto md:z-10 md:h-full md:translate-x-0 md:rounded-card md:transition-all",
+          mobileOpen ? "translate-x-0" : "-translate-x-full",
+          collapsed ? "md:w-[72px]" : "md:w-64"
+        )}
+      >
+      <div className={clsx("flex h-16 shrink-0 items-center border-b border-border px-4", collapsed ? "justify-center" : "gap-3")}>
         {!collapsed && (
           <>
             {branding?.logoUrl ? (
@@ -63,8 +69,16 @@ export function Sidebar() {
         )}
         <button
           type="button"
+          onClick={onMobileClose}
+          className="focus-ring flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted shadow-soft hover:text-[var(--color-text)] md:hidden"
+          aria-label="Fechar menu"
+        >
+          <X className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
           onClick={() => setCollapsed((c) => !c)}
-          className="focus-ring flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted shadow-soft hover:text-[var(--color-text)]"
+          className="focus-ring hidden h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted shadow-soft hover:text-[var(--color-text)] md:flex"
           aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
         >
           {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
@@ -76,6 +90,7 @@ export function Sidebar() {
           <NavLink
             key={item.to}
             to={item.to}
+            onClick={onMobileClose}
             className={({ isActive }) =>
               clsx(
                 "focus-ring flex items-center gap-3 rounded-card px-3 py-2.5 text-sm font-medium transition-colors",
@@ -89,6 +104,7 @@ export function Sidebar() {
           </NavLink>
         ))}
       </nav>
-    </aside>
+      </aside>
+    </>
   );
 }

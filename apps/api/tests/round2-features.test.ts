@@ -122,6 +122,25 @@ describe("transfer targets include MANAGER/ADMIN, who can also receive transfers
     const mine = await request(app).get("/api/conversations/mine").set("Authorization", `Bearer ${gestorToken}`);
     expect(mine.body.map((c: { id: string }) => c.id)).toContain(conversation.id);
   });
+
+  it("lets a MANAGER (not just AGENT) send a text message on a conversation they accepted", async () => {
+    // Regression test: messages.routes.ts used to gate every send endpoint
+    // behind requireRole("AGENT") alone, so a MANAGER/ADMIN could accept a
+    // conversation (allowed since round 37) but then get a 403 trying to
+    // reply in it.
+    await createTestUser({ email: "gestor4@test.dev", role: "MANAGER", displayName: "Gestora" });
+    const token = await loginAs("gestor4@test.dev");
+    const { conversation } = await createWaitingConversation("5511990007777", connectionId);
+
+    await request(app).post(`/api/conversations/${conversation.id}/accept`).set("Authorization", `Bearer ${token}`);
+    const sendRes = await request(app)
+      .post(`/api/messages/conversations/${conversation.id}/text`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ body: "Ola, em que posso ajudar?" });
+
+    expect(sendRes.status).toBe(201);
+    expect(sendRes.body.body).toBe("Ola, em que posso ajudar?");
+  });
 });
 
 describe("WhatsApp connection color and pairing-code connect", () => {

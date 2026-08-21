@@ -77,6 +77,7 @@ export interface UserDTO {
   role: Role;
   status: UserStatus;
   presence: AgentPresence;
+  photoUrl: string | null;
   whatsappConnectionId: string | null;
   whatsappConnectionName: string | null;
   createdAt: string;
