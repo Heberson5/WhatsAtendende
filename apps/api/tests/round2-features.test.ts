@@ -184,4 +184,26 @@ describe("WhatsApp connection color and pairing-code connect", () => {
     const otherContacts = await request(app).get(`/api/whatsapp/connections/${otherConnection.id}/contacts`).set("Authorization", `Bearer ${joaoToken}`);
     expect(otherContacts.status).toBe(403);
   }, 10000);
+
+  it("lets an ADMIN delete a connection that is mid-pairing (not yet CONNECTED), only blocking deletion of a truly linked one", async () => {
+    // Regression test for a real bug reported after deploy: a pairing
+    // attempt that never finished (e.g. no outbound network access to
+    // WhatsApp) used to leave the connection stuck in a non-DISCONNECTED
+    // state forever, and deleteConnection required exactly DISCONNECTED —
+    // so a failed pairing attempt permanently blocked deletion. It now only
+    // blocks deleting a connection that is actually CONNECTED.
+    await createTestUser({ email: "admin6@test.dev", role: "ADMIN" });
+    const token = await loginAs("admin6@test.dev");
+    const created = await request(app).post("/api/whatsapp/connections").set("Authorization", `Bearer ${token}`).send({ name: "Suporte4" });
+
+    await request(app).post(`/api/whatsapp/connections/${created.body.id}/connect`).set("Authorization", `Bearer ${token}`);
+    await new Promise((resolve) => setTimeout(resolve, 600)); // mock provider is QR_PENDING by ~400ms, well before CONNECTED at ~1.9s
+
+    const midPairing = await request(app).get("/api/whatsapp/connections").set("Authorization", `Bearer ${token}`);
+    const state = midPairing.body.find((c: { id: string }) => c.id === created.body.id).state;
+    expect(["CONNECTING", "QR_PENDING"]).toContain(state);
+
+    const deleteRes = await request(app).delete(`/api/whatsapp/connections/${created.body.id}`).set("Authorization", `Bearer ${token}`);
+    expect(deleteRes.status).toBe(204);
+  });
 });

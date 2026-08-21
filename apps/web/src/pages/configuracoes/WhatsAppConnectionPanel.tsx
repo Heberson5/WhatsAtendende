@@ -117,7 +117,7 @@ export function WhatsAppConnectionPanel() {
   });
 
   return (
-    <div className="max-w-3xl space-y-4">
+    <div className="max-w-xl space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-base font-semibold">Conexões de WhatsApp</h2>
@@ -223,7 +223,16 @@ export function WhatsAppConnectionPanel() {
               )}
               <div className="flex items-center gap-2">
                 <span className={`rounded-full px-3 py-1 text-xs font-semibold ${STATE_COLOR[connection.state]}`}>{STATE_LABEL[connection.state]}</span>
-                {connection.state === "DISCONNECTED" && (
+                {(connection.state === "CONNECTING" || connection.state === "QR_PENDING" || connection.state === "CODE_PENDING") && (
+                  <button
+                    onClick={() => disconnectMutation.mutate(connection.id)}
+                    className="focus-ring rounded-card border border-border px-2 py-1 text-xs font-medium text-muted hover:bg-surface-alt"
+                    title="Cancela a tentativa de conexão em andamento"
+                  >
+                    Cancelar
+                  </button>
+                )}
+                {connection.state !== "CONNECTED" && (
                   <button
                     onClick={() => deleteMutation.mutate(connection.id)}
                     disabled={connection.agentCount > 0}
