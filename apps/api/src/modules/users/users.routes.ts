@@ -1,14 +1,32 @@
-import { Router } from "express";
+import { Router, type Request } from "express";
 import { z } from "zod";
+import { PERMISSION } from "@whatsatendende/types";
 import { asyncHandler } from "../../lib/async-handler";
-import { requireAuth, requireRole } from "../../middleware/auth";
+import { requireAuth } from "../../middleware/auth";
+import { requirePermission } from "../../lib/permissions";
 import { writeAudit } from "../../lib/audit";
+import { Errors } from "../../lib/http-error";
 import { toUserDTO } from "./users.mapper";
 import * as usersService from "./users.service";
 
 export const usersRouter = Router();
 
-usersRouter.use(requireAuth, requireRole("ADMIN"));
+usersRouter.use(requireAuth, requirePermission(PERMISSION.USUARIOS_GERENCIAR));
+
+// USUARIOS_GERENCIAR can be granted to a MANAGER, unlike every other
+// permission gate in this file, which is a real capability change: a
+// delegated (non-ADMIN) user manager must never be able to create a new
+// ADMIN, promote anyone to ADMIN, or touch an existing ADMIN account —
+// otherwise granting this one permission would be an unbounded privilege
+// escalation. A true ADMIN caller is exempt from all of this.
+async function assertNoAdminEscalation(req: Request, targetUserId?: string, requestedRole?: string) {
+  if (req.auth!.role === "ADMIN") return;
+  if (requestedRole === "ADMIN") throw Errors.forbidden("Somente um administrador pode conceder o perfil Administrador");
+  if (targetUserId) {
+    const target = await usersService.getUser(targetUserId);
+    if (target.role === "ADMIN") throw Errors.forbidden("Somente um administrador pode gerenciar outra conta de Administrador");
+  }
+}
 
 usersRouter.get(
   "/",
@@ -37,6 +55,7 @@ usersRouter.post(
     if (input.password !== input.confirmPassword) {
       return res.status(400).json({ error: "BAD_REQUEST", message: "As senhas nao coincidem" });
     }
+    await assertNoAdminEscalation(req, undefined, input.role);
     const user = await usersService.createUser(input);
     await writeAudit({ userId: req.auth!.userId, action: "USER_CREATED", entity: "User", entityId: user.id, ipAddress: req.ip ?? null, metadata: { email: user.email, role: user.role } });
     res.status(201).json(toUserDTO(user));
@@ -60,6 +79,7 @@ usersRouter.patch(
     if (input.password && input.password !== confirmPassword) {
       return res.status(400).json({ error: "BAD_REQUEST", message: "As senhas nao coincidem" });
     }
+    await assertNoAdminEscalation(req, req.params.id, input.role);
     const user = await usersService.updateUser(req.params.id, input);
     await writeAudit({
       userId: req.auth!.userId,
@@ -76,6 +96,7 @@ usersRouter.patch(
 usersRouter.post(
   "/:id/activate",
   asyncHandler(async (req, res) => {
+    await assertNoAdminEscalation(req, req.params.id);
     const user = await usersService.setUserStatus(req.params.id, "ACTIVE");
     await writeAudit({ userId: req.auth!.userId, action: "USER_ACTIVATED", entity: "User", entityId: user.id, ipAddress: req.ip ?? null });
     res.json(toUserDTO(user));
@@ -85,6 +106,7 @@ usersRouter.post(
 usersRouter.post(
   "/:id/deactivate",
   asyncHandler(async (req, res) => {
+    await assertNoAdminEscalation(req, req.params.id);
     const user = await usersService.setUserStatus(req.params.id, "INACTIVE");
     await writeAudit({ userId: req.auth!.userId, action: "USER_DEACTIVATED", entity: "User", entityId: user.id, ipAddress: req.ip ?? null });
     res.json(toUserDTO(user));
@@ -94,6 +116,7 @@ usersRouter.post(
 usersRouter.post(
   "/:id/reset-password",
   asyncHandler(async (req, res) => {
+    await assertNoAdminEscalation(req, req.params.id);
     const result = await usersService.resetUserPassword(req.params.id);
     await writeAudit({ userId: req.auth!.userId, action: "USER_PASSWORD_RESET_BY_ADMIN", entity: "User", entityId: req.params.id, ipAddress: req.ip ?? null });
     // Returned once, out-of-band delivery (e-mail) is a documented follow-up — see README roadmap.

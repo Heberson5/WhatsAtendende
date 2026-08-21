@@ -4,8 +4,10 @@ import path from "node:path";
 import fs from "node:fs";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { PERMISSION } from "@whatsatendende/types";
 import { asyncHandler } from "../../lib/async-handler";
-import { requireAuth, requireRole } from "../../middleware/auth";
+import { requireAuth } from "../../middleware/auth";
+import { requirePermission } from "../../lib/permissions";
 import { verifyAccessToken } from "../auth/jwt";
 import { Errors } from "../../lib/http-error";
 import { env } from "../../config/env";
@@ -63,9 +65,10 @@ messagesRouter.get(
 messagesRouter.use(requireAuth);
 
 // MANAGER/ADMIN can also own and work a conversation in Atendimento (see
-// conversations.routes.ts's own ATTENDANCE_ROLES) — restricting sending to
-// AGENT alone would let them accept a conversation but never reply in it.
-const ATTENDANCE_ROLES = ["AGENT", "MANAGER", "ADMIN"] as const;
+// conversations.routes.ts) — restricting sending to AGENT alone would let
+// them accept a conversation but never reply in it. Same configurable
+// permission as conversations.routes.ts's attendance gate.
+const requireAttendanceAccess = requirePermission(PERMISSION.ATENDIMENTO_ACESSAR);
 
 const ALLOWED_MIME_TYPES = new Set([
   "image/jpeg",
@@ -129,7 +132,7 @@ messagesRouter.get(
 const sendTextSchema = z.object({ body: z.string().min(1).max(4096), replyToMessageId: z.string().uuid().optional() });
 messagesRouter.post(
   "/conversations/:conversationId/text",
-  requireRole(...ATTENDANCE_ROLES),
+  requireAttendanceAccess,
   asyncHandler(async (req, res) => {
     const conversation = await loadConversationForAgent(req.params.conversationId, req.auth!.userId);
     const { body, replyToMessageId } = sendTextSchema.parse(req.body);
@@ -162,7 +165,7 @@ messagesRouter.post(
 
 messagesRouter.post(
   "/conversations/:conversationId/file",
-  requireRole(...ATTENDANCE_ROLES),
+  requireAttendanceAccess,
   upload.single("file"),
   asyncHandler(async (req, res) => {
     const conversation = await loadConversationForAgent(req.params.conversationId, req.auth!.userId);
@@ -203,7 +206,7 @@ messagesRouter.post(
 const locationSchema = z.object({ latitude: z.number(), longitude: z.number() });
 messagesRouter.post(
   "/conversations/:conversationId/location",
-  requireRole(...ATTENDANCE_ROLES),
+  requireAttendanceAccess,
   asyncHandler(async (req, res) => {
     const conversation = await loadConversationForAgent(req.params.conversationId, req.auth!.userId);
     const { latitude, longitude } = locationSchema.parse(req.body);
@@ -230,7 +233,7 @@ messagesRouter.post(
 const reactionSchema = z.object({ emoji: z.string().max(8).nullable() });
 messagesRouter.post(
   "/:messageId/reaction",
-  requireRole(...ATTENDANCE_ROLES),
+  requireAttendanceAccess,
   asyncHandler(async (req, res) => {
     const { emoji } = reactionSchema.parse(req.body);
     const message = await service.getMessageWithConversation(req.params.messageId);

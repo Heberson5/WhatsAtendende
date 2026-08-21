@@ -19,6 +19,7 @@ export async function resetDatabase() {
   await prisma.user.deleteMany();
   await prisma.systemSetting.deleteMany();
   await prisma.whatsAppConnection.deleteMany();
+  await prisma.rolePermission.deleteMany();
 }
 
 export async function createTestConnection(name: string) {

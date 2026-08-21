@@ -8,6 +8,7 @@ import { toUserDTO } from "../users/users.mapper";
 import * as authService from "./auth.service";
 import { refreshCookieOptions } from "./auth.service";
 import { prisma } from "../../lib/prisma";
+import { getPermissionsForRole } from "../../lib/permissions";
 
 export const authRouter = Router();
 
@@ -29,7 +30,7 @@ authRouter.post(
     const { email, password } = loginSchema.parse(req.body);
     const { accessToken, refreshToken, user } = await authService.login(email, password, req.ip ?? null);
     res.cookie("refreshToken", refreshToken, refreshCookieOptions());
-    res.json({ accessToken, user: toUserDTO(user) });
+    res.json({ accessToken, user: toUserDTO(user), permissions: await getPermissionsForRole(user.role) });
   })
 );
 
@@ -40,7 +41,7 @@ authRouter.post(
     if (!token) return res.status(401).json({ error: "UNAUTHORIZED", message: "Sessao nao encontrada" });
     const { accessToken, refreshToken, user } = await authService.refresh(token);
     res.cookie("refreshToken", refreshToken, refreshCookieOptions());
-    res.json({ accessToken, user: toUserDTO(user) });
+    res.json({ accessToken, user: toUserDTO(user), permissions: await getPermissionsForRole(user.role) });
   })
 );
 
@@ -60,7 +61,7 @@ authRouter.get(
   requireAuth,
   asyncHandler(async (req, res) => {
     const user = await prisma.user.findUniqueOrThrow({ where: { id: req.auth!.userId }, include: { whatsappConnection: true } });
-    res.json(toUserDTO(user));
+    res.json({ ...toUserDTO(user), permissions: await getPermissionsForRole(user.role) });
   })
 );
 

@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ArrowLeft, ArrowRightLeft, CheckCircle2, Phone } from "lucide-react";
-import type { ConversationListItemDTO, MessageDTO, PaginatedResult } from "@whatsatendende/types";
+import { PERMISSION, type ConversationListItemDTO, type MessageDTO, type PaginatedResult } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { getSocket } from "../../lib/socket";
+import { useAuthStore } from "../../store/auth-store";
 import { MessageBubble } from "./MessageBubble";
 import { Composer } from "./Composer";
 import { TransferModal } from "./TransferModal";
@@ -18,6 +19,9 @@ async function fetchMessages(conversationId: string, cursor?: string) {
 
 export function ChatPanel({ conversation, onClosed, onBack }: { conversation: ConversationListItemDTO; onClosed: () => void; onBack?: () => void }) {
   const queryClient = useQueryClient();
+  const permissions = useAuthStore((s) => s.permissions);
+  const canTransfer = permissions?.[PERMISSION.ATENDIMENTO_TRANSFERIR];
+  const canClose = permissions?.[PERMISSION.ATENDIMENTO_ENCERRAR];
   const [messages, setMessages] = useState<MessageDTO[]>([]);
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -185,18 +189,22 @@ export function ChatPanel({ conversation, onClosed, onBack }: { conversation: Co
           )}
         </div>
         <div className="flex shrink-0 gap-2">
-          <button
-            onClick={() => setTransferOpen(true)}
-            className="focus-ring flex items-center gap-1.5 rounded-card border border-border px-2 py-1.5 text-xs font-medium hover:bg-surface-alt sm:px-3"
-          >
-            <ArrowRightLeft className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Transferir</span>
-          </button>
-          <button
-            onClick={() => setCloseConfirmOpen(true)}
-            className="focus-ring flex items-center gap-1.5 rounded-card bg-primary px-2 py-1.5 text-xs font-medium text-primary-fg hover:opacity-90 sm:px-3"
-          >
-            <CheckCircle2 className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Encerrar</span>
-          </button>
+          {canTransfer && (
+            <button
+              onClick={() => setTransferOpen(true)}
+              className="focus-ring flex items-center gap-1.5 rounded-card border border-border px-2 py-1.5 text-xs font-medium hover:bg-surface-alt sm:px-3"
+            >
+              <ArrowRightLeft className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Transferir</span>
+            </button>
+          )}
+          {canClose && (
+            <button
+              onClick={() => setCloseConfirmOpen(true)}
+              className="focus-ring flex items-center gap-1.5 rounded-card bg-primary px-2 py-1.5 text-xs font-medium text-primary-fg hover:opacity-90 sm:px-3"
+            >
+              <CheckCircle2 className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Encerrar</span>
+            </button>
+          )}
         </div>
       </div>
 

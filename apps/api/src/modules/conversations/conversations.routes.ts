@@ -1,7 +1,9 @@
 import { Router } from "express";
 import { z } from "zod";
+import { PERMISSION } from "@whatsatendende/types";
 import { asyncHandler } from "../../lib/async-handler";
-import { requireAuth, requireRole } from "../../middleware/auth";
+import { requireAuth } from "../../middleware/auth";
+import { requirePermission } from "../../lib/permissions";
 import { writeAudit } from "../../lib/audit";
 import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
@@ -15,8 +17,10 @@ conversationsRouter.use(requireAuth);
 
 // Anyone who can attend conversations at all — see PROMPT: "o gestor e
 // administrador também devem ter o menu de atendimentos e poderão atender e
-// receber transferências".
-const ATTENDANCE_ROLES = ["AGENT", "MANAGER", "ADMIN"] as const;
+// receber transferências". Configurable per role in Configurações >
+// Permissões; defaults (AGENT/MANAGER true, ADMIN always true) reproduce
+// what used to be the hardcoded ATTENDANCE_ROLES check.
+const requireAttendanceAccess = requirePermission(PERMISSION.ATENDIMENTO_ACESSAR);
 
 // Queue: an AGENT only ever sees their own WhatsApp connection's queue.
 // MANAGER/ADMIN have no fixed connection, so they see every connection's
@@ -24,7 +28,7 @@ const ATTENDANCE_ROLES = ["AGENT", "MANAGER", "ADMIN"] as const;
 // Never reveals a message preview (mapper enforces this).
 conversationsRouter.get(
   "/queue",
-  requireRole(...ATTENDANCE_ROLES),
+  requireAttendanceAccess,
   asyncHandler(async (req, res) => {
     const agent = await prisma.user.findUnique({ where: { id: req.auth!.userId }, select: { whatsappConnectionId: true } });
     const connectionIds = agent?.whatsappConnectionId ? [agent.whatsappConnectionId] : parseListParam(req.query.connectionId as string | string[] | undefined);
@@ -36,7 +40,7 @@ conversationsRouter.get(
 
 conversationsRouter.get(
   "/mine",
-  requireRole(...ATTENDANCE_ROLES),
+  requireAttendanceAccess,
   asyncHandler(async (req, res) => {
     const conversations = await service.listMyConversations(req.auth!.userId);
     res.json(conversations.map((c) => toConversationListItemDTO(c, true)));
@@ -54,7 +58,7 @@ const startSchema = z.object({
 // must say which connection since they have none of their own.
 conversationsRouter.post(
   "/start",
-  requireRole(...ATTENDANCE_ROLES),
+  requireAttendanceAccess,
   asyncHandler(async (req, res) => {
     const { connectionId, phone, name } = startSchema.parse(req.body);
     let targetConnectionId = connectionId;
@@ -86,7 +90,7 @@ const oversightQuerySchema = z.object({
 });
 conversationsRouter.get(
   "/oversight",
-  requireRole("MANAGER", "ADMIN"),
+  requirePermission(PERMISSION.GESTAO_ACESSAR),
   asyncHandler(async (req, res) => {
     const filters = oversightQuerySchema.parse(req.query);
     const connectionIds = parseListParam(filters.connectionId);
@@ -118,7 +122,7 @@ conversationsRouter.get(
 
 conversationsRouter.post(
   "/:id/accept",
-  requireRole(...ATTENDANCE_ROLES),
+  requireAttendanceAccess,
   asyncHandler(async (req, res) => {
     const conversation = await service.acceptConversation(req.params.id, req.auth!.userId);
     await writeAudit({ userId: req.auth!.userId, action: "CONVERSATION_ACCEPTED", entity: "Conversation", entityId: conversation.id, ipAddress: req.ip ?? null });
@@ -130,7 +134,8 @@ conversationsRouter.post(
 const transferSchema = z.object({ toAgentId: z.string().uuid(), note: z.string().max(500).optional() });
 conversationsRouter.post(
   "/:id/transfer",
-  requireRole(...ATTENDANCE_ROLES),
+  requireAttendanceAccess,
+  requirePermission(PERMISSION.ATENDIMENTO_TRANSFERIR),
   asyncHandler(async (req, res) => {
     const existing = await service.getConversationOrThrow(req.params.id);
     service.assertAgentCanAccessConversation(existing, req.auth!);
@@ -144,7 +149,7 @@ conversationsRouter.post(
 
 conversationsRouter.post(
   "/:id/read",
-  requireRole(...ATTENDANCE_ROLES),
+  requireAttendanceAccess,
   asyncHandler(async (req, res) => {
     await service.markConversationRead(req.params.id, req.auth!.userId);
     res.status(204).end();
@@ -153,7 +158,8 @@ conversationsRouter.post(
 
 conversationsRouter.post(
   "/:id/close",
-  requireRole(...ATTENDANCE_ROLES),
+  requireAttendanceAccess,
+  requirePermission(PERMISSION.ATENDIMENTO_ENCERRAR),
   asyncHandler(async (req, res) => {
     const existing = await service.getConversationOrThrow(req.params.id);
     service.assertAgentCanAccessConversation(existing, req.auth!);

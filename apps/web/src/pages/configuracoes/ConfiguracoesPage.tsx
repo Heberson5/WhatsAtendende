@@ -2,22 +2,31 @@ import { useState } from "react";
 import { WhatsAppConnectionPanel } from "./WhatsAppConnectionPanel";
 import { BrandingPanel } from "./BrandingPanel";
 import { EmailSettingsPanel } from "./EmailSettingsPanel";
+import { PermissionsPanel } from "./PermissionsPanel";
+import { useAuthStore } from "../../store/auth-store";
 
-type Tab = "whatsapp" | "branding" | "email";
+type Tab = "whatsapp" | "branding" | "email" | "permissoes";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "whatsapp", label: "WhatsApp" },
   { key: "branding", label: "Identidade visual" },
   { key: "email", label: "E-mail" },
+  { key: "permissoes", label: "Permissões" },
 ];
 
 export default function ConfiguracoesPage() {
   const [tab, setTab] = useState<Tab>("whatsapp");
+  const role = useAuthStore((s) => s.user?.role);
+  // Configurações itself can be reached by a MANAGER granted the
+  // "configuracoes.gerenciar" permission, but the permissions matrix is
+  // always ADMIN-only on the backend (see permissions.routes.ts) — hiding
+  // this tab for anyone else keeps the UI honest about what they can do.
+  const visibleTabs = TABS.filter((t) => t.key !== "permissoes" || role === "ADMIN");
 
   return (
     <div className="h-full overflow-auto p-3 sm:p-6">
       <div className="shadow-soft mb-6 flex w-fit gap-1 rounded-card border border-border bg-surface p-1">
-        {TABS.map((t) => (
+        {visibleTabs.map((t) => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
@@ -31,6 +40,7 @@ export default function ConfiguracoesPage() {
       {tab === "whatsapp" && <WhatsAppConnectionPanel />}
       {tab === "branding" && <BrandingPanel />}
       {tab === "email" && <EmailSettingsPanel />}
+      {tab === "permissoes" && role === "ADMIN" && <PermissionsPanel />}
     </div>
   );
 }

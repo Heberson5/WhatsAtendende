@@ -32,7 +32,7 @@ api.interceptors.response.use(
         refreshPromise = api
           .post("/auth/refresh")
           .then((res) => {
-            useAuthStore.getState().setSession(res.data.accessToken, res.data.user);
+            useAuthStore.getState().setSession(res.data.accessToken, res.data.user, res.data.permissions);
             return res.data.accessToken as string;
           })
           .catch(() => {

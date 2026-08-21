@@ -1,13 +1,15 @@
 import { Router } from "express";
 import { z } from "zod";
+import { PERMISSION } from "@whatsatendende/types";
 import { asyncHandler } from "../../lib/async-handler";
-import { requireAuth, requireRole } from "../../middleware/auth";
+import { requireAuth } from "../../middleware/auth";
+import { requirePermission } from "../../lib/permissions";
 import { resolvePeriod } from "../../lib/period";
 import { parseListParam } from "../../lib/parse-list-param";
 import { getDashboard } from "./dashboard.service";
 
 export const dashboardRouter = Router();
-dashboardRouter.use(requireAuth, requireRole("ADMIN", "MANAGER"));
+dashboardRouter.use(requireAuth, requirePermission(PERMISSION.DASHBOARD_ACESSAR));
 
 const querySchema = z.object({
   period: z.enum(["today", "yesterday", "last7days", "month", "lastMonth", "custom"]).default("today"),

@@ -12,7 +12,7 @@ export function useBootstrapSession() {
     if (hydrated) return;
     api
       .post("/auth/refresh")
-      .then((res) => setSession(res.data.accessToken, res.data.user))
+      .then((res) => setSession(res.data.accessToken, res.data.user, res.data.permissions))
       .catch(() => undefined)
       .finally(() => setHydrated());
     // eslint-disable-next-line react-hooks/exhaustive-deps

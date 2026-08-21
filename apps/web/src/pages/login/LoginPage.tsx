@@ -27,7 +27,7 @@ export default function LoginPage() {
     setError(null);
     try {
       const res = await api.post("/auth/login", { email, password });
-      setSession(res.data.accessToken, res.data.user);
+      setSession(res.data.accessToken, res.data.user, res.data.permissions);
       if (remember) localStorage.setItem("lastEmail", email);
       navigate("/");
     } catch (err) {

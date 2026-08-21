@@ -384,3 +384,19 @@ model Notification {
 
   @@index([userId, readAt])
 }
+
+// One row per (role, permission) an admin has explicitly toggled away from
+// its hardcoded default (see PERMISSION_DEFINITIONS in @whatsatendende/types)
+// — an empty table reproduces today's fixed role checks exactly. ADMIN never
+// gets a row here: it always has every permission, checked directly in code,
+// so the platform can never lock its own admins out of the permissions
+// screen that controls this table.
+model RolePermission {
+  id         String   @id @default(uuid())
+  role       Role
+  permission String
+  allowed    Boolean
+  updatedAt  DateTime @updatedAt
+
+  @@unique([role, permission])
+}
