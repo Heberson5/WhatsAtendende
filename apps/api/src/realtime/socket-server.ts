@@ -39,10 +39,25 @@ export function createSocketServer(httpServer: HttpServer): SocketIOServer {
     }
     if (auth.role === "MANAGER" || auth.role === "ADMIN") socket.join(ROOMS.oversight());
 
-    socket.on("conversation:join", (conversationId: string) => {
+    // Unlike the REST layer, a socket event has no per-route middleware to
+    // enforce this, so the ownership check has to happen right here: an
+    // AGENT must only be able to join the room for a conversation actually
+    // assigned to them, otherwise they could listen in on another agent's
+    // conversation just by guessing/observing its ID. MANAGER/ADMIN keep
+    // the same unrestricted oversight access they already have via REST.
+    socket.on("conversation:join", async (conversationId: unknown) => {
+      if (typeof conversationId !== "string" || !conversationId) return;
+      if (auth.role === "AGENT") {
+        const conversation = await prisma.conversation.findUnique({
+          where: { id: conversationId },
+          select: { assignedAgentId: true },
+        });
+        if (!conversation || conversation.assignedAgentId !== auth.userId) return;
+      }
       socket.join(ROOMS.conversation(conversationId));
     });
-    socket.on("conversation:leave", (conversationId: string) => {
+    socket.on("conversation:leave", (conversationId: unknown) => {
+      if (typeof conversationId !== "string" || !conversationId) return;
       socket.leave(ROOMS.conversation(conversationId));
     });
 
