@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, Download, FileSpreadsheet, FileText } from "lucide-react";
+import { ChevronDown, Columns3, Download, FileSpreadsheet, FileText } from "lucide-react";
 import { api } from "../../lib/api";
 import { PeriodFilter, type PeriodValue } from "../../components/common/PeriodFilter";
 import { ConnectionFilter } from "../../components/common/ConnectionFilter";
@@ -24,6 +24,21 @@ export default function RelatoriosPage() {
   const [period, setPeriod] = useState<PeriodValue>({ period: "month" });
   const [connectionIds, setConnectionIds] = useState<string[]>([]);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [columnsMenuOpen, setColumnsMenuOpen] = useState(false);
+  // Hidden columns, kept per report tab (each has a different column set) —
+  // see PROMPT: "poder remover algumas colunas, para que o relatório fique
+  // melhor apresentável ao visualizar ou extrair". Applies to both the
+  // on-screen table and every export format.
+  const [hiddenColumnsByTab, setHiddenColumnsByTab] = useState<Partial<Record<ReportKind, string[]>>>({});
+  const columnsMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (columnsMenuRef.current && !columnsMenuRef.current.contains(e.target as Node)) setColumnsMenuOpen(false);
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const { data, isLoading } = useQuery({
     queryKey: ["report", tab, period, connectionIds],
@@ -40,6 +55,19 @@ export default function RelatoriosPage() {
     },
   });
 
+  const rows: Record<string, unknown>[] = Array.isArray(data) ? data : [];
+  const allColumns = rows[0] ? Object.keys(rows[0]) : [];
+  const hiddenColumns = hiddenColumnsByTab[tab] ?? [];
+  const visibleColumns = allColumns.filter((c) => !hiddenColumns.includes(c));
+
+  function toggleColumn(column: string) {
+    setHiddenColumnsByTab((prev) => {
+      const current = prev[tab] ?? [];
+      const next = current.includes(column) ? current.filter((c) => c !== column) : [...current, column];
+      return { ...prev, [tab]: next };
+    });
+  }
+
   // See PROMPT: "Relatórios poder extrair em PDF e em xlsx" — alongside the
   // pre-existing CSV export, same three formats on every tab.
   async function download(format: "csv" | "pdf" | "xlsx") {
@@ -51,6 +79,7 @@ export default function RelatoriosPage() {
         to: period.to,
         connectionId: connectionIds.length ? connectionIds : undefined,
         format,
+        columns: allColumns.length ? visibleColumns.join(",") : undefined,
       },
       responseType: "blob",
     });
@@ -63,8 +92,6 @@ export default function RelatoriosPage() {
     link.remove();
     window.URL.revokeObjectURL(url);
   }
-
-  const rows: Record<string, unknown>[] = Array.isArray(data) ? data : [];
 
   return (
     <div className="flex h-full flex-col overflow-hidden p-3 sm:p-6">
@@ -84,6 +111,28 @@ export default function RelatoriosPage() {
         <div className="flex flex-wrap items-center gap-3">
           <PeriodFilter value={period} onChange={setPeriod} />
           <ConnectionFilter value={connectionIds} onChange={setConnectionIds} />
+          {tab !== "messages" && allColumns.length > 0 && (
+            <div ref={columnsMenuRef} className="relative">
+              <button
+                onClick={() => setColumnsMenuOpen((o) => !o)}
+                className="focus-ring flex items-center gap-1.5 rounded-card border border-border px-3 py-2 text-sm font-medium hover:bg-surface-alt"
+              >
+                <Columns3 className="h-4 w-4" /> Colunas
+                {hiddenColumns.length > 0 && <span className="rounded-full bg-primary/15 px-1.5 text-xs text-primary">{visibleColumns.length}</span>}
+                <ChevronDown className="h-3.5 w-3.5 text-muted" />
+              </button>
+              {columnsMenuOpen && (
+                <div className="shadow-soft absolute right-0 top-full z-20 mt-1 max-h-72 w-56 overflow-y-auto rounded-card border border-border bg-surface p-2">
+                  {allColumns.map((column) => (
+                    <label key={column} className="flex cursor-pointer items-center gap-2 rounded-card px-2 py-1.5 text-sm hover:bg-surface-alt">
+                      <input type="checkbox" checked={!hiddenColumns.includes(column)} onChange={() => toggleColumn(column)} />
+                      {column}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           <div className="relative">
             <button
               onClick={() => setExportMenuOpen((o) => !o)}
@@ -126,7 +175,7 @@ export default function RelatoriosPage() {
         <div className="shadow-soft flex-1 overflow-auto rounded-card border border-border bg-surface">
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-surface-alt text-left text-xs uppercase tracking-wide text-muted">
-              <tr>{rows[0] && Object.keys(rows[0]).map((key) => <th key={key} className="whitespace-nowrap px-4 py-3">{key}</th>)}</tr>
+              <tr>{visibleColumns.map((key) => <th key={key} className="whitespace-nowrap px-4 py-3">{key}</th>)}</tr>
             </thead>
             <tbody>
               {isLoading && (
@@ -141,9 +190,9 @@ export default function RelatoriosPage() {
               )}
               {rows.map((row, i) => (
                 <tr key={i} className="border-t border-border hover:bg-surface-alt">
-                  {Object.values(row).map((value, j) => (
-                    <td key={j} className="whitespace-nowrap px-4 py-2.5">
-                      {String(value ?? "-")}
+                  {visibleColumns.map((key) => (
+                    <td key={key} className="whitespace-nowrap px-4 py-2.5">
+                      {String(row[key] ?? "-")}
                     </td>
                   ))}
                 </tr>

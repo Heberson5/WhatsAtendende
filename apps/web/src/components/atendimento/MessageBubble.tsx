@@ -110,11 +110,14 @@ export function MessageBubble({
   onReply,
   onReact,
   repliedMessage,
+  readOnly,
 }: {
   message: MessageDTO;
   onReply: (message: MessageDTO) => void;
   onReact: (message: MessageDTO, emoji: string) => void;
   repliedMessage?: MessageDTO;
+  /** Gestão's oversight view: same bubble rendering as Atendimento, but no reply/react — gestores only watch. */
+  readOnly?: boolean;
 }) {
   const [showReactions, setShowReactions] = useState(false);
   const [openMedia, setOpenMedia] = useState<LightboxMedia | null>(null);
@@ -212,7 +215,9 @@ export function MessageBubble({
   return (
     <>
       <div className={clsx("group flex items-end gap-1", isOutbound ? "justify-end" : "justify-start")}>
-        {isOutbound ? (
+        {readOnly ? (
+          bubble
+        ) : isOutbound ? (
           <>
             {actions}
             {bubble}
