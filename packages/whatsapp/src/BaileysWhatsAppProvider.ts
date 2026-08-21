@@ -12,6 +12,8 @@ import type {
   ConnectOptions,
   ContactInfo,
   DeliveryEvent,
+  HistoryMessageEvent,
+  HistorySyncEvent,
   InboundMessageEvent,
   ReactionEvent,
   SendResult,
@@ -90,7 +92,14 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
       const socket = makeWASocket({
         auth: state,
         logger: this.logger as any,
-        syncFullHistory: false,
+        // Baileys gates BOTH the phone's address book sync (contacts.upsert/
+        // chats.upsert) and past-message history sync (messaging-history.set,
+        // handled below) behind this single flag — with it off, neither ever
+        // fires, which is exactly why "start a new conversation" showed no
+        // saved contacts and why old conversations never appeared. It only
+        // costs a one-time sync burst right after pairing/reconnecting, not
+        // an ongoing cost.
+        syncFullHistory: true,
         // Pairing-code linking and QR linking are mutually exclusive per
         // Baileys session: suppress the QR event entirely when a phone number
         // was given, since we're about to request a code instead.
@@ -174,6 +183,23 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
 
       socket.ev.on("contacts.upsert", (contacts) => this.upsertContacts(contacts));
       socket.ev.on("contacts.update", (contacts) => this.upsertContacts(contacts));
+
+      socket.ev.on("messaging-history.set", ({ contacts, messages }) => {
+        this.upsertContacts(contacts);
+        const converted: HistoryMessageEvent[] = [];
+        for (const message of messages) {
+          const chatId = message.key.remoteJid ?? "";
+          if (!chatId || isNonCustomerChat(chatId)) continue;
+          const entry = convertHistoryMessage(message, chatId);
+          if (entry) converted.push(entry);
+        }
+        if (converted.length > 0 || contacts.length > 0) {
+          this.emitter.emit("historySync", {
+            contacts: Array.from(this.contacts.values()),
+            messages: converted,
+          } satisfies HistorySyncEvent);
+        }
+      });
 
       socket.ev.on("messages.update", (updates) => {
         for (const update of updates) {
@@ -341,6 +367,10 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
     this.emitter.on("reaction", listener);
   }
 
+  onHistorySync(listener: (event: HistorySyncEvent) => void): void {
+    this.emitter.on("historySync", listener);
+  }
+
   private requireSocket(): WASocket {
     if (!this.socket || this.status.state !== "CONNECTED") {
       throw new Error("WhatsApp provider is not connected");
@@ -453,6 +483,52 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
  */
 function isNonCustomerChat(chatId: string): boolean {
   return chatId.endsWith("@g.us") || chatId.endsWith("@broadcast") || chatId.endsWith("@newsletter");
+}
+
+/**
+ * Converts one WAMessage out of a `messaging-history.set` batch into our
+ * HistoryMessageEvent shape. Deliberately does NOT download media: a real
+ * business account's history sync can hand back thousands of messages in
+ * one batch, and re-downloading every past image/video/audio/document would
+ * be slow, rate-limit-risky, and balloon disk usage for content the agent
+ * may never need. Media messages are still imported (so the conversation
+ * thread and its timeline are complete) but without the attachment binary —
+ * MessageBubble shows a "media from before this system tracked it" state
+ * for those. Only TEXT/LOCATION/CONTACT (cheap, no binary) carry full content.
+ */
+function convertHistoryMessage(message: WAMessage, chatId: string): HistoryMessageEvent | null {
+  const content = message.message;
+  if (!content) return null;
+
+  const base = {
+    providerMessageId: message.key.id ?? "",
+    chatId,
+    phone: chatId.split("@")[0],
+    fromMe: Boolean(message.key.fromMe),
+    timestamp: new Date((Number(message.messageTimestamp) || Date.now() / 1000) * 1000),
+  };
+  if (!base.providerMessageId) return null;
+
+  if (content.conversation || content.extendedTextMessage?.text) {
+    return { ...base, type: "TEXT", body: content.conversation ?? content.extendedTextMessage?.text ?? "" };
+  }
+  if (content.locationMessage) {
+    return {
+      ...base,
+      type: "LOCATION",
+      body: null,
+      latitude: content.locationMessage.degreesLatitude ?? undefined,
+      longitude: content.locationMessage.degreesLongitude ?? undefined,
+    };
+  }
+  if (content.contactMessage) {
+    return { ...base, type: "CONTACT", body: null, vcard: content.contactMessage.vcard ?? undefined };
+  }
+  if (content.imageMessage) return { ...base, type: "IMAGE", body: content.imageMessage.caption ?? null };
+  if (content.videoMessage) return { ...base, type: "VIDEO", body: content.videoMessage.caption ?? null };
+  if (content.audioMessage) return { ...base, type: "AUDIO", body: null };
+  if (content.documentMessage) return { ...base, type: "DOCUMENT", body: content.documentMessage.title ?? null };
+  return null;
 }
 
 function mapBaileysReceiptToStatus(receipt: number): DeliveryEvent["status"] | null {

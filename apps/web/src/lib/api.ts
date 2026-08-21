@@ -9,6 +9,14 @@ export const api = axios.create({
 api.interceptors.request.use((config) => {
   const token = useAuthStore.getState().accessToken;
   if (token) config.headers.Authorization = `Bearer ${token}`;
+  // Dashboard/report "hoje", "este mês" etc. and every date/time column they
+  // print are computed server-side, but the API container's clock has no
+  // reason to sit in the viewer's own timezone — so every request to these
+  // endpoints carries the browser's UTC offset and the server computes
+  // "today" and formats dates against that instead of its own local time.
+  if (config.url?.startsWith("/reports") || config.url?.startsWith("/dashboard")) {
+    config.params = { ...config.params, tzOffsetMinutes: new Date().getTimezoneOffset() };
+  }
   return config;
 });
 

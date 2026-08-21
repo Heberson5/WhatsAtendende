@@ -8,6 +8,8 @@ export interface ReportParams {
   agentId?: string;
   /** Empty/undefined = every WhatsApp connection — see PROMPT: filtro podendo selecionar várias ou todas. */
   connectionIds?: string[];
+  /** Browser's UTC offset in minutes — see lib/period.ts. Only needed by reports that format a date/time column. */
+  tzOffsetMinutes?: number;
 }
 
 // Every report row is built with Portuguese keys directly — those keys
@@ -28,12 +30,18 @@ function minutes(ms: number | null): number | string {
   return ms === null ? "-" : Math.round(ms / 60000);
 }
 
-function formatDateTime(d: Date | null): string {
+// Formats in the browser's local time, not the server's (this API runs in a
+// container with no TZ set, i.e. UTC) — see lib/period.ts for the same
+// reasoning applied to period boundaries. Pure arithmetic, no IANA timezone
+// database needed since Brazil has had no DST since 2019.
+function formatDateTime(d: Date | null, tzOffsetMinutes = 0): string {
   if (!d) return "-";
-  return d.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).replace(",", "");
+  const local = new Date(d.getTime() - tzOffsetMinutes * 60_000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(local.getUTCDate())}/${pad(local.getUTCMonth() + 1)}/${local.getUTCFullYear()} ${pad(local.getUTCHours())}:${pad(local.getUTCMinutes())}`;
 }
 
-export async function getAttendanceReport({ from, to, agentId, connectionIds }: ReportParams) {
+export async function getAttendanceReport({ from, to, agentId, connectionIds, tzOffsetMinutes = 0 }: ReportParams) {
   const connectionFilter = connectionIds?.length ? { in: connectionIds } : undefined;
   const conversations = await prisma.conversation.findMany({
     where: {
@@ -59,16 +67,16 @@ export async function getAttendanceReport({ from, to, agentId, connectionIds }: 
     const totalMs = c.closedAt ? c.closedAt.getTime() - c.enteredQueueAt.getTime() : null;
 
     return {
-      Data: formatDateTime(c.createdAt),
+      Data: formatDateTime(c.createdAt, tzOffsetMinutes),
       Conexão: c.whatsappConnection.name,
       Cliente: c.contact.name ?? c.contact.phone,
       Telefone: c.contact.phone,
       Atendente: c.assignedAgent?.displayName ?? "-",
-      "Entrada na fila": formatDateTime(c.enteredQueueAt),
-      Aceite: formatDateTime(c.acceptedAt),
+      "Entrada na fila": formatDateTime(c.enteredQueueAt, tzOffsetMinutes),
+      Aceite: formatDateTime(c.acceptedAt, tzOffsetMinutes),
       "Até aceite (min)": minutes(acceptMs),
       "Até 1ª resposta (min)": minutes(firstResponseMs),
-      Encerramento: formatDateTime(c.closedAt),
+      Encerramento: formatDateTime(c.closedAt, tzOffsetMinutes),
       "Duração total (min)": minutes(totalMs),
       "Mensagens recebidas": received,
       "Mensagens enviadas": sent,
@@ -179,7 +187,7 @@ export async function toXlsx(rows: Record<string, unknown>[], sheetName: string)
 }
 
 /** PDF export — see PROMPT: "Relatórios poder extrair em PDF". A plain, readable tabular layout — no external headless-browser dependency. */
-export function toPdf(rows: Record<string, unknown>[], title: string): Promise<Buffer> {
+export function toPdf(rows: Record<string, unknown>[], title: string, tzOffsetMinutes = 0): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ margin: 36, size: "A4", layout: "landscape" });
     const chunks: Buffer[] = [];
@@ -188,7 +196,7 @@ export function toPdf(rows: Record<string, unknown>[], title: string): Promise<B
     doc.on("error", reject);
 
     doc.fontSize(16).fillColor("#14202b").text(title);
-    doc.fontSize(9).fillColor("#64748b").text(`Gerado em ${new Date().toLocaleString("pt-BR")}`);
+    doc.fontSize(9).fillColor("#64748b").text(`Gerado em ${formatDateTime(new Date(), tzOffsetMinutes)}`);
     doc.moveDown();
 
     if (rows.length === 0) {

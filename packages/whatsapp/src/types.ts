@@ -63,6 +63,25 @@ export interface ContactInfo {
   photoUrl: string | null;
 }
 
+export interface HistoryMessageEvent {
+  providerMessageId: string;
+  chatId: string;
+  phone: string;
+  /** true = sent by the connected number itself (e.g. from the phone, before this system was tracking it); false = from the customer. */
+  fromMe: boolean;
+  type: "TEXT" | "LOCATION" | "CONTACT" | "IMAGE" | "VIDEO" | "AUDIO" | "DOCUMENT";
+  body: string | null;
+  latitude?: number;
+  longitude?: number;
+  vcard?: string;
+  timestamp: Date;
+}
+
+export interface HistorySyncEvent {
+  contacts: ContactInfo[];
+  messages: HistoryMessageEvent[];
+}
+
 /**
  * WhatsAppProvider is the single seam between the application and any
  * concrete WhatsApp client library. No other module in the app should
@@ -93,10 +112,11 @@ export interface WhatsAppProvider {
 
   getContactInfo(chatId: string): Promise<ContactInfo>;
   getContactPhoto(chatId: string): Promise<string | null>;
-  syncHistory(chatId: string, limit: number): Promise<void>;
 
   onConnectionUpdate(listener: (status: WhatsAppStatusSnapshot) => void): void;
   onMessage(listener: (event: InboundMessageEvent) => void): void;
   onDelivery(listener: (event: DeliveryEvent) => void): void;
   onReaction(listener: (event: ReactionEvent) => void): void;
+  /** Fired when the linked phone hands over its address book and/or recent chat history — see BaileysWhatsAppProvider for when/why this fires. */
+  onHistorySync(listener: (event: HistorySyncEvent) => void): void;
 }

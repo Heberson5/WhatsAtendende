@@ -16,13 +16,23 @@ const querySchema = z.object({
   agentId: z.string().uuid().optional(),
   connectionId: z.union([z.string(), z.array(z.string())]).optional(),
   format: z.enum(["json", "csv", "pdf", "xlsx"]).default("json"),
+  // The browser's own UTC offset in minutes (Date#getTimezoneOffset()) — see
+  // lib/period.ts for why the server can't just use its own clock/timezone.
+  tzOffsetMinutes: z.coerce.number().default(0),
 });
 
 // See PROMPT: "Relatórios poder extrair em PDF e em xlsx" — alongside the
 // existing CSV/JSON. `title`/`baseFilename` are per-report only for the
 // PDF heading and download filename; the row-to-document conversion itself
 // is shared.
-async function respond(res: import("express").Response, rows: Record<string, unknown>[], format: "json" | "csv" | "pdf" | "xlsx", baseFilename: string, title: string) {
+async function respond(
+  res: import("express").Response,
+  rows: Record<string, unknown>[],
+  format: "json" | "csv" | "pdf" | "xlsx",
+  baseFilename: string,
+  title: string,
+  tzOffsetMinutes: number
+) {
   if (format === "csv") {
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="${baseFilename}.csv"`);
@@ -37,7 +47,7 @@ async function respond(res: import("express").Response, rows: Record<string, unk
     return;
   }
   if (format === "pdf") {
-    const buffer = await service.toPdf(rows, title);
+    const buffer = await service.toPdf(rows, title, tzOffsetMinutes);
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="${baseFilename}.pdf"`);
     res.send(buffer);
@@ -50,9 +60,15 @@ reportsRouter.get(
   "/attendance",
   asyncHandler(async (req, res) => {
     const query = querySchema.parse(req.query);
-    const { from, to } = resolvePeriod(query.period, query.from, query.to);
-    const rows = await service.getAttendanceReport({ from, to, agentId: query.agentId, connectionIds: parseListParam(query.connectionId) });
-    await respond(res, rows, query.format, "relatorio-atendimentos", "Relatório de Atendimentos");
+    const { from, to } = resolvePeriod(query.period, query.from, query.to, query.tzOffsetMinutes);
+    const rows = await service.getAttendanceReport({
+      from,
+      to,
+      agentId: query.agentId,
+      connectionIds: parseListParam(query.connectionId),
+      tzOffsetMinutes: query.tzOffsetMinutes,
+    });
+    await respond(res, rows, query.format, "relatorio-atendimentos", "Relatório de Atendimentos", query.tzOffsetMinutes);
   })
 );
 
@@ -60,9 +76,9 @@ reportsRouter.get(
   "/per-agent",
   asyncHandler(async (req, res) => {
     const query = querySchema.parse(req.query);
-    const { from, to } = resolvePeriod(query.period, query.from, query.to);
+    const { from, to } = resolvePeriod(query.period, query.from, query.to, query.tzOffsetMinutes);
     const rows = await service.getPerAgentReport({ from, to, connectionIds: parseListParam(query.connectionId) });
-    await respond(res, rows, query.format, "relatorio-por-atendente", "Relatório por Atendente");
+    await respond(res, rows, query.format, "relatorio-por-atendente", "Relatório por Atendente", query.tzOffsetMinutes);
   })
 );
 
@@ -70,10 +86,10 @@ reportsRouter.get(
   "/messages",
   asyncHandler(async (req, res) => {
     const query = querySchema.parse(req.query);
-    const { from, to } = resolvePeriod(query.period, query.from, query.to);
+    const { from, to } = resolvePeriod(query.period, query.from, query.to, query.tzOffsetMinutes);
     const data = await service.getMessagesReport({ from, to, agentId: query.agentId, connectionIds: parseListParam(query.connectionId) });
     if (query.format === "json") return res.json(data);
     // The other export formats need rows, not a single stats object — wrap it as one row.
-    await respond(res, [data], query.format, "relatorio-mensagens", "Relatório de Mensagens");
+    await respond(res, [data], query.format, "relatorio-mensagens", "Relatório de Mensagens", query.tzOffsetMinutes);
   })
 );
