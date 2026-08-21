@@ -222,7 +222,15 @@ SEED_ADMIN_EMAIL=seu-email@exemplo.com SEED_ADMIN_PASSWORD=sua-senha-forte \
 ```
 
 Rodar de novo não sobrescreve a senha de um usuário que já existe — só cria
-os que ainda não existem no banco.
+os que ainda não existem no banco. Se o e-mail já existir e a senha não
+estiver batendo (por exemplo, rodou o comando duas vezes com senhas
+diferentes por engano), acrescente `SEED_ADMIN_FORCE_RESET=true` para
+redefinir a senha explicitamente:
+
+```bash
+SEED_ADMIN_EMAIL=seu-email@exemplo.com SEED_ADMIN_PASSWORD=sua-senha-nova \
+  SEED_ADMIN_FORCE_RESET=true npm run prisma:seed -w apps/api
+```
 
 ## Recuperação de senha por e-mail
 
