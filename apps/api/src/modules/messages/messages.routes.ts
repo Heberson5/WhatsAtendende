@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Request, type Response, type NextFunction } from "express";
 import multer from "multer";
 import path from "node:path";
 import fs from "node:fs";
@@ -6,6 +6,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { asyncHandler } from "../../lib/async-handler";
 import { requireAuth, requireRole } from "../../middleware/auth";
+import { verifyAccessToken } from "../auth/jwt";
 import { Errors } from "../../lib/http-error";
 import { env } from "../../config/env";
 import { prisma } from "../../lib/prisma";
@@ -16,6 +17,49 @@ import { realtimeEvents } from "../../realtime/realtime";
 import { assertAgentCanAccessConversation, getConversationOrThrow } from "../conversations/conversations.service";
 
 export const messagesRouter = Router();
+
+// An <img>/<video>/<audio> tag can't attach an Authorization header, so the
+// attachment download route alone also accepts the access token as a query
+// param — registered before the router-wide requireAuth below so it isn't
+// forced through the header-only path. The token stays short-lived (same
+// TTL as everywhere else), so this only exposes a brief window even if a
+// URL leaks via referrer/history — an acceptable trade-off for an internal
+// tool versus fetching every message image as an authenticated blob.
+function requireAuthFromHeaderOrQuery(req: Request, _res: Response, next: NextFunction) {
+  const header = req.headers.authorization;
+  const queryToken = typeof req.query.token === "string" ? req.query.token : undefined;
+  const token = header?.startsWith("Bearer ") ? header.slice("Bearer ".length) : queryToken;
+  if (!token) return next(Errors.unauthorized());
+  try {
+    const payload = verifyAccessToken(token);
+    req.auth = { userId: payload.sub, role: payload.role, displayName: payload.displayName };
+    next();
+  } catch {
+    next(Errors.unauthorized("Token invalido ou expirado"));
+  }
+}
+
+messagesRouter.get(
+  "/attachments/:attachmentId/download",
+  requireAuthFromHeaderOrQuery,
+  asyncHandler(async (req, res) => {
+    const attachment = await prisma.messageAttachment.findUnique({
+      where: { id: req.params.attachmentId },
+      include: { message: { include: { conversation: true } } },
+    });
+    if (!attachment) throw Errors.notFound();
+    if (req.auth!.role === "AGENT") {
+      assertAgentCanAccessConversation(attachment.message.conversation, req.auth!);
+    }
+    if (!attachment.storageKey) throw Errors.notFound("Arquivo sem conteudo binario (ex.: localizacao/vcard)");
+    const filePath = path.join(env.UPLOAD_DIR, attachment.storageKey);
+    if (!fs.existsSync(filePath)) throw Errors.notFound("Arquivo nao encontrado no armazenamento");
+    res.setHeader("Content-Type", attachment.mimeType);
+    res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(attachment.fileName)}"`);
+    res.sendFile(path.resolve(filePath));
+  })
+);
+
 messagesRouter.use(requireAuth);
 
 // MANAGER/ADMIN can also own and work a conversation in Atendimento (see
@@ -197,25 +241,5 @@ messagesRouter.post(
     }
     realtimeEvents.messageStatusChanged(conversation.id);
     res.json(toMessageDTO(updated));
-  })
-);
-
-messagesRouter.get(
-  "/attachments/:attachmentId/download",
-  asyncHandler(async (req, res) => {
-    const attachment = await prisma.messageAttachment.findUnique({
-      where: { id: req.params.attachmentId },
-      include: { message: { include: { conversation: true } } },
-    });
-    if (!attachment) throw Errors.notFound();
-    if (req.auth!.role === "AGENT") {
-      assertAgentCanAccessConversation(attachment.message.conversation, req.auth!);
-    }
-    if (!attachment.storageKey) throw Errors.notFound("Arquivo sem conteudo binario (ex.: localizacao/vcard)");
-    const filePath = path.join(env.UPLOAD_DIR, attachment.storageKey);
-    if (!fs.existsSync(filePath)) throw Errors.notFound("Arquivo nao encontrado no armazenamento");
-    res.setHeader("Content-Type", attachment.mimeType);
-    res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(attachment.fileName)}"`);
-    res.sendFile(path.resolve(filePath));
   })
 );

@@ -13,6 +13,7 @@ apps/api/prisma/dev.db
 apps/api/generated/
 apps/api/whatsapp-sessions/
 apps/api/uploads/
+apps/api/uploads-test/
 *.tsbuildinfo
 .vscode/
 .idea/
