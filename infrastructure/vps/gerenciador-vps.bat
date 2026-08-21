@@ -214,13 +214,29 @@ echo ===================================================
 echo Populando usuarios iniciais do WhatsAtendende...
 echo ===================================================
 echo.
-echo Cria/atualiza um admin, um gestor e dois atendentes de
-echo exemplo com senhas padrao (ver README) - troque essas senhas
-echo em Usuarios assim que acessar. Seguro rodar mais de uma vez:
-echo nao sobrescreve a senha de um usuario ja existente.
+echo Cria os usuarios de exemplo do ambiente de desenvolvimento (ver
+echo apps/api/prisma/seed.ts no codigo - as senhas nao ficam na
+echo documentacao). Seguro rodar mais de uma vez: nao sobrescreve a
+echo senha de um usuario que ja existe.
 echo.
+echo Opcionalmente, informe abaixo um e-mail e senha REAIS para criar
+echo (se ainda nao existir) um administrador de verdade, sem que essa
+echo senha fique salva em nenhum arquivo. Deixe em branco para pular.
+echo Evite usar os caracteres %% ^ ^& " nessa senha (o Windows trata
+echo eles de forma especial). O texto digitado fica visivel na tela.
+echo.
+set ADMINEMAIL=
+set ADMINPASS=
+set /p ADMINEMAIL=E-mail do administrador real (ou Enter para pular):
+if not "%ADMINEMAIL%"=="" set /p ADMINPASS=Senha desse administrador:
 
-ssh -i "%KEY%" %USER%@%IP% "cd %PROJETO% && docker compose exec -T api npm run prisma:seed"
+if "%ADMINEMAIL%"=="" (
+    ssh -i "%KEY%" %USER%@%IP% "cd %PROJETO% && docker compose exec -T api npm run prisma:seed"
+) else (
+    ssh -i "%KEY%" %USER%@%IP% "cd %PROJETO% && docker compose exec -T -e SEED_ADMIN_EMAIL=%ADMINEMAIL% -e SEED_ADMIN_PASSWORD=%ADMINPASS% api npm run prisma:seed"
+)
+set ADMINEMAIL=
+set ADMINPASS=
 
 pause
 goto MENU
