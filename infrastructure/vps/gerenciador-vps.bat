@@ -4,13 +4,19 @@ color 0A
 title GERENCIADOR DA VPS - ORACLE CLOUD
 
 rem =====================================================================
-rem Edite estas 5 linhas para o seu ambiente antes de usar.
+rem Edite estas linhas para o seu ambiente antes de usar.
 rem =====================================================================
 set IP=147.15.110.106
 set USER=ubuntu
 set KEY=C:\Users\Heberson\Downloads\ssh-key-2026-08-01.key
 set PROJETO=~/whatsatendende
 set REPO_WHATSATENDENDE=https://github.com/Heberson5/WhatsAtendende.git
+rem Branch que a VPS deve seguir. As opcoes [1] e [15] agora fixam a VPS
+rem NESTA branch a cada atualizacao (git fetch + reset --hard), entao um
+rem "git pull" antigo apontando para outra branch nunca mais fica pra tras
+rem em silencio. Troque para "main" quando essas correcoes forem
+rem mescladas na branch principal do projeto.
+set BRANCH=claude/whatsapp-multiuser-support-web-02oo3i
 set PROJETO2=~/treinamentos
 set ENVTREINO=C:\Users\Heberson\Documents\GitHub\treinamentos\.env
 
@@ -47,6 +53,7 @@ echo  [19] Ver docker-compose.yml do WhatsAtendende
 echo  [20] Ver .env/commit/bundle do Treinamentos
 echo  [21] Popular usuários iniciais do WhatsAtendende (seed)
 echo  [22] Remover Chamados do VPS (containers + pasta)
+echo  [23] Ver versao (commit) do WhatsAtendende em producao
 echo.
 echo   [0] Sair
 echo.
@@ -74,16 +81,40 @@ if "%op%"=="19" goto CATCOMPOSE
 if "%op%"=="20" goto CATENV
 if "%op%"=="21" goto SEED_WHATSATENDENDE
 if "%op%"=="22" goto REMOVE_CHAMADOS
+if "%op%"=="23" goto VERSAO_WHATSATENDENDE
 if "%op%"=="0" exit
 
 goto MENU
 
 :UPDATE
 cls
-echo Atualizando projeto...
-ssh -i "%KEY%" %USER%@%IP% "cd %PROJETO% && git pull && docker compose up -d --build"
+echo Atualizando projeto (git fetch + reset --hard + rebuild completo)...
+call :HARD_UPDATE_WHATSATENDENDE
 pause
 goto MENU
+
+rem =====================================================================
+rem Rotina compartilhada por [1] e [15] - garante que toda atualizacao
+rem realmente aplica o codigo mais novo, sem depender de cache antigo:
+rem   1. git fetch + reset --hard na branch %BRANCH% (nunca fica preso
+rem      numa branch antiga, nem trava por causa de alteracao local na VPS)
+rem   2. mostra o commit antes/depois, pra voce confirmar visualmente
+rem      que o servidor realmente pegou a versao nova
+rem   3. docker compose build --pull (reconstroi as imagens do zero,
+rem      inclusive atualizando as imagens-base do sistema operacional)
+rem   4. docker compose up -d --force-recreate --remove-orphans (recria
+rem      os containers mesmo se o Docker achar, por engano, que nada mudou)
+rem   5. docker image prune -f (limpa imagens antigas - evita lotar o
+rem      disco da VPS a cada atualizacao)
+rem   6. docker compose ps no final, pra confirmar que os containers
+rem      subiram ha poucos segundos
+rem A migracao do banco (prisma migrate deploy) roda sozinha, dentro do
+rem container, antes do servidor da API iniciar - nao precisa fazer nada
+rem a parte para isso.
+rem =====================================================================
+:HARD_UPDATE_WHATSATENDENDE
+ssh -i "%KEY%" %USER%@%IP% "cd %PROJETO% && echo === Commit ANTES da atualizacao === && git log -1 --oneline && git fetch origin && git checkout %BRANCH% && git reset --hard origin/%BRANCH% && echo === Commit DEPOIS da atualizacao === && git log -1 --oneline && docker compose build --pull && docker compose up -d --force-recreate --remove-orphans && docker image prune -f && echo === Containers (confira se o STATUS mostra 'Up' ha poucos segundos) === && docker compose ps"
+exit /b
 
 :SSH
 cls
@@ -196,7 +227,14 @@ echo (conexao real). Depois do deploy, entre em Configuracoes no
 echo sistema e conecte o WhatsApp (QR Code ou codigo de pareamento).
 echo.
 
-ssh -i "%KEY%" %USER%@%IP% "if [ -d %PROJETO%/.git ]; then cd %PROJETO% && git pull; else rm -rf %PROJETO% && git clone %REPO_WHATSATENDENDE% %PROJETO%; fi && cd %PROJETO% && if [ ! -f .env ]; then echo 'Criando .env com segredos novos (primeiro deploy)...'; { echo JWT_ACCESS_SECRET=$(openssl rand -hex 32); echo JWT_REFRESH_SECRET=$(openssl rand -hex 32); echo WHATSAPP_PROVIDER=baileys; echo WEB_APP_URL=http://%IP%:8080; } > .env; echo '.env criado - faca um backup deste arquivo (nao esta no git, sem ele os logins existentes param de funcionar num redeploy que o apague).'; fi && docker compose up -d --build"
+rem Primeiro deploy apenas: clona o repositorio (se ainda nao existe) e
+rem cria o .env com segredos novos (se ainda nao existe). Numa atualizacao
+rem normal, com o projeto ja clonado e o .env ja no lugar, este passo nao
+rem faz nada alem de trocar para a branch %BRANCH% - quem realmente
+rem atualiza o codigo e reconstroi tudo e a rotina HARD_UPDATE logo abaixo.
+ssh -i "%KEY%" %USER%@%IP% "if [ -d %PROJETO%/.git ]; then cd %PROJETO% && git checkout %BRANCH%; else rm -rf %PROJETO% && git clone -b %BRANCH% %REPO_WHATSATENDENDE% %PROJETO%; fi && cd %PROJETO% && if [ ! -f .env ]; then echo 'Criando .env com segredos novos (primeiro deploy)...'; { echo JWT_ACCESS_SECRET=$(openssl rand -hex 32); echo JWT_REFRESH_SECRET=$(openssl rand -hex 32); echo WHATSAPP_PROVIDER=baileys; echo WEB_APP_URL=http://%IP%:8080; } > .env; echo '.env criado - faca um backup deste arquivo (nao esta no git, sem ele os logins existentes param de funcionar num redeploy que o apague).'; fi"
+
+call :HARD_UPDATE_WHATSATENDENDE
 
 echo.
 echo WhatsAtendende atualizado e no ar em http://%IP%:8080
@@ -293,6 +331,15 @@ goto MENU
 cls
 echo Verificando .env, commit e bundle do Treinamentos...
 ssh -i "%KEY%" %USER%@%IP% "echo ===ENV=== ; cat ~/treinamentos/.env 2>&1 ; echo ===GITLOG=== ; cd ~/treinamentos && git log -1 --oneline ; echo ===BUNDLE=== ; docker exec treinamentos grep -rl supabase.co /usr/share/nginx/html/assets/ ; echo ===FIM==="
+pause
+goto MENU
+
+:VERSAO_WHATSATENDENDE
+cls
+echo Verificando o que esta REALMENTE rodando em producao agora...
+echo (compare o commit abaixo com o commit mais recente no GitHub)
+echo.
+ssh -i "%KEY%" %USER%@%IP% "cd %PROJETO% && echo ===BRANCH=== && git branch --show-current && echo ===COMMIT=== && git log -1 --oneline && echo ===CONTAINERS=== && docker compose ps"
 pause
 goto MENU
 
