@@ -3,6 +3,7 @@ import request from "supertest";
 import { createApp } from "../src/app";
 import { prisma } from "../src/lib/prisma";
 import { resetDatabase, createTestUser, createTestConnection, createWaitingConversation, TEST_PASSWORD } from "./helpers";
+import * as conversationsService from "../src/modules/conversations/conversations.service";
 
 const app = createApp();
 
@@ -49,6 +50,40 @@ describe("conversation queue and acceptance", () => {
     // Exactly one ACCEPTED assignment record should exist — no duplicate wins.
     const assignments = await prisma.conversationAssignment.findMany({ where: { conversationId: conversation.id, reason: "ACCEPT" } });
     expect(assignments).toHaveLength(1);
+  });
+
+  it("orders the queue by most recent message, not by when it first entered the queue", async () => {
+    await createTestUser({ email: "joao@test.dev", role: "AGENT", displayName: "Joao", whatsappConnectionId: connectionId });
+    const token = await loginAs("joao@test.dev");
+
+    // Conversation A entered the queue first (older enteredQueueAt) but its
+    // customer sent a newer follow-up message — it should sort ABOVE
+    // conversation B, which entered the queue more recently but has gone
+    // quiet since. A pure enteredQueueAt-based order would put B first.
+    const contactA = await prisma.contact.create({ data: { phone: "5511900000001", whatsappConnectionId: connectionId } });
+    const conversationA = await prisma.conversation.create({
+      data: {
+        contactId: contactA.id,
+        whatsappConnectionId: connectionId,
+        status: "WAITING",
+        enteredQueueAt: new Date("2026-01-01T10:00:00Z"),
+        lastMessageAt: new Date("2026-01-01T12:00:00Z"),
+      },
+    });
+    const contactB = await prisma.contact.create({ data: { phone: "5511900000002", whatsappConnectionId: connectionId } });
+    const conversationB = await prisma.conversation.create({
+      data: {
+        contactId: contactB.id,
+        whatsappConnectionId: connectionId,
+        status: "WAITING",
+        enteredQueueAt: new Date("2026-01-01T11:00:00Z"),
+        lastMessageAt: new Date("2026-01-01T11:05:00Z"),
+      },
+    });
+
+    const res = await request(app).get("/api/conversations/queue").set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.map((c: { id: string }) => c.id)).toEqual([conversationA.id, conversationB.id]);
   });
 
   it("hides message preview and content from the queue before acceptance", async () => {
@@ -234,6 +269,29 @@ describe("conversation queue and acceptance", () => {
 
     const readRes = await request(app).post(`/api/conversations/${conversation.id}/read`).set("Authorization", `Bearer ${token}`);
     expect(readRes.status).toBe(204);
+
+    const after = await request(app).get("/api/conversations/mine").set("Authorization", `Bearer ${token}`);
+    expect(after.body.find((c: { id: string }) => c.id === conversation.id).unreadCount).toBe(0);
+  });
+
+  it("clears the unread badge when the linked phone marks the chat read (not just via the /read endpoint)", async () => {
+    await createTestUser({ email: "joao@test.dev", role: "AGENT", displayName: "Joao", whatsappConnectionId: connectionId });
+    const token = await loginAs("joao@test.dev");
+    const { conversation, contact } = await createWaitingConversation("5511999995555", connectionId);
+    await request(app).post(`/api/conversations/${conversation.id}/accept`).set("Authorization", `Bearer ${token}`);
+    await prisma.message.createMany({
+      data: [{ conversationId: conversation.id, direction: "INBOUND", type: "TEXT", status: "DELIVERED", body: "oi" }],
+    });
+
+    const before = await request(app).get("/api/conversations/mine").set("Authorization", `Bearer ${token}`);
+    expect(before.body.find((c: { id: string }) => c.id === conversation.id).unreadCount).toBe(1);
+
+    // Simulates what whatsapp.service.ts's onChatRead handler does when the
+    // provider reports the chat was read from the linked phone — no HTTP
+    // route involved, since this isn't triggered by an authenticated user action.
+    const active = await conversationsService.findActiveConversationForContact(contact.id);
+    expect(active?.id).toBe(conversation.id);
+    await conversationsService.markConversationReadFromDevice(active!.id);
 
     const after = await request(app).get("/api/conversations/mine").set("Authorization", `Bearer ${token}`);
     expect(after.body.find((c: { id: string }) => c.id === conversation.id).unreadCount).toBe(0);

@@ -83,6 +83,16 @@ export interface HistorySyncEvent {
 }
 
 /**
+ * Fired when a chat is marked read from somewhere other than this app —
+ * almost always the linked phone itself, via WhatsApp's own multi-device
+ * sync. Lets the unread badge here match what the agent already sees on
+ * their phone instead of only ever clearing when they open it in this UI.
+ */
+export interface ChatReadEvent {
+  chatId: string;
+}
+
+/**
  * WhatsAppProvider is the single seam between the application and any
  * concrete WhatsApp client library. No other module in the app should
  * import a provider implementation directly — only this interface.
@@ -119,4 +129,6 @@ export interface WhatsAppProvider {
   onReaction(listener: (event: ReactionEvent) => void): void;
   /** Fired when the linked phone hands over its address book and/or recent chat history — see BaileysWhatsAppProvider for when/why this fires. */
   onHistorySync(listener: (event: HistorySyncEvent) => void): void;
+  /** Fired when a chat's unread count drops to zero from outside this app (e.g. read on the linked phone) — see ChatReadEvent. */
+  onChatRead(listener: (event: ChatReadEvent) => void): void;
 }

@@ -57,6 +57,11 @@ export const realtimeEvents = {
   messageStatusChanged: (conversationId: string) => {
     getIO()?.to(ROOMS.conversation(conversationId)).emit("message:status", { conversationId });
   },
+  /** The linked phone marked a chat as read (WhatsApp's own multi-device sync) — refreshes the unread badge for whoever owns it. */
+  conversationReadFromDevice: (conversationId: string, agentId: string | null) => {
+    if (agentId) getIO()?.to(ROOMS.user(agentId)).emit("conversation:read", { conversationId });
+    getIO()?.to(ROOMS.oversight()).emit("oversight:updated");
+  },
   whatsappStatusChanged: (connectionId: string, status: unknown) => {
     getIO()?.emit("whatsapp:status", { connectionId, status });
   },

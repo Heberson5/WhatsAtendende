@@ -9,6 +9,7 @@ import makeWASocket, {
   type WAMessage,
 } from "@whiskeysockets/baileys";
 import type {
+  ChatReadEvent,
   ConnectOptions,
   ContactInfo,
   DeliveryEvent,
@@ -223,6 +224,21 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
         }
       });
 
+      // Fires whenever WhatsApp's multi-device sync pushes a chat-state
+      // change from any linked device — most relevantly, the phone itself
+      // marking a chat as read. Only the transition to "no unread messages
+      // left" matters here; every other partial update (archived, pinned,
+      // muted, etc.) is ignored.
+      socket.ev.on("chats.update", (updates) => {
+        for (const update of updates) {
+          const chatId = update.id;
+          if (!chatId || isNonCustomerChat(chatId)) continue;
+          if (update.unreadCount === undefined || update.unreadCount === null) continue;
+          if (Number(update.unreadCount) > 0) continue;
+          this.emitter.emit("chatRead", { chatId } satisfies ChatReadEvent);
+        }
+      });
+
       socket.ev.on("messages.reaction", (reactions) => {
         for (const r of reactions) {
           this.emitter.emit("reaction", {
@@ -376,6 +392,10 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
 
   onHistorySync(listener: (event: HistorySyncEvent) => void): void {
     this.emitter.on("historySync", listener);
+  }
+
+  onChatRead(listener: (event: ChatReadEvent) => void): void {
+    this.emitter.on("chatRead", listener);
   }
 
   private requireSocket(): WASocket {

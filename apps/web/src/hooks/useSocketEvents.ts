@@ -40,6 +40,10 @@ export function useSocketEvents(activeConversationId: string | null) {
     const onMessageStatus = (payload: { conversationId: string }) => {
       queryClient.invalidateQueries({ queryKey: ["messages", payload.conversationId] });
     };
+    // The linked phone marked a chat as read (WhatsApp's own multi-device
+    // sync) — refresh so the unread badge here matches what's already read
+    // on the phone, without waiting for the 20s poll.
+    const onConversationRead = () => queryClient.invalidateQueries({ queryKey: ["mine"] });
     const onOversightUpdated = () => queryClient.invalidateQueries({ queryKey: ["oversight"] });
     const onWhatsappStatus = () => queryClient.invalidateQueries({ queryKey: ["whatsapp-status"] });
 
@@ -51,6 +55,7 @@ export function useSocketEvents(activeConversationId: string | null) {
     socket.on("message:new", onMessageNew);
     socket.on("message:inbound-notification", onInboundNotification);
     socket.on("message:status", onMessageStatus);
+    socket.on("conversation:read", onConversationRead);
     socket.on("oversight:updated", onOversightUpdated);
     socket.on("whatsapp:status", onWhatsappStatus);
 
@@ -63,6 +68,7 @@ export function useSocketEvents(activeConversationId: string | null) {
       socket.off("message:new", onMessageNew);
       socket.off("message:inbound-notification", onInboundNotification);
       socket.off("message:status", onMessageStatus);
+      socket.off("conversation:read", onConversationRead);
       socket.off("oversight:updated", onOversightUpdated);
       socket.off("whatsapp:status", onWhatsappStatus);
     };
