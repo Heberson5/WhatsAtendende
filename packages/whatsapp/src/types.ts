@@ -31,6 +31,15 @@ export interface InboundMessageEvent {
   vcard?: string;
   replyToProviderMessageId?: string | null;
   timestamp: Date;
+  // true when this message was sent BY the connected account rather than
+  // received from the customer — WhatsApp's multi-device protocol reports
+  // this the same way whether it was sent through this app or directly
+  // from the linked phone (or any other linked session). A message this
+  // app itself just sent also echoes back through here; the consumer is
+  // responsible for recognizing (by providerMessageId) that it already
+  // recorded that one and skipping it, rather than filtering fromMe out
+  // entirely — that would silently drop every message sent from the phone.
+  fromMe: boolean;
 }
 
 export interface DeliveryEvent {

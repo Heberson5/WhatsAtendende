@@ -424,7 +424,12 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
   }
 
   private async handleIncomingMessage(message: WAMessage): Promise<void> {
-    if (message.key.fromMe) return;
+    // Previously dropped every fromMe message outright to avoid the app
+    // double-recording its own sends — but that also silently dropped
+    // every message sent directly from the linked phone (or any other
+    // linked device), since WhatsApp's protocol marks both cases fromMe
+    // identically. The consumer now de-duplicates by providerMessageId
+    // instead — see fromMe on InboundMessageEvent.
     const chatId = message.key.remoteJid ?? "";
     if (!chatId || isNonCustomerChat(chatId)) return; // ignore groups, status updates, broadcast lists, channels
 
@@ -435,10 +440,13 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
       providerMessageId: message.key.id ?? "",
       chatId,
       phone: chatId.split("@")[0],
-      contactName: message.pushName ?? null,
+      // pushName on a fromMe message is this account's own name, not the
+      // customer's — never let it overwrite the contact's stored name.
+      contactName: message.key.fromMe ? null : (message.pushName ?? null),
       replyToProviderMessageId:
         content.extendedTextMessage?.contextInfo?.stanzaId ?? null,
       timestamp: new Date((Number(message.messageTimestamp) || Date.now() / 1000) * 1000),
+      fromMe: Boolean(message.key.fromMe),
     };
 
     if (content.conversation || content.extendedTextMessage?.text) {
