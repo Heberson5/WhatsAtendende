@@ -162,6 +162,10 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
     // Mock provider has no historical backlog to sync.
   }
 
+  onChatRead(): void {
+    // Mock provider has no linked phone to sync a read-state from.
+  }
+
   /** Test/demo helper: force an inbound message without waiting for the timer. */
   simulateIncomingMessage(phone: string, body: string, contactName: string | null = null): void {
     const event: InboundMessageEvent = {

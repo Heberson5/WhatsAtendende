@@ -182,6 +182,24 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
     }
   });
 
+  provider.onChatRead(async (event) => {
+    try {
+      // Non-customer chats (groups, status, broadcast lists) are already
+      // filtered out by the provider before this event is emitted.
+      const phone = event.chatId.split("@")[0];
+      const contact = await prisma.contact.findUnique({
+        where: { phone_whatsappConnectionId: { phone, whatsappConnectionId: connectionId } },
+      });
+      if (!contact) return;
+      const conversation = await conversationsService.findActiveConversationForContact(contact.id);
+      if (!conversation) return;
+      await conversationsService.markConversationReadFromDevice(conversation.id);
+      realtimeEvents.conversationReadFromDevice(conversation.id, conversation.assignedAgentId);
+    } catch (err) {
+      logger.error({ err, connectionId }, "failed to sync a chat-read event from the linked phone");
+    }
+  });
+
   provider.onReaction(async (event) => {
     const message = await prisma.message.findUnique({ where: { providerMessageId: event.providerMessageId } });
     if (!message) return;

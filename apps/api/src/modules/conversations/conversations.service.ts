@@ -151,11 +151,15 @@ export async function importHistoricalMessages(connectionId: string, messages: H
  * the agent an explicit new queue card. Default routing target is the
  * queue (not the last agent), per spec section 28's default.
  */
-export async function findOrOpenConversationForInboundMessage(connectionId: string, contactId: string) {
-  const active = await prisma.conversation.findFirst({
+export async function findActiveConversationForContact(contactId: string) {
+  return prisma.conversation.findFirst({
     where: { contactId, status: { in: ["NEW", "WAITING", "IN_PROGRESS", "TRANSFERRED"] } },
     orderBy: { createdAt: "desc" },
   });
+}
+
+export async function findOrOpenConversationForInboundMessage(connectionId: string, contactId: string) {
+  const active = await findActiveConversationForContact(contactId);
   if (active) return { conversation: active, isNewConversation: false };
 
   const conversation = await prisma.conversation.create({
@@ -182,7 +186,11 @@ export async function listQueue(connectionIds?: string[]) {
       status: { in: ["NEW", "WAITING"] },
     },
     include: conversationInclude,
-    orderBy: { enteredQueueAt: "asc" },
+    // Most recently messaged first — matches WhatsApp's own chat-list
+    // ordering and "Meus atendimentos" below, instead of FIFO by when the
+    // conversation first entered the queue (which never moved a card even
+    // after the customer sent a newer follow-up message).
+    orderBy: { lastMessageAt: "desc" },
   });
   return conversations;
 }
@@ -251,6 +259,19 @@ export async function markConversationRead(conversationId: string, agentId: stri
     data: { assignedAgentReadAt: new Date() },
   });
   if (result.count === 0) throw Errors.forbidden("Esta conversa nao pertence a este atendente");
+}
+
+/**
+ * Same effect as markConversationRead, but with no agent-ownership check —
+ * used only when the WhatsApp provider reports a chat was read from the
+ * linked phone itself (see onChatRead in whatsapp.service.ts), which is not
+ * an authenticated user action and has no agentId to check against.
+ */
+export async function markConversationReadFromDevice(conversationId: string) {
+  await prisma.conversation.update({
+    where: { id: conversationId },
+    data: { assignedAgentReadAt: new Date() },
+  });
 }
 
 export interface OversightFilters {
