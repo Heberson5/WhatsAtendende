@@ -192,7 +192,13 @@ export async function listQueue(connectionIds?: string[]) {
     // after the customer sent a newer follow-up message).
     orderBy: { lastMessageAt: "desc" },
   });
-  return conversations;
+  // A queue conversation is unassigned, so every inbound message on it is
+  // by definition still unread by anyone — same getUnreadCounts query
+  // "Meus atendimentos" below already uses, just with no agent to compare
+  // against yet. Without this, the card's unread-count badge (see
+  // ConversationCard) always rendered 0 in the queue.
+  const unreadCounts = await getUnreadCounts(conversations.map((c) => c.id));
+  return conversations.map((c) => Object.assign(c, { _unreadCount: unreadCounts.get(c.id) ?? 0 }));
 }
 
 /**
