@@ -177,6 +177,7 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
       body,
       replyToProviderMessageId: null,
       timestamp: new Date(),
+      fromMe: false,
     };
     this.emitter.emit("message", event);
   }

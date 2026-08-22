@@ -1,7 +1,7 @@
 import path from "node:path";
 import fs from "node:fs";
 import { randomUUID } from "node:crypto";
-import { createWhatsAppProvider, type WhatsAppProvider, type WhatsAppStatusSnapshot } from "@whatsatendende/whatsapp";
+import { createWhatsAppProvider, type InboundMessageEvent, type WhatsAppProvider, type WhatsAppStatusSnapshot } from "@whatsatendende/whatsapp";
 import { env } from "../../config/env";
 import { prisma } from "../../lib/prisma";
 import { logger } from "../../lib/logger";
@@ -84,6 +84,11 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
 
   provider.onMessage(async (event) => {
     try {
+      if (event.fromMe) {
+        await handleDeviceSentMessage(event);
+        return;
+      }
+
       const contact = await conversationsService.findOrCreateContact(connectionId, event.phone, event.contactName);
       if (!contact.photoUrl) {
         // Fire-and-forget: a WhatsApp profile-picture lookup must never
@@ -107,40 +112,7 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
         replyToProviderMessageId: event.replyToProviderMessageId,
       });
 
-      if (event.mediaBuffer) {
-        const mimeType = event.mediaMimeType ?? "application/octet-stream";
-        const ext = extensionFor(mimeType, event.mediaFileName);
-        const storageKey = `${randomUUID()}${ext}`;
-        fs.writeFileSync(path.join(env.UPLOAD_DIR, storageKey), event.mediaBuffer);
-        await messagesService.addAttachment(message.id, {
-          fileName: event.mediaFileName ?? `arquivo${ext}`,
-          mimeType,
-          sizeBytes: event.mediaBuffer.length,
-          storageKey,
-          kind: event.type,
-        });
-      }
-      if (event.latitude && event.longitude) {
-        await messagesService.addAttachment(message.id, {
-          fileName: "location",
-          mimeType: "application/geo+json",
-          sizeBytes: 0,
-          storageKey: "",
-          kind: "LOCATION",
-          latitude: event.latitude,
-          longitude: event.longitude,
-        });
-      }
-      if (event.vcard) {
-        await messagesService.addAttachment(message.id, {
-          fileName: "contact.vcf",
-          mimeType: "text/vcard",
-          sizeBytes: event.vcard.length,
-          storageKey: "",
-          kind: "CONTACT",
-          vcard: event.vcard,
-        });
-      }
+      await addAttachmentsFromEvent(message.id, event);
 
       const contactLabel = contact.name ?? contact.phone;
       if (isNewConversation) {
@@ -156,6 +128,73 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
       logger.error({ err, connectionId }, "failed to process inbound whatsapp message");
     }
   });
+
+  /**
+   * A message sent directly from the linked phone (or any other linked
+   * device) instead of through this app. Reuses the same contact/
+   * conversation lookup as an inbound customer message — WhatsApp itself
+   * doesn't distinguish where a conversation's next message comes from —
+   * but records it as OUTBOUND with no agent attached, and skips it
+   * entirely when it turns out to be an echo of a message this app just
+   * sent itself (see createOutboundMessageFromDevice).
+   */
+  async function handleDeviceSentMessage(event: InboundMessageEvent) {
+    // contactName is never trusted here (see BaileysWhatsAppProvider) and
+    // a fromMe message should never seed a brand-new contact's photo from
+    // this account's own profile picture, so no getContactPhoto call here.
+    const contact = await conversationsService.findOrCreateContact(connectionId, event.phone, null);
+    const { conversation } = await conversationsService.findOrOpenConversationForInboundMessage(connectionId, contact.id);
+
+    const message = await messagesService.createOutboundMessageFromDevice({
+      conversationId: conversation.id,
+      providerMessageId: event.providerMessageId,
+      type: event.type,
+      body: event.body,
+      timestamp: event.timestamp,
+      replyToProviderMessageId: event.replyToProviderMessageId,
+    });
+    if (!message) return; // already recorded via this app's own send flow
+
+    await addAttachmentsFromEvent(message.id, event);
+    realtimeEvents.newMessage(conversation.id, conversation.assignedAgentId);
+  }
+
+  async function addAttachmentsFromEvent(messageId: string, event: InboundMessageEvent) {
+    if (event.mediaBuffer) {
+      const mimeType = event.mediaMimeType ?? "application/octet-stream";
+      const ext = extensionFor(mimeType, event.mediaFileName);
+      const storageKey = `${randomUUID()}${ext}`;
+      fs.writeFileSync(path.join(env.UPLOAD_DIR, storageKey), event.mediaBuffer);
+      await messagesService.addAttachment(messageId, {
+        fileName: event.mediaFileName ?? `arquivo${ext}`,
+        mimeType,
+        sizeBytes: event.mediaBuffer.length,
+        storageKey,
+        kind: event.type,
+      });
+    }
+    if (event.latitude && event.longitude) {
+      await messagesService.addAttachment(messageId, {
+        fileName: "location",
+        mimeType: "application/geo+json",
+        sizeBytes: 0,
+        storageKey: "",
+        kind: "LOCATION",
+        latitude: event.latitude,
+        longitude: event.longitude,
+      });
+    }
+    if (event.vcard) {
+      await messagesService.addAttachment(messageId, {
+        fileName: "contact.vcf",
+        mimeType: "text/vcard",
+        sizeBytes: event.vcard.length,
+        storageKey: "",
+        kind: "CONTACT",
+        vcard: event.vcard,
+      });
+    }
+  }
 
   provider.onDelivery(async (event) => {
     const message = await messagesService.updateMessageStatusByProviderId(event.providerMessageId, event.status);

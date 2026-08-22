@@ -68,6 +68,62 @@ export async function createOutboundMessage(input: CreateOutboundMessageInput) {
   return message;
 }
 
+export interface CreateOutboundMessageFromDeviceInput {
+  conversationId: string;
+  providerMessageId: string;
+  type: MessageType;
+  body: string | null;
+  timestamp: Date;
+  replyToProviderMessageId?: string | null;
+}
+
+/**
+ * Records a message sent directly from the linked phone (or any other
+ * WhatsApp multi-device session) instead of through this app — see the
+ * fromMe handling in BaileysWhatsAppProvider/whatsapp.service.ts. Unlike
+ * createOutboundMessage (the agent-initiated send flow), this doesn't
+ * require an assigned agent or an in-progress conversation: WhatsApp
+ * itself has no such concept, so a reply typed on the phone can land on a
+ * conversation that's still sitting unassigned in the queue.
+ * providerMessageId and delivery status are already known from the event
+ * (not filled in later by an async send call), so this writes the row
+ * already SENT rather than PENDING.
+ *
+ * Returns null (does nothing) when a message with this providerMessageId
+ * already exists — that means this app sent it itself via
+ * createOutboundMessage, and WhatsApp is just echoing it back through the
+ * same live event stream; recording it again would duplicate it.
+ */
+export async function createOutboundMessageFromDevice(input: CreateOutboundMessageFromDeviceInput) {
+  const existing = await prisma.message.findUnique({ where: { providerMessageId: input.providerMessageId } });
+  if (existing) return null;
+
+  const replyTo = input.replyToProviderMessageId
+    ? await prisma.message.findUnique({ where: { providerMessageId: input.replyToProviderMessageId } })
+    : null;
+
+  const message = await prisma.message.create({
+    data: {
+      conversationId: input.conversationId,
+      direction: "OUTBOUND",
+      type: input.type,
+      status: "SENT",
+      body: input.body,
+      providerMessageId: input.providerMessageId,
+      replyToMessageId: replyTo?.id ?? null,
+      createdAt: input.timestamp,
+    },
+    include: messageInclude,
+  });
+
+  await prisma.conversation.update({
+    where: { id: input.conversationId },
+    data: { lastMessageAt: input.timestamp, lastMessageDirection: "OUTBOUND" },
+  });
+
+  return message;
+}
+
 export async function markMessageSent(messageId: string, providerMessageId: string) {
   return prisma.message.update({
     where: { id: messageId },
