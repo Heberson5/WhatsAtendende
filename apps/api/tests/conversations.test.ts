@@ -86,6 +86,22 @@ describe("conversation queue and acceptance", () => {
     expect(res.body.map((c: { id: string }) => c.id)).toEqual([conversationA.id, conversationB.id]);
   });
 
+  it("shows an unread count on queue cards too, not just on 'Meus atendimentos'", async () => {
+    await createTestUser({ email: "joao@test.dev", role: "AGENT", displayName: "Joao", whatsappConnectionId: connectionId });
+    const token = await loginAs("joao@test.dev");
+    const { conversation } = await createWaitingConversation("5511999994444", connectionId);
+    await prisma.message.createMany({
+      data: [
+        { conversationId: conversation.id, direction: "INBOUND", type: "TEXT", status: "DELIVERED", body: "oi" },
+        { conversationId: conversation.id, direction: "INBOUND", type: "TEXT", status: "DELIVERED", body: "alguem ai?" },
+      ],
+    });
+
+    const res = await request(app).get("/api/conversations/queue").set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.find((c: { id: string }) => c.id === conversation.id).unreadCount).toBe(2);
+  });
+
   it("hides message preview and content from the queue before acceptance", async () => {
     await createTestUser({ email: "joao@test.dev", role: "AGENT", displayName: "Joao", whatsappConnectionId: connectionId });
     const token = await loginAs("joao@test.dev");

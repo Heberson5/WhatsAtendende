@@ -12,11 +12,16 @@ import { getPermissionsForRole } from "../../lib/permissions";
 
 export const authRouter = Router();
 
-const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false });
+// Skipped only under NODE_ENV=test: every request in a test run shares the
+// same source IP, and a single test file can legitimately log in well past
+// 20 times (one per agent/scenario) — that's test volume, not the login
+// brute-forcing this limiter exists to stop. Never skipped outside tests.
+const skipInTests = () => env.NODE_ENV === "test";
+const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false, skip: skipInTests });
 // Password-reset endpoints are unauthenticated by nature — without their
 // own limiter they'd let an attacker spam e-mails to arbitrary addresses
 // (forgot-password) or brute-force reset tokens (reset-password).
-const passwordResetLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false });
+const passwordResetLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, standardHeaders: true, legacyHeaders: false, skip: skipInTests });
 
 const loginSchema = z.object({
   email: z.string().email(),
