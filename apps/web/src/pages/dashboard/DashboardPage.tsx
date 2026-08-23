@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Inbox, MessageSquare, Timer, Users } from "lucide-react";
-import { api } from "../../lib/api";
+import { api, getApiErrorMessage } from "../../lib/api";
 import { PeriodFilter, type PeriodValue } from "../../components/common/PeriodFilter";
 import { ConnectionFilter } from "../../components/common/ConnectionFilter";
 import { StatCard, formatMinutes } from "../../components/common/StatCard";
@@ -29,7 +29,7 @@ export default function DashboardPage() {
     queryFn: async () => (await api.get<AgentOption[]>("/agents")).data,
   });
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ["dashboard", period, agentId, connectionIds],
     queryFn: async () =>
       (
@@ -61,6 +61,12 @@ export default function DashboardPage() {
       </div>
 
       {isLoading && <p className="text-sm text-muted">Carregando indicadores...</p>}
+
+      {isError && (
+        <p className="text-sm text-red-600">
+          Não foi possível carregar os indicadores: {getApiErrorMessage(error, "erro inesperado")}
+        </p>
+      )}
 
       {data && (
         <div className="space-y-8">

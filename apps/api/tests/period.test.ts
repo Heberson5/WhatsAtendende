@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { resolvePeriod } from "../src/lib/period";
+import { resolvePeriod, optionalDateQueryParam } from "../src/lib/period";
 
 // UTC-4 (Cuiabá/Tangará da Serra, MT) — Brazil has had no DST since 2019, so
 // this is a fixed offset in minutes, matching JS Date#getTimezoneOffset().
@@ -52,5 +52,27 @@ describe("resolvePeriod (browser-timezone-aware day boundaries)", () => {
     const { from, to } = resolvePeriod("lastMonth", undefined, undefined, CUIABA_OFFSET_MINUTES);
     expect(from.toISOString()).toBe("2025-12-01T04:00:00.000Z");
     expect(to.toISOString()).toBe("2026-01-01T03:59:59.999Z");
+  });
+});
+
+describe("optionalDateQueryParam", () => {
+  // Regression: the period-filter UI sends `from`/`to` as `""` (not simply
+  // omitted) whenever the selected period isn't "custom". Plain
+  // `z.coerce.date().optional()` rejected that empty string (`new Date("")`
+  // is invalid), 400ing every dashboard/reports/oversight request the
+  // moment a user touched the period or connection filter.
+  it("treats an empty string the same as an absent value", () => {
+    expect(optionalDateQueryParam.parse("")).toBeUndefined();
+    expect(optionalDateQueryParam.parse(undefined)).toBeUndefined();
+  });
+
+  it("still parses a real date string", () => {
+    const result = optionalDateQueryParam.parse("2026-08-01");
+    expect(result).toBeInstanceOf(Date);
+    expect((result as Date).toISOString()).toBe("2026-08-01T00:00:00.000Z");
+  });
+
+  it("still rejects a genuinely invalid (non-empty) date string", () => {
+    expect(() => optionalDateQueryParam.parse("not-a-date")).toThrow();
   });
 });

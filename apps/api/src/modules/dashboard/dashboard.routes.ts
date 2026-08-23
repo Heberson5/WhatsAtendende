@@ -4,7 +4,7 @@ import { PERMISSION } from "@whatsatendende/types";
 import { asyncHandler } from "../../lib/async-handler";
 import { requireAuth } from "../../middleware/auth";
 import { requirePermission } from "../../lib/permissions";
-import { resolvePeriod } from "../../lib/period";
+import { resolvePeriod, optionalDateQueryParam } from "../../lib/period";
 import { parseListParam } from "../../lib/parse-list-param";
 import { getDashboard } from "./dashboard.service";
 
@@ -13,8 +13,8 @@ dashboardRouter.use(requireAuth, requirePermission(PERMISSION.DASHBOARD_ACESSAR)
 
 const querySchema = z.object({
   period: z.enum(["today", "yesterday", "last7days", "month", "lastMonth", "custom"]).default("today"),
-  from: z.coerce.date().optional(),
-  to: z.coerce.date().optional(),
+  from: optionalDateQueryParam,
+  to: optionalDateQueryParam,
   agentId: z.string().uuid().optional(),
   connectionId: z.union([z.string(), z.array(z.string())]).optional(),
   tzOffsetMinutes: z.coerce.number().default(0),
