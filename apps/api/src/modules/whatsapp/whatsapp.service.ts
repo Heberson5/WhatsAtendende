@@ -142,7 +142,7 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
         return;
       }
 
-      const contact = await conversationsService.findOrCreateContact(connectionId, event.phone, event.contactName);
+      const contact = await conversationsService.findOrCreateContact(connectionId, event.phone, event.contactName, event.chatId);
       if (!contact.photoUrl) {
         // Fire-and-forget: a WhatsApp profile-picture lookup must never
         // delay showing the message itself. Best-effort — getContactPhoto
@@ -195,7 +195,7 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
     // contactName is never trusted here (see BaileysWhatsAppProvider) and
     // a fromMe message should never seed a brand-new contact's photo from
     // this account's own profile picture, so no getContactPhoto call here.
-    const contact = await conversationsService.findOrCreateContact(connectionId, event.phone, null);
+    const contact = await conversationsService.findOrCreateContact(connectionId, event.phone, null, event.chatId);
     const { conversation } = await conversationsService.findOrOpenConversationForInboundMessage(connectionId, contact.id);
 
     const message = await messagesService.createOutboundMessageFromDevice({
