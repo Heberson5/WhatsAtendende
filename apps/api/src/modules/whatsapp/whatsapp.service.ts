@@ -227,7 +227,12 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
 
   provider.onDelivery(async (event) => {
     const message = await messagesService.updateMessageStatusByProviderId(event.providerMessageId, event.status);
-    if (message) realtimeEvents.messageStatusChanged(message.conversationId);
+    if (!message) return;
+    const conversation = await prisma.conversation.findUnique({
+      where: { id: message.conversationId },
+      select: { assignedAgentId: true },
+    });
+    realtimeEvents.messageStatusChanged(message.conversationId, conversation?.assignedAgentId);
   });
 
   provider.onHistorySync(async (event) => {
@@ -268,7 +273,10 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
   });
 
   provider.onReaction(async (event) => {
-    const message = await prisma.message.findUnique({ where: { providerMessageId: event.providerMessageId } });
+    const message = await prisma.message.findUnique({
+      where: { providerMessageId: event.providerMessageId },
+      include: { conversation: { select: { assignedAgentId: true } } },
+    });
     if (!message) return;
     // Customer reactions have userId=NULL, so a compound-unique upsert
     // can't target them reliably (NULLs never compare equal in Postgres) —
@@ -277,7 +285,7 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
     if (event.emoji) {
       await prisma.messageReaction.create({ data: { messageId: message.id, emoji: event.emoji, fromCustomer: true } });
     }
-    realtimeEvents.messageStatusChanged(message.conversationId);
+    realtimeEvents.messageStatusChanged(message.conversationId, message.conversation.assignedAgentId);
   });
 }
 

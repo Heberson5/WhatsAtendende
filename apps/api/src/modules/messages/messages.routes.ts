@@ -244,7 +244,7 @@ messagesRouter.post(
     if (message.providerMessageId) {
       await whatsappService.sendReaction(conversation.whatsappConnectionId, conversation.contact.phone, message.providerMessageId, emoji).catch(() => undefined);
     }
-    realtimeEvents.messageStatusChanged(conversation.id);
+    realtimeEvents.messageStatusChanged(conversation.id, conversation.assignedAgentId);
     res.json(toMessageDTO(updated));
   })
 );
