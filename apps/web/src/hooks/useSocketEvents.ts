@@ -77,8 +77,19 @@ export function useSocketEvents(activeConversationId: string | null) {
   useEffect(() => {
     const socket = getSocket();
     if (!socket || !activeConversationId) return;
-    socket.emit("conversation:join", activeConversationId);
+    const join = () => socket.emit("conversation:join", activeConversationId);
+    join();
+    // A dropped/restored connection (network blip, API redeploy) gets a
+    // brand-new socket.io session server-side — unlike the user/queue/
+    // oversight rooms (rejoined automatically server-side on every
+    // "connection" event, see socket-server.ts), this conversation's room
+    // was only ever joined via this explicit emit, so it does not survive
+    // a reconnect on its own. Without rejoining here, a chat left open
+    // across a reconnect silently stops getting message/status updates —
+    // looking like realtime is broken — until the page is reloaded.
+    socket.on("connect", join);
     return () => {
+      socket.off("connect", join);
       socket.emit("conversation:leave", activeConversationId);
     };
   }, [activeConversationId]);

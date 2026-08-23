@@ -99,6 +99,7 @@ export interface HistorySyncEvent {
  */
 export interface ChatReadEvent {
   chatId: string;
+  phone: string; // normalized E.164-ish digits — see phoneFromJid in BaileysWhatsAppProvider
 }
 
 /**

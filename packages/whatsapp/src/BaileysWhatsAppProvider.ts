@@ -1,4 +1,6 @@
 import { EventEmitter } from "node:events";
+import fs from "node:fs";
+import path from "node:path";
 import * as QRCode from "qrcode";
 import pino from "pino";
 import makeWASocket, {
@@ -63,6 +65,14 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
   // arrive (no makeInMemoryStore dependency needed for just this). Backs
   // listContacts() — the phone's address book, used by "start a new conversation".
   private contacts = new Map<string, ContactInfo>();
+  // Persists the in-memory contacts Map to a small JSON file next to the
+  // Baileys auth state so "Nova conversa"'s address book survives an API
+  // process restart (every deploy). Without this, listContacts() came back
+  // empty right after every restart — the phone's address book only
+  // trickles back in gradually via contacts.upsert/update as live
+  // conversations happen (see the syncFullHistory comment in connect()) —
+  // which used to look like "Nova Conversa parou de trazer os contatos".
+  private contactsCachePath: string;
   private lastConnectOptions: ConnectOptions | undefined;
   // Reconnect bookkeeping — see the "connection: close" handler below for
   // why this exists: without it, a socket that can never actually reach
@@ -76,7 +86,30 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
   private static readonly BASE_RECONNECT_DELAY_MS = 3000;
   private static readonly MAX_RECONNECT_DELAY_MS = 30_000;
 
-  constructor(private options: BaileysProviderOptions) {}
+  constructor(private options: BaileysProviderOptions) {
+    this.contactsCachePath = path.join(options.authStateDir, "contacts-cache.json");
+    this.loadContactsCache();
+  }
+
+  private loadContactsCache() {
+    try {
+      const raw = fs.readFileSync(this.contactsCachePath, "utf-8");
+      const entries = JSON.parse(raw) as ContactInfo[];
+      for (const c of entries) this.contacts.set(c.phone, c);
+    } catch {
+      // No cache yet (first run for this connection) or a corrupt/unreadable
+      // file — starts empty, same as before this cache existed.
+    }
+  }
+
+  private persistContactsCache() {
+    try {
+      fs.mkdirSync(path.dirname(this.contactsCachePath), { recursive: true });
+      fs.writeFileSync(this.contactsCachePath, JSON.stringify(Array.from(this.contacts.values())));
+    } catch (err) {
+      this.logger.error({ err }, "failed to persist WhatsApp contacts cache to disk");
+    }
+  }
 
   async connect(connectOptions?: ConnectOptions): Promise<void> {
     if (this.reconnectTimer) {
@@ -235,7 +268,7 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
           if (!chatId || isNonCustomerChat(chatId)) continue;
           if (update.unreadCount === undefined || update.unreadCount === null) continue;
           if (Number(update.unreadCount) > 0) continue;
-          this.emitter.emit("chatRead", { chatId } satisfies ChatReadEvent);
+          this.emitter.emit("chatRead", { chatId, phone: phoneFromJid(chatId, update.pnJid) } satisfies ChatReadEvent);
         }
       });
 
@@ -279,6 +312,10 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
     await this.socket?.logout().catch(() => undefined);
     this.socket = null;
     this.contacts.clear();
+    // An explicit disconnect means unlinking — a future relink could be a
+    // different phone entirely, so the cached address book must not bleed
+    // into it.
+    fs.rmSync(this.contactsCachePath, { force: true });
     this.settleDisconnected();
   }
 
@@ -410,10 +447,13 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
     this.emitter.emit("connection", status);
   }
 
-  private upsertContacts(contacts: Array<{ id?: string; name?: string | null; notify?: string | null; imgUrl?: string | null }>) {
+  private upsertContacts(contacts: Array<{ id?: string; jid?: string; name?: string | null; notify?: string | null; imgUrl?: string | null }>) {
     for (const c of contacts) {
       if (!c.id || isNonCustomerChat(c.id)) continue;
-      const phone = c.id.split("@")[0];
+      // `id` is `@lid` (an opaque privacy identifier, not a phone number)
+      // for a growing share of contacts — Baileys separately hands back the
+      // real phone-number JID as `jid` whenever it knows it.
+      const phone = (c.jid ?? c.id).split("@")[0];
       const existing = this.contacts.get(phone);
       this.contacts.set(phone, {
         phone,
@@ -421,6 +461,7 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
         photoUrl: (c.imgUrl && c.imgUrl !== "changed" ? c.imgUrl : existing?.photoUrl) ?? null,
       });
     }
+    this.persistContactsCache();
   }
 
   private async handleIncomingMessage(message: WAMessage): Promise<void> {
@@ -439,7 +480,7 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
     const base = {
       providerMessageId: message.key.id ?? "",
       chatId,
-      phone: chatId.split("@")[0],
+      phone: phoneFromJid(chatId, message.key.senderPn ?? message.key.participantPn),
       // pushName on a fromMe message is this account's own name, not the
       // customer's — never let it overwrite the contact's stored name.
       contactName: message.key.fromMe ? null : (message.pushName ?? null),
@@ -521,6 +562,22 @@ function isNonCustomerChat(chatId: string): boolean {
 }
 
 /**
+ * WhatsApp is migrating chats to opaque `@lid` identifiers instead of the
+ * phone-number-based `@s.whatsapp.net` JID, for privacy. `jid.split("@")[0]`
+ * on a `@lid` JID is a meaningless internal number — not a phone number an
+ * agent could recognize, call, or save — which used to show up as "the
+ * wrong number" for the contact everywhere in the app. WhatsApp separately
+ * hands back the real phone number wherever it's known (a message's
+ * senderPn/participantPn, a chat's pnJid, a contact's jid); this picks
+ * that up when available, falling back to the LID digits only when
+ * WhatsApp hasn't told us the real number for this chat yet.
+ */
+function phoneFromJid(jid: string, altPnJid?: string | null): string {
+  if (!jid.endsWith("@lid") || !altPnJid) return jid.split("@")[0];
+  return altPnJid.split("@")[0];
+}
+
+/**
  * Converts one WAMessage out of a `messaging-history.set` batch into our
  * HistoryMessageEvent shape. Deliberately does NOT download media: a real
  * business account's history sync can hand back thousands of messages in
@@ -538,7 +595,7 @@ function convertHistoryMessage(message: WAMessage, chatId: string): HistoryMessa
   const base = {
     providerMessageId: message.key.id ?? "",
     chatId,
-    phone: chatId.split("@")[0],
+    phone: phoneFromJid(chatId, message.key.senderPn ?? message.key.participantPn),
     fromMe: Boolean(message.key.fromMe),
     timestamp: new Date((Number(message.messageTimestamp) || Date.now() / 1000) * 1000),
   };

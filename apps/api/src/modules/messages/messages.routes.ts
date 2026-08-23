@@ -156,6 +156,7 @@ messagesRouter.post(
       message.id,
       conversation.contact.phone,
       body,
+      req.auth!.displayName,
       replyToProviderMessageId
     );
     realtimeEvents.newMessage(conversation.id, req.auth!.userId);
@@ -196,6 +197,7 @@ messagesRouter.post(
       req.file.buffer,
       req.file.originalname,
       req.file.mimetype,
+      req.auth!.displayName,
       (req.body?.caption as string) || undefined
     );
     realtimeEvents.newMessage(conversation.id, req.auth!.userId);

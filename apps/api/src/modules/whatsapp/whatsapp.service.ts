@@ -44,8 +44,22 @@ function getProvider(connectionId: string): WhatsAppProvider {
   return provider;
 }
 
+/** Test-only escape hatch to reach the live provider instance (e.g. to inspect MockWhatsAppProvider.sentTexts) — never used by application code. */
+export function __getProviderForTests(connectionId: string): WhatsAppProvider | undefined {
+  return providers.get(connectionId);
+}
+
 function toChatId(phone: string): string {
   return phone.includes("@") ? phone : `${phone}@s.whatsapp.net`;
+}
+
+// Multiple agents share the same connected WhatsApp number, so without this
+// the customer has no way to tell who they're talking to from one message
+// to the next — WhatsApp's own bold markdown (*text*) renders on the phone.
+// Only ever applied to the text actually sent over the wire; the stored
+// Message.body keeps exactly what the agent typed.
+export function withSenderPrefix(senderDisplayName: string, text: string): string {
+  return `*${senderDisplayName}:*\n${text}`;
 }
 
 /** Boots a provider instance for every existing connection row. Called once at startup — see server.ts. */
@@ -225,9 +239,8 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
     try {
       // Non-customer chats (groups, status, broadcast lists) are already
       // filtered out by the provider before this event is emitted.
-      const phone = event.chatId.split("@")[0];
       const contact = await prisma.contact.findUnique({
-        where: { phone_whatsappConnectionId: { phone, whatsappConnectionId: connectionId } },
+        where: { phone_whatsappConnectionId: { phone: event.phone, whatsappConnectionId: connectionId } },
       });
       if (!contact) return;
       const conversation = await conversationsService.findActiveConversationForContact(contact.id);
@@ -382,10 +395,13 @@ export async function sendOutboundText(
   messageId: string,
   contactPhone: string,
   text: string,
+  senderDisplayName: string,
   replyToProviderMessageId?: string
 ) {
   try {
-    const result = await getProvider(connectionId).sendText(toChatId(contactPhone), text, { replyToProviderMessageId });
+    const result = await getProvider(connectionId).sendText(toChatId(contactPhone), withSenderPrefix(senderDisplayName, text), {
+      replyToProviderMessageId,
+    });
     const message = await messagesService.markMessageSent(messageId, result.providerMessageId);
     return toMessageDTO(message);
   } catch (err) {
@@ -402,10 +418,17 @@ export async function sendOutboundFile(
   buffer: Buffer,
   fileName: string,
   mimeType: string,
+  senderDisplayName: string,
   caption?: string
 ) {
   try {
-    const result = await getProvider(connectionId).sendFile(toChatId(contactPhone), buffer, fileName, mimeType, caption);
+    const result = await getProvider(connectionId).sendFile(
+      toChatId(contactPhone),
+      buffer,
+      fileName,
+      mimeType,
+      caption ? withSenderPrefix(senderDisplayName, caption) : undefined
+    );
     const message = await messagesService.markMessageSent(messageId, result.providerMessageId);
     return toMessageDTO(message);
   } catch (err) {
