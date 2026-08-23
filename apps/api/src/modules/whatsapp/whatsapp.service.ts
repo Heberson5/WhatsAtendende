@@ -62,11 +62,26 @@ export function withSenderPrefix(senderDisplayName: string, text: string): strin
   return `*${senderDisplayName}:*\n${text}`;
 }
 
-/** Boots a provider instance for every existing connection row. Called once at startup — see server.ts. */
+/**
+ * Boots a provider instance for every existing connection row. Called once
+ * at startup — see server.ts.
+ *
+ * A row whose last persisted status was CONNECTED is auto-reconnected here
+ * using its already-linked Baileys session (no new QR/pairing-code needed —
+ * WhatsApp accepts the existing credentials same as any other reconnect).
+ * Without this, every API restart (every deploy) silently left every
+ * previously-connected WhatsApp session sitting idle — the process only
+ * ever *creates* the provider object, it never called .connect() on its
+ * own — so sending/receiving stayed dead until an admin happened to notice
+ * and click "Reconectar" in Configurações.
+ */
 export async function initWhatsAppConnections(): Promise<void> {
   const rows = await prisma.whatsAppConnection.findMany();
   for (const row of rows) {
-    bootstrapConnection(row.id);
+    const provider = bootstrapConnection(row.id);
+    if (row.status === "CONNECTED") {
+      provider.connect().catch((err) => logger.error({ err, connectionId: row.id }, "failed to auto-reconnect WhatsApp connection on startup"));
+    }
   }
 }
 
