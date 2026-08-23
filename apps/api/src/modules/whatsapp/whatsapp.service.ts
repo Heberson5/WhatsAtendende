@@ -98,7 +98,31 @@ function bootstrapConnection(connectionId: string): WhatsAppProvider {
 function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
   provider.onConnectionUpdate(async (status) => {
     try {
-      await persistConnectionStatus(connectionId, status);
+      let linkedNumberToSet: string | undefined;
+      if (status.state === "CONNECTED" && status.connectedNumber) {
+        const existing = await prisma.whatsAppConnection.findUnique({
+          where: { id: connectionId },
+          select: { linkedNumber: true },
+        });
+        if (!existing) return; // deleted mid-flight — same as the P2025 guard below
+        if (existing.linkedNumber && existing.linkedNumber !== status.connectedNumber) {
+          // This connection's history (contacts/conversations/messages)
+          // belongs to a specific real-world number — see PROMPT:
+          // "reconectar somente no mesmo número que já estava antes".
+          // Pairing a different one here would silently start mixing a
+          // second person's WhatsApp account into it, so the pairing is
+          // undone immediately instead of ever reaching CONNECTED.
+          logger.error(
+            { connectionId, expected: existing.linkedNumber, got: status.connectedNumber },
+            "rejected a WhatsApp pairing: the linked number does not match this connection's original number"
+          );
+          provider.disconnect().catch(() => undefined);
+          realtimeEvents.whatsappPairingRejected(connectionId, existing.linkedNumber, status.connectedNumber);
+          return;
+        }
+        if (!existing.linkedNumber) linkedNumberToSet = status.connectedNumber;
+      }
+      await persistConnectionStatus(connectionId, status, linkedNumberToSet);
     } catch (err) {
       // The connection row can vanish out from under an in-flight
       // connect/reconnect (deleted by an admin, or — only ever in
@@ -289,7 +313,7 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
   });
 }
 
-async function persistConnectionStatus(connectionId: string, status: WhatsAppStatusSnapshot) {
+async function persistConnectionStatus(connectionId: string, status: WhatsAppStatusSnapshot, linkedNumber?: string) {
   await prisma.whatsAppConnection.update({
     where: { id: connectionId },
     data: {
@@ -297,6 +321,7 @@ async function persistConnectionStatus(connectionId: string, status: WhatsAppSta
       connectedNumber: status.connectedNumber,
       lastConnectedAt: status.lastConnectedAt,
       lastQrAt: status.qrCodeDataUrl || status.pairingCode ? new Date() : undefined,
+      ...(linkedNumber ? { linkedNumber } : {}),
     },
   });
 }
@@ -309,6 +334,11 @@ export interface ConnectionSummaryDTO {
   qrCodeDataUrl: string | null;
   pairingCode: string | null;
   connectedNumber: string | null;
+  // The number this connection was first ever linked to — see PROMPT:
+  // "reconectar somente no mesmo número que já estava antes". Null only for
+  // a connection that has never completed a pairing yet, in which case any
+  // number is accepted (there's nothing to conflict with).
+  linkedNumber: string | null;
   lastConnectedAt: string | null;
   agentCount: number;
 }
@@ -318,7 +348,16 @@ export interface ConnectionSummaryDTO {
 // changeable afterwards via PATCH /connections/:id.
 const COLOR_PALETTE = ["#0097B4", "#7C3AED", "#F97316", "#059669", "#DC2626", "#2563EB", "#DB2777", "#65A30D"];
 
-function toConnectionSummary(row: { id: string; name: string; color: string; status: string; connectedNumber: string | null; lastConnectedAt: Date | null; _count: { agents: number } }): ConnectionSummaryDTO {
+function toConnectionSummary(row: {
+  id: string;
+  name: string;
+  color: string;
+  status: string;
+  connectedNumber: string | null;
+  linkedNumber: string | null;
+  lastConnectedAt: Date | null;
+  _count: { agents: number };
+}): ConnectionSummaryDTO {
   const runtime = providers.get(row.id)?.getStatus();
   return {
     id: row.id,
@@ -328,6 +367,7 @@ function toConnectionSummary(row: { id: string; name: string; color: string; sta
     qrCodeDataUrl: runtime?.qrCodeDataUrl ?? null,
     pairingCode: runtime?.pairingCode ?? null,
     connectedNumber: runtime?.connectedNumber ?? row.connectedNumber,
+    linkedNumber: row.linkedNumber,
     lastConnectedAt: (runtime?.lastConnectedAt ?? row.lastConnectedAt)?.toISOString?.() ?? null,
     agentCount: row._count.agents,
   };

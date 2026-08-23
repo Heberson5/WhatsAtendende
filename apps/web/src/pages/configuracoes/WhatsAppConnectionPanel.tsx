@@ -14,6 +14,7 @@ interface ConnectionSummary {
   qrCodeDataUrl: string | null;
   pairingCode: string | null;
   connectedNumber: string | null;
+  linkedNumber: string | null;
   lastConnectedAt: string | null;
   agentCount: number;
 }
@@ -61,9 +62,18 @@ export function WhatsAppConnectionPanel() {
     const socket = getSocket();
     if (!socket) return;
     const handler = () => queryClient.invalidateQueries({ queryKey: ["whatsapp-connections"] });
+    const rejectionHandler = (payload: { expectedNumber: string; gotNumber: string }) => {
+      toast.error(
+        `Número diferente do original — vinculação recusada. Esta conexão já esteve vinculada ao número ${payload.expectedNumber}; o número ${payload.gotNumber} foi desconectado automaticamente. Escaneie/vincule com o número original.`,
+        { duration: 10000 }
+      );
+      queryClient.invalidateQueries({ queryKey: ["whatsapp-connections"] });
+    };
     socket.on("whatsapp:status", handler);
+    socket.on("whatsapp:pairing-rejected", rejectionHandler);
     return () => {
       socket.off("whatsapp:status", handler);
+      socket.off("whatsapp:pairing-rejected", rejectionHandler);
     };
   }, [queryClient]);
 
@@ -274,6 +284,12 @@ export function WhatsAppConnectionPanel() {
               </div>
             ) : (
               <div className="space-y-4">
+                {connection.linkedNumber && (
+                  <p className="rounded-card bg-secondary/30 px-3 py-2 text-xs text-secondary-fg">
+                    Esta conexão já esteve vinculada ao número <strong>{connection.linkedNumber}</strong>. Vincule novamente com o mesmo
+                    número — um número diferente é recusado automaticamente, para não misturar o histórico desta conexão com outra conta.
+                  </p>
+                )}
                 {connection.qrCodeDataUrl ? (
                   <div className="flex flex-col items-center gap-3 rounded-card border border-dashed border-border p-6">
                     {connection.qrCodeDataUrl.startsWith("data:") ? (

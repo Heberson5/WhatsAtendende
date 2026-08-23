@@ -120,6 +120,14 @@ model WhatsAppConnection {
   color           String                   @default("#0097B4")
   status          WhatsAppConnectionStatus @default(DISCONNECTED)
   connectedNumber String?
+  // The phone number this connection was FIRST successfully linked to — set
+  // once and kept forever after, unlike connectedNumber (which clears on
+  // every disconnect, even a transient one). Lets a later reconnect/re-pair
+  // attempt be checked against the original number so this connection's
+  // conversation history never ends up mixed with a different real-world
+  // phone number — see PROMPT: "reconectar somente no mesmo número que já
+  // estava antes".
+  linkedNumber    String?
   lastConnectedAt DateTime?
   lastQrAt        DateTime?
   createdAt       DateTime                 @default(now())

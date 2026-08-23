@@ -187,7 +187,19 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
           const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
           this.settleDisconnected();
 
-          if (!shouldReconnect) return; // explicit logout — never auto-retry
+          if (!shouldReconnect) {
+            // WhatsApp itself revoked this session (unlinked from the
+            // phone's own "Aparelhos conectados", or logged out) — the
+            // credentials saved on disk are now permanently dead. Without
+            // clearing them, the *next* connect() attempt would keep
+            // seeing `state.creds.registered === true` and silently retry
+            // this same dead session instead of falling back to a fresh
+            // QR/pairing-code flow — which is exactly what used to leave
+            // "Conectar" on an existing connection generating nothing at
+            // all after a real logout.
+            await fs.promises.rm(this.options.authStateDir, { recursive: true, force: true }).catch(() => undefined);
+            return; // explicit logout — never auto-retry
+          }
 
           this.reconnectAttempts += 1;
           // A session that was linked before and just dropped (network
@@ -312,9 +324,15 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
     await this.socket?.logout().catch(() => undefined);
     this.socket = null;
     this.contacts.clear();
-    // An explicit disconnect means unlinking — a future relink could be a
-    // different phone entirely, so the cached address book must not bleed
-    // into it.
+    // An explicit disconnect means unlinking — the credentials are dead
+    // either way (socket.logout() already told WhatsApp's servers to
+    // revoke them when that succeeded; wiping them here too guarantees it
+    // regardless, so the next "Conectar" always gets a genuinely fresh
+    // QR/pairing-code flow instead of silently retrying a dead session —
+    // see the same reasoning in the "connection: close" / loggedOut branch
+    // of connect()). A future relink could also be a different phone
+    // entirely, so the cached address book must not bleed into it either.
+    fs.rmSync(this.options.authStateDir, { recursive: true, force: true });
     fs.rmSync(this.contactsCachePath, { force: true });
     this.settleDisconnected();
   }
