@@ -8,6 +8,7 @@ import { writeAudit } from "../../lib/audit";
 import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
 import { parseListParam } from "../../lib/parse-list-param";
+import { optionalDateQueryParam } from "../../lib/period";
 import { toConversationListItemDTO } from "./conversations.mapper";
 import * as service from "./conversations.service";
 import { realtimeEvents } from "../../realtime/realtime";
@@ -80,8 +81,8 @@ conversationsRouter.post(
 // distinct from their "/queue" and "/mine" above, which only ever show
 // conversations they can actually act on (their own, or unassigned).
 const oversightQuerySchema = z.object({
-  from: z.coerce.date().optional(),
-  to: z.coerce.date().optional(),
+  from: optionalDateQueryParam,
+  to: optionalDateQueryParam,
   agentId: z.string().uuid().optional(),
   status: z.enum(["NEW", "WAITING", "IN_PROGRESS", "TRANSFERRED", "CLOSED", "ABANDONED"]).optional(),
   q: z.string().optional(),

@@ -1,4 +1,19 @@
+import { z } from "zod";
+
 export type PeriodKey = "today" | "yesterday" | "last7days" | "month" | "lastMonth" | "custom";
+
+/**
+ * Query-string date param that's optional in practice but arrives as an
+ * empty string (not simply absent) whenever a caller sends `from=&to=` —
+ * e.g. a period-filter UI that only fills these in for period="custom"
+ * but still includes the keys for every other period. Plain
+ * `z.coerce.date().optional()` rejects `""` (`new Date("")` is invalid),
+ * which used to 400 the whole request for every non-custom period.
+ */
+export const optionalDateQueryParam = z.preprocess(
+  (value) => (value === "" ? undefined : value),
+  z.coerce.date().optional()
+);
 
 // Day boundaries ("hoje", "este mês", ...) must be computed in the browser's
 // local calendar day, not the server's — this API runs in a Docker container

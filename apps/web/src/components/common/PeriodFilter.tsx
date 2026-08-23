@@ -25,7 +25,15 @@ export function PeriodFilter({ value, onChange }: { value: PeriodValue; onChange
     <div className="flex flex-wrap items-center gap-2">
       <select
         value={value.period}
-        onChange={(e) => onChange({ period: e.target.value as PeriodKey, from: customFrom, to: customTo })}
+        onChange={(e) => {
+          const period = e.target.value as PeriodKey;
+          // Only "custom" carries from/to — every other period is resolved
+          // server-side from `period` alone. Sending the (possibly still
+          // empty) customFrom/customTo strings here for a non-custom period
+          // used to make the API reject the request (empty string isn't a
+          // valid date), leaving the page blank with no error shown.
+          onChange(period === "custom" ? { period, from: customFrom, to: customTo } : { period });
+        }}
         className="focus-ring rounded-card border border-border bg-surface px-3 py-2 text-sm"
       >
         {OPTIONS.map((opt) => (

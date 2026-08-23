@@ -4,7 +4,7 @@ import { PERMISSION } from "@whatsatendende/types";
 import { asyncHandler } from "../../lib/async-handler";
 import { requireAuth } from "../../middleware/auth";
 import { requirePermission } from "../../lib/permissions";
-import { resolvePeriod } from "../../lib/period";
+import { resolvePeriod, optionalDateQueryParam } from "../../lib/period";
 import { parseListParam } from "../../lib/parse-list-param";
 import * as service from "./reports.service";
 
@@ -13,8 +13,8 @@ reportsRouter.use(requireAuth, requirePermission(PERMISSION.RELATORIOS_ACESSAR))
 
 const querySchema = z.object({
   period: z.enum(["today", "yesterday", "last7days", "month", "lastMonth", "custom"]).default("month"),
-  from: z.coerce.date().optional(),
-  to: z.coerce.date().optional(),
+  from: optionalDateQueryParam,
+  to: optionalDateQueryParam,
   agentId: z.string().uuid().optional(),
   connectionId: z.union([z.string(), z.array(z.string())]).optional(),
   format: z.enum(["json", "csv", "pdf", "xlsx"]).default("json"),
