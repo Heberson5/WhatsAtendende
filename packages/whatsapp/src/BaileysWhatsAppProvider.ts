@@ -172,7 +172,16 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
 
         if (connection === "open") {
           this.reconnectAttempts = 0;
-          const connectedNumber = socket.user?.id?.split(":")[0] ?? null;
+          // Prefer the phone-number JID (`jid`) over the raw session id —
+          // same @lid privacy migration as everywhere else in this file:
+          // `id` can itself be `<lid>:<device>@lid` for an account WhatsApp
+          // has moved to a LID-based identity, which used to surface as a
+          // meaningless "connected number" and — worse — as a false
+          // same-number mismatch on every later reconnect (see
+          // whatsapp.service.ts), since it no longer matched the real
+          // number recorded the first time this connection was paired.
+          const ownIdentity = socket.user?.jid ?? socket.user?.id ?? null;
+          const connectedNumber = ownIdentity ? ownIdentity.split(":")[0].split("@")[0] : null;
           this.setStatus({
             state: "CONNECTED",
             qrCodeDataUrl: null,
