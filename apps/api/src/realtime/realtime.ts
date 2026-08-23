@@ -71,6 +71,10 @@ export const realtimeEvents = {
   whatsappStatusChanged: (connectionId: string, status: unknown) => {
     getIO()?.emit("whatsapp:status", { connectionId, status });
   },
+  /** A QR/pairing-code scan linked a different phone number than this connection was originally paired with — the pairing was undone, never reaching CONNECTED. See PROMPT: reconnect only with the same number as before. */
+  whatsappPairingRejected: (connectionId: string, expectedNumber: string, gotNumber: string) => {
+    getIO()?.emit("whatsapp:pairing-rejected", { connectionId, expectedNumber, gotNumber });
+  },
   /** A pending transfer expired without the receiving agent logging in — it bounced back to whoever transferred it. */
   transferReverted: (conversationId: string, revertedToAgentId: string, expiredAgentId: string) => {
     getIO()?.to(ROOMS.user(expiredAgentId)).emit("conversation:removed", { conversationId });
