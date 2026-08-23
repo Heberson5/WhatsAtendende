@@ -40,8 +40,19 @@ async function getUnreadCounts(conversationIds: string[]): Promise<Map<string, n
  * Contact resolution: WhatsApp is the source of truth for phone -> identity,
  * scoped per connection — the same phone number talking to two different
  * connected WhatsApp numbers is two separate customer relationships.
+ *
+ * `providerChatId` (the raw WhatsApp chat id, e.g. "<n>@lid" or
+ * "<n>@s.whatsapp.net") is optional context, not the lookup key: WhatsApp's
+ * @lid privacy identifiers mean the *phone* recorded for a contact can
+ * legitimately change over the life of one chat — created back when only
+ * the opaque @lid digits were known, then later messages resolve the real
+ * number (see phoneFromJid in BaileysWhatsAppProvider). Without this, that
+ * later message would silently spawn a second, disconnected contact/
+ * conversation for the exact same person instead of correcting the first
+ * one — this recovers the original row by its still-stable chat id and
+ * fixes its phone in place.
  */
-export async function findOrCreateContact(connectionId: string, phone: string, name: string | null) {
+export async function findOrCreateContact(connectionId: string, phone: string, name: string | null, providerChatId?: string) {
   const existing = await prisma.contact.findUnique({
     where: { phone_whatsappConnectionId: { phone, whatsappConnectionId: connectionId } },
   });
@@ -57,6 +68,24 @@ export async function findOrCreateContact(connectionId: string, phone: string, n
       },
     });
   }
+
+  if (providerChatId) {
+    const priorPhone = providerChatId.split("@")[0];
+    if (priorPhone && priorPhone !== phone) {
+      const byPriorPhone = await prisma.contact.findUnique({
+        where: { phone_whatsappConnectionId: { phone: priorPhone, whatsappConnectionId: connectionId } },
+      });
+      if (byPriorPhone) {
+        return prisma.contact
+          .update({
+            where: { id: byPriorPhone.id },
+            data: { phone, lastInteractionAt: new Date(), name: byPriorPhone.name ?? name ?? undefined },
+          })
+          .catch(() => byPriorPhone); // extremely rare unique-constraint race — keep the old phone rather than fail the message
+      }
+    }
+  }
+
   return prisma.contact.create({ data: { phone, name, whatsappConnectionId: connectionId } });
 }
 
@@ -66,6 +95,7 @@ export async function updateContactPhoto(contactId: string, photoUrl: string) {
 
 export interface HistoricalMessageInput {
   providerMessageId: string;
+  chatId?: string;
   phone: string;
   fromMe: boolean;
   type: "TEXT" | "LOCATION" | "CONTACT" | "IMAGE" | "VIDEO" | "AUDIO" | "DOCUMENT";
@@ -90,7 +120,7 @@ export async function importHistoricalMessages(connectionId: string, messages: H
     const existing = await prisma.message.findUnique({ where: { providerMessageId: m.providerMessageId } });
     if (existing) continue;
 
-    const contact = await findOrCreateContact(connectionId, m.phone, null);
+    const contact = await findOrCreateContact(connectionId, m.phone, null, m.chatId);
     let conversation = await prisma.conversation.findFirst({ where: { contactId: contact.id }, orderBy: { createdAt: "desc" } });
     if (!conversation) {
       conversation = await prisma.conversation.create({
