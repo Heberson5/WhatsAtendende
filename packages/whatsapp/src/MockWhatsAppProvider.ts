@@ -50,6 +50,9 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
     lastConnectedAt: null,
   };
   private autoMessageTimer: NodeJS.Timeout | null = null;
+  /** Test helper: every sendText/sendFile call, exactly as this "reached WhatsApp" — lets tests assert on things like whatsapp.service.ts's sender-name prefix without a real WhatsApp account. */
+  readonly sentTexts: { chatId: string; text: string }[] = [];
+  readonly sentFiles: { chatId: string; caption?: string }[] = [];
 
   async connect(options?: ConnectOptions): Promise<void> {
     this.setStatus({ ...this.status, state: "CONNECTING" });
@@ -94,13 +97,15 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
 
   async sendText(chatId: string, text: string, _options?: SendTextOptions): Promise<SendResult> {
     this.ensureConnected();
+    this.sentTexts.push({ chatId, text });
     const result = { providerMessageId: randomUUID(), timestamp: new Date() };
     this.simulateDeliveryLifecycle(chatId, result.providerMessageId);
     return result;
   }
 
-  async sendFile(): Promise<SendResult> {
+  async sendFile(chatId: string, _buffer: Buffer, _fileName: string, _mimeType: string, caption?: string): Promise<SendResult> {
     this.ensureConnected();
+    this.sentFiles.push({ chatId, caption });
     const result = { providerMessageId: randomUUID(), timestamp: new Date() };
     return result;
   }
