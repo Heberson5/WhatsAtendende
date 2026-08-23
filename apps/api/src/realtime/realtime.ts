@@ -54,8 +54,14 @@ export const realtimeEvents = {
   inboundMessageNotification: (conversationId: string, agentId: string, contactName: string, preview: string) => {
     getIO()?.to(ROOMS.user(agentId)).emit("message:inbound-notification", { conversationId, contactName, preview });
   },
-  messageStatusChanged: (conversationId: string) => {
+  // Also broadcast to the owning agent's own room — unlike the queue/user/
+  // oversight rooms (rejoined automatically server-side on every socket
+  // "connection" event), the conversation room is only ever joined via an
+  // explicit client emit and can be missed after a reconnect; this keeps
+  // delivery/read ticks (and reaction updates) live even then, same as newMessage.
+  messageStatusChanged: (conversationId: string, agentId?: string | null) => {
     getIO()?.to(ROOMS.conversation(conversationId)).emit("message:status", { conversationId });
+    if (agentId) getIO()?.to(ROOMS.user(agentId)).emit("message:status", { conversationId });
   },
   /** The linked phone marked a chat as read (WhatsApp's own multi-device sync) — refreshes the unread badge for whoever owns it. */
   conversationReadFromDevice: (conversationId: string, agentId: string | null) => {
