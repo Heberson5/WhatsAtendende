@@ -95,26 +95,51 @@ goto MENU
 
 rem =====================================================================
 rem Rotina compartilhada por [1] e [15] - garante que toda atualizacao
-rem realmente aplica o codigo mais novo, sem depender de cache antigo:
-rem   1. git fetch + reset --hard na branch %BRANCH% (nunca fica preso
-rem      numa branch antiga, nem trava por causa de alteracao local na VPS)
-rem   2. mostra o commit antes/depois, pra voce confirmar visualmente
-rem      que o servidor realmente pegou a versao nova
-rem   3. docker compose build --pull (reconstroi as imagens do zero,
-rem      inclusive atualizando as imagens-base do sistema operacional)
-rem   4. docker compose up -d --force-recreate --remove-orphans (recria
-rem      os containers mesmo se o Docker achar, por engano, que nada mudou)
-rem   5. docker image prune -f (limpa imagens antigas - evita lotar o
-rem      disco da VPS a cada atualizacao)
-rem   6. docker compose ps no final, pra confirmar que os containers
-rem      subiram ha poucos segundos
+rem realmente aplica o codigo mais novo, sem depender de cache antigo.
+rem Dividida em 2 chamadas SSH separadas, cada uma com sua propria
+rem checagem de sucesso/falha (%ERRORLEVEL%), em vez de um unico comando
+rem gigante onde uma falha no meio (ex.: rebuild sem memoria/disco numa
+rem VPS pequena) passava batido no meio da rolagem de texto:
+rem   [1/2] git fetch + reset --hard na branch %BRANCH% (nunca fica preso
+rem         numa branch antiga, nem trava por alteracao local na VPS) -
+rem         mostra o commit antes/depois, pra confirmar visualmente que
+rem         pegou a versao nova
+rem   [2/2] docker compose build (reconstroi as imagens com o codigo
+rem         novo) + up -d --force-recreate --remove-orphans (recria os
+rem         containers mesmo se o Docker achar, por engano, que nada
+rem         mudou) + docker image prune (limpa imagens antigas, evita
+rem         lotar o disco) + docker compose ps no final
 rem A migracao do banco (prisma migrate deploy) roda sozinha, dentro do
 rem container, antes do servidor da API iniciar - nao precisa fazer nada
 rem a parte para isso.
 rem =====================================================================
 :HARD_UPDATE_WHATSATENDENDE
-ssh -i "%KEY%" %USER%@%IP% "cd %PROJETO% && echo === Commit ANTES da atualizacao === && git log -1 --oneline && git fetch origin && git checkout %BRANCH% && git reset --hard origin/%BRANCH% && echo === Commit DEPOIS da atualizacao === && git log -1 --oneline && docker compose build --pull && docker compose up -d --force-recreate --remove-orphans && docker image prune -f && echo === Containers (confira se o STATUS mostra 'Up' ha poucos segundos) === && docker compose ps"
-exit /b
+echo.
+echo [1/2] Sincronizando codigo (branch %BRANCH%)...
+ssh -i "%KEY%" %USER%@%IP% "cd %PROJETO% && echo === Commit ANTES da atualizacao === && git log -1 --oneline && git fetch origin && git checkout %BRANCH% && git reset --hard origin/%BRANCH% && echo === Commit DEPOIS da atualizacao === && git log -1 --oneline"
+if errorlevel 1 (
+    echo.
+    echo [ERRO] Falha ao sincronizar o codigo via git. Os containers NAO
+    echo foram reconstruidos - nada mudou no servidor. Confira a mensagem
+    echo de erro acima ^(ex.: sem conexao com o GitHub, chave SSH^).
+    exit /b 1
+)
+echo.
+echo [2/2] Reconstruindo e subindo os containers ^(pode demorar alguns minutos^)...
+ssh -i "%KEY%" %USER%@%IP% "cd %PROJETO% && docker compose build && docker compose up -d --force-recreate --remove-orphans && docker image prune -f && echo === Containers ^(confira se o STATUS mostra 'Up' ha poucos segundos^) === && docker compose ps"
+if errorlevel 1 (
+    echo.
+    echo [ERRO] O codigo foi atualizado, mas a reconstrucao dos containers
+    echo FALHOU no meio do processo - o servidor pode ter ficado com uma
+    echo versao incompleta ou parada. Rode a opcao [5] para ver os logs
+    echo completos do erro, e a opcao [7] para checar memoria/disco ^(se a
+    echo VPS ficou sem memoria durante o build, crie o swap pela opcao
+    echo [18] e tente atualizar de novo^).
+    exit /b 1
+)
+echo.
+echo [OK] Codigo atualizado e containers reconstruidos com sucesso.
+exit /b 0
 
 :SSH
 cls
@@ -235,6 +260,12 @@ rem atualiza o codigo e reconstroi tudo e a rotina HARD_UPDATE logo abaixo.
 ssh -i "%KEY%" %USER%@%IP% "if [ -d %PROJETO%/.git ]; then cd %PROJETO% && git checkout %BRANCH%; else rm -rf %PROJETO% && git clone -b %BRANCH% %REPO_WHATSATENDENDE% %PROJETO%; fi && cd %PROJETO% && if [ ! -f .env ]; then echo 'Criando .env com segredos novos (primeiro deploy)...'; { echo JWT_ACCESS_SECRET=$(openssl rand -hex 32); echo JWT_REFRESH_SECRET=$(openssl rand -hex 32); echo WHATSAPP_PROVIDER=baileys; echo WEB_APP_URL=http://%IP%:8080; } > .env; echo '.env criado - faca um backup deste arquivo (nao esta no git, sem ele os logins existentes param de funcionar num redeploy que o apague).'; fi"
 
 call :HARD_UPDATE_WHATSATENDENDE
+if errorlevel 1 (
+    echo.
+    echo Deploy interrompido - veja o erro acima antes de tentar de novo.
+    pause
+    goto MENU
+)
 
 echo.
 echo WhatsAtendende atualizado e no ar em http://%IP%:8080
