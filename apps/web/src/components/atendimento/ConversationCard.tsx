@@ -26,6 +26,11 @@ export function ConversationCard({
   accepting?: boolean;
 }) {
   const displayName = conversation.contact.name || conversation.contact.phone;
+  // When there's a saved name, displayName hides the phone entirely — show
+  // it as a subtitle too, since the phone number is what an agent actually
+  // needs to confirm/dial/search by, not just a name that could be wrong
+  // or shared by two different contacts.
+  const showPhoneSubtitle = Boolean(conversation.contact.name);
 
   return (
     <div
@@ -64,6 +69,8 @@ export function ConversationCard({
             {formatDistanceToNow(new Date(conversation.enteredQueueAt), { locale: ptBR, addSuffix: false })}
           </span>
         </div>
+
+        {showPhoneSubtitle && <p className="truncate text-xs text-muted">{conversation.contact.phone}</p>}
 
         <div className="mt-1 flex flex-wrap items-center gap-1.5">
           <span
