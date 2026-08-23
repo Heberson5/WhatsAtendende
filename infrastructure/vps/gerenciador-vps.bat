@@ -126,7 +126,7 @@ if errorlevel 1 (
 )
 echo.
 echo [2/2] Reconstruindo e subindo os containers ^(pode demorar alguns minutos^)...
-ssh -i "%KEY%" %USER%@%IP% "cd %PROJETO% && docker compose build && docker compose up -d --force-recreate --remove-orphans && docker image prune -f && echo === Containers ^(confira se o STATUS mostra 'Up' ha poucos segundos^) === && docker compose ps"
+ssh -i "%KEY%" %USER%@%IP% "cd %PROJETO% && docker compose build && docker compose up -d --force-recreate --remove-orphans && docker image prune -f && echo === Containers - confira se o STATUS mostra Up ha poucos segundos === && docker compose ps"
 if errorlevel 1 (
     echo.
     echo [ERRO] O codigo foi atualizado, mas a reconstrucao dos containers
