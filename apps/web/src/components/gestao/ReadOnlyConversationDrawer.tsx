@@ -1,8 +1,16 @@
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { X, Phone } from "lucide-react";
 import type { ConversationListItemDTO, MessageDTO, PaginatedResult } from "@whatsatendende/types";
 import { api } from "../../lib/api";
 import { MessageBubble } from "../atendimento/MessageBubble";
+
+async function fetchMessages(conversationId: string, cursor?: string) {
+  const res = await api.get<PaginatedResult<MessageDTO>>(`/messages/conversations/${conversationId}`, {
+    params: { cursor, limit: 100 },
+  });
+  return res.data;
+}
 
 export function ReadOnlyConversationDrawer({
   conversation,
@@ -11,14 +19,51 @@ export function ReadOnlyConversationDrawer({
   conversation: ConversationListItemDTO;
   onClose: () => void;
 }) {
-  const { data, isLoading } = useQuery({
+  const [messages, setMessages] = useState<MessageDTO[]>([]);
+  const [cursor, setCursor] = useState<string | undefined>(undefined);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const isFirstLoad = useRef(true);
+
+  const messagesQuery = useQuery({
     queryKey: ["oversight-messages", conversation.id],
-    queryFn: async () =>
-      (await api.get<PaginatedResult<MessageDTO>>(`/messages/conversations/${conversation.id}`, { params: { limit: 50 } })).data,
+    queryFn: () => fetchMessages(conversation.id),
   });
 
+  useEffect(() => {
+    if (!messagesQuery.data) return;
+    setMessages((prev) => (prev.length === 0 ? messagesQuery.data.items : prev));
+    setCursor((prev) => prev ?? messagesQuery.data.nextCursor ?? undefined);
+  }, [messagesQuery.data]);
+
+  useEffect(() => {
+    if (isFirstLoad.current && messages.length > 0) {
+      scrollContainerRef.current?.scrollTo({ top: scrollContainerRef.current.scrollHeight });
+      isFirstLoad.current = false;
+    }
+  }, [messages]);
+
+  // Automatically keeps paging through history until it's all loaded, same
+  // as ChatPanel's own conversation view — see PROMPT: "trazer todo o
+  // histórico das conversas quando é aberta".
+  useEffect(() => {
+    if (!cursor) return;
+    const container = scrollContainerRef.current;
+    const prevScrollHeight = container?.scrollHeight ?? 0;
+    const prevScrollTop = container?.scrollTop ?? 0;
+    fetchMessages(conversation.id, cursor).then((page) => {
+      setMessages((prev) => [...page.items, ...prev]);
+      setCursor(page.nextCursor ?? undefined);
+      requestAnimationFrame(() => {
+        if (!container) return;
+        container.scrollTop = prevScrollTop + (container.scrollHeight - prevScrollHeight);
+      });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cursor, conversation.id]);
+
+  const isLoading = messagesQuery.isLoading;
   const displayName = conversation.contact.name || conversation.contact.phone;
-  const messageById = new Map((data?.items ?? []).map((m) => [m.id, m]));
+  const messageById = new Map(messages.map((m) => [m.id, m]));
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/30">
@@ -47,9 +92,9 @@ export function ReadOnlyConversationDrawer({
           </button>
         </div>
 
-        <div className="flex-1 space-y-3 overflow-y-auto bg-[var(--color-bg)] px-4 py-4">
-          {isLoading && <p className="text-center text-sm text-muted">Carregando histórico...</p>}
-          {data?.items.map((m) => (
+        <div ref={scrollContainerRef} className="flex-1 space-y-3 overflow-y-auto bg-[var(--color-bg)] px-4 py-4">
+          {(isLoading || cursor) && <p className="text-center text-sm text-muted">Carregando histórico...</p>}
+          {messages.map((m) => (
             <MessageBubble
               key={m.id}
               message={m}

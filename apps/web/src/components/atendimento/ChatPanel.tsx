@@ -11,8 +11,11 @@ import { Composer } from "./Composer";
 import { TransferModal } from "./TransferModal";
 
 async function fetchMessages(conversationId: string, cursor?: string) {
+  // 100 (the API's own max) rather than a smaller page, since every page
+  // beyond the first is now fetched automatically back-to-back until the
+  // whole history is loaded — fewer round trips to get there.
   const res = await api.get<PaginatedResult<MessageDTO>>(`/messages/conversations/${conversationId}`, {
-    params: { cursor, limit: 30 },
+    params: { cursor, limit: 100 },
   });
   return res.data;
 }
@@ -24,12 +27,21 @@ export function ChatPanel({ conversation, onClosed, onBack }: { conversation: Co
   const canClose = permissions?.[PERMISSION.ATENDIMENTO_ENCERRAR];
   const [messages, setMessages] = useState<MessageDTO[]>([]);
   const [cursor, setCursor] = useState<string | undefined>(undefined);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [replyTo, setReplyTo] = useState<MessageDTO | null>(null);
   const [transferOpen, setTransferOpen] = useState(false);
   const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const isFirstLoad = useRef(true);
+  // Tracks which conversation is current so a loadOlder() fetch that's
+  // still in flight when the agent switches to a different conversation
+  // (now much more likely, since history now loads continuously right
+  // after opening one) can recognize it's stale and discard its result
+  // instead of injecting the wrong conversation's messages.
+  const activeConversationId = useRef(conversation.id);
+  useEffect(() => {
+    activeConversationId.current = conversation.id;
+  }, [conversation.id]);
 
   const messagesQuery = useQuery({
     queryKey: ["messages", conversation.id],
@@ -91,15 +103,33 @@ export function ChatPanel({ conversation, onClosed, onBack }: { conversation: Co
 
   async function loadOlder() {
     if (!cursor) return;
-    setLoadingMore(true);
-    try {
-      const page = await fetchMessages(conversation.id, cursor);
-      setMessages((prev) => [...page.items, ...prev]);
-      setCursor(page.nextCursor ?? undefined);
-    } finally {
-      setLoadingMore(false);
-    }
+    const requestedFor = conversation.id;
+    const container = scrollContainerRef.current;
+    const prevScrollHeight = container?.scrollHeight ?? 0;
+    const prevScrollTop = container?.scrollTop ?? 0;
+    const page = await fetchMessages(conversation.id, cursor);
+    if (activeConversationId.current !== requestedFor) return; // switched conversations mid-fetch
+    setMessages((prev) => [...page.items, ...prev]);
+    setCursor(page.nextCursor ?? undefined);
+    // Prepending older messages above what's already rendered must not
+    // visibly move whatever the agent is currently looking at — restore
+    // their exact scroll position relative to the content once the new
+    // (taller) content has painted.
+    requestAnimationFrame(() => {
+      if (!container) return;
+      container.scrollTop = prevScrollTop + (container.scrollHeight - prevScrollHeight);
+    });
   }
+
+  // Automatically keeps paging through history until it's all loaded —
+  // see PROMPT: "trazer todo o histórico das conversas quando é aberta".
+  // Each loadOlder() call advances `cursor`, which re-triggers this same
+  // effect, chaining through every page; it stops on its own the moment
+  // cursor comes back undefined (no more history).
+  useEffect(() => {
+    if (cursor) loadOlder();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cursor]);
 
   const sendTextMutation = useMutation({
     mutationFn: (input: { body: string; replyToMessageId?: string }) =>
@@ -208,12 +238,10 @@ export function ChatPanel({ conversation, onClosed, onBack }: { conversation: Co
         </div>
       </div>
 
-      <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
+      <div ref={scrollContainerRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
         {cursor && (
           <div className="text-center">
-            <button onClick={loadOlder} disabled={loadingMore} className="focus-ring text-xs text-primary hover:underline">
-              {loadingMore ? "Carregando..." : "Carregar mensagens anteriores"}
-            </button>
+            <p className="text-xs text-muted">Carregando histórico...</p>
           </div>
         )}
         {messages.map((message) => (
