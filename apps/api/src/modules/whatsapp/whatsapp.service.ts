@@ -59,7 +59,7 @@ function toChatId(phone: string): string {
 // Only ever applied to the text actually sent over the wire; the stored
 // Message.body keeps exactly what the agent typed.
 export function withSenderPrefix(senderDisplayName: string, text: string): string {
-  return `*${senderDisplayName}:*\n${text}`;
+  return `*${senderDisplayName}*\n\n${text}`;
 }
 
 /**
