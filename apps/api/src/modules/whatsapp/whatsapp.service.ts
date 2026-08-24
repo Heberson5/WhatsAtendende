@@ -49,6 +49,22 @@ export function __getProviderForTests(connectionId: string): WhatsAppProvider | 
   return providers.get(connectionId);
 }
 
+/**
+ * Called once from server.ts's SIGTERM/SIGINT handler, before the process
+ * exits (every deploy sends one of these to the outgoing container). Ends
+ * every live WhatsApp connection's WebSocket cleanly instead of letting the
+ * process die out from under it — see WhatsAppProvider.endForShutdown for
+ * why an abrupt kill was corrupting WhatsApp's own multi-device sync to the
+ * linked phone on every redeploy.
+ */
+export async function shutdownAllConnections(): Promise<void> {
+  await Promise.all(
+    Array.from(providers.values()).map((provider) =>
+      provider.endForShutdown().catch((err) => logger.error({ err }, "failed to gracefully end a WhatsApp connection during shutdown"))
+    )
+  );
+}
+
 function toChatId(phone: string): string {
   return phone.includes("@") ? phone : `${phone}@s.whatsapp.net`;
 }

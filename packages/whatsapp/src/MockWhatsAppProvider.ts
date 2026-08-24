@@ -91,6 +91,10 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
     });
   }
 
+  async endForShutdown(): Promise<void> {
+    if (this.autoMessageTimer) clearInterval(this.autoMessageTimer);
+  }
+
   getStatus(): WhatsAppStatusSnapshot {
     return this.status;
   }

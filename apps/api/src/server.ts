@@ -1,7 +1,7 @@
 import http from "node:http";
 import { createApp } from "./app";
 import { createSocketServer } from "./realtime/socket-server";
-import { initWhatsAppConnections } from "./modules/whatsapp/whatsapp.service";
+import { initWhatsAppConnections, shutdownAllConnections } from "./modules/whatsapp/whatsapp.service";
 import { revertExpiredTransfers } from "./modules/conversations/conversations.service";
 import { env } from "./config/env";
 import { logger } from "./lib/logger";
@@ -29,6 +29,11 @@ async function main() {
     logger.info(`${signal} received, shutting down`);
     clearInterval(transferSweepTimer);
     httpServer.close();
+    // Every deploy sends this signal to the outgoing container — ending
+    // each WhatsApp connection's socket cleanly here (rather than letting
+    // the process just die under it) avoids corrupting WhatsApp's own
+    // multi-device sync to the linked phone. See shutdownAllConnections.
+    await shutdownAllConnections();
     await prisma.$disconnect();
     process.exit(0);
   };
