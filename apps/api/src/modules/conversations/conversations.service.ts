@@ -298,6 +298,33 @@ export async function markConversationRead(conversationId: string, agentId: stri
 }
 
 /**
+ * providerMessageIds of a conversation's still-unread inbound messages —
+ * i.e. exactly the ones markConversationRead is about to clear the badge
+ * for. Called BEFORE markConversationRead (which bumps assignedAgentReadAt)
+ * so it still sees the pre-update cutoff — see whatsapp.service.ts's
+ * syncReadReceiptToDevice, which sends WhatsApp read receipts for these so
+ * opening a conversation in the app also clears the unread indicator on
+ * the linked phone itself, not just in this app.
+ */
+export async function getUnreadInboundProviderMessageIds(conversationId: string): Promise<string[]> {
+  const conversation = await prisma.conversation.findUnique({
+    where: { id: conversationId },
+    select: { assignedAgentReadAt: true },
+  });
+  if (!conversation) return [];
+  const messages = await prisma.message.findMany({
+    where: {
+      conversationId,
+      direction: "INBOUND",
+      providerMessageId: { not: null },
+      ...(conversation.assignedAgentReadAt ? { createdAt: { gt: conversation.assignedAgentReadAt } } : {}),
+    },
+    select: { providerMessageId: true },
+  });
+  return messages.map((m) => m.providerMessageId).filter((id): id is string => Boolean(id));
+}
+
+/**
  * Same effect as markConversationRead, but with no agent-ownership check —
  * used only when the WhatsApp provider reports a chat was read from the
  * linked phone itself (see onChatRead in whatsapp.service.ts), which is not

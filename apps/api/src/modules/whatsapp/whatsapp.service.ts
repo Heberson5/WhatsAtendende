@@ -50,6 +50,32 @@ export function __getProviderForTests(connectionId: string): WhatsAppProvider | 
 }
 
 /**
+ * Sends WhatsApp read receipts for a conversation's still-unread inbound
+ * messages — called right when an agent opens it in the app (see
+ * conversations.routes.ts's "/:id/read"), so the linked phone's own unread
+ * indicator clears too, not just this app's badge. Best-effort: the
+ * conversation might not be for a real/currently-connected WhatsApp
+ * connection (mock provider, connection mid-reconnect, etc.) — never blocks
+ * or fails the actual "mark read" action over this.
+ */
+export async function syncReadReceiptToDevice(conversationId: string): Promise<void> {
+  try {
+    const providerMessageIds = await conversationsService.getUnreadInboundProviderMessageIds(conversationId);
+    if (providerMessageIds.length === 0) return;
+    const conversation = await prisma.conversation.findUnique({
+      where: { id: conversationId },
+      include: { contact: true },
+    });
+    if (!conversation) return;
+    const provider = providers.get(conversation.contact.whatsappConnectionId);
+    if (!provider) return;
+    await provider.markRead(toChatId(conversation.contact.phone), providerMessageIds);
+  } catch (err) {
+    logger.error({ err, conversationId }, "failed to sync a WhatsApp read receipt to the linked phone");
+  }
+}
+
+/**
  * Called once from server.ts's SIGTERM/SIGINT handler, before the process
  * exits (every deploy sends one of these to the outgoing container). Ends
  * every live WhatsApp connection's WebSocket cleanly instead of letting the

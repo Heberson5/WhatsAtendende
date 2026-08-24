@@ -146,6 +146,18 @@ export interface WhatsAppProvider {
   sendContact(chatId: string, vcard: string, displayName: string): Promise<SendResult>;
   sendReaction(chatId: string, providerMessageId: string, emoji: string | null): Promise<void>;
 
+  /**
+   * Sends WhatsApp read receipts for the given inbound messages — the same
+   * protocol action that (a) shows the customer blue double-check ticks
+   * (unless the connected account's own WhatsApp privacy settings have read
+   * receipts turned off, in which case WhatsApp itself only syncs step (b)
+   * and skips the customer-visible receipt) and (b) clears the unread
+   * indicator on every other device linked to this account, including the
+   * phone itself. There is no way to request only one of the two — it's a
+   * single underlying receipt.
+   */
+  markRead(chatId: string, providerMessageIds: string[]): Promise<void>;
+
   getContactInfo(chatId: string): Promise<ContactInfo>;
   getContactPhoto(chatId: string): Promise<string | null>;
 

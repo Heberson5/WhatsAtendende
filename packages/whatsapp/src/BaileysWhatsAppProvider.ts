@@ -434,6 +434,12 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
     });
   }
 
+  async markRead(chatId: string, providerMessageIds: string[]): Promise<void> {
+    if (providerMessageIds.length === 0) return;
+    const socket = this.requireSocket();
+    await socket.readMessages(providerMessageIds.map((id) => ({ remoteJid: chatId, id, fromMe: false })));
+  }
+
   async getContactInfo(chatId: string): Promise<ContactInfo> {
     this.requireSocket();
     return {

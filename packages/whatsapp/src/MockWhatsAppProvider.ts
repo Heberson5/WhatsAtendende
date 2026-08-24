@@ -53,6 +53,8 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
   /** Test helper: every sendText/sendFile call, exactly as this "reached WhatsApp" — lets tests assert on things like whatsapp.service.ts's sender-name prefix without a real WhatsApp account. */
   readonly sentTexts: { chatId: string; text: string }[] = [];
   readonly sentFiles: { chatId: string; caption?: string }[] = [];
+  /** Test helper: every markRead call, exactly as this "reached WhatsApp". */
+  readonly readReceiptsSent: { chatId: string; providerMessageIds: string[] }[] = [];
 
   async connect(options?: ConnectOptions): Promise<void> {
     this.setStatus({ ...this.status, state: "CONNECTING" });
@@ -131,6 +133,11 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
 
   async sendReaction(): Promise<void> {
     this.ensureConnected();
+  }
+
+  async markRead(chatId: string, providerMessageIds: string[]): Promise<void> {
+    this.ensureConnected();
+    this.readReceiptsSent.push({ chatId, providerMessageIds });
   }
 
   async getContactInfo(chatId: string): Promise<ContactInfo> {
