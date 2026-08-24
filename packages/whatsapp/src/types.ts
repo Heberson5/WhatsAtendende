@@ -112,6 +112,22 @@ export interface ChatReadEvent {
 export interface WhatsAppProvider {
   connect(options?: ConnectOptions): Promise<void>;
   disconnect(): Promise<void>;
+  /**
+   * Cleanly closes the live connection for a graceful process shutdown
+   * (e.g. a deploy) WITHOUT touching the persisted session on disk and
+   * WITHOUT transitioning status to DISCONNECTED — unlike disconnect(),
+   * which unlinks the account entirely. The next process boot's
+   * initWhatsAppConnections() only auto-reconnects a row still recorded
+   * as CONNECTED, so this must never persist a status change. Letting the
+   * WebSocket instead die from the OS killing the process (no close
+   * handshake) is what used to leave WhatsApp's own multi-device sync
+   * between this companion session and the primary phone corrupted after
+   * every deploy — messages still reached the customer fine, but the
+   * phone's own chat history got stuck showing "Aguardando mensagem" for
+   * them, and the operator had to manually reconnect (fresh QR/code) to
+   * clear it.
+   */
+  endForShutdown(): Promise<void>;
   getStatus(): WhatsAppStatusSnapshot;
 
   /** Contacts saved on the linked phone — powers "start a new conversation" from Atendimento. Empty while not CONNECTED. */

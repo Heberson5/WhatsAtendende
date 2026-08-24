@@ -82,6 +82,11 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
   // whatsapp.service.ts deleteConnection).
   private reconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  // Set only by endForShutdown() — makes the "connection: close" handler
+  // below a no-op instead of running its normal status/reconnect logic,
+  // since the process is exiting right after and must not persist a
+  // DISCONNECTED status for a session that's still perfectly good.
+  private shuttingDown = false;
   private static readonly MAX_INITIAL_PAIRING_RETRIES = 3;
   private static readonly BASE_RECONNECT_DELAY_MS = 3000;
   private static readonly MAX_RECONNECT_DELAY_MS = 30_000;
@@ -192,6 +197,7 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
         }
 
         if (connection === "close") {
+          if (this.shuttingDown) return; // see endForShutdown() — leave status/DB alone, this process is exiting
           const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
           const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
           this.settleDisconnected();
@@ -344,6 +350,25 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
     fs.rmSync(this.options.authStateDir, { recursive: true, force: true });
     fs.rmSync(this.contactsCachePath, { force: true });
     this.settleDisconnected();
+  }
+
+  async endForShutdown(): Promise<void> {
+    this.shuttingDown = true;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    const socket = this.socket;
+    this.socket = null;
+    if (!socket) return;
+    await new Promise<void>((resolve) => {
+      // end() sends a proper WebSocket close frame (as opposed to the
+      // process simply dying and the OS dropping the TCP connection) —
+      // give it a brief moment to actually reach WhatsApp's servers
+      // before the process exits.
+      socket.end(undefined);
+      setTimeout(resolve, 250);
+    });
   }
 
   getStatus(): WhatsAppStatusSnapshot {
