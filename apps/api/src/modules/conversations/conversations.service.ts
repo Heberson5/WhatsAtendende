@@ -329,12 +329,32 @@ export async function getUnreadInboundProviderMessageIds(conversationId: string)
  * used only when the WhatsApp provider reports a chat was read from the
  * linked phone itself (see onChatRead in whatsapp.service.ts), which is not
  * an authenticated user action and has no agentId to check against.
+ *
+ * If the conversation was still unassigned and sitting in the queue
+ * (NEW/WAITING), reading it directly on the phone means it's already being
+ * handled outside this app — see PROMPT: "quando aberto no celular, deve
+ * sair da fila". It leaves the queue (HANDLED_EXTERNALLY) instead of being
+ * silently assigned to some agent the phone gives no way to identify;
+ * Gestão still shows it, just no longer as "aguardando". A conversation an
+ * agent already owns (IN_PROGRESS/TRANSFERRED) is left completely alone —
+ * this only ever touches its read marker.
  */
-export async function markConversationReadFromDevice(conversationId: string) {
+export async function markConversationReadFromDevice(conversationId: string): Promise<{ leftQueue: boolean }> {
+  const leftQueue = await prisma.conversation.updateMany({
+    where: { id: conversationId, status: { in: ["NEW", "WAITING"] } },
+    data: { status: "HANDLED_EXTERNALLY", assignedAgentReadAt: new Date() },
+  });
+  if (leftQueue.count > 0) {
+    await prisma.conversationEvent.create({
+      data: { conversationId, type: "HANDLED_EXTERNALLY" },
+    });
+    return { leftQueue: true };
+  }
   await prisma.conversation.update({
     where: { id: conversationId },
     data: { assignedAgentReadAt: new Date() },
   });
+  return { leftQueue: false };
 }
 
 export interface OversightFilters {

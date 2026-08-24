@@ -85,7 +85,7 @@ const oversightQuerySchema = z.object({
   from: optionalDateQueryParam,
   to: optionalDateQueryParam,
   agentId: z.string().uuid().optional(),
-  status: z.enum(["NEW", "WAITING", "IN_PROGRESS", "TRANSFERRED", "CLOSED", "ABANDONED"]).optional(),
+  status: z.enum(["NEW", "WAITING", "IN_PROGRESS", "TRANSFERRED", "CLOSED", "ABANDONED", "HANDLED_EXTERNALLY"]).optional(),
   q: z.string().optional(),
   // Repeated query param (?connectionId=a&connectionId=b) or comma-separated; empty/absent = all connections.
   connectionId: z.union([z.string(), z.array(z.string())]).optional(),

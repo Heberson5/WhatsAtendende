@@ -1,0 +1,62 @@
+import { describe, it, expect, beforeEach, afterAll } from "vitest";
+import { prisma } from "../src/lib/prisma";
+import * as conversationsService from "../src/modules/conversations/conversations.service";
+import { resetDatabase, createTestConnection, createTestUser, createWaitingConversation } from "./helpers";
+
+describe("reading a conversation from the linked phone (markConversationReadFromDevice)", () => {
+  let connectionId: string;
+
+  beforeEach(async () => {
+    await resetDatabase();
+    connectionId = (await createTestConnection("Suporte")).id;
+  });
+
+  afterAll(async () => {
+    await prisma.$disconnect();
+  });
+
+  it("moves a still-queued (WAITING) conversation to HANDLED_EXTERNALLY, leaving the queue with no assigned agent", async () => {
+    const { conversation } = await createWaitingConversation("5511990007777", connectionId);
+
+    const result = await conversationsService.markConversationReadFromDevice(conversation.id);
+    expect(result).toEqual({ leftQueue: true });
+
+    const updated = await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } });
+    expect(updated.status).toBe("HANDLED_EXTERNALLY");
+    expect(updated.assignedAgentId).toBeNull();
+    expect(updated.assignedAgentReadAt).not.toBeNull();
+
+    const queue = await conversationsService.listQueue([connectionId]);
+    expect(queue.find((c) => c.id === conversation.id)).toBeUndefined();
+
+    const event = await prisma.conversationEvent.findFirst({ where: { conversationId: conversation.id, type: "HANDLED_EXTERNALLY" } });
+    expect(event).not.toBeNull();
+  });
+
+  it("leaves an already-assigned (IN_PROGRESS) conversation's status alone — only updates the read marker", async () => {
+    const { conversation } = await createWaitingConversation("5511990008888", connectionId);
+    const agent = await createTestUser({ email: "agente-he@test.dev", role: "AGENT", whatsappConnectionId: connectionId });
+    await conversationsService.acceptConversation(conversation.id, agent.id);
+
+    const result = await conversationsService.markConversationReadFromDevice(conversation.id);
+    expect(result).toEqual({ leftQueue: false });
+
+    const updated = await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } });
+    expect(updated.status).toBe("IN_PROGRESS");
+    expect(updated.assignedAgentId).toBe(agent.id);
+    expect(updated.assignedAgentReadAt).not.toBeNull();
+  });
+
+  it("a further message from the same contact after HANDLED_EXTERNALLY starts a brand-new conversation, same as CLOSED", async () => {
+    const { contact, conversation } = await createWaitingConversation("5511990009999", connectionId);
+    await conversationsService.markConversationReadFromDevice(conversation.id);
+
+    const { conversation: reopened, isNewConversation } = await conversationsService.findOrOpenConversationForInboundMessage(
+      connectionId,
+      contact.id
+    );
+    expect(isNewConversation).toBe(true);
+    expect(reopened.id).not.toBe(conversation.id);
+    expect(reopened.status).toBe("NEW");
+  });
+});

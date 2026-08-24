@@ -24,6 +24,7 @@ const STATUS_LABEL: Record<string, string> = {
   TRANSFERRED: "Transferida",
   CLOSED: "Encerrada",
   ABANDONED: "Abandonada",
+  HANDLED_EXTERNALLY: "Atendido pelo celular",
 };
 
 function minutes(ms: number | null): number | string {
