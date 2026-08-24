@@ -125,9 +125,15 @@ export function ChatPanel({ conversation, onClosed, onBack }: { conversation: Co
   // see PROMPT: "trazer todo o histórico das conversas quando é aberta".
   // Each loadOlder() call advances `cursor`, which re-triggers this same
   // effect, chaining through every page; it stops on its own the moment
-  // cursor comes back undefined (no more history).
+  // cursor comes back undefined (no more history). Paced with a short
+  // delay between pages, rather than firing every request back-to-back —
+  // a very long conversation could otherwise mean dozens of requests
+  // bursting in the same instant against the single API process that is
+  // also running the live WhatsApp connection.
   useEffect(() => {
-    if (cursor) loadOlder();
+    if (!cursor) return;
+    const timer = setTimeout(() => loadOlder(), 300);
+    return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cursor]);
 
