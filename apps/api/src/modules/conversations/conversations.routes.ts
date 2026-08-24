@@ -12,6 +12,7 @@ import { optionalDateQueryParam } from "../../lib/period";
 import { toConversationListItemDTO } from "./conversations.mapper";
 import * as service from "./conversations.service";
 import { realtimeEvents } from "../../realtime/realtime";
+import { syncReadReceiptToDevice } from "../whatsapp/whatsapp.service";
 
 export const conversationsRouter = Router();
 conversationsRouter.use(requireAuth);
@@ -152,6 +153,11 @@ conversationsRouter.post(
   "/:id/read",
   requireAttendanceAccess,
   asyncHandler(async (req, res) => {
+    // Started before markConversationRead (which bumps assignedAgentReadAt)
+    // so it still reads the pre-update unread cutoff; not awaited — it's a
+    // real round trip to WhatsApp's servers (errors logged internally), and
+    // the agent's own "mark read" click shouldn't wait on that.
+    void syncReadReceiptToDevice(req.params.id);
     await service.markConversationRead(req.params.id, req.auth!.userId);
     res.status(204).end();
   })
