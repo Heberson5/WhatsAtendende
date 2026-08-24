@@ -16,6 +16,7 @@ const STATUS_LABEL: Record<string, string> = {
   TRANSFERRED: "Transferida",
   CLOSED: "Encerrada",
   ABANDONED: "Abandonada",
+  HANDLED_EXTERNALLY: "Atendido pelo celular",
 };
 
 const STATUS_COLOR: Record<string, string> = {
@@ -25,6 +26,7 @@ const STATUS_COLOR: Record<string, string> = {
   TRANSFERRED: "bg-purple-100 text-purple-700",
   CLOSED: "bg-gray-100 text-gray-600",
   ABANDONED: "bg-red-100 text-red-700",
+  HANDLED_EXTERNALLY: "bg-yellow-100 text-yellow-700",
 };
 
 interface AgentOption {

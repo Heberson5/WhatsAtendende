@@ -68,6 +68,12 @@ export const realtimeEvents = {
     if (agentId) getIO()?.to(ROOMS.user(agentId)).emit("conversation:read", { conversationId });
     getIO()?.to(ROOMS.oversight()).emit("oversight:updated");
   },
+  /** A still-queued conversation was read directly on the linked phone and left the queue (HANDLED_EXTERNALLY) — see markConversationReadFromDevice. Same queue-refresh broadcast as conversationAccepted, just with no owning agent to notify. */
+  conversationHandledExternally: (connectionId: string) => {
+    getIO()?.to(ROOMS.queue(connectionId)).emit("queue:updated");
+    getIO()?.to(ROOMS.oversight()).emit("queue:updated");
+    getIO()?.to(ROOMS.oversight()).emit("oversight:updated");
+  },
   whatsappStatusChanged: (connectionId: string, status: unknown) => {
     getIO()?.emit("whatsapp:status", { connectionId, status });
   },

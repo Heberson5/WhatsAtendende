@@ -331,8 +331,12 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
       if (!contact) return;
       const conversation = await conversationsService.findActiveConversationForContact(contact.id);
       if (!conversation) return;
-      await conversationsService.markConversationReadFromDevice(conversation.id);
-      realtimeEvents.conversationReadFromDevice(conversation.id, conversation.assignedAgentId);
+      const { leftQueue } = await conversationsService.markConversationReadFromDevice(conversation.id);
+      if (leftQueue) {
+        realtimeEvents.conversationHandledExternally(connectionId);
+      } else {
+        realtimeEvents.conversationReadFromDevice(conversation.id, conversation.assignedAgentId);
+      }
     } catch (err) {
       logger.error({ err, connectionId }, "failed to sync a chat-read event from the linked phone");
     }

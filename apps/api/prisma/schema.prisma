@@ -170,6 +170,14 @@ enum ConversationStatus {
   TRANSFERRED
   CLOSED
   ABANDONED
+  // A still-unassigned (NEW/WAITING) conversation was read directly on the
+  // linked phone instead of through this app — see PROMPT: "quando aberto
+  // no celular, deve sair da fila". Left with no assigned agent (the phone
+  // gives no way to know which one), so it leaves the queue without being
+  // attributed to anyone; still visible in Gestão. A further message from
+  // the same contact starts a brand-new conversation, same precedent as
+  // CLOSED (see findActiveConversationForContact).
+  HANDLED_EXTERNALLY
 }
 
 model Conversation {
@@ -260,7 +268,7 @@ model ConversationEvent {
   id              String   @id @default(uuid())
   conversation    Conversation @relation(fields: [conversationId], references: [id])
   conversationId  String
-  type            String   // CREATED | ACCEPTED | TRANSFERRED | CLOSED | REOPENED | ACCEPT_CONFLICT
+  type            String   // CREATED | ACCEPTED | TRANSFERRED | CLOSED | REOPENED | ACCEPT_CONFLICT | HANDLED_EXTERNALLY
   payload         Json?
   createdAt       DateTime @default(now())
 

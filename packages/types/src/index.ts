@@ -29,6 +29,9 @@ export const CONVERSATION_STATUS = {
   TRANSFERRED: "TRANSFERRED",
   CLOSED: "CLOSED",
   ABANDONED: "ABANDONED",
+  // A still-unassigned conversation was read directly on the linked phone —
+  // it leaves the queue without being attributed to any agent.
+  HANDLED_EXTERNALLY: "HANDLED_EXTERNALLY",
 } as const;
 export type ConversationStatus = (typeof CONVERSATION_STATUS)[keyof typeof CONVERSATION_STATUS];
 
