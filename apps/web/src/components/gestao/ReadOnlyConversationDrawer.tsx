@@ -44,20 +44,27 @@ export function ReadOnlyConversationDrawer({
 
   // Automatically keeps paging through history until it's all loaded, same
   // as ChatPanel's own conversation view — see PROMPT: "trazer todo o
-  // histórico das conversas quando é aberta".
+  // histórico das conversas quando é aberta". Paced with a short delay
+  // between pages rather than firing every request back-to-back — a very
+  // long conversation could otherwise mean dozens of requests bursting in
+  // the same instant against the single API process that is also running
+  // the live WhatsApp connection.
   useEffect(() => {
     if (!cursor) return;
-    const container = scrollContainerRef.current;
-    const prevScrollHeight = container?.scrollHeight ?? 0;
-    const prevScrollTop = container?.scrollTop ?? 0;
-    fetchMessages(conversation.id, cursor).then((page) => {
-      setMessages((prev) => [...page.items, ...prev]);
-      setCursor(page.nextCursor ?? undefined);
-      requestAnimationFrame(() => {
-        if (!container) return;
-        container.scrollTop = prevScrollTop + (container.scrollHeight - prevScrollHeight);
+    const timer = setTimeout(() => {
+      const container = scrollContainerRef.current;
+      const prevScrollHeight = container?.scrollHeight ?? 0;
+      const prevScrollTop = container?.scrollTop ?? 0;
+      fetchMessages(conversation.id, cursor).then((page) => {
+        setMessages((prev) => [...page.items, ...prev]);
+        setCursor(page.nextCursor ?? undefined);
+        requestAnimationFrame(() => {
+          if (!container) return;
+          container.scrollTop = prevScrollTop + (container.scrollHeight - prevScrollHeight);
+        });
       });
-    });
+    }, 300);
+    return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cursor, conversation.id]);
 
