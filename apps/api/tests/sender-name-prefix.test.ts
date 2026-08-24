@@ -15,7 +15,7 @@ async function loginAs(email: string) {
 
 describe("withSenderPrefix (pure formatting)", () => {
   it("prefixes the WhatsApp-bold agent name ahead of the text, separated by a blank line", () => {
-    expect(withSenderPrefix("Joao", "Ola, em que posso ajudar?")).toBe("*Joao*\n\nOla, em que posso ajudar?");
+    expect(withSenderPrefix("Joao", "Ola, em que posso ajudar?")).toBe("*Joao:*\n\nOla, em que posso ajudar?");
   });
 });
 
@@ -57,7 +57,7 @@ describe("outbound WhatsApp sends carry the sending agent's display name", () =>
     expect(textRes.body.body).toBe("Ola, em que posso ajudar?"); // unprefixed in the app itself
 
     const provider = __getProviderForTests(created.body.id) as MockWhatsAppProvider;
-    expect(provider.sentTexts.at(-1)?.text).toBe("*Joao Pereira*\n\nOla, em que posso ajudar?");
+    expect(provider.sentTexts.at(-1)?.text).toBe("*Joao Pereira:*\n\nOla, em que posso ajudar?");
 
     const fileRes = await request(app)
       .post(`/api/messages/conversations/${conversation.id}/file`)
@@ -66,6 +66,6 @@ describe("outbound WhatsApp sends carry the sending agent's display name", () =>
       .attach("file", Buffer.from("fake-image-bytes"), { filename: "comprovante.jpg", contentType: "image/jpeg" });
     expect(fileRes.status).toBe(201);
     expect(fileRes.body.body).toBe("Segue o comprovante"); // unprefixed in the app itself
-    expect(provider.sentFiles.at(-1)?.caption).toBe("*Joao Pereira*\n\nSegue o comprovante");
+    expect(provider.sentFiles.at(-1)?.caption).toBe("*Joao Pereira:*\n\nSegue o comprovante");
   }, 10000);
 });
