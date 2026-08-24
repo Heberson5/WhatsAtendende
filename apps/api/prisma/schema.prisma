@@ -154,12 +154,23 @@ model Contact {
   phone                String
   name                 String?
   photoUrl             String?
+  // WhatsApp's raw chat id (e.g. "<n>@lid" or "<n>@s.whatsapp.net") as first
+  // learned for this contact — WhatsApp's @lid privacy migration means the
+  // SAME chat can report this id in either form across different events
+  // (an inbound customer message vs. one echoed from the linked phone
+  // itself, say), and only some of those events also reveal the real phone
+  // number alongside it. Persisting whichever chat id we saw first gives a
+  // stable key to recognize "this is the same chat" by even on a later
+  // event whose own chatId came back unresolved (@lid) with no phone
+  // number attached at all — see findOrCreateContact.
+  providerChatId       String?
   firstConversationAt  DateTime @default(now())
   lastInteractionAt    DateTime @default(now())
 
   conversations Conversation[]
 
   @@unique([phone, whatsappConnectionId])
+  @@unique([providerChatId, whatsappConnectionId])
   @@index([phone])
 }
 

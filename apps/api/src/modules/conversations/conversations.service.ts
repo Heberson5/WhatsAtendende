@@ -42,17 +42,46 @@ async function getUnreadCounts(conversationIds: string[]): Promise<Map<string, n
  * connected WhatsApp numbers is two separate customer relationships.
  *
  * `providerChatId` (the raw WhatsApp chat id, e.g. "<n>@lid" or
- * "<n>@s.whatsapp.net") is optional context, not the lookup key: WhatsApp's
- * @lid privacy identifiers mean the *phone* recorded for a contact can
- * legitimately change over the life of one chat — created back when only
- * the opaque @lid digits were known, then later messages resolve the real
- * number (see phoneFromJid in BaileysWhatsAppProvider). Without this, that
- * later message would silently spawn a second, disconnected contact/
- * conversation for the exact same person instead of correcting the first
- * one — this recovers the original row by its still-stable chat id and
- * fixes its phone in place.
+ * "<n>@s.whatsapp.net") matters because of WhatsApp's @lid privacy
+ * migration: the SAME chat can report this id in either form across
+ * different events — e.g. an inbound customer message resolves the real
+ * phone (via senderPn) while a message echoed from the linked phone itself
+ * comes back with only the opaque @lid digits and no phone attached at all
+ * (senderPn/participantPn are only ever populated for group chats). Without
+ * a stable key, that second kind of event would spawn a brand-new,
+ * disconnected contact/conversation every time instead of continuing the
+ * existing one — this is what used to show up as a duplicate card in the
+ * Fila for someone already in "Meus Atendimentos".
+ *
+ * Resolution order: (1) exact match on the stable chat id, if we've seen
+ * this one before — correcting the phone in place should this event have
+ * resolved a real number where an earlier one hadn't; (2) match on phone,
+ * learning the chat id onto that row if it didn't have one yet; (3) the
+ * legacy heal path for a row created back when only the @lid digits were
+ * known and stored as its phone, before providerChatId existed at all;
+ * (4) a genuinely new contact.
  */
 export async function findOrCreateContact(connectionId: string, phone: string, name: string | null, providerChatId?: string) {
+  if (providerChatId) {
+    const byChatId = await prisma.contact.findFirst({
+      where: { whatsappConnectionId: connectionId, providerChatId },
+    });
+    if (byChatId) {
+      return prisma.contact.update({
+        where: { id: byChatId.id },
+        data: {
+          lastInteractionAt: new Date(),
+          name: byChatId.name ?? name ?? undefined,
+          // Only upgrade the stored phone when this event actually resolved
+          // one — never downgrade an already-known real number back to the
+          // raw @lid digits just because this particular event couldn't
+          // resolve it.
+          phone: phone === providerChatId.split("@")[0] ? undefined : phone,
+        },
+      });
+    }
+  }
+
   const existing = await prisma.contact.findUnique({
     where: { phone_whatsappConnectionId: { phone, whatsappConnectionId: connectionId } },
   });
@@ -65,6 +94,7 @@ export async function findOrCreateContact(connectionId: string, phone: string, n
         // agent-entered/CRM name should not be clobbered by WhatsApp's
         // pushName on every message.
         name: existing.name ?? name ?? undefined,
+        providerChatId: existing.providerChatId ?? providerChatId ?? undefined,
       },
     });
   }
@@ -79,14 +109,14 @@ export async function findOrCreateContact(connectionId: string, phone: string, n
         return prisma.contact
           .update({
             where: { id: byPriorPhone.id },
-            data: { phone, lastInteractionAt: new Date(), name: byPriorPhone.name ?? name ?? undefined },
+            data: { phone, providerChatId, lastInteractionAt: new Date(), name: byPriorPhone.name ?? name ?? undefined },
           })
           .catch(() => byPriorPhone); // extremely rare unique-constraint race — keep the old phone rather than fail the message
       }
     }
   }
 
-  return prisma.contact.create({ data: { phone, name, whatsappConnectionId: connectionId } });
+  return prisma.contact.create({ data: { phone, name, whatsappConnectionId: connectionId, providerChatId } });
 }
 
 export async function updateContactPhoto(contactId: string, photoUrl: string) {
