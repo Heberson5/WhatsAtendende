@@ -6,12 +6,13 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { PERMISSION } from "@whatsatendende/types";
 import { asyncHandler } from "../../lib/async-handler";
-import { requireAuth } from "../../middleware/auth";
+import { requireAuth, requireRole } from "../../middleware/auth";
 import { requirePermission } from "../../lib/permissions";
 import { verifyAccessToken } from "../auth/jwt";
 import { Errors } from "../../lib/http-error";
 import { env } from "../../config/env";
 import { prisma } from "../../lib/prisma";
+import { writeAudit } from "../../lib/audit";
 import * as service from "./messages.service";
 import { toMessageDTO } from "./messages.mapper";
 import * as whatsappService from "../whatsapp/whatsapp.service";
@@ -249,5 +250,29 @@ messagesRouter.post(
     }
     realtimeEvents.messageStatusChanged(conversation.id, conversation.assignedAgentId);
     res.json(toMessageDTO(updated));
+  })
+);
+
+messagesRouter.delete(
+  "/:messageId",
+  // ADMIN-only, same restriction level as conversations.routes.ts's
+  // /:id/merge — this permanently hides the message from this app's own
+  // conversation view. It never touches Baileys/WhatsApp: the customer's
+  // WhatsApp app and any other linked device keep the message untouched,
+  // per PROMPT: "de forma que nao afete no que esta no APP".
+  requireRole("ADMIN"),
+  asyncHandler(async (req, res) => {
+    const message = await service.getMessageWithConversation(req.params.messageId);
+    await service.deleteMessage(req.params.messageId, req.auth!.userId);
+    await writeAudit({
+      userId: req.auth!.userId,
+      action: "MESSAGE_DELETED",
+      entity: "Message",
+      entityId: req.params.messageId,
+      ipAddress: req.ip ?? null,
+      metadata: { conversationId: message.conversationId },
+    });
+    realtimeEvents.messageDeleted(message.conversationId, req.params.messageId, message.conversation.assignedAgentId);
+    res.status(204).end();
   })
 );

@@ -1,6 +1,6 @@
 import clsx from "clsx";
 import { format } from "date-fns";
-import { Check, CheckCheck, Clock, FileText, MapPin, ReplyIcon, Smile, User } from "lucide-react";
+import { Check, CheckCheck, Clock, FileText, MapPin, ReplyIcon, Smile, Trash2, User } from "lucide-react";
 import type { MessageDTO, MessageAttachmentDTO } from "@whatsatendende/types";
 import { useState } from "react";
 import { renderWhatsAppFormatting } from "../../lib/whatsappFormatting";
@@ -109,18 +109,24 @@ export function MessageBubble({
   message,
   onReply,
   onReact,
+  onDelete,
   repliedMessage,
   readOnly,
+  canDelete,
 }: {
   message: MessageDTO;
   onReply: (message: MessageDTO) => void;
   onReact: (message: MessageDTO, emoji: string) => void;
+  onDelete?: (message: MessageDTO) => void;
   repliedMessage?: MessageDTO;
   /** Gestão's oversight view: same bubble rendering as Atendimento, but no reply/react — gestores only watch. */
   readOnly?: boolean;
+  /** ADMIN-only "excluir mensagem" affordance — local to this app, never touches WhatsApp. */
+  canDelete?: boolean;
 }) {
   const [showReactions, setShowReactions] = useState(false);
   const [openMedia, setOpenMedia] = useState<LightboxMedia | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const isOutbound = message.direction === "OUTBOUND";
 
   const bubble = (
@@ -179,6 +185,16 @@ export function MessageBubble({
       <button onClick={() => onReply(message)} className="focus-ring rounded-full p-1.5 text-muted hover:bg-surface-alt hover:text-[var(--color-text)]" aria-label="Responder">
         <ReplyIcon className="h-3.5 w-3.5" />
       </button>
+      {canDelete && onDelete && (
+        <button
+          onClick={() => setConfirmDelete(true)}
+          className="focus-ring rounded-full p-1.5 text-muted hover:bg-surface-alt hover:text-red-600"
+          aria-label="Excluir mensagem"
+          title="Excluir mensagem (somente neste sistema)"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      )}
       <div className="relative">
         <button
           onClick={() => setShowReactions((s) => !s)}
@@ -230,6 +246,32 @@ export function MessageBubble({
         )}
       </div>
       {openMedia && <MediaLightbox media={openMedia} onClose={() => setOpenMedia(null)} />}
+
+      {confirmDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-sm rounded-card border border-border bg-surface p-5 shadow-elevated">
+            <h2 className="text-base font-semibold">Excluir mensagem?</h2>
+            <p className="mt-2 text-sm text-muted">
+              A mensagem some apenas desta conversa neste sistema. O WhatsApp do cliente e qualquer outro
+              aparelho conectado (celular, WhatsApp Web) não são afetados.
+            </p>
+            <div className="mt-4 flex gap-2">
+              <button onClick={() => setConfirmDelete(false)} className="focus-ring flex-1 rounded-card border border-border py-2 text-sm">
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  onDelete?.(message);
+                  setConfirmDelete(false);
+                }}
+                className="focus-ring flex-1 rounded-card bg-red-600 py-2 text-sm font-semibold text-white hover:opacity-90"
+              >
+                Excluir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

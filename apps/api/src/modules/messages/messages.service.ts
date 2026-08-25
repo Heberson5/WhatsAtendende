@@ -17,7 +17,7 @@ export interface ListMessagesParams {
 /** Cursor-based pagination (createdAt+id) so a busy conversation's history loads incrementally, never all at once. */
 export async function listMessages({ conversationId, cursor, limit }: ListMessagesParams) {
   const messages = await prisma.message.findMany({
-    where: { conversationId },
+    where: { conversationId, deletedAt: null },
     include: messageInclude,
     orderBy: { createdAt: "desc" },
     take: limit + 1,
@@ -223,6 +223,24 @@ export async function getMessageWithConversation(messageId: string) {
   const message = await prisma.message.findUnique({ where: { id: messageId }, include: { conversation: true } });
   if (!message) throw Errors.notFound("Mensagem nao encontrada");
   return message;
+}
+
+/**
+ * ADMIN-only "excluir mensagem" — soft delete local to this app: the row
+ * (and its attachments) is kept for audit purposes but excluded from
+ * listMessages from this point on. Deliberately never calls out to
+ * whatsapp.service/Baileys — there is no message-revoke request here, so
+ * the customer's own WhatsApp app and any other linked device are
+ * completely unaffected.
+ */
+export async function deleteMessage(messageId: string, deletedByUserId: string) {
+  const message = await prisma.message.findUnique({ where: { id: messageId } });
+  if (!message) throw Errors.notFound("Mensagem nao encontrada");
+  if (message.deletedAt) return message; // already deleted — idempotent no-op
+  return prisma.message.update({
+    where: { id: messageId },
+    data: { deletedAt: new Date(), deletedByUserId },
+  });
 }
 
 export { messageInclude };

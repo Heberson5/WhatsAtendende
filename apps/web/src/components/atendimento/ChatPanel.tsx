@@ -23,6 +23,7 @@ async function fetchMessages(conversationId: string, cursor?: string) {
 export function ChatPanel({ conversation, onClosed, onBack }: { conversation: ConversationListItemDTO; onClosed: () => void; onBack?: () => void }) {
   const queryClient = useQueryClient();
   const permissions = useAuthStore((s) => s.permissions);
+  const isAdmin = useAuthStore((s) => s.user?.role === "ADMIN");
   const canTransfer = permissions?.[PERMISSION.ATENDIMENTO_TRANSFERIR];
   const canClose = permissions?.[PERMISSION.ATENDIMENTO_ENCERRAR];
   const [messages, setMessages] = useState<MessageDTO[]>([]);
@@ -98,6 +99,23 @@ export function ChatPanel({ conversation, onClosed, onBack }: { conversation: Co
       socket.off("message:new", handler);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversation.id]);
+
+  // An admin deleted a message (from this device or another) — the
+  // invalidate-and-refetch-page-1 pattern used for message:new/status would
+  // never remove it here, since the merge above only upserts newer pages
+  // into what's already loaded, so it's pruned directly from local state.
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+    const handler = (payload: { conversationId: string; messageId: string }) => {
+      if (payload.conversationId !== conversation.id) return;
+      setMessages((prev) => prev.filter((m) => m.id !== payload.messageId));
+    };
+    socket.on("message:deleted", handler);
+    return () => {
+      socket.off("message:deleted", handler);
+    };
   }, [conversation.id]);
 
   useEffect(() => {
@@ -200,6 +218,15 @@ export function ChatPanel({ conversation, onClosed, onBack }: { conversation: Co
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["messages", conversation.id] }),
   });
 
+  const deleteMessageMutation = useMutation({
+    mutationFn: (messageId: string) => api.delete(`/messages/${messageId}`),
+    onSuccess: (_res, messageId) => {
+      setMessages((prev) => prev.filter((m) => m.id !== messageId));
+      toast.success("Mensagem excluída desta conversa.");
+    },
+    onError: (err) => toast.error(getApiErrorMessage(err)),
+  });
+
   const transferMutation = useMutation({
     mutationFn: (input: { toAgentId: string; note: string }) =>
       api.post(`/conversations/${conversation.id}/transfer`, input),
@@ -287,6 +314,8 @@ export function ChatPanel({ conversation, onClosed, onBack }: { conversation: Co
             repliedMessage={message.replyToMessageId ? messageById.get(message.replyToMessageId) : undefined}
             onReply={setReplyTo}
             onReact={(m, emoji) => reactMutation.mutate({ messageId: m.id, emoji })}
+            canDelete={isAdmin}
+            onDelete={(m) => deleteMessageMutation.mutate(m.id)}
           />
         ))}
         <div ref={bottomRef} />

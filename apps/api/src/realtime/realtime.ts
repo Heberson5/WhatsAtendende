@@ -63,6 +63,11 @@ export const realtimeEvents = {
     getIO()?.to(ROOMS.conversation(conversationId)).emit("message:status", { conversationId });
     if (agentId) getIO()?.to(ROOMS.user(agentId)).emit("message:status", { conversationId });
   },
+  /** An admin deleted a message from a conversation (local to this app only — see messages.routes.ts). Carries the messageId so any open chat view can prune it from its already-loaded list, not just refetch page 1 (which would silently leave a stale copy behind). */
+  messageDeleted: (conversationId: string, messageId: string, agentId?: string | null) => {
+    getIO()?.to(ROOMS.conversation(conversationId)).emit("message:deleted", { conversationId, messageId });
+    if (agentId) getIO()?.to(ROOMS.user(agentId)).emit("message:deleted", { conversationId, messageId });
+  },
   /** The linked phone marked a chat as read (WhatsApp's own multi-device sync) — refreshes the unread badge for whoever owns it. */
   conversationReadFromDevice: (conversationId: string, agentId: string | null) => {
     if (agentId) getIO()?.to(ROOMS.user(agentId)).emit("conversation:read", { conversationId });
