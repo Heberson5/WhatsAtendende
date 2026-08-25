@@ -110,6 +110,21 @@ export interface ChatReadEvent {
 }
 
 /**
+ * Fired when WhatsApp reveals a chat's real phone number after it was
+ * first known only by its opaque @lid privacy id — independently of any
+ * read-state change. This is the only way a contact ever gets corrected
+ * when it was created from a message with no phone-resolvable field at
+ * all in the first place (a message sent directly from the linked phone
+ * in a brand-new 1:1 chat — senderPn/participantPn are only ever
+ * populated for group chats, so that kind of message can't resolve the
+ * number on its own no matter what).
+ */
+export interface ChatIdentityResolvedEvent {
+  chatId: string;
+  phone: string;
+}
+
+/**
  * WhatsAppProvider is the single seam between the application and any
  * concrete WhatsApp client library. No other module in the app should
  * import a provider implementation directly — only this interface.
@@ -176,4 +191,6 @@ export interface WhatsAppProvider {
   onHistorySync(listener: (event: HistorySyncEvent) => void): void;
   /** Fired when a chat's unread count drops to zero from outside this app (e.g. read on the linked phone) — see ChatReadEvent. */
   onChatRead(listener: (event: ChatReadEvent) => void): void;
+  /** Fired when WhatsApp reveals a chat's real phone number after it was first seen only as an opaque @lid id — see ChatIdentityResolvedEvent. */
+  onChatIdentityResolved(listener: (event: ChatIdentityResolvedEvent) => void): void;
 }
