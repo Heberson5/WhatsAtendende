@@ -87,4 +87,44 @@ describe("findOrCreateContact self-heals a contact whose phone was originally a 
     expect(updated.id).toBe(contact.id);
     expect(updated.providerChatId).toBe(chatId);
   });
+
+  it("folds a duplicate into an already-existing contact instead of crashing on the unique-phone constraint, once the duplicate's chat id resolves to that contact's real phone", async () => {
+    // Regression: a contact that already existed (e.g. from a prior, now
+    // CLOSED conversation) has no providerChatId at all if it predates that
+    // column. A brand-new message sent directly from the phone on that same
+    // chat — reported as @lid with no resolvable phone, since a chat with
+    // no prior record here has nothing to match on yet — spawns a genuine
+    // duplicate contact. When WhatsApp later reveals that @lid's real phone
+    // (via chats.update's pnJid — see ChatIdentityResolvedEvent) and it
+    // turns out to be this exact pre-existing contact, updating the
+    // duplicate's phone in place used to collide with the unique
+    // [phone, whatsappConnectionId] constraint and throw — silently
+    // swallowed by the caller, permanently stranding the duplicate.
+    const realPhone = "5511955554433";
+    const original = await prisma.contact.create({
+      data: { phone: realPhone, name: "Cliente Antigo", whatsappConnectionId: connectionId },
+    });
+    const closedConversation = await prisma.conversation.create({
+      data: { contactId: original.id, whatsappConnectionId: connectionId, status: "CLOSED", enteredQueueAt: new Date(), lastMessageAt: new Date() },
+    });
+
+    const lidDigits = "166554433221100";
+    const chatId = `${lidDigits}@lid`;
+    const duplicate = await conversationsService.findOrCreateContact(connectionId, lidDigits, null, chatId);
+    const newConversation = await prisma.conversation.create({
+      data: { contactId: duplicate.id, whatsappConnectionId: connectionId, status: "NEW", enteredQueueAt: new Date(), lastMessageAt: new Date() },
+    });
+
+    const healed = await conversationsService.findOrCreateContact(connectionId, realPhone, null, chatId);
+    expect(healed.id).toBe(original.id);
+    expect(healed.phone).toBe(realPhone);
+
+    const count = await prisma.contact.count({ where: { whatsappConnectionId: connectionId } });
+    expect(count).toBe(1);
+
+    const closedAfter = await prisma.conversation.findUniqueOrThrow({ where: { id: closedConversation.id } });
+    expect(closedAfter.contactId).toBe(original.id); // untouched
+    const newAfter = await prisma.conversation.findUniqueOrThrow({ where: { id: newConversation.id } });
+    expect(newAfter.contactId).toBe(original.id); // re-pointed from the deleted duplicate
+  });
 });
