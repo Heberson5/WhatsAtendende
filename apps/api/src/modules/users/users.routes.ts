@@ -6,6 +6,7 @@ import { requireAuth } from "../../middleware/auth";
 import { requirePermission } from "../../lib/permissions";
 import { writeAudit } from "../../lib/audit";
 import { Errors } from "../../lib/http-error";
+import { realtimeEvents } from "../../realtime/realtime";
 import { toUserDTO } from "./users.mapper";
 import * as usersService from "./users.service";
 
@@ -110,6 +111,17 @@ usersRouter.post(
     const user = await usersService.setUserStatus(req.params.id, "INACTIVE");
     await writeAudit({ userId: req.auth!.userId, action: "USER_DEACTIVATED", entity: "User", entityId: user.id, ipAddress: req.ip ?? null });
     res.json(toUserDTO(user));
+  })
+);
+
+usersRouter.post(
+  "/:id/force-logout",
+  asyncHandler(async (req, res) => {
+    await assertNoAdminEscalation(req, req.params.id);
+    await usersService.forceLogoutUser(req.params.id);
+    realtimeEvents.userForceLoggedOut(req.params.id);
+    await writeAudit({ userId: req.auth!.userId, action: "USER_FORCE_LOGGED_OUT", entity: "User", entityId: req.params.id, ipAddress: req.ip ?? null });
+    res.status(204).end();
   })
 );
 

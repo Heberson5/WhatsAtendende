@@ -91,6 +91,22 @@ export async function setUserStatus(id: string, status: "ACTIVE" | "INACTIVE") {
   return prisma.user.update({ where: { id }, data: { status }, include: withConnection });
 }
 
+/**
+ * Revokes every refresh token so the user can't silently renew their
+ * session, and marks them offline. On its own this isn't truly instant — a
+ * short-lived access token they already hold keeps working until it
+ * naturally expires — see realtimeEvents.userForceLoggedOut (called by the
+ * route right after this) for the part that actually disconnects them
+ * immediately.
+ */
+export async function forceLogoutUser(id: string) {
+  await getUser(id);
+  await prisma.$transaction([
+    prisma.refreshToken.updateMany({ where: { userId: id }, data: { revokedAt: new Date() } }),
+    prisma.user.update({ where: { id }, data: { presence: "OFFLINE" } }),
+  ]);
+}
+
 export async function resetUserPassword(id: string): Promise<{ temporaryPassword: string }> {
   await getUser(id);
   const temporaryPassword = crypto.randomBytes(6).toString("base64url");
