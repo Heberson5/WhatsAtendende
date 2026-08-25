@@ -36,7 +36,7 @@ export function Topbar({ title, onMenuClick }: { title: string; onMenuClick?: ()
         <h1 className="truncate text-lg font-semibold">{title}</h1>
       </div>
       <div className="flex shrink-0 items-center gap-2 sm:gap-4">
-        <div className="hidden items-center gap-1 rounded-full border border-border p-1 sm:flex">
+        <div className="flex items-center gap-0.5 rounded-full border border-border p-1 sm:gap-1">
           <button
             className={`focus-ring rounded-full p-1.5 ${preference === "LIGHT" ? "bg-secondary text-secondary-fg" : "text-muted"}`}
             onClick={() => setTheme("LIGHT")}
