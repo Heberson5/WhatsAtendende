@@ -32,7 +32,16 @@ export function ChatPanel({ conversation, onClosed, onBack }: { conversation: Co
   const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const isFirstLoad = useRef(true);
+  // Updated live on scroll, not recomputed after each render — checking
+  // scroll position only after new (taller) content has already painted
+  // would misjudge "was near the bottom" by however tall the new message
+  // happens to be.
+  const nearBottomRef = useRef(true);
+  // The most recent message's id as of the last messagesQuery update — lets
+  // the auto-scroll effect below tell "a new message landed at the end"
+  // apart from loadOlder() prepending older ones at the start, and doubles
+  // as the very first load's own signal (null = hasn't loaded yet).
+  const lastNewestIdRef = useRef<string | null>(null);
   // Tracks which conversation is current so a loadOlder() fetch that's
   // still in flight when the agent switches to a different conversation
   // (now much more likely, since history now loads continuously right
@@ -54,13 +63,27 @@ export function ChatPanel({ conversation, onClosed, onBack }: { conversation: Co
   });
 
   useEffect(() => {
-    isFirstLoad.current = true;
+    lastNewestIdRef.current = null;
+    nearBottomRef.current = true;
     setMessages([]);
     setCursor(undefined);
     // Opening a conversation clears its unread badge.
     markReadMutation.mutate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversation.id]);
+
+  // Tracked continuously (not just checked when a message arrives) so the
+  // auto-scroll below reflects where the agent actually left the scroll
+  // position, not a snapshot taken after new content already changed it.
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const handleScroll = () => {
+      nearBottomRef.current = container.scrollHeight - container.scrollTop - container.clientHeight < 150;
+    };
+    container.addEventListener("scroll", handleScroll);
+    return () => container.removeEventListener("scroll", handleScroll);
+  }, []);
 
   // While the conversation stays open, any further inbound message is
   // immediately marked read too — the agent is already looking at it live.
@@ -92,14 +115,21 @@ export function ChatPanel({ conversation, onClosed, onBack }: { conversation: Co
       return Array.from(byId.values()).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
     });
     setCursor((prev) => prev ?? messagesQuery.data.nextCursor ?? undefined);
-  }, [messagesQuery.data]);
 
-  useEffect(() => {
-    if (isFirstLoad.current && messages.length > 0) {
-      bottomRef.current?.scrollIntoView();
-      isFirstLoad.current = false;
+    // Auto-scroll to the newest message like WhatsApp Web: always on the
+    // very first load, and afterwards only when a genuinely new message
+    // just landed at the end (not merely a status update on one already
+    // shown) and the agent hasn't scrolled up to read older history —
+    // sending or receiving one shouldn't yank them back down mid-scroll.
+    const newest = messagesQuery.data.items.at(-1);
+    if (newest && newest.id !== lastNewestIdRef.current) {
+      const isFirst = lastNewestIdRef.current === null;
+      lastNewestIdRef.current = newest.id;
+      if (isFirst || nearBottomRef.current) {
+        requestAnimationFrame(() => bottomRef.current?.scrollIntoView({ behavior: isFirst ? "auto" : "smooth" }));
+      }
     }
-  }, [messages]);
+  }, [messagesQuery.data]);
 
   async function loadOlder() {
     if (!cursor) return;

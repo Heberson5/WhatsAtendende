@@ -19,9 +19,10 @@ export default function AtendimentoPage() {
   const [novaConversaOpen, setNovaConversaOpen] = useState(false);
   const queryClient = useQueryClient();
   const user = useAuthStore((s) => s.user);
-  // AGENT always has a fixed connection (the server ignores this filter for
-  // them anyway); MANAGER/ADMIN have none, so they get a combined queue
-  // across every connection, narrowable with the same filter used elsewhere.
+  // AGENT always attends a single fixed connection — the server ignores
+  // this filter for them anyway — so only MANAGER/ADMIN, who see every
+  // connection's queue combined by default, get the filter UI at all.
+  const canFilterByConnection = user?.role === "MANAGER" || user?.role === "ADMIN";
   const hasFixedConnection = Boolean(user?.whatsappConnectionName);
 
   useSocketEvents(selectedId);
@@ -31,7 +32,7 @@ export default function AtendimentoPage() {
     queryFn: async () =>
       (
         await api.get<ConversationListItemDTO[]>("/conversations/queue", {
-          params: { connectionId: !hasFixedConnection && connectionIds.length ? connectionIds : undefined },
+          params: { connectionId: canFilterByConnection && connectionIds.length ? connectionIds : undefined },
         })
       ).data,
     refetchInterval: 20_000,
@@ -69,14 +70,14 @@ export default function AtendimentoPage() {
         )}
       >
         <div className="flex items-center gap-1.5 border-b border-border bg-surface-alt px-3 py-2">
-          {hasFixedConnection ? (
-            <span className="flex flex-1 items-center gap-1.5 text-xs font-medium text-muted">
-              <Radio className="h-3.5 w-3.5 text-primary" /> Conexão: {user!.whatsappConnectionName}
-            </span>
-          ) : (
+          {canFilterByConnection ? (
             <div className="flex-1">
               <ConnectionFilter value={connectionIds} onChange={setConnectionIds} />
             </div>
+          ) : (
+            <span className="flex flex-1 items-center gap-1.5 text-xs font-medium text-muted">
+              <Radio className="h-3.5 w-3.5 text-primary" /> Conexão: {user?.whatsappConnectionName}
+            </span>
           )}
           <button
             onClick={() => setNovaConversaOpen(true)}
