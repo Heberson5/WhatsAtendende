@@ -505,11 +505,13 @@ export async function sendOutboundText(
   contactPhone: string,
   text: string,
   senderDisplayName: string,
-  replyToProviderMessageId?: string
+  replyToProviderMessageId?: string,
+  replyToText?: string | null
 ) {
   try {
     const result = await getProvider(connectionId).sendText(toChatId(contactPhone), withSenderPrefix(senderDisplayName, text), {
       replyToProviderMessageId,
+      replyToText,
     });
     const message = await messagesService.markMessageSent(messageId, result.providerMessageId);
     return toMessageDTO(message);

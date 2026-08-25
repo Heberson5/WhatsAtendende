@@ -146,9 +146,11 @@ messagesRouter.post(
     });
 
     let replyToProviderMessageId: string | undefined;
+    let replyToText: string | null | undefined;
     if (replyToMessageId) {
       const original = await prisma.message.findUnique({ where: { id: replyToMessageId } });
       replyToProviderMessageId = original?.providerMessageId ?? undefined;
+      replyToText = original?.body;
     }
 
     const dto = await whatsappService.sendOutboundText(
@@ -157,7 +159,8 @@ messagesRouter.post(
       conversation.contact.phone,
       body,
       req.auth!.displayName,
-      replyToProviderMessageId
+      replyToProviderMessageId,
+      replyToText
     );
     realtimeEvents.newMessage(conversation.id, req.auth!.userId);
     res.status(201).json(dto);
