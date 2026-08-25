@@ -2,12 +2,14 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Eye } from "lucide-react";
+import { Eye, GitMerge } from "lucide-react";
 import type { ConversationListItemDTO } from "@whatsatendende/types";
 import { api } from "../../lib/api";
+import { useAuthStore } from "../../store/auth-store";
 import { PeriodFilter, type PeriodValue } from "../../components/common/PeriodFilter";
 import { ConnectionFilter } from "../../components/common/ConnectionFilter";
 import { ReadOnlyConversationDrawer } from "../../components/gestao/ReadOnlyConversationDrawer";
+import { MergeConversationModal } from "../../components/gestao/MergeConversationModal";
 
 const STATUS_LABEL: Record<string, string> = {
   NEW: "Nova",
@@ -41,6 +43,8 @@ export default function GestaoPage() {
   const [search, setSearch] = useState("");
   const [connectionIds, setConnectionIds] = useState<string[]>([]);
   const [selected, setSelected] = useState<ConversationListItemDTO | null>(null);
+  const [merging, setMerging] = useState<ConversationListItemDTO | null>(null);
+  const isAdmin = useAuthStore((s) => s.user?.role === "ADMIN");
 
   const { data: agents } = useQuery({
     queryKey: ["agents"],
@@ -139,9 +143,20 @@ export default function GestaoPage() {
                 <td className="px-4 py-3 text-muted">{formatDistanceToNow(new Date(c.enteredQueueAt), { locale: ptBR, addSuffix: true })}</td>
                 <td className="px-4 py-3 text-muted">{c.acceptedAt ? formatDistanceToNow(new Date(c.acceptedAt), { locale: ptBR, addSuffix: true }) : "-"}</td>
                 <td className="px-4 py-3 text-right">
-                  <button onClick={() => setSelected(c)} className="focus-ring inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
-                    <Eye className="h-3.5 w-3.5" /> Visualizar
-                  </button>
+                  <div className="flex items-center justify-end gap-3">
+                    {isAdmin && (
+                      <button
+                        onClick={() => setMerging(c)}
+                        className="focus-ring inline-flex items-center gap-1 text-xs font-medium text-muted hover:text-primary hover:underline"
+                        title="Mesclar esta conversa duplicada com outra"
+                      >
+                        <GitMerge className="h-3.5 w-3.5" /> Mesclar
+                      </button>
+                    )}
+                    <button onClick={() => setSelected(c)} className="focus-ring inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
+                      <Eye className="h-3.5 w-3.5" /> Visualizar
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -150,6 +165,14 @@ export default function GestaoPage() {
       </div>
 
       {selected && <ReadOnlyConversationDrawer conversation={selected} onClose={() => setSelected(null)} />}
+
+      {merging && (
+        <MergeConversationModal
+          conversation={merging}
+          onClose={() => setMerging(null)}
+          onMerged={() => setMerging(null)}
+        />
+      )}
     </div>
   );
 }

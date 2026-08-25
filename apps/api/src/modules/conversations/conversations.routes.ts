@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { PERMISSION } from "@whatsatendende/types";
 import { asyncHandler } from "../../lib/async-handler";
-import { requireAuth } from "../../middleware/auth";
+import { requireAuth, requireRole } from "../../middleware/auth";
 import { requirePermission } from "../../lib/permissions";
 import { writeAudit } from "../../lib/audit";
 import { prisma } from "../../lib/prisma";
@@ -160,6 +160,34 @@ conversationsRouter.post(
     void syncReadReceiptToDevice(req.params.id);
     await service.markConversationRead(req.params.id, req.auth!.userId);
     res.status(204).end();
+  })
+);
+
+const mergeSchema = z.object({ intoConversationId: z.string().uuid() });
+conversationsRouter.post(
+  "/:id/merge",
+  // Irreversible (deletes the duplicate conversation row after moving its
+  // messages) and only ever needed to clean up a pre-existing duplicate —
+  // see findOrCreateContact's @lid contact-matching fix — so restricted to
+  // ADMIN rather than the general attendance-permission set.
+  requireRole("ADMIN"),
+  asyncHandler(async (req, res) => {
+    const { intoConversationId } = mergeSchema.parse(req.body);
+    const merged = await service.mergeConversations(req.params.id, intoConversationId);
+    await writeAudit({
+      userId: req.auth!.userId,
+      action: "CONVERSATIONS_MERGED",
+      entity: "Conversation",
+      entityId: merged.id,
+      ipAddress: req.ip ?? null,
+      metadata: { mergedConversationId: req.params.id },
+    });
+    realtimeEvents.conversationsMerged(merged.whatsappConnectionId);
+    // The surviving conversation just gained the duplicate's messages —
+    // reuses newMessage's existing wiring to refresh its owner's "mine"
+    // list and this conversation's own view if it's open right now.
+    realtimeEvents.newMessage(merged.id, merged.assignedAgentId);
+    res.json(toConversationListItemDTO(merged, true));
   })
 );
 

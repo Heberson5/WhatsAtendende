@@ -81,6 +81,12 @@ export const realtimeEvents = {
   whatsappPairingRejected: (connectionId: string, expectedNumber: string, gotNumber: string) => {
     getIO()?.emit("whatsapp:pairing-rejected", { connectionId, expectedNumber, gotNumber });
   },
+  /** An admin merged a duplicate conversation into another — refreshes the Fila/Gestão views that could have shown either one. The surviving conversation's owner is notified separately via newMessage, below, since it just gained the duplicate's messages. */
+  conversationsMerged: (connectionId: string) => {
+    getIO()?.to(ROOMS.queue(connectionId)).emit("queue:updated");
+    getIO()?.to(ROOMS.oversight()).emit("queue:updated");
+    getIO()?.to(ROOMS.oversight()).emit("oversight:updated");
+  },
   /** A pending transfer expired without the receiving agent logging in — it bounced back to whoever transferred it. */
   transferReverted: (conversationId: string, revertedToAgentId: string, expiredAgentId: string) => {
     getIO()?.to(ROOMS.user(expiredAgentId)).emit("conversation:removed", { conversationId });
