@@ -1,21 +1,28 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { KeyRound, Pencil, Plus, UserCheck, UserX } from "lucide-react";
+import { KeyRound, LogOut, Pencil, Plus, UserCheck, UserX } from "lucide-react";
 import { toast } from "sonner";
 import type { UserDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
+import { useAuthStore } from "../../store/auth-store";
 import { UserFormModal, type UserFormValues } from "./UserFormModal";
 
 const ROLE_LABEL: Record<string, string> = { ADMIN: "Administrador", MANAGER: "Gestor", AGENT: "Atendente" };
+const PRESENCE_LABEL: Record<string, string> = { ONLINE: "Online", AWAY: "Ausente", OFFLINE: "Offline" };
 
 export default function UsuariosPage() {
   const queryClient = useQueryClient();
+  const currentUserId = useAuthStore((s) => s.user?.id);
   const [modalUser, setModalUser] = useState<UserDTO | null | "new">(null);
 
   const { data: users, isLoading } = useQuery({
     queryKey: ["users"],
     queryFn: async () => (await api.get<UserDTO[]>("/users")).data,
+    // Presença (online/offline) only ever changes via login/logout/force
+    // logout elsewhere — a light poll is enough to keep it current here
+    // without needing a dedicated realtime channel for this one column.
+    refetchInterval: 20_000,
   });
 
   const createMutation = useMutation({
@@ -43,6 +50,15 @@ export default function UsuariosPage() {
     mutationFn: (id: string) => api.post<{ temporaryPassword: string }>(`/users/${id}/reset-password`),
     onSuccess: (res) => {
       toast.success(`Senha temporária gerada: ${res.data.temporaryPassword}`, { duration: 15000 });
+    },
+    onError: (err) => toast.error(getApiErrorMessage(err)),
+  });
+
+  const forceLogoutMutation = useMutation({
+    mutationFn: (id: string) => api.post(`/users/${id}/force-logout`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      toast.success("Usuário desconectado.");
     },
     onError: (err) => toast.error(getApiErrorMessage(err)),
   });
@@ -80,6 +96,7 @@ export default function UsuariosPage() {
               <th className="px-4 py-3">Perfil</th>
               <th className="px-4 py-3">Conexão WhatsApp</th>
               <th className="px-4 py-3">Status</th>
+              <th className="px-4 py-3">Presença</th>
               <th className="px-4 py-3">Último acesso</th>
               <th className="px-4 py-3 text-right">Ações</th>
             </tr>
@@ -87,7 +104,7 @@ export default function UsuariosPage() {
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-muted">
+                <td colSpan={8} className="px-4 py-8 text-center text-muted">
                   Carregando...
                 </td>
               </tr>
@@ -108,6 +125,14 @@ export default function UsuariosPage() {
                 </td>
                 <td className="px-4 py-3 text-muted">{u.lastAccessAt ? format(new Date(u.lastAccessAt), "dd/MM/yyyy HH:mm") : "Nunca acessou"}</td>
                 <td className="px-4 py-3">
+                  <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted">
+                    <span
+                      className={`h-2 w-2 rounded-full ${u.presence === "ONLINE" ? "bg-green-500" : u.presence === "AWAY" ? "bg-yellow-500" : "bg-gray-300"}`}
+                    />
+                    {PRESENCE_LABEL[u.presence]}
+                  </span>
+                </td>
+                <td className="px-4 py-3">
                   <div className="flex justify-end gap-1">
                     <button onClick={() => setModalUser(u)} className="focus-ring rounded-card p-1.5 text-muted hover:bg-surface-alt" aria-label="Editar" title="Editar">
                       <Pencil className="h-4 w-4" />
@@ -120,6 +145,17 @@ export default function UsuariosPage() {
                     >
                       {u.status === "ACTIVE" ? <UserX className="h-4 w-4" /> : <UserCheck className="h-4 w-4" />}
                     </button>
+                    {u.presence === "ONLINE" && u.id !== currentUserId && (
+                      <button
+                        onClick={() => forceLogoutMutation.mutate(u.id)}
+                        disabled={forceLogoutMutation.isPending && forceLogoutMutation.variables === u.id}
+                        className="focus-ring rounded-card p-1.5 text-muted hover:bg-surface-alt disabled:opacity-60"
+                        aria-label="Desconectar agora"
+                        title="Desconectar agora"
+                      >
+                        <LogOut className="h-4 w-4" />
+                      </button>
+                    )}
                     <button
                       onClick={() => resetPasswordMutation.mutate(u.id)}
                       className="focus-ring rounded-card p-1.5 text-muted hover:bg-surface-alt"

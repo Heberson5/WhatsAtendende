@@ -1,9 +1,10 @@
-import { Outlet, useLocation } from "react-router-dom";
+import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 import { useAuthStore } from "../../store/auth-store";
-import { connectSocket, disconnectSocket } from "../../lib/socket";
+import { connectSocket, disconnectSocket, getSocket } from "../../lib/socket";
 
 const TITLES: Record<string, string> = {
   "/atendimento": "Atendimento",
@@ -17,12 +18,33 @@ const TITLES: Record<string, string> = {
 
 export function AppLayout() {
   const location = useLocation();
+  const navigate = useNavigate();
   const accessToken = useAuthStore((s) => s.accessToken);
+  const clearSession = useAuthStore((s) => s.clearSession);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   useEffect(() => {
     if (accessToken) connectSocket(accessToken);
     return () => disconnectSocket();
+  }, [accessToken]);
+
+  // An admin disconnected this account from Usuários — the server already
+  // killed the live socket; this just gets the UI itself out of the
+  // now-dead session before the still-valid-for-a-few-more-minutes access
+  // token lets any stale screen keep looking usable.
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+    const handler = () => {
+      toast.error("Sua sessão foi encerrada por um administrador.");
+      clearSession();
+      navigate("/login");
+    };
+    socket.on("user:force-logout", handler);
+    return () => {
+      socket.off("user:force-logout", handler);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessToken]);
 
   // A route change from tapping a NavLink already closes the drawer (see
