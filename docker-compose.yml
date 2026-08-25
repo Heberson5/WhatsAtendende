@@ -43,6 +43,14 @@ services:
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?set a random secret in .env}
       WHATSAPP_PROVIDER: ${WHATSAPP_PROVIDER:-mock}
       WHATSAPP_AUTH_DIR: /data/whatsapp-sessions
+      # Left "silent" (the default) normally — Baileys logs every raw
+      # protocol frame at debug level, far too noisy to run permanently.
+      # Set WHATSAPP_LOG_LEVEL=warn in .env and redeploy to temporarily
+      # surface actual Signal-protocol/session errors (e.g. decryption
+      # failures) that never reach this app's own logs at all, since they
+      # happen entirely inside Baileys — needed to diagnose anything at the
+      # WhatsApp-protocol level instead of guessing from the outside.
+      WHATSAPP_LOG_LEVEL: ${WHATSAPP_LOG_LEVEL:-silent}
       WEB_APP_URL: ${WEB_APP_URL:-http://localhost:8080}
       UPLOAD_DIR: /data/uploads
       # Left false (the default) on purpose: this stack still publishes the
