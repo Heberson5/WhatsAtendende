@@ -427,6 +427,64 @@ export async function getConversationOrThrow(id: string) {
 }
 
 /**
+ * Folds a spurious duplicate conversation (see the @lid contact-matching
+ * fix in findOrCreateContact — pre-existing duplicates from before that fix
+ * don't heal on their own) into the real one: every message moves over,
+ * `intoConversationId`'s lastMessageAt/lastMessageDirection is recomputed
+ * from the merged set, and the duplicate conversation row is deleted so it
+ * stops showing up anywhere (Fila, Gestão, Relatórios). If the duplicate
+ * belonged to a different Contact row than the real conversation (the usual
+ * case — that's exactly what made it a duplicate), every other conversation
+ * on that duplicate contact moves over too and the now-empty contact row is
+ * removed. Irreversible — ADMIN-only, see conversations.routes.ts.
+ */
+export async function mergeConversations(duplicateConversationId: string, intoConversationId: string) {
+  if (duplicateConversationId === intoConversationId) {
+    throw Errors.badRequest("Nao e possivel mesclar uma conversa com ela mesma");
+  }
+  const [duplicate, into] = await Promise.all([
+    prisma.conversation.findUnique({ where: { id: duplicateConversationId } }),
+    prisma.conversation.findUnique({ where: { id: intoConversationId } }),
+  ]);
+  if (!duplicate) throw Errors.notFound("Conversa duplicada nao encontrada");
+  if (!into) throw Errors.notFound("Conversa de destino nao encontrada");
+  if (duplicate.whatsappConnectionId !== into.whatsappConnectionId) {
+    throw Errors.badRequest("So e possivel mesclar conversas da mesma conexao de WhatsApp");
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.message.updateMany({ where: { conversationId: duplicate.id }, data: { conversationId: into.id } });
+
+    const latestMessage = await tx.message.findFirst({
+      where: { conversationId: into.id },
+      orderBy: { createdAt: "desc" },
+    });
+    if (latestMessage) {
+      await tx.conversation.update({
+        where: { id: into.id },
+        data: { lastMessageAt: latestMessage.createdAt, lastMessageDirection: latestMessage.direction },
+      });
+    }
+
+    if (duplicate.contactId !== into.contactId) {
+      await tx.conversation.updateMany({ where: { contactId: duplicate.contactId }, data: { contactId: into.contactId } });
+    }
+
+    await tx.conversationEvent.deleteMany({ where: { conversationId: duplicate.id } });
+    await tx.conversationAssignment.deleteMany({ where: { conversationId: duplicate.id } });
+    await tx.conversationTransfer.deleteMany({ where: { conversationId: duplicate.id } });
+    await tx.conversation.delete({ where: { id: duplicate.id } });
+
+    if (duplicate.contactId !== into.contactId) {
+      const remaining = await tx.conversation.count({ where: { contactId: duplicate.contactId } });
+      if (remaining === 0) await tx.contact.delete({ where: { id: duplicate.contactId } });
+    }
+  });
+
+  return getConversationOrThrow(into.id);
+}
+
+/**
  * Enforces PROMPT section 10 (and the later "gestor e administrador também
  * ... poderão atender"): only the assigned agent may open/respond to a
  * conversation — but "agent" now means whichever active user (AGENT,
