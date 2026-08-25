@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { Inbox, MessageSquare, Timer, Users } from "lucide-react";
+import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Inbox, MessageSquare, Timer, UserCheck, Users, Wifi } from "lucide-react";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { PeriodFilter, type PeriodValue } from "../../components/common/PeriodFilter";
 import { ConnectionFilter } from "../../components/common/ConnectionFilter";
@@ -17,7 +17,13 @@ interface DashboardData {
   messages: { received: number; sent: number; total: number };
   timings: { avgAcceptMs: number | null; avgFirstResponseMs: number | null; avgHandlingMs: number | null; avgClosingMs: number | null };
   perAgent: { agentId: string; agentName: string; conversations: number; messagesSent: number; avgHandlingMs: number | null }[];
+  users: { online: number; active: number; total: number };
 }
+
+// Matches the app's own connection-color palette in spirit (teal primary,
+// yellow secondary) rather than introducing a third unrelated color set.
+const STATUS_COLORS = ["#F59E0B", "#0097B4", "#6B7280"]; // waiting, inProgress, closed
+const MESSAGE_COLORS = ["#0097B4", "#FFE450"]; // received, sent
 
 export default function DashboardPage() {
   const [period, setPeriod] = useState<PeriodValue>({ period: "today" });
@@ -71,6 +77,15 @@ export default function DashboardPage() {
       {data && (
         <div className="space-y-8">
           <section>
+            <h2 className="mb-3 text-sm font-semibold text-muted">Usuários</h2>
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+              <StatCard label="Online agora" value={data.users.online} icon={Wifi} />
+              <StatCard label="Ativos" value={data.users.active} icon={UserCheck} />
+              <StatCard label="Total" value={data.users.total} icon={Users} />
+            </div>
+          </section>
+
+          <section>
             <h2 className="mb-3 text-sm font-semibold text-muted">Conversas</h2>
             <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
               <StatCard label="Recebidas" value={data.conversations.received} icon={Inbox} />
@@ -87,6 +102,68 @@ export default function DashboardPage() {
               <StatCard label="Recebidas" value={data.messages.received} icon={MessageSquare} />
               <StatCard label="Enviadas" value={data.messages.sent} icon={MessageSquare} />
               <StatCard label="Total" value={data.messages.total} icon={MessageSquare} />
+            </div>
+          </section>
+
+          <section>
+            <h2 className="mb-3 text-sm font-semibold text-muted">Distribuição no período</h2>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="shadow-soft rounded-card border border-border bg-surface p-4">
+                <p className="mb-2 text-xs font-medium text-muted">Conversas por status</p>
+                {data.conversations.received === 0 ? (
+                  <p className="py-8 text-center text-sm text-muted">Sem dados no período selecionado.</p>
+                ) : (
+                  <ResponsiveContainer width="100%" height={240}>
+                    <PieChart>
+                      <Pie
+                        data={[
+                          { name: "Aguardando", value: data.conversations.waiting },
+                          { name: "Em atendimento", value: data.conversations.inProgress },
+                          { name: "Encerradas", value: data.conversations.closed },
+                        ]}
+                        dataKey="value"
+                        nameKey="name"
+                        innerRadius={50}
+                        outerRadius={80}
+                      >
+                        {STATUS_COLORS.map((color) => (
+                          <Cell key={color} fill={color} />
+                        ))}
+                      </Pie>
+                      <Legend verticalAlign="bottom" height={24} wrapperStyle={{ fontSize: 12 }} />
+                      <Tooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+
+              <div className="shadow-soft rounded-card border border-border bg-surface p-4">
+                <p className="mb-2 text-xs font-medium text-muted">Mensagens recebidas x enviadas</p>
+                {data.messages.total === 0 ? (
+                  <p className="py-8 text-center text-sm text-muted">Sem dados no período selecionado.</p>
+                ) : (
+                  <ResponsiveContainer width="100%" height={240}>
+                    <PieChart>
+                      <Pie
+                        data={[
+                          { name: "Recebidas", value: data.messages.received },
+                          { name: "Enviadas", value: data.messages.sent },
+                        ]}
+                        dataKey="value"
+                        nameKey="name"
+                        innerRadius={50}
+                        outerRadius={80}
+                      >
+                        {MESSAGE_COLORS.map((color) => (
+                          <Cell key={color} fill={color} />
+                        ))}
+                      </Pie>
+                      <Legend verticalAlign="bottom" height={24} wrapperStyle={{ fontSize: 12 }} />
+                      <Tooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
             </div>
           </section>
 
