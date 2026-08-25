@@ -377,8 +377,15 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
 
   async sendText(chatId: string, text: string, options?: SendTextOptions): Promise<SendResult> {
     const socket = this.requireSocket();
+    // Baileys reads quoted.message (not just quoted.key) to build the
+    // reply-preview stanza — passing a key with no message content throws
+    // inside its own message-generation code, which used to fail every
+    // reply send silently (caught and swallowed by sendOutboundText).
     const quoted = options?.replyToProviderMessageId
-      ? { key: { id: options.replyToProviderMessageId, remoteJid: chatId, fromMe: false } }
+      ? {
+          key: { id: options.replyToProviderMessageId, remoteJid: chatId, fromMe: false },
+          message: { conversation: options.replyToText ?? "" },
+        }
       : undefined;
     const sent = await socket.sendMessage(chatId, { text }, { quoted: quoted as any });
     return { providerMessageId: sent?.key.id ?? "", timestamp: new Date() };

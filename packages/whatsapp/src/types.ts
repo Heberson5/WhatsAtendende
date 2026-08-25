@@ -64,6 +64,13 @@ export interface SendResult {
 
 export interface SendTextOptions {
   replyToProviderMessageId?: string;
+  // The original message's own text — WhatsApp's protocol requires the
+  // quoted message's content alongside its key (not just the key) to
+  // render the reply-preview bubble; without it Baileys throws building
+  // the outgoing stanza and the reply never reaches WhatsApp at all. Only
+  // text sends can be a reply (see the /messages/.../text route), so this
+  // is always the replied-to message's plain body.
+  replyToText?: string | null;
 }
 
 export interface ContactInfo {
