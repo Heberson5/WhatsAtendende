@@ -130,7 +130,7 @@ export default function MeuPerfilPage() {
                   <Trash2 className="h-4 w-4" /> Remover foto
                 </button>
               )}
-              <p className="text-xs text-muted">PNG, JPEG ou WEBP, até 2MB.</p>
+              <p className="text-xs text-muted">PNG, JPEG ou WEBP, até 8MB.</p>
             </div>
           </div>
         </div>
