@@ -67,17 +67,41 @@ export async function findOrCreateContact(connectionId: string, phone: string, n
       where: { whatsappConnectionId: connectionId, providerChatId },
     });
     if (byChatId) {
+      // Only upgrade the stored phone when this event actually resolved
+      // one — never downgrade an already-known real number back to the
+      // raw @lid digits just because this particular event couldn't
+      // resolve it.
+      const resolvedPhone = phone === providerChatId.split("@")[0] ? undefined : phone;
+      if (resolvedPhone && resolvedPhone !== byChatId.phone) {
+        // A DIFFERENT contact already owns this exact phone under this
+        // connection — byChatId was itself a duplicate spawned back when
+        // this chat id had never resolved a phone number yet (e.g. a
+        // message sent directly from the phone on a chat this app had no
+        // prior record of), and this event is the first to reveal it was
+        // the same person all along. Fold it into the real contact instead
+        // of colliding on the unique-phone constraint (which used to fail
+        // this update silently, permanently stranding the duplicate).
+        const collision = await prisma.contact.findUnique({
+          where: { phone_whatsappConnectionId: { phone: resolvedPhone, whatsappConnectionId: connectionId } },
+        });
+        if (collision && collision.id !== byChatId.id) {
+          return prisma.$transaction(async (tx) => {
+            await tx.conversation.updateMany({ where: { contactId: byChatId.id }, data: { contactId: collision.id } });
+            // Delete the duplicate BEFORE writing its providerChatId onto
+            // the survivor — both rows would briefly hold the same value
+            // otherwise, tripping the unique [providerChatId,
+            // whatsappConnectionId] constraint.
+            await tx.contact.delete({ where: { id: byChatId.id } });
+            return tx.contact.update({
+              where: { id: collision.id },
+              data: { lastInteractionAt: new Date(), providerChatId: collision.providerChatId ?? providerChatId },
+            });
+          });
+        }
+      }
       return prisma.contact.update({
         where: { id: byChatId.id },
-        data: {
-          lastInteractionAt: new Date(),
-          name: byChatId.name ?? name ?? undefined,
-          // Only upgrade the stored phone when this event actually resolved
-          // one — never downgrade an already-known real number back to the
-          // raw @lid digits just because this particular event couldn't
-          // resolve it.
-          phone: phone === providerChatId.split("@")[0] ? undefined : phone,
-        },
+        data: { lastInteractionAt: new Date(), name: byChatId.name ?? name ?? undefined, phone: resolvedPhone },
       });
     }
   }
