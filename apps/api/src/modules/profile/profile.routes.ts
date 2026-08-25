@@ -8,6 +8,7 @@ import { asyncHandler } from "../../lib/async-handler";
 import { requireAuth } from "../../middleware/auth";
 import { writeAudit } from "../../lib/audit";
 import { env } from "../../config/env";
+import { Errors } from "../../lib/http-error";
 import { toUserDTO } from "../users/users.mapper";
 import * as service from "./profile.service";
 
@@ -28,10 +29,16 @@ const ALLOWED_PHOTO_MIME_TO_EXT: Record<string, string> = {
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 2 * 1024 * 1024 },
+  // A raw, un-resized phone camera photo is routinely 3-8MB — 2MB used to
+  // reject exactly that (the most common source for a profile photo) with
+  // an error the UI only ever showed as a generic "erro interno do
+  // servidor", making the upload look silently broken. See error-handler.ts
+  // for the other half of this fix (a real message for whichever limit is
+  // still hit).
+  limits: { fileSize: 8 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     if (!(file.mimetype in ALLOWED_PHOTO_MIME_TO_EXT)) {
-      return cb(new Error("Formato de imagem nao suportado"));
+      return cb(Errors.badRequest("Formato de imagem nao suportado"));
     }
     cb(null, true);
   },
