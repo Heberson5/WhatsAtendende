@@ -342,6 +342,20 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
     }
   });
 
+  // The only source that can ever correct a contact created from a message
+  // with no phone-resolvable field at all to begin with — a message sent
+  // directly from the linked phone in a brand-new 1:1 chat, whose remoteJid
+  // comes back as the opaque @lid id with no senderPn/participantPn
+  // attached (those are only ever populated for group chats). See
+  // ChatIdentityResolvedEvent and findOrCreateContact's self-heal.
+  provider.onChatIdentityResolved(async (event) => {
+    try {
+      await conversationsService.findOrCreateContact(connectionId, event.phone, null, event.chatId);
+    } catch (err) {
+      logger.error({ err, connectionId }, "failed to heal a contact's phone number from a resolved chat identity");
+    }
+  });
+
   provider.onReaction(async (event) => {
     const message = await prisma.message.findUnique({
       where: { providerMessageId: event.providerMessageId },

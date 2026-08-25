@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
 import type {
+  ChatIdentityResolvedEvent,
   ConnectOptions,
   ContactInfo,
   DeliveryEvent,
@@ -180,6 +181,15 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
 
   onChatRead(): void {
     // Mock provider has no linked phone to sync a read-state from.
+  }
+
+  onChatIdentityResolved(listener: (event: ChatIdentityResolvedEvent) => void): void {
+    this.emitter.on("chatIdentityResolved", listener);
+  }
+
+  /** Test helper: force a chat-identity-resolved event without a real @lid chat behind it. */
+  simulateChatIdentityResolved(chatId: string, phone: string): void {
+    this.emitter.emit("chatIdentityResolved", { chatId, phone } satisfies ChatIdentityResolvedEvent);
   }
 
   /** Test/demo helper: force an inbound message without waiting for the timer. */

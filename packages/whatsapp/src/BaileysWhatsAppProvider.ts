@@ -11,6 +11,7 @@ import makeWASocket, {
   type WAMessage,
 } from "@whiskeysockets/baileys";
 import type {
+  ChatIdentityResolvedEvent,
   ChatReadEvent,
   ConnectOptions,
   ContactInfo,
@@ -293,6 +294,17 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
         for (const update of updates) {
           const chatId = update.id;
           if (!chatId || isNonCustomerChat(chatId)) continue;
+          // Fires independently of the read-state check below — a chat's
+          // pnJid can become known on its own, and this is the ONLY way a
+          // contact ever self-heals when it was created from a message
+          // that couldn't resolve a phone number at all to begin with
+          // (see ChatIdentityResolvedEvent).
+          if (chatId.endsWith("@lid") && update.pnJid) {
+            this.emitter.emit("chatIdentityResolved", {
+              chatId,
+              phone: update.pnJid.split("@")[0],
+            } satisfies ChatIdentityResolvedEvent);
+          }
           if (update.unreadCount === undefined || update.unreadCount === null) continue;
           if (Number(update.unreadCount) > 0) continue;
           this.emitter.emit("chatRead", { chatId, phone: phoneFromJid(chatId, update.pnJid) } satisfies ChatReadEvent);
@@ -498,6 +510,10 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
 
   onChatRead(listener: (event: ChatReadEvent) => void): void {
     this.emitter.on("chatRead", listener);
+  }
+
+  onChatIdentityResolved(listener: (event: ChatIdentityResolvedEvent) => void): void {
+    this.emitter.on("chatIdentityResolved", listener);
   }
 
   private requireSocket(): WASocket {
