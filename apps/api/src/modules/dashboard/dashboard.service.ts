@@ -76,6 +76,7 @@ export async function getDashboard({ from, to, agentId, connectionIds }: Dashboa
   const sent = messages.find((m) => m.direction === "OUTBOUND")?._count ?? 0;
 
   const perAgent = await getPerAgentBreakdown(from, to, connectionFilter);
+  const users = await getUsersSummary();
 
   return {
     conversations: {
@@ -93,7 +94,20 @@ export async function getDashboard({ from, to, agentId, connectionIds }: Dashboa
       avgClosingMs: avgMs(closingDiffs),
     },
     perAgent,
+    users,
   };
+}
+
+// A snapshot of right now, not scoped to the reporting period — "how many
+// users are online" is inherently a current-moment question, not a
+// historical one like the rest of this dashboard.
+async function getUsersSummary() {
+  const [online, active, total] = await Promise.all([
+    prisma.user.count({ where: { presence: "ONLINE" } }),
+    prisma.user.count({ where: { status: "ACTIVE" } }),
+    prisma.user.count(),
+  ]);
+  return { online, active, total };
 }
 
 async function getPerAgentBreakdown(from: Date, to: Date, connectionFilter?: { in: string[] }) {
