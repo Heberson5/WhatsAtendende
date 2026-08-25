@@ -333,6 +333,15 @@ model Message {
   deliveredAt           DateTime?
   readAt                DateTime?
 
+  // ADMIN-only "excluir mensagem" — soft delete local to this app only:
+  // deleted messages are simply excluded from listMessages, but the row
+  // (and any attachment) is kept for audit purposes. Never propagated to
+  // WhatsApp — there is no revoke/delete call to Baileys anywhere in this
+  // flow, so the customer's own WhatsApp app and any other linked device
+  // (phone, WhatsApp Web/Desktop) keep the message exactly as it was.
+  deletedAt             DateTime?
+  deletedByUserId       String?
+
   attachments MessageAttachment[]
   reactions   MessageReaction[]
 
