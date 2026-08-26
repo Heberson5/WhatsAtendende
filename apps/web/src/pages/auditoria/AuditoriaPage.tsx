@@ -6,14 +6,86 @@ import { api } from "../../lib/api";
 
 // Every distinct `entity` string ever passed to writeAudit() across the API
 // — see e.g. auth.service.ts, users.routes.ts, conversations.routes.ts. The
-// backend filter is an exact match, so this doubles as the filter's option
-// list; a new entity added on the backend just won't have a dedicated
-// filter option here until this list is updated (it still shows up fine
-// under "Todas").
-const ENTITY_OPTIONS = ["User", "Conversation", "Contact", "Message", "WhatsAppConnection", "SystemSetting", "RolePermission"];
+// backend filter is an exact match, so the keys here double as the filter's
+// option list; a new entity added on the backend just won't have a
+// dedicated filter option or translated label here until this map is
+// updated (it still shows up fine under "Todas", just untranslated).
+const ENTITY_LABEL: Record<string, string> = {
+  User: "Usuário",
+  Conversation: "Conversa",
+  Contact: "Contato",
+  Message: "Mensagem",
+  WhatsAppConnection: "Conexão WhatsApp",
+  SystemSetting: "Configuração",
+  RolePermission: "Permissão",
+};
+
+// Every distinct `action` string ever passed to writeAudit() — see the same
+// call sites as ENTITY_LABEL above. formatAction falls back to a generic
+// (still readable, just untranslated) rendering for anything not listed
+// here, so a new action added later never shows up blank.
+const ACTION_LABEL: Record<string, string> = {
+  LOGIN_SUCCESS: "Login realizado",
+  LOGIN_FAILED: "Falha no login",
+  LOGIN_BLOCKED_INACTIVE: "Login bloqueado (usuário inativo)",
+  LOGOUT: "Logout",
+  PASSWORD_RESET_REQUESTED: "Redefinição de senha solicitada",
+  PASSWORD_RESET_COMPLETED: "Redefinição de senha concluída",
+  CONVERSATION_STARTED: "Conversa iniciada",
+  CONVERSATION_ACCEPTED: "Conversa aceita",
+  CONVERSATION_TRANSFERRED: "Conversa transferida",
+  CONVERSATION_TRANSFER_REVERTED: "Transferência revertida (destinatário não logou a tempo)",
+  CONVERSATIONS_MERGED: "Conversas mescladas",
+  CONVERSATION_CLOSED: "Conversa encerrada",
+  CONTACTS_AUTO_MERGED: "Contatos mesclados automaticamente",
+  MESSAGE_SENT: "Mensagem enviada",
+  MESSAGE_DELETED: "Mensagem excluída",
+  USER_CREATED: "Usuário criado",
+  USER_UPDATED: "Usuário atualizado",
+  USER_ACTIVATED: "Usuário ativado",
+  USER_DEACTIVATED: "Usuário inativado",
+  USER_FORCE_LOGGED_OUT: "Usuário desconectado por um administrador",
+  USER_PASSWORD_RESET_BY_ADMIN: "Senha redefinida por um administrador",
+  PROFILE_UPDATED: "Perfil atualizado",
+  PROFILE_PHOTO_UPLOADED: "Foto de perfil enviada",
+  PROFILE_PHOTO_REMOVED: "Foto de perfil removida",
+  PROFILE_PASSWORD_CHANGED: "Senha alterada",
+  SETTINGS_BRANDING_UPDATED: "Identidade visual atualizada",
+  SETTINGS_LOGO_UPLOADED: "Logo enviada",
+  SETTINGS_FAVICON_UPLOADED: "Favicon enviado",
+  SETTINGS_BUSINESS_UPDATED: "Configurações gerais atualizadas",
+  SETTINGS_EMAIL_UPDATED: "Configuração de e-mail atualizada",
+  SETTINGS_EMAIL_TEST_SENT: "E-mail de teste enviado",
+  PERMISSIONS_UPDATED: "Permissões atualizadas",
+  WHATSAPP_CONNECTION_CREATED: "Conexão WhatsApp criada",
+  WHATSAPP_CONNECTION_UPDATED: "Conexão WhatsApp atualizada",
+  WHATSAPP_CONNECTION_DELETED: "Conexão WhatsApp excluída",
+  WHATSAPP_CONNECT_REQUESTED: "Conexão WhatsApp solicitada",
+  WHATSAPP_DISCONNECTED: "WhatsApp desconectado",
+  WHATSAPP_RECONNECT_REQUESTED: "Reconexão WhatsApp solicitada",
+};
 
 function formatAction(action: string): string {
-  return action.charAt(0) + action.slice(1).toLowerCase().replace(/_/g, " ");
+  if (ACTION_LABEL[action]) return ACTION_LABEL[action];
+  // Fallback for anything not in the map above: "MENSAGEM_ENVIADA" -> "Mensagem enviada".
+  const readable = action.toLowerCase().replace(/_/g, " ");
+  return readable.charAt(0).toUpperCase() + readable.slice(1);
+}
+
+function formatEntity(entity: string): string {
+  return ENTITY_LABEL[entity] ?? entity;
+}
+
+interface MessageAuditMetadata {
+  contactName?: string | null;
+  contactPhone?: string | null;
+  text?: string | null;
+}
+
+/** Only Message-entity entries (send/delete) currently carry contact/text info — see messages.routes.ts. */
+function readMessageMetadata(log: AuditLogDTO): MessageAuditMetadata {
+  if (log.entity !== "Message" || typeof log.metadata !== "object" || log.metadata === null) return {};
+  return log.metadata as MessageAuditMetadata;
 }
 
 async function fetchAuditLog(cursor: string | undefined, entity: string) {
@@ -67,9 +139,9 @@ export default function AuditoriaPage() {
             className="focus-ring rounded-card border border-border bg-transparent px-3 py-1.5 text-sm"
           >
             <option value="">Todas</option>
-            {ENTITY_OPTIONS.map((e) => (
-              <option key={e} value={e}>
-                {e}
+            {Object.entries(ENTITY_LABEL).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
               </option>
             ))}
           </select>
@@ -84,33 +156,43 @@ export default function AuditoriaPage() {
               <th className="px-4 py-3">Usuário</th>
               <th className="px-4 py-3">Ação</th>
               <th className="px-4 py-3">Entidade</th>
+              <th className="px-4 py-3">Cliente</th>
+              <th className="px-4 py-3">Texto</th>
               <th className="px-4 py-3">IP</th>
             </tr>
           </thead>
           <tbody>
             {query.isLoading && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-muted">
+                <td colSpan={7} className="px-4 py-8 text-center text-muted">
                   Carregando...
                 </td>
               </tr>
             )}
             {!query.isLoading && logs.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-muted">
+                <td colSpan={7} className="px-4 py-8 text-center text-muted">
                   Nenhum registro encontrado.
                 </td>
               </tr>
             )}
-            {logs.map((log) => (
-              <tr key={log.id} className="border-t border-border align-top hover:bg-surface-alt">
-                <td className="whitespace-nowrap px-4 py-3 text-muted">{format(new Date(log.createdAt), "dd/MM/yyyy HH:mm:ss")}</td>
-                <td className="px-4 py-3">{log.userDisplayName}</td>
-                <td className="px-4 py-3">{formatAction(log.action)}</td>
-                <td className="px-4 py-3 text-muted">{log.entity}</td>
-                <td className="px-4 py-3 text-muted">{log.ipAddress ?? "-"}</td>
-              </tr>
-            ))}
+            {logs.map((log) => {
+              const { contactName, contactPhone, text } = readMessageMetadata(log);
+              const client = contactName || contactPhone;
+              return (
+                <tr key={log.id} className="border-t border-border align-top hover:bg-surface-alt">
+                  <td className="whitespace-nowrap px-4 py-3 text-muted">{format(new Date(log.createdAt), "dd/MM/yyyy HH:mm:ss")}</td>
+                  <td className="px-4 py-3">{log.userDisplayName}</td>
+                  <td className="px-4 py-3">{formatAction(log.action)}</td>
+                  <td className="px-4 py-3 text-muted">{formatEntity(log.entity)}</td>
+                  <td className="px-4 py-3 text-muted">{client ?? "-"}</td>
+                  <td className="max-w-xs truncate px-4 py-3 text-muted" title={text ?? undefined}>
+                    {text ?? "-"}
+                  </td>
+                  <td className="px-4 py-3 text-muted">{log.ipAddress ?? "-"}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
