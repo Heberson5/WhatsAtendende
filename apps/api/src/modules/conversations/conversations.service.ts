@@ -256,6 +256,38 @@ export async function findOrOpenConversationForInboundMessage(connectionId: stri
 }
 
 /**
+ * Same lookup as findOrOpenConversationForInboundMessage, but for a message
+ * sent directly from the linked phone/another device (see
+ * handleDeviceSentMessage in whatsapp.service.ts) with no active conversation
+ * to attach it to yet. This must never create a NEW/WAITING conversation —
+ * that would put a card in the live queue for a contact the agent is
+ * already messaging outside this app, even though the customer never wrote
+ * in. It opens straight into HANDLED_EXTERNALLY instead: same status
+ * markConversationReadFromDevice uses for "being handled on the phone",
+ * visible in Gestão but never in the Fila. See PROMPT: só deve aparecer na
+ * fila quando o cliente envia mensagem.
+ */
+export async function findOrOpenConversationForDeviceSentMessage(connectionId: string, contactId: string) {
+  const active = await findActiveConversationForContact(contactId);
+  if (active) return { conversation: active, isNewConversation: false };
+
+  const conversation = await prisma.conversation.create({
+    data: {
+      contactId,
+      whatsappConnectionId: connectionId,
+      status: "HANDLED_EXTERNALLY",
+      enteredQueueAt: new Date(),
+      lastMessageAt: new Date(),
+      assignedAgentReadAt: new Date(),
+    },
+  });
+  await prisma.conversationEvent.create({
+    data: { conversationId: conversation.id, type: "HANDLED_EXTERNALLY", payload: { reason: "started from device" } },
+  });
+  return { conversation, isNewConversation: true };
+}
+
+/**
  * An AGENT only ever sees the queue for their own WhatsApp connection.
  * MANAGER/ADMIN have no fixed connection — see PROMPT: "o gestor e
  * administrador também devem ter o menu de atendimentos" — so they pass
