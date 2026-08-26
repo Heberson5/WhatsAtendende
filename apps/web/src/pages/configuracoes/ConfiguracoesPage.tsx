@@ -20,10 +20,14 @@ export default function ConfiguracoesPage() {
   const [tab, setTab] = useState<Tab>("whatsapp");
   const role = useAuthStore((s) => s.user?.role);
   // Configurações itself can be reached by a MANAGER granted the
-  // "configuracoes.gerenciar" permission, but the permissions matrix is
-  // always ADMIN-only on the backend (see permissions.routes.ts) — hiding
-  // this tab for anyone else keeps the UI honest about what they can do.
-  const visibleTabs = TABS.filter((t) => t.key !== "permissoes" || role === "ADMIN");
+  // "configuracoes.gerenciar" permission, but the permissions matrix and
+  // session/security settings are always ADMIN-only — hiding these tabs for
+  // anyone else keeps the UI honest about what they can do. (The permissions
+  // matrix is enforced ADMIN-only on the backend too, see
+  // permissions.routes.ts; PATCH /settings/business is enforced only by the
+  // configuracoes.gerenciar permission, same as the other Configurações
+  // tabs — this is a UI-only restriction, not a backend one.)
+  const visibleTabs = TABS.filter((t) => (t.key !== "permissoes" && t.key !== "seguranca") || role === "ADMIN");
 
   return (
     <div className="h-full overflow-auto p-3 sm:p-6">
@@ -42,7 +46,7 @@ export default function ConfiguracoesPage() {
       {tab === "whatsapp" && <WhatsAppConnectionPanel />}
       {tab === "branding" && <BrandingPanel />}
       {tab === "email" && <EmailSettingsPanel />}
-      {tab === "seguranca" && <SecuritySettingsPanel />}
+      {tab === "seguranca" && role === "ADMIN" && <SecuritySettingsPanel />}
       {tab === "permissoes" && role === "ADMIN" && <PermissionsPanel />}
     </div>
   );
