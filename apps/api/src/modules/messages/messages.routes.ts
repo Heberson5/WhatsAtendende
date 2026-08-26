@@ -163,6 +163,14 @@ messagesRouter.post(
       replyToProviderMessageId,
       replyToText
     );
+    await writeAudit({
+      userId: req.auth!.userId,
+      action: "MESSAGE_SENT",
+      entity: "Message",
+      entityId: message.id,
+      ipAddress: req.ip ?? null,
+      metadata: { conversationId: conversation.id, contactName: conversation.contact.name, contactPhone: conversation.contact.phone, text: body },
+    });
     realtimeEvents.newMessage(conversation.id, req.auth!.userId);
     res.status(201).json(dto);
   })
@@ -204,6 +212,19 @@ messagesRouter.post(
       req.auth!.displayName,
       (req.body?.caption as string) || undefined
     );
+    await writeAudit({
+      userId: req.auth!.userId,
+      action: "MESSAGE_SENT",
+      entity: "Message",
+      entityId: message.id,
+      ipAddress: req.ip ?? null,
+      metadata: {
+        conversationId: conversation.id,
+        contactName: conversation.contact.name,
+        contactPhone: conversation.contact.phone,
+        text: (req.body?.caption as string) || `Arquivo: ${req.file.originalname}`,
+      },
+    });
     realtimeEvents.newMessage(conversation.id, req.auth!.userId);
     res.status(201).json(dto);
   })
@@ -231,6 +252,14 @@ messagesRouter.post(
       longitude,
     });
     const dto = await whatsappService.sendOutboundLocation(conversation.whatsappConnectionId, message.id, conversation.contact.phone, latitude, longitude);
+    await writeAudit({
+      userId: req.auth!.userId,
+      action: "MESSAGE_SENT",
+      entity: "Message",
+      entityId: message.id,
+      ipAddress: req.ip ?? null,
+      metadata: { conversationId: conversation.id, contactName: conversation.contact.name, contactPhone: conversation.contact.phone, text: "Localização compartilhada" },
+    });
     realtimeEvents.newMessage(conversation.id, req.auth!.userId);
     res.status(201).json(dto);
   })
@@ -270,7 +299,12 @@ messagesRouter.delete(
       entity: "Message",
       entityId: req.params.messageId,
       ipAddress: req.ip ?? null,
-      metadata: { conversationId: message.conversationId },
+      metadata: {
+        conversationId: message.conversationId,
+        contactName: message.conversation.contact.name,
+        contactPhone: message.conversation.contact.phone,
+        text: message.body,
+      },
     });
     realtimeEvents.messageDeleted(message.conversationId, req.params.messageId, message.conversation.assignedAgentId);
     res.status(204).end();
