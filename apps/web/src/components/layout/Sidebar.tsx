@@ -8,6 +8,7 @@ import {
   FileBarChart,
   Users,
   Settings,
+  ScrollText,
   ChevronLeft,
   ChevronRight,
   X,
@@ -33,6 +34,7 @@ const MENU_ITEMS: MenuItem[] = [
   { to: "/relatorios", label: "Relatórios", icon: FileBarChart, permission: PERMISSION.RELATORIOS_ACESSAR },
   { to: "/usuarios", label: "Usuários", icon: Users, permission: PERMISSION.USUARIOS_GERENCIAR },
   { to: "/configuracoes", label: "Configurações", icon: Settings, permission: PERMISSION.CONFIGURACOES_GERENCIAR },
+  { to: "/auditoria", label: "Auditoria", icon: ScrollText, permission: PERMISSION.AUDITORIA_ACESSAR },
 ];
 
 export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: boolean; onMobileClose?: () => void }) {

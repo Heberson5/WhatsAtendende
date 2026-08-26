@@ -12,6 +12,7 @@ import DashboardPage from "./pages/dashboard/DashboardPage";
 import RelatoriosPage from "./pages/relatorios/RelatoriosPage";
 import UsuariosPage from "./pages/usuarios/UsuariosPage";
 import ConfiguracoesPage from "./pages/configuracoes/ConfiguracoesPage";
+import AuditoriaPage from "./pages/auditoria/AuditoriaPage";
 import MeuPerfilPage from "./pages/perfil/MeuPerfilPage";
 
 // Where "/" lands depends on what this user's role can actually reach —
@@ -25,6 +26,7 @@ const HOME_PRIORITY: { permission: (typeof PERMISSION)[keyof typeof PERMISSION];
   { permission: PERMISSION.RELATORIOS_ACESSAR, to: "/relatorios" },
   { permission: PERMISSION.USUARIOS_GERENCIAR, to: "/usuarios" },
   { permission: PERMISSION.CONFIGURACOES_GERENCIAR, to: "/configuracoes" },
+  { permission: PERMISSION.AUDITORIA_ACESSAR, to: "/auditoria" },
 ];
 
 function RoleHome() {
@@ -72,6 +74,9 @@ export default function App() {
           </Route>
           <Route element={<PermissionRoute permission={PERMISSION.CONFIGURACOES_GERENCIAR} />}>
             <Route path="/configuracoes" element={<ConfiguracoesPage />} />
+          </Route>
+          <Route element={<PermissionRoute permission={PERMISSION.AUDITORIA_ACESSAR} />}>
+            <Route path="/auditoria" element={<AuditoriaPage />} />
           </Route>
         </Route>
       </Route>
