@@ -238,7 +238,7 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
     // a fromMe message should never seed a brand-new contact's photo from
     // this account's own profile picture, so no getContactPhoto call here.
     const contact = await conversationsService.findOrCreateContact(connectionId, event.phone, null, event.chatId);
-    const { conversation } = await conversationsService.findOrOpenConversationForInboundMessage(connectionId, contact.id);
+    const { conversation } = await conversationsService.findOrOpenConversationForDeviceSentMessage(connectionId, contact.id);
 
     const message = await messagesService.createOutboundMessageFromDevice({
       conversationId: conversation.id,
@@ -325,9 +325,19 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
     try {
       // Non-customer chats (groups, status, broadcast lists) are already
       // filtered out by the provider before this event is emitted.
-      const contact = await prisma.contact.findUnique({
-        where: { phone_whatsappConnectionId: { phone: event.phone, whatsappConnectionId: connectionId } },
-      });
+      //
+      // Resolve by chatId (providerChatId) first, same order findOrCreateContact
+      // uses — event.phone is only ever a best-effort guess (see phoneFromJid):
+      // on an @lid chat whose pnJid isn't attached to THIS particular event, it
+      // falls back to the meaningless @lid digits, which never match the
+      // contact's real stored phone. Looking up by phone alone silently missed
+      // the contact on exactly those events, which is why a chat read on the
+      // linked phone would sometimes never leave the queue.
+      const contact =
+        (await prisma.contact.findFirst({ where: { whatsappConnectionId: connectionId, providerChatId: event.chatId } })) ??
+        (await prisma.contact.findUnique({
+          where: { phone_whatsappConnectionId: { phone: event.phone, whatsappConnectionId: connectionId } },
+        }));
       if (!contact) return;
       const conversation = await conversationsService.findActiveConversationForContact(contact.id);
       if (!conversation) return;
