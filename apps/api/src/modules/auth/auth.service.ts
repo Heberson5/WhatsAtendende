@@ -7,6 +7,7 @@ import { sendMail } from "../../lib/mail";
 import { clearPendingTransferDeadlines } from "../conversations/conversations.service";
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from "./jwt";
 import { env } from "../../config/env";
+import { realtimeEvents } from "../../realtime/realtime";
 
 const REFRESH_TOKEN_DAYS = 7;
 
@@ -41,6 +42,17 @@ export async function login(email: string, password: string, ip: string | null) 
     throw Errors.unauthorized("E-mail ou senha invalidos");
   }
 
+  // Only one active login at a time — see PROMPT: o usuário não pode logar
+  // mais de uma vez. Revoking here (never deleting — keeps the audit trail
+  // via each row's own timestamps) happens BEFORE this login mints its own
+  // token below, so it never revokes itself. If a live session was actually
+  // open (revoked something), also kill it instantly — see
+  // realtimeEvents.userForceLoggedOut.
+  const revoked = await prisma.refreshToken.updateMany({
+    where: { userId: user.id, revokedAt: null, expiresAt: { gt: new Date() } },
+    data: { revokedAt: new Date() },
+  });
+
   const accessToken = signAccessToken({ sub: user.id, role: user.role, displayName: user.displayName });
   const refreshToken = signRefreshToken(user.id);
 
@@ -51,6 +63,10 @@ export async function login(email: string, password: string, ip: string | null) 
       expiresAt: new Date(Date.now() + REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000),
     },
   });
+
+  if (revoked.count > 0) {
+    realtimeEvents.userForceLoggedOut(user.id, "NEW_LOGIN");
+  }
 
   await prisma.user.update({ where: { id: user.id }, data: { lastAccessAt: new Date(), presence: "ONLINE" } });
   await writeAudit({ userId: user.id, action: "LOGIN_SUCCESS", entity: "User", entityId: user.id, ipAddress: ip });
@@ -175,6 +191,12 @@ export function refreshCookieOptions() {
     // are POST) CSRF surface on the cookie-authenticated auth routes entirely.
     sameSite: "strict" as const,
     path: "/api/auth",
-    maxAge: REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000,
+    // No maxAge/expires — a session cookie, not a persistent one. See
+    // PROMPT: fechar o navegador deve encerrar a sessão automaticamente.
+    // The browser drops it once the browser itself (not just the tab) is
+    // closed, so useBootstrapSession's silent refresh on next open finds
+    // nothing to send and the user lands back on /login. The refresh
+    // token's own REFRESH_TOKEN_DAYS server-side expiry stays as a second,
+    // independent ceiling regardless of how long the cookie itself survives.
   };
 }
