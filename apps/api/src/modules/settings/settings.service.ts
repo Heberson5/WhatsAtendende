@@ -44,7 +44,9 @@ export async function getBusinessSettings(): Promise<Record<string, unknown>> {
 // logic yet, but the settings store and API already support them so the
 // enforcement can land without a schema/API break.
 const DEFAULT_BUSINESS_SETTINGS = {
-  inactivityTimeoutMinutes: 30,
+  // Now enforced client-side (see useIdleLogout) — 8h covers a full shift
+  // without ever tripping mid-workday; an admin can tune it in Configurações.
+  inactivityTimeoutMinutes: 8 * 60,
   autoCloseEnabled: false,
   reopenTarget: "QUEUE", // QUEUE | LAST_AGENT
   uploadMaxSizeMb: 25,

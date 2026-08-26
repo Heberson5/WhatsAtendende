@@ -80,15 +80,19 @@ export const realtimeEvents = {
     getIO()?.to(ROOMS.oversight()).emit("oversight:updated");
   },
   /**
-   * An admin force-disconnected this user from Usuários. Revoking their
-   * refresh tokens alone leaves an already-issued access token working for
-   * up to its own remaining TTL — genuinely instant means also killing
-   * their live socket(s) right now, which is what disconnectSockets does;
-   * the frontend's own force-logout listener (on the emitted event) clears
-   * its session and redirects before that disconnect even lands.
+   * Kills every live session this user currently has open. Two callers:
+   * an ADMIN force-disconnecting them from Usuários ("ADMIN"), or the user
+   * themselves logging in again somewhere else while an old session is
+   * still around ("NEW_LOGIN" — see PROMPT: only one active login at a
+   * time). Revoking refresh tokens alone leaves an already-issued access
+   * token working for up to its own remaining TTL — genuinely instant means
+   * also killing the live socket(s) right now, which is what
+   * disconnectSockets does; the frontend's own force-logout listener (on
+   * the emitted event) clears its session and redirects before that
+   * disconnect even lands, and uses `reason` to show the right message.
    */
-  userForceLoggedOut: (userId: string) => {
-    getIO()?.to(ROOMS.user(userId)).emit("user:force-logout");
+  userForceLoggedOut: (userId: string, reason: "ADMIN" | "NEW_LOGIN" = "ADMIN") => {
+    getIO()?.to(ROOMS.user(userId)).emit("user:force-logout", { reason });
     getIO()?.in(ROOMS.user(userId)).disconnectSockets(true);
   },
   whatsappStatusChanged: (connectionId: string, status: unknown) => {

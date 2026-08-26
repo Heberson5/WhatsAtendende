@@ -3,14 +3,16 @@ import { WhatsAppConnectionPanel } from "./WhatsAppConnectionPanel";
 import { BrandingPanel } from "./BrandingPanel";
 import { EmailSettingsPanel } from "./EmailSettingsPanel";
 import { PermissionsPanel } from "./PermissionsPanel";
+import { SecuritySettingsPanel } from "./SecuritySettingsPanel";
 import { useAuthStore } from "../../store/auth-store";
 
-type Tab = "whatsapp" | "branding" | "email" | "permissoes";
+type Tab = "whatsapp" | "branding" | "email" | "seguranca" | "permissoes";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "whatsapp", label: "WhatsApp" },
   { key: "branding", label: "Identidade visual" },
   { key: "email", label: "E-mail" },
+  { key: "seguranca", label: "Segurança" },
   { key: "permissoes", label: "Permissões" },
 ];
 
@@ -40,6 +42,7 @@ export default function ConfiguracoesPage() {
       {tab === "whatsapp" && <WhatsAppConnectionPanel />}
       {tab === "branding" && <BrandingPanel />}
       {tab === "email" && <EmailSettingsPanel />}
+      {tab === "seguranca" && <SecuritySettingsPanel />}
       {tab === "permissoes" && role === "ADMIN" && <PermissionsPanel />}
     </div>
   );
