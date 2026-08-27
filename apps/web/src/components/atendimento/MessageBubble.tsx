@@ -1,6 +1,7 @@
 import clsx from "clsx";
 import { format } from "date-fns";
-import { Check, CheckCheck, Clock, FileText, MapPin, ReplyIcon, Smile, Trash2, User } from "lucide-react";
+import { ptBR } from "date-fns/locale";
+import { Calendar, Check, CheckCheck, Clock, ExternalLink, FileText, ListChecks, MapPin, MessageCircle, ReplyIcon, Smile, Trash2, User } from "lucide-react";
 import type { MessageDTO, MessageAttachmentDTO } from "@whatsatendende/types";
 import { useState } from "react";
 import { renderWhatsAppFormatting } from "../../lib/whatsappFormatting";
@@ -28,7 +29,34 @@ function vcardName(vcard: string | undefined, fallback: string): string {
   return match?.[1]?.trim() || fallback;
 }
 
-function Attachment({ att, onOpenMedia }: { att: MessageAttachmentDTO; onOpenMedia: (media: LightboxMedia) => void }) {
+/**
+ * A vCard's TEL line looks like `TEL;type=CELL;waid=5511999998888:+55 11
+ * 99999-8888` — `waid` (when present) is WhatsApp's own already-normalized
+ * number, more reliable than re-parsing the free-form display value next
+ * to it. Falls back to stripping non-digits from the TEL value itself for
+ * a vCard that doesn't carry a waid (e.g. a contact shared from outside
+ * WhatsApp's own address book picker).
+ */
+function vcardPhone(vcard: string | undefined): string | null {
+  if (!vcard) return null;
+  const waid = vcard.match(/waid=(\d+)/);
+  if (waid) return waid[1];
+  const tel = vcard.match(/TEL[^:\n]*:([^\n]+)/);
+  if (!tel) return null;
+  const digits = tel[1].replace(/\D/g, "");
+  return digits || null;
+}
+
+function Attachment({
+  att,
+  onOpenMedia,
+  onStartConversation,
+}: {
+  att: MessageAttachmentDTO;
+  onOpenMedia: (media: LightboxMedia) => void;
+  /** Starts a new conversation with a phone number found inside a received vCard — omitted (button hidden) in read-only views. */
+  onStartConversation?: (phone: string, name: string) => void;
+}) {
   if (att.kind === "IMAGE") {
     const src = withAuthToken(att.url);
     return (
@@ -56,31 +84,107 @@ function Attachment({ att, onOpenMedia }: { att: MessageAttachmentDTO; onOpenMed
     return <audio src={withAuthToken(att.url)} controls className="w-full min-w-[220px]" />;
   }
   if (att.kind === "LOCATION" && att.latitude !== undefined && att.longitude !== undefined) {
-    const mapSrc = `https://staticmap.openstreetmap.de/staticmap.php?center=${att.latitude},${att.longitude}&zoom=15&size=280x140&markers=${att.latitude},${att.longitude},red-pushpin`;
+    // No third-party static-map image here on purpose — that used to depend
+    // on an external image host that can be blocked (corporate proxy,
+    // ad/tracker blockers) or simply go down, silently leaving the whole
+    // location bubble blank. Coordinates + a link to a real, live map is
+    // slower to scan but never fails to render.
     return (
       <a
         href={`https://maps.google.com/?q=${att.latitude},${att.longitude}`}
         target="_blank"
         rel="noreferrer"
-        className="block overflow-hidden rounded border border-black/10"
+        className="flex items-center gap-2.5 rounded border border-black/10 bg-black/5 px-3 py-2.5 hover:bg-black/10"
       >
-        <img src={mapSrc} alt="Localização compartilhada" className="block w-full" />
-        <div className="flex items-center gap-1.5 bg-black/5 px-2 py-1.5 text-xs">
-          <MapPin className="h-3.5 w-3.5 shrink-0" /> Localização compartilhada
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/10">
+          <MapPin className="h-4.5 w-4.5" />
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-medium">Localização compartilhada</p>
+          <p className="text-xs opacity-75">
+            {att.latitude.toFixed(5)}, {att.longitude.toFixed(5)} · Abrir no mapa
+          </p>
         </div>
       </a>
     );
   }
-  if (att.kind === "CONTACT") {
+  if (att.kind === "POLL") {
     return (
-      <div className="flex items-center gap-2 rounded border border-black/10 bg-black/5 px-3 py-2">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-black/10">
-          <User className="h-4 w-4" />
-        </span>
-        <div className="min-w-0">
-          <p className="truncate text-sm font-medium">{vcardName(att.vcard, att.fileName)}</p>
-          <p className="text-xs opacity-75">Contato</p>
+      <div className="min-w-[220px] rounded border border-black/10 bg-black/5 px-3 py-2.5">
+        <div className="mb-2 flex items-center gap-1.5 text-xs font-medium opacity-75">
+          <ListChecks className="h-3.5 w-3.5" /> Enquete
         </div>
+        <p className="text-sm font-medium">{att.pollQuestion}</p>
+        {/* Read-only: WhatsApp encrypts each vote against the poll's own key, so live
+            tallying isn't shown here — just the question/options as the poll was created. */}
+        <div className="mt-2 space-y-1.5">
+          {(att.pollOptions ?? []).map((option, i) => (
+            <div key={i} className="flex items-center gap-2 rounded border border-black/10 bg-[var(--color-surface)] px-2.5 py-1.5 text-xs">
+              <span className="h-3 w-3 shrink-0 rounded-full border border-current opacity-50" />
+              <span className="truncate">{option}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+  if (att.kind === "EVENT") {
+    return (
+      <div className="min-w-[220px] rounded border border-black/10 bg-black/5 px-3 py-2.5">
+        <div className="mb-1 flex items-center gap-1.5 text-xs font-medium opacity-75">
+          <Calendar className="h-3.5 w-3.5" /> Evento
+        </div>
+        <p className="text-sm font-medium">{att.eventName}</p>
+        {att.eventStartAt && (
+          <p className="mt-0.5 text-xs opacity-90">{format(new Date(att.eventStartAt), "EEEE, d 'de' MMMM 'às' HH:mm", { locale: ptBR })}</p>
+        )}
+        {att.eventDescription && <p className="mt-1 whitespace-pre-wrap text-xs opacity-90">{att.eventDescription}</p>}
+        {att.latitude !== undefined && att.longitude !== undefined && (
+          <a
+            href={`https://maps.google.com/?q=${att.latitude},${att.longitude}`}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-1.5 flex items-center gap-1 text-xs font-medium underline opacity-90 hover:opacity-100"
+          >
+            <MapPin className="h-3 w-3" /> Ver localização
+          </a>
+        )}
+        {att.eventJoinLink && (
+          <a
+            href={att.eventJoinLink}
+            target="_blank"
+            rel="noreferrer"
+            className="focus-ring mt-2 flex w-full items-center justify-center gap-1.5 rounded border border-black/10 bg-black/5 py-1.5 text-xs font-medium hover:bg-black/10"
+          >
+            <ExternalLink className="h-3.5 w-3.5" /> Entrar
+          </a>
+        )}
+      </div>
+    );
+  }
+  if (att.kind === "CONTACT") {
+    const name = vcardName(att.vcard, att.fileName);
+    const phone = vcardPhone(att.vcard);
+    return (
+      <div className="min-w-[220px] rounded border border-black/10 bg-black/5 px-3 py-2">
+        <div className="flex items-center gap-2">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-black/10">
+            <User className="h-4 w-4" />
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium">{name}</p>
+            <p className="text-xs opacity-75">{phone ?? "Contato"}</p>
+          </div>
+        </div>
+        {onStartConversation && phone && (
+          <button
+            type="button"
+            onClick={() => onStartConversation(phone, name)}
+            className="focus-ring mt-2 flex w-full items-center justify-center gap-1.5 rounded border border-black/10 bg-black/5 py-1.5 text-xs font-medium hover:bg-black/10"
+          >
+            <MessageCircle className="h-3.5 w-3.5" /> Iniciar conversa
+          </button>
+        )}
       </div>
     );
   }
@@ -110,6 +214,7 @@ export function MessageBubble({
   onReply,
   onReact,
   onDelete,
+  onStartConversation,
   repliedMessage,
   readOnly,
   canDelete,
@@ -119,6 +224,8 @@ export function MessageBubble({
   onReply: (message: MessageDTO) => void;
   onReact: (message: MessageDTO, emoji: string) => void;
   onDelete?: (message: MessageDTO) => void;
+  /** Starts a new conversation with a phone number found inside a received vCard attachment. Omitted in read-only views (Gestão). */
+  onStartConversation?: (phone: string, name: string) => void;
   repliedMessage?: MessageDTO;
   /** Gestão's oversight view: same bubble rendering as Atendimento, but no reply/react — gestores only watch. */
   readOnly?: boolean;
@@ -157,7 +264,7 @@ export function MessageBubble({
 
       {message.attachments.map((att) => (
         <div key={att.id} className="mb-1.5">
-          <Attachment att={att} onOpenMedia={setOpenMedia} />
+          <Attachment att={att} onOpenMedia={setOpenMedia} onStartConversation={readOnly ? undefined : onStartConversation} />
         </div>
       ))}
 

@@ -20,7 +20,18 @@ async function fetchMessages(conversationId: string, cursor?: string) {
   return res.data;
 }
 
-export function ChatPanel({ conversation, onClosed, onBack }: { conversation: ConversationListItemDTO; onClosed: () => void; onBack?: () => void }) {
+export function ChatPanel({
+  conversation,
+  onClosed,
+  onBack,
+  onConversationStarted,
+}: {
+  conversation: ConversationListItemDTO;
+  onClosed: () => void;
+  onBack?: () => void;
+  /** A new conversation was started from a vCard received in this chat (see MessageBubble's "Iniciar conversa") — the caller decides what to do with it (open it, refresh lists...). */
+  onConversationStarted?: (conversation: ConversationListItemDTO) => void;
+}) {
   const queryClient = useQueryClient();
   const permissions = useAuthStore((s) => s.permissions);
   const isAdmin = useAuthStore((s) => s.user?.role === "ADMIN");
@@ -299,6 +310,20 @@ export function ChatPanel({ conversation, onClosed, onBack }: { conversation: Co
     onError: (err) => toast.error(getApiErrorMessage(err)),
   });
 
+  const startConversationMutation = useMutation({
+    mutationFn: (input: { phone: string; name: string }) =>
+      api.post<ConversationListItemDTO>("/conversations/start", {
+        connectionId: conversation.whatsappConnectionId,
+        phone: input.phone,
+        name: input.name,
+      }),
+    onSuccess: (res) => {
+      toast.success("Conversa iniciada.");
+      onConversationStarted?.(res.data);
+    },
+    onError: (err) => toast.error(getApiErrorMessage(err)),
+  });
+
   const transferMutation = useMutation({
     mutationFn: (input: { toAgentId: string; note: string }) =>
       api.post(`/conversations/${conversation.id}/transfer`, input),
@@ -442,6 +467,7 @@ export function ChatPanel({ conversation, onClosed, onBack }: { conversation: Co
                 onReact={(m, emoji) => reactMutation.mutate({ messageId: m.id, emoji })}
                 canDelete={isAdmin}
                 onDelete={(m) => deleteMessageMutation.mutate(m.id)}
+                onStartConversation={onConversationStarted ? (phone, name) => startConversationMutation.mutate({ phone, name }) : undefined}
                 highlighted={searchOpen && searchMatches[matchIndex]?.id === message.id}
               />
             </div>

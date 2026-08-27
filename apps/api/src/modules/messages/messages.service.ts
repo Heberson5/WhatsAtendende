@@ -212,6 +212,12 @@ export async function addAttachment(
     latitude?: number;
     longitude?: number;
     vcard?: string;
+    pollQuestion?: string;
+    pollOptions?: string[];
+    eventName?: string;
+    eventDescription?: string;
+    eventStartAt?: Date;
+    eventJoinLink?: string;
   }
 ) {
   return prisma.messageAttachment.create({ data: { messageId, ...attachment } });

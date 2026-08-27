@@ -146,7 +146,16 @@ export default function AtendimentoPage() {
 
       <div className={clsx("overflow-hidden bg-[var(--color-bg)]", selectedConversation ? "block" : "hidden md:block")}>
         {selectedConversation ? (
-          <ChatPanel conversation={selectedConversation} onClosed={() => setSelectedId(null)} onBack={() => setSelectedId(null)} />
+          <ChatPanel
+            conversation={selectedConversation}
+            onClosed={() => setSelectedId(null)}
+            onBack={() => setSelectedId(null)}
+            onConversationStarted={(conv) => {
+              queryClient.invalidateQueries({ queryKey: ["mine"] });
+              setSelectedId(conv.id);
+              setTab("mine");
+            }}
+          />
         ) : (
           <div className="flex h-full items-center justify-center text-sm text-muted">
             Selecione um atendimento para visualizar a conversa

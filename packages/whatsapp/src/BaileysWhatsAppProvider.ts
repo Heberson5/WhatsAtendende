@@ -638,6 +638,33 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
       return;
     }
 
+    if (content.pollCreationMessage) {
+      this.emitter.emit("message", {
+        ...base,
+        type: "POLL",
+        body: null,
+        pollQuestion: content.pollCreationMessage.name ?? "",
+        pollOptions: (content.pollCreationMessage.options ?? []).map((o) => o.optionName ?? "").filter(Boolean),
+      } satisfies InboundMessageEvent);
+      return;
+    }
+
+    if (content.eventMessage) {
+      const event = content.eventMessage;
+      this.emitter.emit("message", {
+        ...base,
+        type: "EVENT",
+        body: null,
+        eventName: event.name ?? "",
+        eventDescription: event.description ?? undefined,
+        eventStartAt: event.startTime ? new Date(Number(event.startTime) * 1000) : undefined,
+        eventJoinLink: event.joinLink ?? undefined,
+        latitude: event.location?.degreesLatitude ?? undefined,
+        longitude: event.location?.degreesLongitude ?? undefined,
+      } satisfies InboundMessageEvent);
+      return;
+    }
+
     const mediaType = content.imageMessage
       ? "IMAGE"
       : content.videoMessage
@@ -733,6 +760,29 @@ function convertHistoryMessage(message: WAMessage, chatId: string): HistoryMessa
   }
   if (content.contactMessage) {
     return { ...base, type: "CONTACT", body: null, vcard: content.contactMessage.vcard ?? undefined };
+  }
+  if (content.pollCreationMessage) {
+    return {
+      ...base,
+      type: "POLL",
+      body: null,
+      pollQuestion: content.pollCreationMessage.name ?? "",
+      pollOptions: (content.pollCreationMessage.options ?? []).map((o) => o.optionName ?? "").filter(Boolean),
+    };
+  }
+  if (content.eventMessage) {
+    const event = content.eventMessage;
+    return {
+      ...base,
+      type: "EVENT",
+      body: null,
+      eventName: event.name ?? "",
+      eventDescription: event.description ?? undefined,
+      eventStartAt: event.startTime ? new Date(Number(event.startTime) * 1000) : undefined,
+      eventJoinLink: event.joinLink ?? undefined,
+      latitude: event.location?.degreesLatitude ?? undefined,
+      longitude: event.location?.degreesLongitude ?? undefined,
+    };
   }
   if (content.imageMessage) return { ...base, type: "IMAGE", body: content.imageMessage.caption ?? null };
   if (content.videoMessage) return { ...base, type: "VIDEO", body: content.videoMessage.caption ?? null };

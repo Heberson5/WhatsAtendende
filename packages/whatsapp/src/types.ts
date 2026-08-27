@@ -21,7 +21,7 @@ export interface InboundMessageEvent {
   chatId: string; // provider-native chat/contact id (e.g. "5511999999999@s.whatsapp.net")
   phone: string; // normalized E.164-ish digits
   contactName: string | null;
-  type: "TEXT" | "IMAGE" | "VIDEO" | "AUDIO" | "DOCUMENT" | "LOCATION" | "CONTACT";
+  type: "TEXT" | "IMAGE" | "VIDEO" | "AUDIO" | "DOCUMENT" | "LOCATION" | "CONTACT" | "POLL" | "EVENT";
   body: string | null;
   mediaBuffer?: Buffer;
   mediaMimeType?: string;
@@ -29,6 +29,14 @@ export interface InboundMessageEvent {
   latitude?: number;
   longitude?: number;
   vcard?: string;
+  /** POLL only — sent in plaintext by WhatsApp; votes (a separate, later message) are end-to-end encrypted and not handled here. */
+  pollQuestion?: string;
+  pollOptions?: string[];
+  /** EVENT only ("lembrete"/"evento" in WhatsApp's own Portuguese UI). */
+  eventName?: string;
+  eventDescription?: string;
+  eventStartAt?: Date;
+  eventJoinLink?: string;
   replyToProviderMessageId?: string | null;
   timestamp: Date;
   // true when this message was sent BY the connected account rather than
@@ -85,11 +93,17 @@ export interface HistoryMessageEvent {
   phone: string;
   /** true = sent by the connected number itself (e.g. from the phone, before this system was tracking it); false = from the customer. */
   fromMe: boolean;
-  type: "TEXT" | "LOCATION" | "CONTACT" | "IMAGE" | "VIDEO" | "AUDIO" | "DOCUMENT";
+  type: "TEXT" | "LOCATION" | "CONTACT" | "IMAGE" | "VIDEO" | "AUDIO" | "DOCUMENT" | "POLL" | "EVENT";
   body: string | null;
   latitude?: number;
   longitude?: number;
   vcard?: string;
+  pollQuestion?: string;
+  pollOptions?: string[];
+  eventName?: string;
+  eventDescription?: string;
+  eventStartAt?: Date;
+  eventJoinLink?: string;
   timestamp: Date;
 }
 

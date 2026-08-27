@@ -303,6 +303,14 @@ enum MessageType {
   DOCUMENT
   LOCATION
   CONTACT
+  // A WhatsApp poll — read-only here: only the question/options (sent in
+  // plaintext) are shown. Votes (pollUpdateMessage) are end-to-end
+  // encrypted against the poll's own key and are not decoded/tallied.
+  POLL
+  // WhatsApp's "Evento" message — what a Portuguese-speaking user calls a
+  // "lembrete" (reminder): a shareable calendar-style invite with a name,
+  // optional description/location/join link and a start time.
+  EVENT
   SYSTEM
 }
 
@@ -361,6 +369,16 @@ model MessageAttachment {
   latitude   Float?
   longitude  Float?
   vcard      String?
+  // POLL only.
+  pollQuestion String?
+  pollOptions  Json?
+  // EVENT only — location reuses latitude/longitude above (WhatsApp's
+  // EventMessage carries an optional plain LocationMessage the same shape
+  // as a standalone one).
+  eventName        String?
+  eventDescription String?
+  eventStartAt     DateTime?
+  eventJoinLink    String?
   createdAt  DateTime    @default(now())
 
   @@index([messageId])
