@@ -10,7 +10,7 @@ import { requireAuth } from "../../middleware/auth";
 import { requirePermission } from "../../lib/permissions";
 import { PERMISSION } from "@whatsatendende/types";
 import { writeAudit } from "../../lib/audit";
-import { sendMail } from "../../lib/mail";
+import { sendMail, sendTemplatedMail } from "../../lib/mail";
 import { env } from "../../config/env";
 import * as service from "./settings.service";
 
@@ -201,6 +201,73 @@ settingsRouter.post(
       "Este é um e-mail de teste. Se você o recebeu, a configuração de SMTP está funcionando corretamente."
     );
     await writeAudit({ userId: req.auth!.userId, action: "SETTINGS_EMAIL_TEST_SENT", entity: "SystemSetting", entityId: "email", ipAddress: req.ip ?? null, metadata: { to, sent: result.sent } });
+    if (!result.sent) {
+      return res.status(400).json({ error: "SMTP_TEST_FAILED", message: result.reason ?? "Falha ao enviar e-mail de teste" });
+    }
+    res.json({ message: "E-mail de teste enviado com sucesso." });
+  })
+);
+
+// ---------------------------------------------------------------------------
+// E-mail templates (HTML + subject + on/off) for the system's automatic
+// e-mails: password reset, new-user welcome, account-deactivated notice.
+// ---------------------------------------------------------------------------
+
+const emailTemplateTypeSchema = z.enum(["PASSWORD_RESET", "USER_WELCOME", "USER_DEACTIVATED"]);
+
+// Fake values for every tag the sample preview needs — same names sendTemplatedMail
+// resolves for real, so what the admin sees in "Pré-visualizar" matches what gets sent.
+const PREVIEW_SAMPLE_VARS: Record<string, Record<string, string>> = {
+  PASSWORD_RESET: { nome: "Maria Souza", link_redefinicao: "https://exemplo.com/reset-password?token=amostra" },
+  USER_WELCOME: { nome: "João Pereira", email: "joao.pereira@exemplo.com", link_login: "https://exemplo.com/login" },
+  USER_DEACTIVATED: { nome: "Carlos Lima" },
+};
+
+settingsRouter.get(
+  "/email-templates",
+  requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
+  asyncHandler(async (_req, res) => {
+    res.json({ templates: await service.getEmailTemplates(), tags: service.EMAIL_TEMPLATE_TAGS, commonTags: service.EMAIL_TEMPLATE_COMMON_TAGS });
+  })
+);
+
+const emailTemplatePatchSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    subject: z.string().min(1).max(200).optional(),
+    html: z.string().min(1).max(50_000).optional(),
+  })
+  .strict();
+
+settingsRouter.patch(
+  "/email-templates/:type",
+  requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
+  asyncHandler(async (req, res) => {
+    const type = emailTemplateTypeSchema.parse(req.params.type);
+    const patch = emailTemplatePatchSchema.parse(req.body ?? {});
+    const templates = await service.updateEmailTemplate(type, patch);
+    await writeAudit({
+      userId: req.auth!.userId,
+      action: "SETTINGS_EMAIL_TEMPLATE_UPDATED",
+      entity: "SystemSetting",
+      entityId: `emailTemplates:${type}`,
+      ipAddress: req.ip ?? null,
+      metadata: { type, ...patch, html: patch.html ? "(alterado)" : undefined },
+    });
+    res.json(templates);
+  })
+);
+
+const emailTemplateTestSchema = z.object({ to: z.string().email() });
+settingsRouter.post(
+  "/email-templates/:type/test",
+  requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
+  emailTestLimiter,
+  asyncHandler(async (req, res) => {
+    const type = emailTemplateTypeSchema.parse(req.params.type);
+    const { to } = emailTemplateTestSchema.parse(req.body);
+    const result = await sendTemplatedMail(type, to, PREVIEW_SAMPLE_VARS[type]);
+    await writeAudit({ userId: req.auth!.userId, action: "SETTINGS_EMAIL_TEMPLATE_TEST_SENT", entity: "SystemSetting", entityId: `emailTemplates:${type}`, ipAddress: req.ip ?? null, metadata: { type, to, sent: result.sent } });
     if (!result.sent) {
       return res.status(400).json({ error: "SMTP_TEST_FAILED", message: result.reason ?? "Falha ao enviar e-mail de teste" });
     }

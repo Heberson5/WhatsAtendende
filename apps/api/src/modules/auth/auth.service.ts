@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
 import { writeAudit } from "../../lib/audit";
-import { sendMail } from "../../lib/mail";
+import { sendTemplatedMail } from "../../lib/mail";
 import { clearPendingTransferDeadlines } from "../conversations/conversations.service";
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from "./jwt";
 import { env } from "../../config/env";
@@ -141,15 +141,10 @@ export async function requestPasswordReset(email: string): Promise<{ token: stri
   await writeAudit({ userId: user.id, action: "PASSWORD_RESET_REQUESTED", entity: "User", entityId: user.id });
 
   const resetLink = `${env.WEB_APP_URL}/reset-password?token=${token}`;
-  const { sent } = await sendMail(
-    user.email,
-    "Redefinição de senha - WhatsAtendende",
-    `<p>Olá, ${user.displayName}.</p>
-     <p>Recebemos uma solicitação para redefinir a senha da sua conta. Clique no link abaixo para continuar (válido por 1 hora):</p>
-     <p><a href="${resetLink}">${resetLink}</a></p>
-     <p>Se você não solicitou essa alteração, ignore este e-mail — sua senha permanece a mesma.</p>`,
-    `Redefinição de senha: acesse ${resetLink} (válido por 1 hora). Se você não solicitou, ignore este e-mail.`
-  );
+  const { sent } = await sendTemplatedMail("PASSWORD_RESET", user.email, {
+    nome: user.displayName,
+    link_redefinicao: resetLink,
+  });
 
   // The raw token is still returned to the caller — the route only surfaces
   // it in the API response outside production, and only when the e-mail

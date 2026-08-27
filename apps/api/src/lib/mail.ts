@@ -1,6 +1,7 @@
 import nodemailer from "nodemailer";
 import { logger } from "./logger";
-import { getEmailSettings } from "../modules/settings/settings.service";
+import { env } from "../config/env";
+import { getEmailSettings, getEmailTemplates, getBranding, type EmailTemplateType } from "../modules/settings/settings.service";
 
 export interface SendMailResult {
   sent: boolean;
@@ -38,4 +39,53 @@ export async function sendMail(to: string, subject: string, html: string, text: 
     logger.error({ err }, "failed to send e-mail via SMTP");
     return { sent: false, reason: "Falha ao enviar e-mail pelo servidor SMTP configurado" };
   }
+}
+
+function renderTemplate(source: string, vars: Record<string, string>): string {
+  return source.replace(/\{\{(\w+)\}\}/g, (_match, key: string) => vars[key] ?? "");
+}
+
+/** Crude HTML->text fallback for the plaintext part of a templated e-mail — good enough for mail clients that show it. */
+function htmlToPlainText(html: string): string {
+  return html
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<(p|div|tr|br)[^>]*>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n\s+/g, "\n")
+    .trim();
+}
+
+/**
+ * Renders one of the system's configurable e-mail templates (Configurações >
+ * Modelos de e-mail) with the given tag values and sends it. `vars` only
+ * needs the tags specific to that template type (e.g. `nome`,
+ * `link_redefinicao`) — the tags common to every template (empresa,
+ * logo_html, cor_primaria, ano) are always resolved here from Identidade
+ * visual, so every automatic e-mail stays on-brand without each caller
+ * having to know about branding at all.
+ */
+export async function sendTemplatedMail(type: EmailTemplateType, to: string, vars: Record<string, string>): Promise<SendMailResult> {
+  const [templates, branding] = await Promise.all([getEmailTemplates(), getBranding()]);
+  const template = templates[type];
+  if (!template.enabled) {
+    return { sent: false, reason: "Este e-mail está desativado em Configurações > Modelos de e-mail" };
+  }
+
+  const logoHtml = branding.logoUrl
+    ? `<img src="${env.WEB_APP_URL}${branding.logoUrl}" alt="${branding.companyName}" width="160" style="display:block; border:0; max-width:160px; height:auto;">`
+    : `<strong style="font-family:Helvetica,Arial,sans-serif; font-size:20px; color:${branding.primaryColor};">${branding.companyName}</strong>`;
+
+  const allVars: Record<string, string> = {
+    empresa: branding.companyName,
+    logo_html: logoHtml,
+    cor_primaria: branding.primaryColor,
+    ano: String(new Date().getFullYear()),
+    ...vars,
+  };
+
+  const subject = renderTemplate(template.subject, allVars);
+  const html = renderTemplate(template.html, allVars);
+  return sendMail(to, subject, html, htmlToPlainText(html));
 }
