@@ -7,7 +7,18 @@ interface AgentOption {
   id: string;
   displayName: string;
   presence: "ONLINE" | "AWAY" | "OFFLINE";
+  photoUrl: string | null;
   whatsappConnectionName: string | null;
+}
+
+function AgentAvatar({ agent }: { agent: AgentOption }) {
+  return agent.photoUrl ? (
+    <img src={agent.photoUrl} alt="" className="h-6 w-6 shrink-0 rounded-full object-cover" />
+  ) : (
+    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-surface-alt text-[10px] font-semibold text-muted">
+      {agent.displayName.slice(0, 2).toUpperCase()}
+    </div>
+  );
 }
 
 const PRESENCE_DOT: Record<string, string> = { ONLINE: "bg-green-500", AWAY: "bg-yellow-500", OFFLINE: "bg-gray-400" };
@@ -83,6 +94,7 @@ export function TransferModal({
           >
             {selectedAgent ? (
               <>
+                <AgentAvatar agent={selectedAgent} />
                 <span className={`h-2 w-2 shrink-0 rounded-full ${PRESENCE_DOT[selectedAgent.presence]}`} />
                 <span className="flex-1 truncate">{selectedAgent.displayName}</span>
                 <span className="shrink-0 text-xs text-muted">
@@ -110,6 +122,7 @@ export function TransferModal({
                   }}
                   className={`focus-ring flex w-full items-center gap-3 rounded-card px-2.5 py-2 text-left hover:bg-surface-alt ${selected === agent.id ? "bg-primary/5" : ""}`}
                 >
+                  <AgentAvatar agent={agent} />
                   <span className={`h-2 w-2 shrink-0 rounded-full ${PRESENCE_DOT[agent.presence]}`} />
                   <span className="flex-1 truncate text-sm">{agent.displayName}</span>
                   <span className="shrink-0 text-xs text-muted">

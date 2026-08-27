@@ -19,10 +19,18 @@ agentsRouter.get(
     // crosses connections.
     const agents = await prisma.user.findMany({
       where: { role: { in: ["AGENT", "MANAGER", "ADMIN"] }, status: "ACTIVE", id: { not: req.auth!.userId } },
-      select: { id: true, displayName: true, presence: true, whatsappConnection: { select: { name: true } } },
+      select: { id: true, displayName: true, presence: true, photoUrl: true, whatsappConnection: { select: { name: true } } },
       orderBy: { displayName: "asc" },
     });
-    res.json(agents.map((a) => ({ id: a.id, displayName: a.displayName, presence: a.presence, whatsappConnectionName: a.whatsappConnection?.name ?? null })));
+    res.json(
+      agents.map((a) => ({
+        id: a.id,
+        displayName: a.displayName,
+        presence: a.presence,
+        photoUrl: a.photoUrl,
+        whatsappConnectionName: a.whatsappConnection?.name ?? null,
+      }))
+    );
   })
 );
 
