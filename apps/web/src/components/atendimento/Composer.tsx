@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { Mic, Paperclip, Send, X, MapPin, Bold, Italic, Strikethrough, Code } from "lucide-react";
+import clsx from "clsx";
+import { Mic, Paperclip, Pause, Play, Send, Trash2, X, MapPin, Bold, Italic, Strikethrough, Code } from "lucide-react";
 import type { MessageDTO } from "@whatsatendende/types";
+
+// How many bars the live/frozen waveform keeps — older samples scroll off
+// the left, matching WhatsApp Web's own recording indicator.
+const MAX_WAVEFORM_BARS = 42;
 
 // A compact but representative slice of the WhatsApp Web emoji panel —
 // grouped so the picker reads as categories, not one undifferentiated wall.
@@ -102,8 +107,17 @@ export function Composer({
   const [text, setText] = useState("");
   const [showEmoji, setShowEmoji] = useState(false);
   const [sending, setSending] = useState(false);
-  const [recording, setRecording] = useState(false);
+  // "recording": actively capturing, mic live, waveform animating.
+  // "paused": MediaRecorder.pause() — mic stream stays open (instant resume,
+  // no new permission prompt) but nothing is being captured; a preview
+  // player lets the agent listen to what's recorded so far before deciding
+  // to resume, discard, or send.
+  const [recordingState, setRecordingState] = useState<"idle" | "recording" | "paused">("idle");
   const [recordSeconds, setRecordSeconds] = useState(0);
+  const [waveformLevels, setWaveformLevels] = useState<number[]>([]);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewPlaying, setPreviewPlaying] = useState(false);
+  const [previewProgress, setPreviewProgress] = useState(0); // 0..1
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [caption, setCaption] = useState("");
   const [selectionBubble, setSelectionBubble] = useState<{ top: number; left: number } | null>(null);
@@ -113,6 +127,10 @@ export function Composer({
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const waveformTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const previewAudioRef = useRef<HTMLAudioElement>(null);
 
   // Closes the emoji panel on any click outside it — it was staying open and
   // getting in the way until the user clicked the toggle button again.
@@ -124,6 +142,24 @@ export function Composer({
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [showEmoji]);
+
+  // Releases the mic (and stops the browser's own "recording" tab indicator)
+  // if the agent navigates away or closes this conversation mid-recording —
+  // switching to a different conversation unmounts this Composer instance
+  // entirely, so nothing else would ever call cancelRecording() otherwise.
+  useEffect(() => {
+    return () => {
+      const recorder = mediaRecorderRef.current;
+      if (recorder && recorder.state !== "inactive") {
+        recorder.stream.getTracks().forEach((t) => t.stop());
+        recorder.stop();
+      }
+      if (waveformTimerRef.current) clearInterval(waveformTimerRef.current);
+      if (timerRef.current) clearInterval(timerRef.current);
+      audioContextRef.current?.close().catch(() => undefined);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Grows the textarea with its content, capped at MAX_TEXTAREA_LINES so a
   // very long message doesn't push the rest of the chat off screen.
@@ -206,6 +242,58 @@ export function Composer({
     );
   }
 
+  // Samples the live mic level ~10x/second (not on every animation frame —
+  // a bar-style waveform doesn't need 60fps, and this keeps re-renders
+  // cheap) and appends one bar, dropping the oldest once the strip is full —
+  // a left-scrolling waveform, the same feel as WhatsApp Web's own recorder.
+  function startWaveformSampling() {
+    const analyser = analyserRef.current;
+    if (!analyser) return;
+    const data = new Uint8Array(analyser.fftSize);
+    waveformTimerRef.current = setInterval(() => {
+      analyser.getByteTimeDomainData(data);
+      let peak = 0;
+      for (let i = 0; i < data.length; i++) {
+        const deviation = Math.abs(data[i] - 128) / 128;
+        if (deviation > peak) peak = deviation;
+      }
+      // Raw mic deviation reads quiet for normal speech — amplified so the
+      // bars actually move visibly instead of sitting near-flat.
+      const level = Math.min(1, peak * 4);
+      setWaveformLevels((prev) => {
+        const next = [...prev, level];
+        return next.length > MAX_WAVEFORM_BARS ? next.slice(next.length - MAX_WAVEFORM_BARS) : next;
+      });
+    }, 100);
+  }
+
+  function stopWaveformSampling() {
+    if (waveformTimerRef.current) {
+      clearInterval(waveformTimerRef.current);
+      waveformTimerRef.current = null;
+    }
+  }
+
+  function releaseRecordingResources() {
+    stopWaveformSampling();
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    audioContextRef.current?.close().catch(() => undefined);
+    audioContextRef.current = null;
+    analyserRef.current = null;
+    mediaRecorderRef.current = null;
+    setPreviewUrl((old) => {
+      if (old) URL.revokeObjectURL(old);
+      return null;
+    });
+    setPreviewPlaying(false);
+    setPreviewProgress(0);
+    setWaveformLevels([]);
+    setRecordingState("idle");
+  }
+
   async function startRecording() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -217,34 +305,97 @@ export function Composer({
         ? new MediaRecorder(stream, { mimeType: "audio/webm" })
         : new MediaRecorder(stream);
       chunksRef.current = [];
-      recorder.ondataavailable = (e) => chunksRef.current.push(e.data);
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+      };
       recorder.start();
       mediaRecorderRef.current = recorder;
-      setRecording(true);
+
+      // Web Audio's AnalyserNode reads live mic levels for the waveform —
+      // entirely separate from the MediaRecorder above, both fed by the
+      // same stream.
+      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const audioContext = new AudioCtx();
+      const source = audioContext.createMediaStreamSource(stream);
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+      audioContextRef.current = audioContext;
+      analyserRef.current = analyser;
+
+      setRecordingState("recording");
       setRecordSeconds(0);
+      setWaveformLevels([]);
       timerRef.current = setInterval(() => setRecordSeconds((s) => s + 1), 1000);
+      startWaveformSampling();
     } catch {
-      alert("Permissao de microfone negada ou indisponivel");
+      alert("Permissão de microfone negada ou indisponível.");
     }
   }
 
-  function cancelRecording() {
-    mediaRecorderRef.current?.stream.getTracks().forEach((t) => t.stop());
-    mediaRecorderRef.current?.stop();
-    mediaRecorderRef.current = null;
+  function pauseRecording() {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder || recorder.state !== "recording") return;
     if (timerRef.current) clearInterval(timerRef.current);
-    setRecording(false);
+    stopWaveformSampling();
+    const mimeType = recorder.mimeType || "audio/webm";
+    // requestData() queues a `dataavailable` task carrying everything
+    // buffered so far — queued (and so resolved) before the setTimeout
+    // task below, which is what lets the preview include audio captured
+    // right up to this exact pause click instead of stopping one chunk short.
+    recorder.requestData();
+    setTimeout(() => {
+      const blob = new Blob(chunksRef.current, { type: mimeType });
+      setPreviewUrl((old) => {
+        if (old) URL.revokeObjectURL(old);
+        return URL.createObjectURL(blob);
+      });
+    }, 0);
+    recorder.pause();
+    setRecordingState("paused");
   }
 
-  function stopAndSendRecording() {
+  function resumeRecording() {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder || recorder.state !== "paused") return;
+    setPreviewUrl((old) => {
+      if (old) URL.revokeObjectURL(old);
+      return null;
+    });
+    setPreviewPlaying(false);
+    setPreviewProgress(0);
+    recorder.resume();
+    timerRef.current = setInterval(() => setRecordSeconds((s) => s + 1), 1000);
+    startWaveformSampling();
+    setRecordingState("recording");
+  }
+
+  function cancelRecording() {
+    const recorder = mediaRecorderRef.current;
+    recorder?.stream.getTracks().forEach((t) => t.stop());
+    if (recorder && recorder.state !== "inactive") recorder.stop();
+    releaseRecordingResources();
+  }
+
+  function togglePreviewPlayback() {
+    const audio = previewAudioRef.current;
+    if (!audio) return;
+    if (previewPlaying) {
+      audio.pause();
+    } else {
+      audio.play().catch(() => undefined);
+    }
+  }
+
+  function finishAndSend() {
     const recorder = mediaRecorderRef.current;
     if (!recorder) return;
+    const mimeType = recorder.mimeType || "audio/webm";
     recorder.onstop = async () => {
       // recorder.mimeType is whatever the browser actually recorded with
       // (see startRecording) — labeling the Blob with anything else would
       // just be wrong, even though the backend also re-encodes it before
       // it reaches WhatsApp regardless of what's claimed here.
-      const mimeType = recorder.mimeType || "audio/webm";
       const extension = mimeType.includes("mp4") ? "m4a" : "webm";
       const blob = new Blob(chunksRef.current, { type: mimeType });
       const file = new File([blob], `audio-${Date.now()}.${extension}`, { type: mimeType });
@@ -256,9 +407,11 @@ export function Composer({
       }
     };
     recorder.stream.getTracks().forEach((t) => t.stop());
-    recorder.stop();
-    if (timerRef.current) clearInterval(timerRef.current);
-    setRecording(false);
+    // .stop() works from both "recording" and "paused" — either way it
+    // flushes one final dataavailable with whatever hasn't been pushed yet
+    // before the "stop" event (and the onstop handler above) fires.
+    if (recorder.state !== "inactive") recorder.stop();
+    releaseRecordingResources();
   }
 
   // WhatsApp Web's own formatting shortcuts/toolbar: wrap the current
@@ -311,18 +464,78 @@ export function Composer({
     }
   }
 
-  if (recording) {
+  if (recordingState !== "idle") {
+    const elapsed = `${String(Math.floor(recordSeconds / 60)).padStart(2, "0")}:${String(recordSeconds % 60).padStart(2, "0")}`;
     return (
       <div className="flex items-center gap-3 border-t border-border bg-surface px-4 py-3">
-        <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-red-500" />
-        <span className="text-sm font-medium">
-          Gravando... {String(Math.floor(recordSeconds / 60)).padStart(2, "0")}:{String(recordSeconds % 60).padStart(2, "0")}
-        </span>
-        <div className="ml-auto flex gap-2">
-          <button onClick={cancelRecording} className="focus-ring rounded-full p-2 text-muted hover:bg-surface-alt" aria-label="Cancelar gravação">
-            <X className="h-5 w-5" />
+        <button onClick={cancelRecording} className="focus-ring shrink-0 rounded-full p-2 text-muted hover:bg-surface-alt" aria-label="Descartar gravação">
+          <Trash2 className="h-5 w-5" />
+        </button>
+
+        {recordingState === "recording" ? (
+          <span className="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-red-500" />
+        ) : (
+          <button
+            onClick={togglePreviewPlayback}
+            className="focus-ring shrink-0 rounded-full bg-primary p-1.5 text-primary-fg"
+            aria-label={previewPlaying ? "Pausar prévia" : "Ouvir prévia"}
+          >
+            {previewPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
           </button>
-          <button onClick={stopAndSendRecording} className="focus-ring rounded-full bg-primary p-2 text-primary-fg" aria-label="Enviar áudio">
+        )}
+
+        <span className="shrink-0 text-sm font-medium tabular-nums">{elapsed}</span>
+
+        {/* Live (recording) or frozen (paused) waveform — same bar strip
+            either way, just animating only while actual audio is being
+            captured. During preview playback the bars ahead of
+            previewProgress dim to show what's already been heard. */}
+        <div className="flex h-8 flex-1 items-center gap-[2px] overflow-hidden">
+          {waveformLevels.length === 0 ? (
+            <span className="text-xs text-muted">{recordingState === "recording" ? "Gravando..." : "Gravação pausada"}</span>
+          ) : (
+            waveformLevels.map((level, i) => (
+              <span
+                key={i}
+                className={clsx(
+                  "w-[3px] shrink-0 rounded-full bg-primary transition-opacity",
+                  recordingState === "paused" && i / waveformLevels.length > previewProgress && "opacity-30"
+                )}
+                style={{ height: `${8 + level * 24}px` }}
+              />
+            ))
+          )}
+        </div>
+
+        {recordingState === "paused" && previewUrl && (
+          <audio
+            ref={previewAudioRef}
+            src={previewUrl}
+            onPlay={() => setPreviewPlaying(true)}
+            onPause={() => setPreviewPlaying(false)}
+            onEnded={() => {
+              setPreviewPlaying(false);
+              setPreviewProgress(0);
+            }}
+            onTimeUpdate={(e) => {
+              const audio = e.currentTarget;
+              if (audio.duration) setPreviewProgress(audio.currentTime / audio.duration);
+            }}
+            className="hidden"
+          />
+        )}
+
+        <div className="ml-auto flex shrink-0 gap-2">
+          {recordingState === "recording" ? (
+            <button onClick={pauseRecording} className="focus-ring rounded-full p-2 text-muted hover:bg-surface-alt" aria-label="Pausar gravação">
+              <Pause className="h-5 w-5" />
+            </button>
+          ) : (
+            <button onClick={resumeRecording} className="focus-ring rounded-full p-2 text-muted hover:bg-surface-alt" aria-label="Retomar gravação">
+              <Mic className="h-5 w-5" />
+            </button>
+          )}
+          <button onClick={finishAndSend} className="focus-ring rounded-full bg-primary p-2 text-primary-fg" aria-label="Enviar áudio">
             <Send className="h-5 w-5" />
           </button>
         </div>
