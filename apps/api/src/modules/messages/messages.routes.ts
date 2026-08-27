@@ -13,6 +13,7 @@ import { Errors } from "../../lib/http-error";
 import { env } from "../../config/env";
 import { prisma } from "../../lib/prisma";
 import { writeAudit } from "../../lib/audit";
+import { transcodeToOggOpus } from "../../lib/audio-transcode";
 import * as service from "./messages.service";
 import { toMessageDTO } from "./messages.mapper";
 import * as whatsappService from "../whatsapp/whatsapp.service";
@@ -81,6 +82,11 @@ const ALLOWED_MIME_TYPES = new Set([
   "audio/mpeg",
   "audio/ogg",
   "audio/webm",
+  // Safari's MediaRecorder (used by the in-app voice-note recorder) has no
+  // WebM support and falls back to this instead — ffmpeg transcodes it to
+  // OGG/Opus the same as any other recording before it reaches WhatsApp,
+  // see the /conversations/:conversationId/audio route below.
+  "audio/mp4",
   "application/pdf",
   "application/msword",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -203,6 +209,55 @@ messagesRouter.post(
       req.file.mimetype,
       req.auth!.displayName,
       (req.body?.caption as string) || undefined
+    );
+    realtimeEvents.newMessage(conversation.id, req.auth!.userId);
+    res.status(201).json(dto);
+  })
+);
+
+messagesRouter.post(
+  "/conversations/:conversationId/audio",
+  // A recorded voice note (the mic button) — distinct from the generic
+  // /file route above, which now sends an attached audio file as a
+  // regular playable audio message (ptt: false). This one always sends
+  // WhatsApp's native PTT voice-note bubble, which only renders correctly
+  // for genuine OGG/Opus — never the browser's raw recorder output (see
+  // PROMPT: "está chegando no celular do cliente como um arquivo web").
+  requireAttendanceAccess,
+  upload.single("file"),
+  asyncHandler(async (req, res) => {
+    const conversation = await loadConversationForAgent(req.params.conversationId, req.auth!.userId);
+    if (!req.file) throw Errors.badRequest("Nenhum audio enviado");
+
+    let oggBuffer: Buffer;
+    try {
+      oggBuffer = await transcodeToOggOpus(req.file.buffer);
+    } catch {
+      throw Errors.badRequest("Nao foi possivel processar o audio gravado");
+    }
+
+    const message = await service.createOutboundMessage({
+      conversationId: conversation.id,
+      agentId: req.auth!.userId,
+      type: "AUDIO",
+    });
+
+    const storageKey = `${randomUUID()}.ogg`;
+    fs.writeFileSync(path.join(env.UPLOAD_DIR, storageKey), oggBuffer);
+    await service.addAttachment(message.id, {
+      fileName: "audio.ogg",
+      mimeType: "audio/ogg",
+      sizeBytes: oggBuffer.length,
+      storageKey,
+      kind: "AUDIO",
+    });
+
+    const dto = await whatsappService.sendOutboundAudio(
+      conversation.whatsappConnectionId,
+      message.id,
+      conversation.contact.phone,
+      oggBuffer,
+      "audio/ogg; codecs=opus"
     );
     realtimeEvents.newMessage(conversation.id, req.auth!.userId);
     res.status(201).json(dto);

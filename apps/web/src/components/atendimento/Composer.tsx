@@ -84,6 +84,7 @@ function getCaretRect(textarea: HTMLTextAreaElement, position: number): { top: n
 export function Composer({
   onSendText,
   onSendFile,
+  onSendAudio,
   onSendLocation,
   replyTo,
   onCancelReply,
@@ -91,6 +92,8 @@ export function Composer({
 }: {
   onSendText: (text: string, replyToMessageId?: string) => Promise<void>;
   onSendFile: (file: File, caption?: string) => Promise<void>;
+  /** A recorded voice note (mic button) — sent as WhatsApp's native PTT bubble, distinct from an attached audio file via onSendFile. */
+  onSendAudio: (file: File) => Promise<void>;
   onSendLocation: (lat: number, lng: number) => Promise<void>;
   replyTo: MessageDTO | null;
   onCancelReply: () => void;
@@ -182,7 +185,13 @@ export function Composer({
   async function startRecording() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
+      // Safari has no MediaRecorder support for webm at all — let the
+      // browser pick its own default (recorder.mimeType below reflects
+      // whatever that ends up being) rather than forcing a container it
+      // can't produce, which used to make recording silently fail there.
+      const recorder = MediaRecorder.isTypeSupported("audio/webm")
+        ? new MediaRecorder(stream, { mimeType: "audio/webm" })
+        : new MediaRecorder(stream);
       chunksRef.current = [];
       recorder.ondataavailable = (e) => chunksRef.current.push(e.data);
       recorder.start();
@@ -207,11 +216,17 @@ export function Composer({
     const recorder = mediaRecorderRef.current;
     if (!recorder) return;
     recorder.onstop = async () => {
-      const blob = new Blob(chunksRef.current, { type: "audio/webm" });
-      const file = new File([blob], `audio-${Date.now()}.webm`, { type: "audio/webm" });
+      // recorder.mimeType is whatever the browser actually recorded with
+      // (see startRecording) — labeling the Blob with anything else would
+      // just be wrong, even though the backend also re-encodes it before
+      // it reaches WhatsApp regardless of what's claimed here.
+      const mimeType = recorder.mimeType || "audio/webm";
+      const extension = mimeType.includes("mp4") ? "m4a" : "webm";
+      const blob = new Blob(chunksRef.current, { type: mimeType });
+      const file = new File([blob], `audio-${Date.now()}.${extension}`, { type: mimeType });
       setSending(true);
       try {
-        await onSendFile(file);
+        await onSendAudio(file);
       } finally {
         setSending(false);
       }
