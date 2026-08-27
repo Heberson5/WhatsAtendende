@@ -122,6 +122,27 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
+    if (this.socket) {
+      // Clicking "Reconectar" on a connection that's already CONNECTED (or
+      // an auto-reconnect racing a manual one) used to fall straight into
+      // makeWASocket() below, leaving the previous socket's WebSocket open
+      // and its listeners still wired. That put two live Baileys sessions
+      // on the same auth identity talking to WhatsApp at once, which
+      // corrupts the Signal double-ratchet state the *other* linked
+      // devices (the phone, WhatsApp Web/Desktop) use to decrypt messages
+      // from this connection — surfacing there as a stuck "Aguardando
+      // mensagem" placeholder that only "resolved" when the next reconnect
+      // happened to win the race, then broke again on the one after.
+      // Detach its listeners first so tearing it down can't fire our own
+      // close/reconnect handling for a socket we're intentionally replacing.
+      // (Baileys' typings require a specific event name per call, but the
+      // runtime object is a plain EventEmitter under the hood — calling it
+      // with no args really does clear every event, same as Node's own
+      // EventEmitter#removeAllListeners().)
+      (this.socket.ev.removeAllListeners as () => void)();
+      this.socket.end(undefined);
+      this.socket = null;
+    }
     this.lastConnectOptions = connectOptions;
     this.setStatus({ ...this.status, state: "CONNECTING" });
 
