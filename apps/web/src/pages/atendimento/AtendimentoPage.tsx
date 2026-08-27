@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import clsx from "clsx";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -9,7 +9,7 @@ import { ConversationCard } from "../../components/atendimento/ConversationCard"
 import { ChatPanel } from "../../components/atendimento/ChatPanel";
 import { ConnectionFilter } from "../../components/common/ConnectionFilter";
 import { NovaConversaModal } from "../../components/atendimento/NovaConversaModal";
-import { useSocketEvents } from "../../hooks/useSocketEvents";
+import { useActiveConversationStore } from "../../store/active-conversation-store";
 import { useAuthStore } from "../../store/auth-store";
 
 export default function AtendimentoPage() {
@@ -19,13 +19,24 @@ export default function AtendimentoPage() {
   const [novaConversaOpen, setNovaConversaOpen] = useState(false);
   const queryClient = useQueryClient();
   const user = useAuthStore((s) => s.user);
+  const setActiveConversationId = useActiveConversationStore((s) => s.setActiveConversationId);
   // AGENT always attends a single fixed connection — the server ignores
   // this filter for them anyway — so only MANAGER/ADMIN, who see every
   // connection's queue combined by default, get the filter UI at all.
   const canFilterByConnection = user?.role === "MANAGER" || user?.role === "ADMIN";
   const hasFixedConnection = Boolean(user?.whatsappConnectionName);
 
-  useSocketEvents(selectedId);
+  // Realtime listening itself (toasts, desktop notifications, the socket
+  // room join that keeps an open chat live) now lives in AppLayout so it
+  // keeps working on every screen, not just this one — this just publishes
+  // which conversation is currently open here so that global listener can
+  // still skip the redundant toast for a message already visible live.
+  // Cleared on unmount (leaving Atendimento entirely) so a stale id doesn't
+  // keep suppressing that conversation's notifications from another page.
+  useEffect(() => {
+    setActiveConversationId(selectedId);
+    return () => setActiveConversationId(null);
+  }, [selectedId, setActiveConversationId]);
 
   const queueQuery = useQuery({
     queryKey: ["queue", connectionIds],
