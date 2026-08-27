@@ -132,8 +132,19 @@ export default function GestaoPage() {
             {conversations?.map((c) => (
               <tr key={c.id} className="border-t border-border hover:bg-surface-alt">
                 <td className="px-4 py-3">
-                  <div className="font-medium">{c.contact.name || c.contact.phone}</div>
-                  <div className="text-xs text-muted">{c.contact.phone}</div>
+                  <div className="flex items-center gap-2.5">
+                    {c.contact.photoUrl ? (
+                      <img src={c.contact.photoUrl} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover" />
+                    ) : (
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-alt text-xs font-semibold text-muted">
+                        {(c.contact.name || c.contact.phone).slice(0, 2).toUpperCase()}
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <div className="truncate font-medium">{c.contact.name || c.contact.phone}</div>
+                      <div className="text-xs text-muted">{c.contact.phone}</div>
+                    </div>
+                  </div>
                 </td>
                 <td className="px-4 py-3">{c.assignedAgentName ?? "-"}</td>
                 <td className="px-4 py-3 text-muted">{c.whatsappConnectionName}</td>
