@@ -296,17 +296,93 @@ export async function findActiveConversationForContact(contactId: string) {
   });
 }
 
-export async function findOrOpenConversationForInboundMessage(connectionId: string, contactId: string) {
-  const active = await findActiveConversationForContact(contactId);
-  if (active) return { conversation: active, isNewConversation: false };
+function stripDiacritics(text: string): string {
+  return text.normalize("NFD").replace(/[̀-ͯ]/g, "");
+}
 
+/**
+ * "@<nome de exibição>" anywhere in a customer's first message routes the
+ * new conversation straight to that agent's "Meus atendimentos" — skipping
+ * the queue entirely — see PROMPT: "se caso o cliente enviar uma mensagem
+ * com arroba [nome], irá direcionar diretamente para meus atendimentos".
+ * Case/accent-insensitive substring match against every active AGENT's
+ * displayName (never MANAGER/ADMIN — explicitly agent-only per that same
+ * conversation), scored so the longest matching name wins when one name is
+ * a prefix of another (e.g. "@Joao" alongside a "João Silva" on the roster).
+ * Requires a non-letter/digit right after the matched name (or end of
+ * string) so "@Joao" doesn't false-match into "@Joaozinho". Zero or
+ * genuinely ambiguous (same-length tie) matches return null — the
+ * conversation falls through to the normal queue, same as no mention at all.
+ */
+export async function findMentionedAgent(body: string | null | undefined): Promise<{ id: string; displayName: string } | null> {
+  if (!body || !body.includes("@")) return null;
+
+  const agents = await prisma.user.findMany({
+    where: { role: "AGENT", status: "ACTIVE" },
+    select: { id: true, displayName: true },
+  });
+  if (agents.length === 0) return null;
+
+  const normalizedBody = stripDiacritics(body).toLowerCase();
+  let best: { id: string; displayName: string } | null = null;
+  let bestLength = -1;
+  let tied = false;
+
+  for (const agent of agents) {
+    const needle = "@" + stripDiacritics(agent.displayName).toLowerCase();
+    const idx = normalizedBody.indexOf(needle);
+    if (idx === -1) continue;
+    const nextChar = normalizedBody[idx + needle.length];
+    if (nextChar && /[a-z0-9]/i.test(nextChar)) continue; // e.g. "@Joaozinho" must not match agent "Joao"
+
+    if (needle.length > bestLength) {
+      best = agent;
+      bestLength = needle.length;
+      tied = false;
+    } else if (needle.length === bestLength) {
+      tied = true;
+    }
+  }
+
+  return tied ? null : best;
+}
+
+export async function findOrOpenConversationForInboundMessage(connectionId: string, contactId: string, body?: string | null) {
+  const active = await findActiveConversationForContact(contactId);
+  if (active) return { conversation: active, isNewConversation: false, autoAssignedAgentId: null as string | null };
+
+  const mentionedAgent = await findMentionedAgent(body);
+  const now = new Date();
   const conversation = await prisma.conversation.create({
-    data: { contactId, whatsappConnectionId: connectionId, status: "NEW", enteredQueueAt: new Date(), lastMessageAt: new Date() },
+    data: mentionedAgent
+      ? {
+          contactId,
+          whatsappConnectionId: connectionId,
+          status: "IN_PROGRESS",
+          assignedAgentId: mentionedAgent.id,
+          enteredQueueAt: now,
+          acceptedAt: now,
+          lastMessageAt: now,
+        }
+      : { contactId, whatsappConnectionId: connectionId, status: "NEW", enteredQueueAt: now, lastMessageAt: now },
   });
-  await prisma.conversationEvent.create({
-    data: { conversationId: conversation.id, type: "CREATED" },
-  });
-  return { conversation, isNewConversation: true };
+
+  if (mentionedAgent) {
+    await prisma.$transaction([
+      prisma.conversationAssignment.create({
+        data: { conversationId: conversation.id, toAgentId: mentionedAgent.id, reason: "MENTION" },
+      }),
+      prisma.conversationEvent.create({
+        data: { conversationId: conversation.id, type: "CREATED", payload: { autoAssignedByMention: mentionedAgent.displayName } },
+      }),
+    ]);
+  } else {
+    await prisma.conversationEvent.create({
+      data: { conversationId: conversation.id, type: "CREATED" },
+    });
+  }
+
+  return { conversation, isNewConversation: true, autoAssignedAgentId: mentionedAgent?.id ?? null };
 }
 
 /**

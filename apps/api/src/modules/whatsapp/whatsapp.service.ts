@@ -194,9 +194,10 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
           .then((photoUrl) => (photoUrl ? conversationsService.updateContactPhoto(contact.id, photoUrl) : undefined))
           .catch(() => undefined);
       }
-      const { conversation, isNewConversation } = await conversationsService.findOrOpenConversationForInboundMessage(
+      const { conversation, isNewConversation, autoAssignedAgentId } = await conversationsService.findOrOpenConversationForInboundMessage(
         connectionId,
-        contact.id
+        contact.id,
+        event.body
       );
 
       const message = await messagesService.createInboundMessage({
@@ -211,7 +212,14 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
 
       const contactLabel = contact.name ?? contact.phone;
       if (isNewConversation) {
-        realtimeEvents.newQueueConversation(connectionId, conversation.id, contactLabel);
+        if (autoAssignedAgentId) {
+          // "@<nome do atendente>" in the customer's first message — skips
+          // the queue entirely, straight into that agent's own list, same
+          // realtime path an accepted conversation uses.
+          realtimeEvents.conversationAccepted(conversation.id, connectionId, autoAssignedAgentId);
+        } else {
+          realtimeEvents.newQueueConversation(connectionId, conversation.id, contactLabel);
+        }
       } else {
         realtimeEvents.newMessage(conversation.id, conversation.assignedAgentId);
         if (conversation.assignedAgentId) {

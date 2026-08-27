@@ -253,7 +253,7 @@ model ConversationAssignment {
   fromAgentId     String?
   toAgent         User     @relation("AssignmentToAgent", fields: [toAgentId], references: [id])
   toAgentId       String
-  reason          String   // ACCEPT | TRANSFER | REOPEN
+  reason          String   // ACCEPT | TRANSFER | REOPEN | MENTION
   createdAt       DateTime @default(now())
 
   @@index([conversationId])
