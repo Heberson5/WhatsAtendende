@@ -166,11 +166,17 @@ export interface HistoricalMessageInput {
   chatId?: string;
   phone: string;
   fromMe: boolean;
-  type: "TEXT" | "LOCATION" | "CONTACT" | "IMAGE" | "VIDEO" | "AUDIO" | "DOCUMENT";
+  type: "TEXT" | "LOCATION" | "CONTACT" | "IMAGE" | "VIDEO" | "AUDIO" | "DOCUMENT" | "POLL" | "EVENT";
   body: string | null;
   latitude?: number;
   longitude?: number;
   vcard?: string;
+  pollQuestion?: string;
+  pollOptions?: string[];
+  eventName?: string;
+  eventDescription?: string;
+  eventStartAt?: Date;
+  eventJoinLink?: string;
   timestamp: Date;
 }
 
@@ -215,7 +221,7 @@ export async function importHistoricalMessages(connectionId: string, messages: H
         createdAt: m.timestamp,
       },
     });
-    if (m.latitude !== undefined && m.longitude !== undefined) {
+    if (m.type === "LOCATION" && m.latitude !== undefined && m.longitude !== undefined) {
       const created = await prisma.message.findUniqueOrThrow({ where: { providerMessageId: m.providerMessageId } });
       await prisma.messageAttachment.create({
         data: { messageId: created.id, fileName: "location", mimeType: "application/geo+json", sizeBytes: 0, storageKey: "", kind: "LOCATION", latitude: m.latitude, longitude: m.longitude },
@@ -225,6 +231,40 @@ export async function importHistoricalMessages(connectionId: string, messages: H
       const created = await prisma.message.findUniqueOrThrow({ where: { providerMessageId: m.providerMessageId } });
       await prisma.messageAttachment.create({
         data: { messageId: created.id, fileName: "contact.vcf", mimeType: "text/vcard", sizeBytes: m.vcard.length, storageKey: "", kind: "CONTACT", vcard: m.vcard },
+      });
+    }
+    if (m.type === "POLL") {
+      const created = await prisma.message.findUniqueOrThrow({ where: { providerMessageId: m.providerMessageId } });
+      await prisma.messageAttachment.create({
+        data: {
+          messageId: created.id,
+          fileName: "poll",
+          mimeType: "application/vnd.whatsapp.poll",
+          sizeBytes: 0,
+          storageKey: "",
+          kind: "POLL",
+          pollQuestion: m.pollQuestion ?? "",
+          pollOptions: m.pollOptions ?? [],
+        },
+      });
+    }
+    if (m.type === "EVENT") {
+      const created = await prisma.message.findUniqueOrThrow({ where: { providerMessageId: m.providerMessageId } });
+      await prisma.messageAttachment.create({
+        data: {
+          messageId: created.id,
+          fileName: "event",
+          mimeType: "application/vnd.whatsapp.event",
+          sizeBytes: 0,
+          storageKey: "",
+          kind: "EVENT",
+          eventName: m.eventName ?? "",
+          eventDescription: m.eventDescription,
+          eventStartAt: m.eventStartAt,
+          eventJoinLink: m.eventJoinLink,
+          latitude: m.latitude,
+          longitude: m.longitude,
+        },
       });
     }
 

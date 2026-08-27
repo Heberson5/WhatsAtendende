@@ -175,10 +175,34 @@ export function Composer({
   }
 
   function handleShareLocation() {
-    if (!navigator.geolocation) return;
+    // Both the API itself and the permission prompt require a secure
+    // context (HTTPS, or localhost) in every modern browser — on a plain
+    // HTTP origin `navigator.geolocation` either doesn't exist at all or
+    // every call fails immediately, with no prompt ever shown. Surfacing
+    // that distinctly (instead of a generic "failed" alert) is the only way
+    // to tell that apart from the agent simply denying the permission.
+    if (!window.isSecureContext) {
+      alert(
+        "Não foi possível obter sua localização: o navegador só permite isso em sites com HTTPS. Este site está em HTTP — é preciso configurar um certificado antes de usar este recurso."
+      );
+      return;
+    }
+    if (!navigator.geolocation) {
+      alert("Este navegador não suporta compartilhar localização.");
+      return;
+    }
     navigator.geolocation.getCurrentPosition(
       (pos) => onSendLocation(pos.coords.latitude, pos.coords.longitude),
-      () => alert("Nao foi possivel obter sua localizacao")
+      (err) => {
+        if (err.code === err.PERMISSION_DENIED) {
+          alert("Permissão de localização negada. Permita o acesso à localização nas configurações do navegador para este site.");
+        } else if (err.code === err.TIMEOUT) {
+          alert("Tempo esgotado ao tentar obter sua localização. Tente novamente.");
+        } else {
+          alert("Não foi possível obter sua localização no momento.");
+        }
+      },
+      { timeout: 10_000 }
     );
   }
 

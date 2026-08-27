@@ -30,6 +30,12 @@ export function toMessageDTO(message: MessageWithRelations): MessageDTO {
       latitude: a.latitude ?? undefined,
       longitude: a.longitude ?? undefined,
       vcard: a.vcard ?? undefined,
+      pollQuestion: a.pollQuestion ?? undefined,
+      pollOptions: Array.isArray(a.pollOptions) ? (a.pollOptions as string[]) : undefined,
+      eventName: a.eventName ?? undefined,
+      eventDescription: a.eventDescription ?? undefined,
+      eventStartAt: a.eventStartAt ? a.eventStartAt.toISOString() : undefined,
+      eventJoinLink: a.eventJoinLink ?? undefined,
     })),
     reactions: message.reactions.map((r) => ({
       id: r.id,

@@ -268,7 +268,7 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
         kind: event.type,
       });
     }
-    if (event.latitude && event.longitude) {
+    if (event.type === "LOCATION" && event.latitude != null && event.longitude != null) {
       await messagesService.addAttachment(messageId, {
         fileName: "location",
         mimeType: "application/geo+json",
@@ -287,6 +287,32 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
         storageKey: "",
         kind: "CONTACT",
         vcard: event.vcard,
+      });
+    }
+    if (event.type === "POLL") {
+      await messagesService.addAttachment(messageId, {
+        fileName: "poll",
+        mimeType: "application/vnd.whatsapp.poll",
+        sizeBytes: 0,
+        storageKey: "",
+        kind: "POLL",
+        pollQuestion: event.pollQuestion ?? "",
+        pollOptions: event.pollOptions ?? [],
+      });
+    }
+    if (event.type === "EVENT") {
+      await messagesService.addAttachment(messageId, {
+        fileName: "event",
+        mimeType: "application/vnd.whatsapp.event",
+        sizeBytes: 0,
+        storageKey: "",
+        kind: "EVENT",
+        eventName: event.eventName ?? "",
+        eventDescription: event.eventDescription,
+        eventStartAt: event.eventStartAt,
+        eventJoinLink: event.eventJoinLink,
+        latitude: event.latitude,
+        longitude: event.longitude,
       });
     }
   }

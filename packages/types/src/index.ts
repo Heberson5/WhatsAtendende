@@ -49,6 +49,8 @@ export const MESSAGE_TYPE = {
   DOCUMENT: "DOCUMENT",
   LOCATION: "LOCATION",
   CONTACT: "CONTACT",
+  POLL: "POLL",
+  EVENT: "EVENT",
   SYSTEM: "SYSTEM",
 } as const;
 export type MessageType = (typeof MESSAGE_TYPE)[keyof typeof MESSAGE_TYPE];
@@ -165,6 +167,15 @@ export interface MessageAttachmentDTO {
   latitude?: number;
   longitude?: number;
   vcard?: string;
+  /** POLL only — the poll's question. */
+  pollQuestion?: string;
+  /** POLL only — the poll's option labels (read-only: votes are end-to-end encrypted and not decoded here). */
+  pollOptions?: string[];
+  /** EVENT only. */
+  eventName?: string;
+  eventDescription?: string;
+  eventStartAt?: string;
+  eventJoinLink?: string;
 }
 
 export interface MessageReactionDTO {
