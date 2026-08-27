@@ -2,6 +2,8 @@ import bcrypt from "bcryptjs";
 import crypto from "node:crypto";
 import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
+import { sendTemplatedMail } from "../../lib/mail";
+import { env } from "../../config/env";
 import type { Role } from "@prisma/client";
 
 const withConnection = { whatsappConnection: true } as const;
@@ -38,7 +40,7 @@ export async function createUser(input: {
 
   const whatsappConnectionId = await resolveConnectionAssignment(input.role, input.whatsappConnectionId);
   const passwordHash = await bcrypt.hash(input.password, 12);
-  return prisma.user.create({
+  const user = await prisma.user.create({
     data: {
       fullName: input.fullName,
       displayName: input.displayName,
@@ -49,6 +51,15 @@ export async function createUser(input: {
     },
     include: withConnection,
   });
+  // Never blocks account creation on e-mail delivery — sendTemplatedMail
+  // already never throws (SMTP not configured, template disabled, or a
+  // send failure all just resolve to { sent: false }).
+  await sendTemplatedMail("USER_WELCOME", user.email, {
+    nome: user.displayName,
+    email: user.email,
+    link_login: `${env.WEB_APP_URL}/login`,
+  });
+  return user;
 }
 
 export async function updateUser(
@@ -87,8 +98,14 @@ export async function updateUser(
 }
 
 export async function setUserStatus(id: string, status: "ACTIVE" | "INACTIVE") {
-  await getUser(id);
-  return prisma.user.update({ where: { id }, data: { status }, include: withConnection });
+  const current = await getUser(id);
+  const user = await prisma.user.update({ where: { id }, data: { status }, include: withConnection });
+  // Only on an actual ACTIVE->INACTIVE transition — never on a no-op PATCH
+  // (e.g. deactivating an already-deactivated user) or on reactivation.
+  if (status === "INACTIVE" && current.status !== "INACTIVE") {
+    await sendTemplatedMail("USER_DEACTIVATED", user.email, { nome: user.displayName });
+  }
+  return user;
 }
 
 /**
