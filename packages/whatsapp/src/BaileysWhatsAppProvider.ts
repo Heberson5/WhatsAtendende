@@ -413,15 +413,38 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
     const socket = this.requireSocket();
     const isImage = mimeType.startsWith("image/");
     const isVideo = mimeType.startsWith("video/");
+    // An audio file (as opposed to a recorded voice note — see sendAudio
+    // below) still needs its own `audio` payload, not `document`: WhatsApp
+    // only renders the inline playable waveform/player for a message sent
+    // this way. Anything falling through to `document` shows up on the
+    // recipient's phone as a plain downloadable file, never as playable
+    // audio at all — see PROMPT: "está chegando no celular do cliente como
+    // um arquivo web".
+    const isAudio = mimeType.startsWith("audio/");
     const payload = isImage
       ? { image: buffer, caption, mimetype: mimeType }
       : isVideo
         ? { video: buffer, caption, mimetype: mimeType }
-        : { document: buffer, fileName, mimetype: mimeType, caption };
+        : isAudio
+          ? { audio: buffer, mimetype: mimeType, ptt: false }
+          : { document: buffer, fileName, mimetype: mimeType, caption };
     const sent = await socket.sendMessage(chatId, payload as any);
     return { providerMessageId: sent?.key.id ?? "", timestamp: new Date() };
   }
 
+  /**
+   * A recorded voice note (WhatsApp's "PTT" — push-to-talk — message type):
+   * the compact waveform bubble with a play button, distinct from an
+   * attached audio file (see sendFile above, which sends ptt: false).
+   * WhatsApp's own clients only recognize this bubble when the audio is
+   * genuinely OGG/Opus-encoded — `mimeType` here must reflect what `buffer`
+   * actually contains (the caller is responsible for transcoding first; see
+   * apps/api's audio-transcode util), not just claim to be ogg while still
+   * carrying whatever the browser's MediaRecorder produced (typically
+   * WebM/Opus) — that mismatch is what used to make a recorded voice note
+   * land on the customer's phone as a generic, unplayable "web file" even
+   * after ptt: true was added here.
+   */
   async sendAudio(chatId: string, buffer: Buffer, mimeType: string): Promise<SendResult> {
     const socket = this.requireSocket();
     const sent = await socket.sendMessage(chatId, {

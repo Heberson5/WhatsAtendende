@@ -563,6 +563,19 @@ export async function sendOutboundFile(
   }
 }
 
+/** A recorded voice note (WhatsApp's PTT bubble) — distinct from sendOutboundFile, which sends ptt: false for an attached audio file. `buffer` must already be OGG/Opus-encoded by this point; see apps/api/src/lib/audio-transcode.ts. */
+export async function sendOutboundAudio(connectionId: string, messageId: string, contactPhone: string, buffer: Buffer, mimeType: string) {
+  try {
+    const result = await getProvider(connectionId).sendAudio(toChatId(contactPhone), buffer, mimeType);
+    const message = await messagesService.markMessageSent(messageId, result.providerMessageId);
+    return toMessageDTO(message);
+  } catch (err) {
+    logger.error({ err, messageId }, "failed to send outbound whatsapp audio");
+    const message = await messagesService.markMessageFailed(messageId);
+    return toMessageDTO(message);
+  }
+}
+
 export async function sendOutboundLocation(connectionId: string, messageId: string, contactPhone: string, lat: number, lng: number) {
   try {
     const result = await getProvider(connectionId).sendLocation(toChatId(contactPhone), lat, lng);

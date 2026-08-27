@@ -205,6 +205,18 @@ export function ChatPanel({ conversation, onClosed, onBack }: { conversation: Co
     onError: (err) => toast.error(getApiErrorMessage(err)),
   });
 
+  const sendAudioMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const form = new FormData();
+      form.append("file", file);
+      return api.post(`/messages/conversations/${conversation.id}/audio`, form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["messages", conversation.id] }),
+    onError: (err) => toast.error(getApiErrorMessage(err)),
+  });
+
   const sendLocationMutation = useMutation({
     mutationFn: (input: { latitude: number; longitude: number }) =>
       api.post(`/messages/conversations/${conversation.id}/location`, input),
@@ -330,6 +342,9 @@ export function ChatPanel({ conversation, onClosed, onBack }: { conversation: Co
         }}
         onSendFile={async (file, caption) => {
           await sendFileMutation.mutateAsync({ file, caption });
+        }}
+        onSendAudio={async (file) => {
+          await sendAudioMutation.mutateAsync(file);
         }}
         onSendLocation={async (lat, lng) => {
           await sendLocationMutation.mutateAsync({ latitude: lat, longitude: lng });
