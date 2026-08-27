@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, ArrowRightLeft, CheckCircle2, Phone } from "lucide-react";
+import { ArrowLeft, ArrowRightLeft, CheckCircle2, ChevronDown, ChevronUp, Phone, Search, X as CloseIcon } from "lucide-react";
 import { PERMISSION, type ConversationListItemDTO, type MessageDTO, type PaginatedResult } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { getSocket } from "../../lib/socket";
@@ -31,18 +31,17 @@ export function ChatPanel({ conversation, onClosed, onBack }: { conversation: Co
   const [replyTo, setReplyTo] = useState<MessageDTO | null>(null);
   const [transferOpen, setTransferOpen] = useState(false);
   const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  // Wraps just the message bubbles (not the scroll container itself, whose
+  // own box size is fixed by the flex layout and wouldn't report content
+  // growth) — observed below so ANY change to its height re-triggers the
+  // stick-to-bottom check, not just a new message arriving.
+  const contentRef = useRef<HTMLDivElement>(null);
   // Updated live on scroll, not recomputed after each render — checking
   // scroll position only after new (taller) content has already painted
   // would misjudge "was near the bottom" by however tall the new message
   // happens to be.
   const nearBottomRef = useRef(true);
-  // The most recent message's id as of the last messagesQuery update — lets
-  // the auto-scroll effect below tell "a new message landed at the end"
-  // apart from loadOlder() prepending older ones at the start, and doubles
-  // as the very first load's own signal (null = hasn't loaded yet).
-  const lastNewestIdRef = useRef<string | null>(null);
   // Tracks which conversation is current so a loadOlder() fetch that's
   // still in flight when the agent switches to a different conversation
   // (now much more likely, since history now loads continuously right
@@ -52,6 +51,16 @@ export function ChatPanel({ conversation, onClosed, onBack }: { conversation: Co
   useEffect(() => {
     activeConversationId.current = conversation.id;
   }, [conversation.id]);
+
+  // In-conversation search — see PROMPT: lupa para pesquisar dentro da
+  // conversa. Purely client-side, over whatever history is already loaded
+  // (the effect below auto-loads all of it right after opening a
+  // conversation, so by the time an agent deliberately opens search it's
+  // realistically already there).
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [matchIndex, setMatchIndex] = useState(0);
+  const messageElementsRef = useRef(new Map<string, HTMLDivElement>());
 
   const messagesQuery = useQuery({
     queryKey: ["messages", conversation.id],
@@ -64,18 +73,22 @@ export function ChatPanel({ conversation, onClosed, onBack }: { conversation: Co
   });
 
   useEffect(() => {
-    lastNewestIdRef.current = null;
     nearBottomRef.current = true;
     setMessages([]);
     setCursor(undefined);
+    // A search stays scoped to the conversation it was opened on — switching
+    // away leaves it open otherwise, quietly searching the wrong messages.
+    setSearchOpen(false);
+    setSearchQuery("");
     // Opening a conversation clears its unread badge.
     markReadMutation.mutate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversation.id]);
 
   // Tracked continuously (not just checked when a message arrives) so the
-  // auto-scroll below reflects where the agent actually left the scroll
-  // position, not a snapshot taken after new content already changed it.
+  // stick-to-bottom check below reflects where the agent actually left the
+  // scroll position, not a snapshot taken after new content already
+  // changed it.
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
@@ -85,6 +98,63 @@ export function ChatPanel({ conversation, onClosed, onBack }: { conversation: Co
     container.addEventListener("scroll", handleScroll);
     return () => container.removeEventListener("scroll", handleScroll);
   }, []);
+
+  // The single source of truth for "stay pinned to the bottom": fires on
+  // ANY change to the message list's actual rendered height — a message
+  // arriving or being sent, or (this is what previously broke it) an
+  // image/video finishing an async load and growing taller than it was the
+  // instant it was inserted. A one-shot scroll-to-bottom right after the
+  // fetch landed always missed that last case, since attachments hadn't
+  // finished loading yet — which is exactly what used to leave a
+  // just-opened conversation stranded mid-history until the agent dragged
+  // the scrollbar down themselves. Older-history prepends (loadOlder,
+  // below) are deliberately not left to this: it only ever snaps to the
+  // bottom, which would yank the agent back down while they're mid-history
+  // — that case restores the agent's exact reading position instead.
+  useEffect(() => {
+    const content = contentRef.current;
+    const container = scrollContainerRef.current;
+    if (!content || !container) return;
+    const observer = new ResizeObserver(() => {
+      if (!nearBottomRef.current) return;
+      container.scrollTop = container.scrollHeight - container.clientHeight;
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, []);
+
+  const searchMatches = useMemo(() => {
+    const normalized = searchQuery.trim().toLowerCase();
+    if (!normalized) return [];
+    return messages.filter((m) => m.body?.toLowerCase().includes(normalized));
+  }, [messages, searchQuery]);
+
+  // A fresh search starts at the most recent match — the one an agent is
+  // most likely looking for — rather than the oldest. Keyed off the query
+  // (not searchMatches itself) so it only jumps on a deliberate new search,
+  // not every time the underlying message list changes mid-search.
+  useEffect(() => {
+    setMatchIndex(Math.max(0, searchMatches.length - 1));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery]);
+
+  useEffect(() => {
+    if (!searchOpen) return;
+    const current = searchMatches[matchIndex];
+    if (!current) return;
+    messageElementsRef.current.get(current.id)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [searchOpen, searchMatches, matchIndex]);
+
+  function goToMatch(direction: 1 | -1) {
+    if (searchMatches.length === 0) return;
+    setMatchIndex((i) => (i + direction + searchMatches.length) % searchMatches.length);
+  }
+
+  function closeSearch() {
+    setSearchOpen(false);
+    setSearchQuery("");
+    setMatchIndex(0);
+  }
 
   // While the conversation stays open, any further inbound message is
   // immediately marked read too — the agent is already looking at it live.
@@ -133,20 +203,10 @@ export function ChatPanel({ conversation, onClosed, onBack }: { conversation: Co
       return Array.from(byId.values()).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
     });
     setCursor((prev) => prev ?? messagesQuery.data.nextCursor ?? undefined);
-
-    // Auto-scroll to the newest message like WhatsApp Web: always on the
-    // very first load, and afterwards only when a genuinely new message
-    // just landed at the end (not merely a status update on one already
-    // shown) and the agent hasn't scrolled up to read older history —
-    // sending or receiving one shouldn't yank them back down mid-scroll.
-    const newest = messagesQuery.data.items.at(-1);
-    if (newest && newest.id !== lastNewestIdRef.current) {
-      const isFirst = lastNewestIdRef.current === null;
-      lastNewestIdRef.current = newest.id;
-      if (isFirst || nearBottomRef.current) {
-        requestAnimationFrame(() => bottomRef.current?.scrollIntoView({ behavior: isFirst ? "auto" : "smooth" }));
-      }
-    }
+    // No manual scroll handling here — the ResizeObserver above reacts to
+    // the resulting height change (new message, first load, or attachments
+    // rendering in) and snaps to the bottom itself whenever the agent was
+    // already there.
   }, [messagesQuery.data]);
 
   async function loadOlder() {
@@ -294,6 +354,14 @@ export function ChatPanel({ conversation, onClosed, onBack }: { conversation: Co
           )}
         </div>
         <div className="flex shrink-0 gap-2">
+          <button
+            onClick={() => setSearchOpen(true)}
+            className="focus-ring flex items-center gap-1.5 rounded-card border border-border p-1.5 text-muted hover:bg-surface-alt sm:px-2"
+            aria-label="Pesquisar nesta conversa"
+            title="Pesquisar nesta conversa"
+          >
+            <Search className="h-3.5 w-3.5" />
+          </button>
           {canTransfer && (
             <button
               onClick={() => setTransferOpen(true)}
@@ -313,24 +381,72 @@ export function ChatPanel({ conversation, onClosed, onBack }: { conversation: Co
         </div>
       </div>
 
-      <div ref={scrollContainerRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
+      {searchOpen && (
+        <div className="flex items-center gap-2 border-b border-border bg-surface px-3 py-2 sm:px-4">
+          <Search className="h-4 w-4 shrink-0 text-muted" />
+          <input
+            autoFocus
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") goToMatch(e.shiftKey ? -1 : 1);
+              if (e.key === "Escape") closeSearch();
+            }}
+            placeholder="Pesquisar nesta conversa"
+            className="flex-1 min-w-0 bg-transparent text-sm focus:outline-none"
+          />
+          <span className="shrink-0 text-xs text-muted">
+            {searchQuery.trim() ? (searchMatches.length > 0 ? `${matchIndex + 1}/${searchMatches.length}` : "0/0") : ""}
+          </span>
+          <button
+            onClick={() => goToMatch(-1)}
+            disabled={searchMatches.length === 0}
+            className="focus-ring shrink-0 rounded-full p-1 text-muted hover:bg-surface-alt disabled:opacity-40"
+            aria-label="Resultado anterior"
+          >
+            <ChevronUp className="h-4 w-4" />
+          </button>
+          <button
+            onClick={() => goToMatch(1)}
+            disabled={searchMatches.length === 0}
+            className="focus-ring shrink-0 rounded-full p-1 text-muted hover:bg-surface-alt disabled:opacity-40"
+            aria-label="Próximo resultado"
+          >
+            <ChevronDown className="h-4 w-4" />
+          </button>
+          <button onClick={closeSearch} className="focus-ring shrink-0 rounded-full p-1 text-muted hover:bg-surface-alt" aria-label="Fechar pesquisa">
+            <CloseIcon className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-4 py-4">
         {cursor && (
           <div className="text-center">
             <p className="text-xs text-muted">Carregando histórico...</p>
           </div>
         )}
-        {messages.map((message) => (
-          <MessageBubble
-            key={message.id}
-            message={message}
-            repliedMessage={message.replyToMessageId ? messageById.get(message.replyToMessageId) : undefined}
-            onReply={setReplyTo}
-            onReact={(m, emoji) => reactMutation.mutate({ messageId: m.id, emoji })}
-            canDelete={isAdmin}
-            onDelete={(m) => deleteMessageMutation.mutate(m.id)}
-          />
-        ))}
-        <div ref={bottomRef} />
+        <div ref={contentRef} className="space-y-3">
+          {messages.map((message) => (
+            <div
+              key={message.id}
+              ref={(el) => {
+                if (el) messageElementsRef.current.set(message.id, el);
+                else messageElementsRef.current.delete(message.id);
+              }}
+            >
+              <MessageBubble
+                message={message}
+                repliedMessage={message.replyToMessageId ? messageById.get(message.replyToMessageId) : undefined}
+                onReply={setReplyTo}
+                onReact={(m, emoji) => reactMutation.mutate({ messageId: m.id, emoji })}
+                canDelete={isAdmin}
+                onDelete={(m) => deleteMessageMutation.mutate(m.id)}
+                highlighted={searchOpen && searchMatches[matchIndex]?.id === message.id}
+              />
+            </div>
+          ))}
+        </div>
       </div>
 
       <Composer

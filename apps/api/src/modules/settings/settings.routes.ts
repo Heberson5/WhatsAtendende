@@ -117,9 +117,13 @@ const businessSettingsSchema = z
   // into system_settings.
   .strict();
 
+// Any authenticated user can read these (not just an admin): the client
+// needs inactivityTimeoutMinutes to enforce the idle-logout timer for
+// every logged-in session, not only for whoever can edit it. Nothing in
+// here is sensitive — see EmailSettings for the one that actually is,
+// which stays admin-gated. PATCH below is still admin-only.
 settingsRouter.get(
   "/business",
-  requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
   asyncHandler(async (_req, res) => {
     res.json(await service.getBusinessSettings());
   })

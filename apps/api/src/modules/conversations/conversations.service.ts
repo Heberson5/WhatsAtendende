@@ -85,7 +85,7 @@ export async function findOrCreateContact(connectionId: string, phone: string, n
           where: { phone_whatsappConnectionId: { phone: resolvedPhone, whatsappConnectionId: connectionId } },
         });
         if (collision && collision.id !== byChatId.id) {
-          return prisma.$transaction(async (tx) => {
+          const merged = await prisma.$transaction(async (tx) => {
             await tx.conversation.updateMany({ where: { contactId: byChatId.id }, data: { contactId: collision.id } });
             // Delete the duplicate BEFORE writing its providerChatId onto
             // the survivor — both rows would briefly hold the same value
@@ -97,6 +97,20 @@ export async function findOrCreateContact(connectionId: string, phone: string, n
               data: { lastInteractionAt: new Date(), providerChatId: collision.providerChatId ?? providerChatId },
             });
           });
+          // The survivor can now own two simultaneously-active conversations
+          // (one from each side of the contact merge) — same customer, still
+          // two cards in Fila/Gestão. Collapse them into one automatically,
+          // same as the manual merge an admin would otherwise have to do.
+          await foldActiveConversationDuplicates(collision.id);
+          await writeAudit({
+            userId: null,
+            action: "CONTACTS_AUTO_MERGED",
+            entity: "Contact",
+            entityId: collision.id,
+            metadata: { mergedContactId: byChatId.id, connectionId, reason: "WhatsApp resolved this chat's real phone number to an already-known contact" },
+          });
+          realtimeEvents.conversationsMerged(connectionId);
+          return merged;
         }
       }
       return prisma.contact.update({
@@ -251,6 +265,38 @@ export async function findOrOpenConversationForInboundMessage(connectionId: stri
   });
   await prisma.conversationEvent.create({
     data: { conversationId: conversation.id, type: "CREATED" },
+  });
+  return { conversation, isNewConversation: true };
+}
+
+/**
+ * Same lookup as findOrOpenConversationForInboundMessage, but for a message
+ * sent directly from the linked phone/another device (see
+ * handleDeviceSentMessage in whatsapp.service.ts) with no active conversation
+ * to attach it to yet. This must never create a NEW/WAITING conversation —
+ * that would put a card in the live queue for a contact the agent is
+ * already messaging outside this app, even though the customer never wrote
+ * in. It opens straight into HANDLED_EXTERNALLY instead: same status
+ * markConversationReadFromDevice uses for "being handled on the phone",
+ * visible in Gestão but never in the Fila. See PROMPT: só deve aparecer na
+ * fila quando o cliente envia mensagem.
+ */
+export async function findOrOpenConversationForDeviceSentMessage(connectionId: string, contactId: string) {
+  const active = await findActiveConversationForContact(contactId);
+  if (active) return { conversation: active, isNewConversation: false };
+
+  const conversation = await prisma.conversation.create({
+    data: {
+      contactId,
+      whatsappConnectionId: connectionId,
+      status: "HANDLED_EXTERNALLY",
+      enteredQueueAt: new Date(),
+      lastMessageAt: new Date(),
+      assignedAgentReadAt: new Date(),
+    },
+  });
+  await prisma.conversationEvent.create({
+    data: { conversationId: conversation.id, type: "HANDLED_EXTERNALLY", payload: { reason: "started from device" } },
   });
   return { conversation, isNewConversation: true };
 }
@@ -460,7 +506,8 @@ export async function getConversationOrThrow(id: string) {
  * belonged to a different Contact row than the real conversation (the usual
  * case — that's exactly what made it a duplicate), every other conversation
  * on that duplicate contact moves over too and the now-empty contact row is
- * removed. Irreversible — ADMIN-only, see conversations.routes.ts.
+ * removed. Irreversible — either ADMIN-triggered (see conversations.routes.ts)
+ * or automatic, via foldActiveConversationDuplicates below.
  */
 export async function mergeConversations(duplicateConversationId: string, intoConversationId: string) {
   if (duplicateConversationId === intoConversationId) {
@@ -506,6 +553,41 @@ export async function mergeConversations(duplicateConversationId: string, intoCo
   });
 
   return getConversationOrThrow(into.id);
+}
+
+/**
+ * Auto-merge engine, part 2: after findOrCreateContact folds two Contact
+ * rows together (the same customer resolved under two different WhatsApp
+ * identifiers — see the collision branch above), the survivor can end up
+ * owning two simultaneously-active conversations at once, one carried over
+ * from each side of the merge. The contacts are unified, but the customer
+ * would still show up as two separate cards in Fila/Gestão. This collapses
+ * every extra active conversation into a single survivor conversation, using
+ * the exact same message-move logic mergeConversations already uses for a
+ * manual ADMIN merge.
+ *
+ * Survivor choice: prefer whichever conversation is already assigned to an
+ * agent (IN_PROGRESS/TRANSFERRED) — folding an unassigned queue card into it
+ * never orphans an agent's in-progress work; between two equally-assigned
+ * (or two equally-unassigned) conversations, keep whichever was messaged
+ * most recently.
+ */
+async function foldActiveConversationDuplicates(contactId: string): Promise<void> {
+  const actives = await prisma.conversation.findMany({
+    where: { contactId, status: { in: ["NEW", "WAITING", "IN_PROGRESS", "TRANSFERRED"] } },
+  });
+  if (actives.length < 2) return;
+
+  const survivor = actives.reduce((best, c) => {
+    const bestAssigned = best.assignedAgentId !== null;
+    const cAssigned = c.assignedAgentId !== null;
+    if (cAssigned !== bestAssigned) return cAssigned ? c : best;
+    return c.lastMessageAt > best.lastMessageAt ? c : best;
+  });
+
+  for (const c of actives) {
+    if (c.id !== survivor.id) await mergeConversations(c.id, survivor.id);
+  }
 }
 
 /**
