@@ -4,9 +4,11 @@ import { toast } from "sonner";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 import { useAuthStore } from "../../store/auth-store";
+import { useActiveConversationStore } from "../../store/active-conversation-store";
 import { connectSocket, disconnectSocket, getSocket } from "../../lib/socket";
 import { useDesktopNotificationPermission } from "../../hooks/useDesktopNotifications";
 import { useIdleLogout } from "../../hooks/useIdleLogout";
+import { useSocketEvents } from "../../hooks/useSocketEvents";
 
 const TITLES: Record<string, string> = {
   "/atendimento": "Atendimento",
@@ -24,10 +26,18 @@ export function AppLayout() {
   const navigate = useNavigate();
   const accessToken = useAuthStore((s) => s.accessToken);
   const clearSession = useAuthStore((s) => s.clearSession);
+  const activeConversationId = useActiveConversationStore((s) => s.activeConversationId);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   useDesktopNotificationPermission();
   useIdleLogout();
+  // Mounted here (not inside AtendimentoPage) so new-queue-conversation and
+  // new-message toasts/desktop notifications keep firing while the agent is
+  // on any other screen (Dashboard, Gestão, Usuários...) — previously this
+  // only ran while the Atendimento page itself was open, so navigating away
+  // silently stopped every notification. See PROMPT: "não estou recebendo
+  // notificação de novas conversas na fila e nem de novas mensagens".
+  useSocketEvents(activeConversationId);
 
   useEffect(() => {
     if (accessToken) connectSocket(accessToken);
