@@ -119,6 +119,8 @@ export function Composer({
   const [previewPlaying, setPreviewPlaying] = useState(false);
   const [previewProgress, setPreviewProgress] = useState(0); // 0..1
   const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingLocation, setPendingLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [locationRequesting, setLocationRequesting] = useState(false);
   const [caption, setCaption] = useState("");
   const [selectionBubble, setSelectionBubble] = useState<{ top: number; left: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -227,9 +229,19 @@ export function Composer({
       alert("Este navegador não suporta compartilhar localização.");
       return;
     }
+    setLocationRequesting(true);
     navigator.geolocation.getCurrentPosition(
-      (pos) => onSendLocation(pos.coords.latitude, pos.coords.longitude),
+      (pos) => {
+        setLocationRequesting(false);
+        // Same "preview before sending" pattern as an attached file below —
+        // WhatsApp Web always shows the pin on a map and waits for an
+        // explicit "Enviar" before a location actually goes out; clicking
+        // the pin icon here used to send it immediately with zero preview
+        // or way to back out.
+        setPendingLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+      },
       (err) => {
+        setLocationRequesting(false);
         if (err.code === err.PERMISSION_DENIED) {
           alert("Permissão de localização negada. Permita o acesso à localização nas configurações do navegador para este site.");
         } else if (err.code === err.TIMEOUT) {
@@ -240,6 +252,25 @@ export function Composer({
       },
       { timeout: 10_000 }
     );
+  }
+
+  async function confirmSendLocation() {
+    if (!pendingLocation) return;
+    setSending(true);
+    try {
+      await onSendLocation(pendingLocation.lat, pendingLocation.lng);
+      // WhatsApp's location message carries no caption field of its own —
+      // an optional comment here goes out as a normal follow-up text right
+      // after it, same as an agent typing one after sharing on real
+      // WhatsApp Web.
+      const comment = caption.trim();
+      if (comment) await onSendText(comment);
+      setPendingLocation(null);
+      setCaption("");
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    } finally {
+      setSending(false);
+    }
   }
 
   // Samples the live mic level ~10x/second (not on every animation frame —
@@ -543,6 +574,49 @@ export function Composer({
     );
   }
 
+  if (pendingLocation) {
+    // OpenStreetMap's own embeddable iframe (openstreetmap.org/export) —
+    // no API key, no third-party static-image proxy (that broke rendering
+    // for received locations before, see MessageBubble) — just OSM's site
+    // itself, centered on a small box around the pin.
+    const delta = 0.01;
+    const bbox = `${pendingLocation.lng - delta},${pendingLocation.lat - delta},${pendingLocation.lng + delta},${pendingLocation.lat + delta}`;
+    const mapSrc = `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${pendingLocation.lat},${pendingLocation.lng}`;
+    return (
+      <div className="border-t border-border bg-surface p-4">
+        <div className="mb-3 overflow-hidden rounded-card border border-border">
+          <iframe title="Prévia da localização" src={mapSrc} className="h-56 w-full" />
+          <div className="flex items-center justify-between gap-3 bg-surface-alt px-3 py-2">
+            <p className="flex items-center gap-1.5 text-xs text-muted">
+              <MapPin className="h-3.5 w-3.5 shrink-0" />
+              {pendingLocation.lat.toFixed(5)}, {pendingLocation.lng.toFixed(5)}
+            </p>
+            <button onClick={() => setPendingLocation(null)} className="focus-ring shrink-0 rounded-full p-1.5 text-muted hover:bg-surface" aria-label="Cancelar envio">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            value={caption}
+            onChange={(e) => setCaption(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && confirmSendLocation()}
+            placeholder="Adicionar comentário (opcional)"
+            autoFocus
+            className="focus-ring flex-1 rounded-full border border-border bg-transparent px-4 py-2 text-sm"
+          />
+          <button
+            onClick={confirmSendLocation}
+            disabled={sending}
+            className="focus-ring flex shrink-0 items-center gap-2 rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-primary-fg disabled:opacity-60"
+          >
+            <Send className="h-4 w-4" /> Enviar localização
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (pendingFile) {
     const isImage = pendingFile.type.startsWith("image/");
     const isVideo = pendingFile.type.startsWith("video/");
@@ -693,8 +767,15 @@ export function Composer({
         </button>
         <input ref={fileInputRef} type="file" hidden onChange={handleFileChange} />
 
-        <button onClick={handleShareLocation} className="focus-ring rounded-full p-2 text-muted hover:bg-surface-alt" aria-label="Enviar localização" type="button">
-          <MapPin className="h-5 w-5" />
+        <button
+          onClick={handleShareLocation}
+          disabled={locationRequesting}
+          className="focus-ring rounded-full p-2 text-muted hover:bg-surface-alt disabled:opacity-60"
+          aria-label="Enviar localização"
+          title={locationRequesting ? "Obtendo sua localização..." : "Enviar localização"}
+          type="button"
+        >
+          <MapPin className={clsx("h-5 w-5", locationRequesting && "animate-pulse")} />
         </button>
 
         <textarea
