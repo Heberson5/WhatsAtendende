@@ -9,15 +9,29 @@ const messageInclude = {
 };
 
 export interface ListMessagesParams {
-  conversationId: string;
+  contactId: string;
   cursor?: string;
   limit: number;
 }
 
-/** Cursor-based pagination (createdAt+id) so a busy conversation's history loads incrementally, never all at once. */
-export async function listMessages({ conversationId, cursor, limit }: ListMessagesParams) {
+/**
+ * Scoped by contact, not by the single conversation being opened: closing a
+ * conversation and having the contact message back deliberately starts a
+ * brand-new Conversation row (its own queue card, its own metrics — see
+ * conversations.service.ts's findActiveConversationForContact), but on
+ * WhatsApp itself there is only ever one continuous thread with that
+ * contact. Splitting the *display* history along those same conversation
+ * boundaries used to make a returning customer's prior (closed) messages
+ * disappear the moment a new record was created — see PROMPT: "quando
+ * encerro uma conversa e o cliente entra em contato em seguida, não está
+ * trazendo o histórico anterior do mesmo cliente."
+ *
+ * Cursor-based pagination (id, via createdAt-desc ordering) so a contact
+ * with a long relationship loads incrementally, never all at once.
+ */
+export async function listMessages({ contactId, cursor, limit }: ListMessagesParams) {
   const messages = await prisma.message.findMany({
-    where: { conversationId, deletedAt: null },
+    where: { conversation: { contactId }, deletedAt: null },
     include: messageInclude,
     orderBy: { createdAt: "desc" },
     take: limit + 1,

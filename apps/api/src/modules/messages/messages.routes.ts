@@ -131,7 +131,7 @@ messagesRouter.get(
     const conversation = await getConversationOrThrow(req.params.conversationId);
     if (req.auth!.role === "AGENT") assertAgentCanAccessConversation(conversation, req.auth!);
     const { cursor, limit } = querySchema.parse(req.query);
-    const result = await service.listMessages({ conversationId: req.params.conversationId, cursor, limit });
+    const result = await service.listMessages({ contactId: conversation.contactId, cursor, limit });
     res.json({ items: result.items.map(toMessageDTO), nextCursor: result.nextCursor });
   })
 );
