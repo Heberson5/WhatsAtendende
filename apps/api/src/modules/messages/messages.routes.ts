@@ -280,6 +280,14 @@ messagesRouter.post(
       oggBuffer,
       "audio/ogg; codecs=opus"
     );
+    await writeAudit({
+      userId: req.auth!.userId,
+      action: "MESSAGE_SENT",
+      entity: "Message",
+      entityId: message.id,
+      ipAddress: req.ip ?? null,
+      metadata: { conversationId: conversation.id, contactName: conversation.contact.name, contactPhone: conversation.contact.phone, text: "Áudio (nota de voz)" },
+    });
     realtimeEvents.newMessage(conversation.id, req.auth!.userId);
     res.status(201).json(dto);
   })
