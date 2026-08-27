@@ -113,6 +113,7 @@ export function MessageBubble({
   repliedMessage,
   readOnly,
   canDelete,
+  highlighted,
 }: {
   message: MessageDTO;
   onReply: (message: MessageDTO) => void;
@@ -123,6 +124,8 @@ export function MessageBubble({
   readOnly?: boolean;
   /** ADMIN-only "excluir mensagem" affordance — local to this app, never touches WhatsApp. */
   canDelete?: boolean;
+  /** The current match of an in-conversation search (see ChatPanel's search bar) — a ring around the bubble marks which one is selected. */
+  highlighted?: boolean;
 }) {
   const [showReactions, setShowReactions] = useState(false);
   const [openMedia, setOpenMedia] = useState<LightboxMedia | null>(null);
@@ -132,8 +135,9 @@ export function MessageBubble({
   const bubble = (
     <div
       className={clsx(
-        "relative max-w-[70%] rounded-card px-3 py-2 text-sm shadow-sm",
-        isOutbound ? "bg-primary text-primary-fg" : "bg-surface-alt"
+        "relative max-w-[70%] rounded-card px-3 py-2 text-sm shadow-sm transition-shadow",
+        isOutbound ? "bg-primary text-primary-fg" : "bg-surface-alt",
+        highlighted && "ring-2 ring-yellow-400 ring-offset-2 ring-offset-[var(--color-bg)]"
       )}
     >
       {isOutbound && message.senderAgentDisplayName && (

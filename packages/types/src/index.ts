@@ -180,6 +180,17 @@ export interface PaginatedResult<T> {
   total?: number;
 }
 
+export interface AuditLogDTO {
+  id: string;
+  userDisplayName: string; // "Sistema" for actions with no acting user (e.g. an automatic transfer revert)
+  action: string;
+  entity: string;
+  entityId: string | null;
+  ipAddress: string | null;
+  metadata: unknown;
+  createdAt: string;
+}
+
 export interface DashboardFilter {
   period: "today" | "yesterday" | "last7days" | "month" | "lastMonth" | "custom";
   from?: string;

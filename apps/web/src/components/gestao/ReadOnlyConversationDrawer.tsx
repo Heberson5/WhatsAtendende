@@ -22,7 +22,19 @@ export function ReadOnlyConversationDrawer({
   const [messages, setMessages] = useState<MessageDTO[]>([]);
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const isFirstLoad = useRef(true);
+  // Wraps just the message bubbles — observed below so ANY change to its
+  // height (a page loading in, or an image/video finishing an async load)
+  // re-snaps to the bottom, not just the one-shot check the messages array
+  // used to get. See ChatPanel's own copy of this same fix for the full
+  // explanation: a scroll-to-bottom taken right when messages first render
+  // always missed attachments that hadn't finished loading yet, which used
+  // to leave a just-opened conversation stranded mid-history.
+  const contentRef = useRef<HTMLDivElement>(null);
+  // Only snap to the bottom while the gestor is actually near it — without
+  // this, the ResizeObserver below would yank them back down every time an
+  // older page loads in while they're scrolled up reading history, fighting
+  // the loadOlder-style scroll-position restore in the [cursor] effect.
+  const nearBottomRef = useRef(true);
 
   const messagesQuery = useQuery({
     queryKey: ["oversight-messages", conversation.id],
@@ -36,11 +48,26 @@ export function ReadOnlyConversationDrawer({
   }, [messagesQuery.data]);
 
   useEffect(() => {
-    if (isFirstLoad.current && messages.length > 0) {
-      scrollContainerRef.current?.scrollTo({ top: scrollContainerRef.current.scrollHeight });
-      isFirstLoad.current = false;
-    }
-  }, [messages]);
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const handleScroll = () => {
+      nearBottomRef.current = container.scrollHeight - container.scrollTop - container.clientHeight < 150;
+    };
+    container.addEventListener("scroll", handleScroll);
+    return () => container.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  useEffect(() => {
+    const content = contentRef.current;
+    const container = scrollContainerRef.current;
+    if (!content || !container) return;
+    const observer = new ResizeObserver(() => {
+      if (!nearBottomRef.current) return;
+      container.scrollTop = container.scrollHeight - container.clientHeight;
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, []);
 
   // Automatically keeps paging through history until it's all loaded, same
   // as ChatPanel's own conversation view — see PROMPT: "trazer todo o
@@ -99,18 +126,20 @@ export function ReadOnlyConversationDrawer({
           </button>
         </div>
 
-        <div ref={scrollContainerRef} className="flex-1 space-y-3 overflow-y-auto bg-[var(--color-bg)] px-4 py-4">
+        <div ref={scrollContainerRef} className="flex-1 overflow-y-auto bg-[var(--color-bg)] px-4 py-4">
           {(isLoading || cursor) && <p className="text-center text-sm text-muted">Carregando histórico...</p>}
-          {messages.map((m) => (
-            <MessageBubble
-              key={m.id}
-              message={m}
-              readOnly
-              onReply={() => undefined}
-              onReact={() => undefined}
-              repliedMessage={m.replyToMessageId ? messageById.get(m.replyToMessageId) : undefined}
-            />
-          ))}
+          <div ref={contentRef} className="space-y-3">
+            {messages.map((m) => (
+              <MessageBubble
+                key={m.id}
+                message={m}
+                readOnly
+                onReply={() => undefined}
+                onReact={() => undefined}
+                repliedMessage={m.replyToMessageId ? messageById.get(m.replyToMessageId) : undefined}
+              />
+            ))}
+          </div>
         </div>
 
         <div className="border-t border-border px-5 py-3 text-center text-xs text-muted">

@@ -220,7 +220,10 @@ export async function toggleReaction(messageId: string, userId: string, emoji: s
 }
 
 export async function getMessageWithConversation(messageId: string) {
-  const message = await prisma.message.findUnique({ where: { id: messageId }, include: { conversation: true } });
+  const message = await prisma.message.findUnique({
+    where: { id: messageId },
+    include: { conversation: { include: { contact: true } } },
+  });
   if (!message) throw Errors.notFound("Mensagem nao encontrada");
   return message;
 }

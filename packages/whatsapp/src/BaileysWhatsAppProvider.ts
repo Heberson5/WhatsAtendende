@@ -564,6 +564,20 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
         name: c.name ?? c.notify ?? existing?.name ?? null,
         photoUrl: (c.imgUrl && c.imgUrl !== "changed" ? c.imgUrl : existing?.photoUrl) ?? null,
       });
+      // The phone's address-book sync (contacts.upsert/contacts.update) is a
+      // second, independent source for the exact same @lid<->real-phone
+      // pairing that chats.update's pnJid resolves — and one that tends to
+      // arrive earlier/more reliably (it fires on every contact sync, not
+      // only once a chat-state update happens to carry it). Feeding it into
+      // the same chatIdentityResolved healing path closes the window where a
+      // contact/conversation created from an @lid-only event (see
+      // handleIncomingMessage) never gets folded into the one a later event
+      // creates under the resolved phone-number id — which is what used to
+      // show up as the same customer listed twice, once by phone number and
+      // once by the opaque WhatsApp id.
+      if (c.id.endsWith("@lid") && c.jid && phone !== c.id.split("@")[0]) {
+        this.emitter.emit("chatIdentityResolved", { chatId: c.id, phone } satisfies ChatIdentityResolvedEvent);
+      }
     }
     this.persistContactsCache();
   }

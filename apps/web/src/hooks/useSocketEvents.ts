@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { getSocket } from "../lib/socket";
+import { notifyDesktop } from "./useDesktopNotifications";
 
 /** Subscribes to server-pushed realtime events and invalidates the affected React Query caches — no polling. */
 export function useSocketEvents(activeConversationId: string | null) {
@@ -15,6 +16,7 @@ export function useSocketEvents(activeConversationId: string | null) {
     const onNewQueueConversation = (payload: { conversationId: string; contactName: string }) => {
       queryClient.invalidateQueries({ queryKey: ["queue"] });
       toast.info(`Nova conversa na fila: ${payload.contactName}`);
+      notifyDesktop("Nova conversa na fila", payload.contactName, `wa-queue-${payload.conversationId}`);
     };
     const onAssigned = () => {
       queryClient.invalidateQueries({ queryKey: ["mine"] });
@@ -36,6 +38,7 @@ export function useSocketEvents(activeConversationId: string | null) {
     const onInboundNotification = (payload: { conversationId: string; contactName: string; preview: string }) => {
       if (payload.conversationId === activeConversationId) return;
       toast.message(payload.contactName, { description: payload.preview });
+      notifyDesktop(payload.contactName, payload.preview, `wa-conversation-${payload.conversationId}`);
     };
     const onMessageStatus = (payload: { conversationId: string }) => {
       queryClient.invalidateQueries({ queryKey: ["messages", payload.conversationId] });
