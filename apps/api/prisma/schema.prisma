@@ -136,8 +136,28 @@ model WhatsAppConnection {
   agents        User[]
   contacts      Contact[]
   conversations Conversation[]
+  quickReplies  QuickReply[]
 
   @@index([status])
+}
+
+// Canned messages an agent can drop into the composer by typing "/" followed
+// by the shortcut — see QuickReply routes/service. Scoped to one WhatsApp
+// connection (not global) so, e.g., "Vendas" and "Suporte" can each curate
+// their own set without stepping on each other's shortcuts.
+model QuickReply {
+  id                    String             @id @default(uuid())
+  name                  String
+  // Stored without the leading "/" (e.g. "boasvindas", not "/boasvindas") —
+  // the slash is purely a UI trigger, added back only when displayed.
+  shortcut              String
+  text                  String
+  whatsappConnection    WhatsAppConnection @relation(fields: [whatsappConnectionId], references: [id], onDelete: Cascade)
+  whatsappConnectionId  String
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+
+  @@unique([whatsappConnectionId, shortcut])
 }
 
 // ---------------------------------------------------------------------------

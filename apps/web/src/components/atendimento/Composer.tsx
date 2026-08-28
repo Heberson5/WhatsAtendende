@@ -86,11 +86,19 @@ function getCaretRect(textarea: HTMLTextAreaElement, position: number): { top: n
   return { top, left };
 }
 
+export interface QuickReplyOption {
+  id: string;
+  name: string;
+  shortcut: string;
+  text: string;
+}
+
 export function Composer({
   onSendText,
   onSendFile,
   onSendAudio,
   onSendLocation,
+  quickReplies = [],
   replyTo,
   onCancelReply,
   disabled,
@@ -100,6 +108,8 @@ export function Composer({
   /** A recorded voice note (mic button) — sent as WhatsApp's native PTT bubble, distinct from an attached audio file via onSendFile. */
   onSendAudio: (file: File) => Promise<void>;
   onSendLocation: (lat: number, lng: number) => Promise<void>;
+  /** Cadastradas em Respostas Rápidas, já filtradas pela conexão desta conversa. */
+  quickReplies?: QuickReplyOption[];
   replyTo: MessageDTO | null;
   onCancelReply: () => void;
   disabled?: boolean;
@@ -123,6 +133,7 @@ export function Composer({
   const [locationRequesting, setLocationRequesting] = useState(false);
   const [caption, setCaption] = useState("");
   const [selectionBubble, setSelectionBubble] = useState<{ top: number; left: number } | null>(null);
+  const [quickReplyActiveIndex, setQuickReplyActiveIndex] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const emojiPanelRef = useRef<HTMLDivElement>(null);
@@ -133,6 +144,35 @@ export function Composer({
   const analyserRef = useRef<AnalyserNode | null>(null);
   const waveformTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const previewAudioRef = useRef<HTMLAudioElement>(null);
+
+  // WhatsApp Business App-style slash command: the picker only ever opens
+  // when "/" is the very first character and nothing after it is a space
+  // yet — the moment a space (or anything else) breaks that, it's just
+  // regular text again, same as Slack/Notion's own "/" triggers.
+  const quickReplyMatch = /^\/(\S*)$/.exec(text);
+  const quickReplyFilter = quickReplyMatch ? quickReplyMatch[1].toLowerCase() : null;
+  const filteredQuickReplies =
+    quickReplyFilter === null
+      ? []
+      : quickReplies.filter((qr) => qr.shortcut.startsWith(quickReplyFilter) || qr.name.toLowerCase().includes(quickReplyFilter));
+  const quickReplyMenuOpen = quickReplyFilter !== null && filteredQuickReplies.length > 0;
+
+  // Keeps the keyboard-highlighted row in range as the filter narrows/widens
+  // the list on every keystroke, instead of pointing at a row that scrolled
+  // out of the filtered results.
+  useEffect(() => {
+    setQuickReplyActiveIndex(0);
+  }, [quickReplyFilter]);
+
+  function selectQuickReply(reply: QuickReplyOption) {
+    setText(reply.text);
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+    });
+  }
 
   // Closes the emoji panel on any click outside it — it was staying open and
   // getting in the way until the user clicked the toggle button again.
@@ -477,6 +517,28 @@ export function Composer({
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (quickReplyMenuOpen) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setQuickReplyActiveIndex((i) => Math.min(i + 1, filteredQuickReplies.length - 1));
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setQuickReplyActiveIndex((i) => Math.max(i - 1, 0));
+        return;
+      }
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        selectQuickReply(filteredQuickReplies[quickReplyActiveIndex]);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setText("");
+        return;
+      }
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -693,7 +755,34 @@ export function Composer({
         </div>
       )}
 
-      <div className="border-t border-border bg-surface">
+      <div className="relative border-t border-border bg-surface">
+        {quickReplyMenuOpen && (
+          <div
+            className="shadow-elevated absolute bottom-full left-3 right-3 z-20 mb-1 max-h-64 overflow-y-auto rounded-card border border-border bg-surface"
+            // Same trick as the formatting toolbar above: without this,
+            // clicking a row blurs the textarea before the click's onClick
+            // ever runs.
+            onMouseDown={(e) => e.preventDefault()}
+          >
+            {filteredQuickReplies.map((qr, i) => (
+              <button
+                key={qr.id}
+                type="button"
+                onClick={() => selectQuickReply(qr)}
+                className={clsx(
+                  "flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left text-sm",
+                  i === quickReplyActiveIndex ? "bg-surface-alt" : "hover:bg-surface-alt"
+                )}
+              >
+                <span className="flex items-center gap-2">
+                  <span className="font-medium">{qr.name}</span>
+                  <code className="rounded bg-surface px-1 text-xs text-muted">/{qr.shortcut}</code>
+                </span>
+                <span className="line-clamp-1 w-full text-xs text-muted">{qr.text}</span>
+              </button>
+            ))}
+          </div>
+        )}
         {replyTo && (
           <div className="flex items-center justify-between border-b border-border bg-surface-alt px-4 py-2 text-xs">
             <div className="min-w-0">

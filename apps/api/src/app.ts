@@ -21,6 +21,7 @@ import { auditRouter } from "./modules/audit/audit.routes";
 import { whatsappRouter } from "./modules/whatsapp/whatsapp.routes";
 import { profileRouter } from "./modules/profile/profile.routes";
 import { permissionsRouter } from "./modules/permissions/permissions.routes";
+import { quickRepliesRouter } from "./modules/quick-replies/quick-replies.routes";
 
 export function createApp() {
   const app = express();
@@ -84,6 +85,7 @@ export function createApp() {
   app.use("/api/whatsapp", whatsappRouter);
   app.use("/api/profile", profileRouter);
   app.use("/api/permissions", permissionsRouter);
+  app.use("/api/quick-replies", quickRepliesRouter);
 
   app.use((req, res) => {
     res.status(404).json({ error: "NOT_FOUND", message: `Rota nao encontrada: ${req.method} ${req.path}` });
