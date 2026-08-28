@@ -89,6 +89,18 @@ export interface UserDTO {
   lastAccessAt: string | null;
 }
 
+export interface QuickReplyDTO {
+  id: string;
+  name: string;
+  /** Without the leading "/" — see the QuickReply Prisma model comment. */
+  shortcut: string;
+  text: string;
+  whatsappConnectionId: string;
+  whatsappConnectionName: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface WhatsAppConnectionSummaryDTO {
   id: string;
   name: string;
@@ -237,6 +249,7 @@ export const PERMISSION = {
   USUARIOS_GERENCIAR: "usuarios.gerenciar",
   CONFIGURACOES_GERENCIAR: "configuracoes.gerenciar",
   AUDITORIA_ACESSAR: "auditoria.acessar",
+  RESPOSTAS_RAPIDAS_GERENCIAR: "respostas_rapidas.gerenciar",
 } as const;
 export type Permission = (typeof PERMISSION)[keyof typeof PERMISSION];
 
@@ -321,6 +334,14 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     description: "Visualizar o histórico de ações realizadas no sistema.",
     editableRoles: ["AGENT", "MANAGER"],
     defaultAllowed: { AGENT: false, MANAGER: false },
+  },
+  {
+    key: PERMISSION.RESPOSTAS_RAPIDAS_GERENCIAR,
+    group: "Respostas Rápidas",
+    label: "Gerenciar respostas rápidas",
+    description: "Cadastrar, editar e excluir as respostas rápidas acionadas no atendimento digitando \"/\".",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
   },
 ];
 

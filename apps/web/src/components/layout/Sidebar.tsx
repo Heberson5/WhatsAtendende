@@ -12,6 +12,7 @@ import {
   ChevronLeft,
   ChevronRight,
   X,
+  Slash,
 } from "lucide-react";
 import { PERMISSION, type Permission } from "@whatsatendende/types";
 import { useAuthStore } from "../../store/auth-store";
@@ -33,6 +34,7 @@ const MENU_ITEMS: MenuItem[] = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, permission: PERMISSION.DASHBOARD_ACESSAR },
   { to: "/relatorios", label: "Relatórios", icon: FileBarChart, permission: PERMISSION.RELATORIOS_ACESSAR },
   { to: "/usuarios", label: "Usuários", icon: Users, permission: PERMISSION.USUARIOS_GERENCIAR },
+  { to: "/respostas-rapidas", label: "Respostas Rápidas", icon: Slash, permission: PERMISSION.RESPOSTAS_RAPIDAS_GERENCIAR },
   { to: "/configuracoes", label: "Configurações", icon: Settings, permission: PERMISSION.CONFIGURACOES_GERENCIAR },
   { to: "/auditoria", label: "Auditoria", icon: ScrollText, permission: PERMISSION.AUDITORIA_ACESSAR },
 ];

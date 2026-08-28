@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ArrowLeft, ArrowRightLeft, CheckCircle2, ChevronDown, ChevronUp, Phone, Search, X as CloseIcon } from "lucide-react";
-import { PERMISSION, type ConversationListItemDTO, type MessageDTO, type PaginatedResult } from "@whatsatendende/types";
+import { PERMISSION, type ConversationListItemDTO, type MessageDTO, type PaginatedResult, type QuickReplyDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { getSocket } from "../../lib/socket";
 import { useAuthStore } from "../../store/auth-store";
@@ -81,6 +81,15 @@ export function ChatPanel({
   const markReadMutation = useMutation({
     mutationFn: () => api.post(`/conversations/${conversation.id}/read`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["mine"] }),
+  });
+
+  // Powers the "/" quick-reply picker in the Composer — scoped server-side
+  // to this conversation's WhatsApp connection (see quick-replies.routes.ts),
+  // so the same list an admin can also see doesn't leak across connections.
+  const quickRepliesQuery = useQuery({
+    queryKey: ["quick-replies", "conversation", conversation.id],
+    queryFn: async () => (await api.get<QuickReplyDTO[]>(`/quick-replies/conversation/${conversation.id}`)).data,
+    staleTime: 60_000,
   });
 
   useEffect(() => {
@@ -477,6 +486,7 @@ export function ChatPanel({
 
       <Composer
         disabled={sendTextMutation.isPending}
+        quickReplies={quickRepliesQuery.data}
         replyTo={replyTo}
         onCancelReply={() => setReplyTo(null)}
         onSendText={async (text, replyToMessageId) => {
