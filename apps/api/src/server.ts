@@ -10,6 +10,15 @@ import { prisma } from "./lib/prisma";
 const TRANSFER_SWEEP_INTERVAL_MS = 5 * 60 * 1000; // see PROMPT: revert an unaccepted offline transfer after 2h
 
 async function main() {
+  // Presence is otherwise only ever kept correct by live socket connections
+  // (see socket-server.ts) — but this process's own in-memory tracking of
+  // those starts empty on every boot, so a row left ONLINE by a previous
+  // process that didn't get to shut down cleanly (a crash, a host reboot)
+  // would otherwise sit there forever with nothing to ever correct it.
+  // Anyone actually still connected reconnects their socket within moments
+  // of this process coming up and gets marked ONLINE again right away.
+  await prisma.user.updateMany({ where: { presence: { not: "OFFLINE" } }, data: { presence: "OFFLINE" } });
+
   const app = createApp();
   const httpServer = http.createServer(app);
   createSocketServer(httpServer);
