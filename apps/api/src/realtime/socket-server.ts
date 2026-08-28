@@ -3,6 +3,7 @@ import { Server as SocketIOServer } from "socket.io";
 import { verifyAccessToken } from "../modules/auth/jwt";
 import { env } from "../config/env";
 import { setIO, ROOMS } from "./realtime";
+import { registerConnection, registerDisconnection } from "./presence-tracker";
 import { logger } from "../lib/logger";
 import { prisma } from "../lib/prisma";
 
@@ -30,6 +31,10 @@ export function createSocketServer(httpServer: HttpServer): SocketIOServer {
   io.on("connection", async (socket) => {
     const auth = socket.data.auth as { userId: string; role: string };
     socket.join(ROOMS.user(auth.userId));
+
+    await registerConnection(auth.userId, socket.id);
+    socket.on("disconnect", () => registerDisconnection(auth.userId, socket.id));
+
     if (auth.role === "AGENT") {
       // Looked up fresh on every connect (rather than trusted from the JWT)
       // so reassigning an agent to a different WhatsApp connection takes
