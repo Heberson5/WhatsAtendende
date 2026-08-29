@@ -96,8 +96,12 @@ export function EmailTemplatesPanel() {
 
   const previewHtml = useMemo(() => {
     if (!html) return "";
+    // Same absolute-URL shape the actual e-mail uses (see resolveLogoUrl in
+    // apps/api/src/lib/mail.ts) — a mail client has no page origin to
+    // resolve a relative src against, so the preview must match that
+    // instead of the relative path used elsewhere in the app (Sidebar, login).
     const logoHtml = branding?.logoUrl
-      ? `<img src="${branding.logoUrl}" alt="${branding.companyName}" width="160" style="display:block;border:0;max-width:160px;height:auto;">`
+      ? `<img src="${window.location.origin}${branding.logoUrl}" alt="${branding.companyName}" width="160" style="display:block;border:0;max-width:160px;height:auto;">`
       : `<strong style="font-family:Helvetica,Arial,sans-serif;font-size:20px;color:${branding?.primaryColor ?? "#0097B4"};">${branding?.companyName ?? "Sua empresa"}</strong>`;
     const vars: Record<string, string> = {
       empresa: branding?.companyName ?? "Sua empresa",

@@ -179,7 +179,7 @@ function baseTemplateHtml(titleText: string, bodyHtml: string): string {
             </td>
           </tr>
           <tr>
-            <td style="padding:20px 32px 32px; font-family:Helvetica,Arial,sans-serif; font-size:14px; line-height:24px; color:#2E363F;">
+            <td style="padding:20px 32px 32px; font-family:Helvetica,Arial,sans-serif; font-size:14px; line-height:24px; color:#2E363F; text-align:justify;">
               ${bodyHtml}
             </td>
           </tr>
