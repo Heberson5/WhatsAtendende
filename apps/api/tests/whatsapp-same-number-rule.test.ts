@@ -65,4 +65,35 @@ describe("a connection can only ever be re-paired with the phone number it was f
     expect(connection.state).toBe("CONNECTED");
     expect(connection.connectedNumber).toBe("5511900001111");
   }, 15000);
+
+  it("refuses to link a number that's already the linked number of a different connection, leaving that other connection untouched", async () => {
+    await resetDatabase();
+    await createTestUser({ email: "admin-dupnumber@test.dev", role: "ADMIN" });
+    const token = await loginAs("admin-dupnumber@test.dev");
+
+    const vendas = await request(app).post("/api/whatsapp/connections").set("Authorization", `Bearer ${token}`).send({ name: "Vendas" });
+    await request(app)
+      .post(`/api/whatsapp/connections/${vendas.body.id}/connect`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ phoneNumber: "5511900003333" });
+    let vendasConnection = await waitForState(app, token, vendas.body.id, 2200);
+    expect(vendasConnection.state).toBe("CONNECTED");
+    expect(vendasConnection.linkedNumber).toBe("5511900003333");
+
+    // A second, brand-new connection tries to pair with the SAME real number.
+    const suporte = await request(app).post("/api/whatsapp/connections").set("Authorization", `Bearer ${token}`).send({ name: "Suporte2" });
+    await request(app)
+      .post(`/api/whatsapp/connections/${suporte.body.id}/connect`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ phoneNumber: "5511900003333" });
+    const suporteConnection = await waitForState(app, token, suporte.body.id, 2200);
+
+    expect(suporteConnection.state).not.toBe("CONNECTED");
+    expect(suporteConnection.linkedNumber).toBeNull();
+
+    // "Vendas" — already legitimately linked first — must be completely unaffected.
+    vendasConnection = await waitForState(app, token, vendas.body.id, 0);
+    expect(vendasConnection.state).toBe("CONNECTED");
+    expect(vendasConnection.linkedNumber).toBe("5511900003333");
+  }, 15000);
 });

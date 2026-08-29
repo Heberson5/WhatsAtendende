@@ -62,11 +62,12 @@ export function WhatsAppConnectionPanel() {
     const socket = getSocket();
     if (!socket) return;
     const handler = () => queryClient.invalidateQueries({ queryKey: ["whatsapp-connections"] });
-    const rejectionHandler = (payload: { expectedNumber: string; gotNumber: string }) => {
-      toast.error(
-        `Número diferente do original — vinculação recusada. Esta conexão já esteve vinculada ao número ${payload.expectedNumber}; o número ${payload.gotNumber} foi desconectado automaticamente. Escaneie/vincule com o número original.`,
-        { duration: 10000 }
-      );
+    const rejectionHandler = (payload: { scannedNumber: string; reason: "MISMATCH" | "ALREADY_LINKED"; expectedNumber?: string; otherConnectionName?: string }) => {
+      const message =
+        payload.reason === "ALREADY_LINKED"
+          ? `Número já vinculado a outra conexão — vinculação recusada. O número ${payload.scannedNumber} já está vinculado à conexão "${payload.otherConnectionName}". Um mesmo número de WhatsApp não pode estar em duas conexões ao mesmo tempo — foi desconectado automaticamente.`
+          : `Número diferente do original — vinculação recusada. Esta conexão já esteve vinculada ao número ${payload.expectedNumber}; o número ${payload.scannedNumber} foi desconectado automaticamente. Escaneie/vincule com o número original.`;
+      toast.error(message, { duration: 10000 });
       queryClient.invalidateQueries({ queryKey: ["whatsapp-connections"] });
     };
     socket.on("whatsapp:status", handler);

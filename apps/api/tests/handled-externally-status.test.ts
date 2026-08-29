@@ -47,6 +47,37 @@ describe("reading a conversation from the linked phone (markConversationReadFrom
     expect(updated.assignedAgentReadAt).not.toBeNull();
   });
 
+  it("moves a still-queued (WAITING) conversation to HANDLED_EXTERNALLY when replied to from the linked phone, same as reading it", async () => {
+    const { contact, conversation } = await createWaitingConversation("5511990006666", connectionId);
+
+    const result = await conversationsService.findOrOpenConversationForDeviceSentMessage(connectionId, contact.id);
+    expect(result.isNewConversation).toBe(false);
+    expect(result.leftQueue).toBe(true);
+    expect(result.conversation.id).toBe(conversation.id);
+    expect(result.conversation.status).toBe("HANDLED_EXTERNALLY");
+    expect(result.conversation.assignedAgentId).toBeNull();
+    expect(result.conversation.assignedAgentReadAt).not.toBeNull();
+
+    const queue = await conversationsService.listQueue([connectionId]);
+    expect(queue.find((c) => c.id === conversation.id)).toBeUndefined();
+
+    const event = await prisma.conversationEvent.findFirst({ where: { conversationId: conversation.id, type: "HANDLED_EXTERNALLY" } });
+    expect(event).not.toBeNull();
+  });
+
+  it("leaves an already-assigned (IN_PROGRESS) conversation's status alone when replied to from the phone — only refreshes the read marker", async () => {
+    const { contact, conversation } = await createWaitingConversation("5511990005555", connectionId);
+    const agent = await createTestUser({ email: "agente-devicereply@test.dev", role: "AGENT", whatsappConnectionId: connectionId });
+    await conversationsService.acceptConversation(conversation.id, agent.id);
+
+    const result = await conversationsService.findOrOpenConversationForDeviceSentMessage(connectionId, contact.id);
+    expect(result.isNewConversation).toBe(false);
+    expect(result.leftQueue).toBe(false);
+    expect(result.conversation.status).toBe("IN_PROGRESS");
+    expect(result.conversation.assignedAgentId).toBe(agent.id);
+    expect(result.conversation.assignedAgentReadAt).not.toBeNull();
+  });
+
   it("a further message from the same contact after HANDLED_EXTERNALLY starts a brand-new conversation, same as CLOSED", async () => {
     const { contact, conversation } = await createWaitingConversation("5511990009999", connectionId);
     await conversationsService.markConversationReadFromDevice(conversation.id);
