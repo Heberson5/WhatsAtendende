@@ -1,7 +1,14 @@
 import nodemailer from "nodemailer";
 import { logger } from "./logger";
 import { env } from "../config/env";
-import { getEmailSettings, getEmailTemplates, getBranding, type EmailTemplateType } from "../modules/settings/settings.service";
+import {
+  getEmailSettings,
+  getEmailTemplates,
+  getBranding,
+  renderEmailTemplateHtml,
+  type EmailTemplateType,
+  type EmailTemplateConfig,
+} from "../modules/settings/settings.service";
 
 export interface SendMailResult {
   sent: boolean;
@@ -63,21 +70,21 @@ function htmlToPlainText(html: string): string {
 }
 
 /**
- * Renders one of the system's configurable e-mail templates (Configurações >
- * Modelos de e-mail) with the given tag values and sends it. `vars` only
- * needs the tags specific to that template type (e.g. `nome`,
- * `link_redefinicao`) — the tags common to every template (empresa,
- * logo_html, cor_primaria, ano) are always resolved here from Identidade
- * visual, so every automatic e-mail stays on-brand without each caller
- * having to know about branding at all.
+ * Turns a template's plain-text fields (title/bodyText/buttonText — see
+ * renderEmailTemplateHtml) plus the given tag values into a ready-to-send
+ * subject + HTML. `vars` only needs the tags specific to that template type
+ * (e.g. `nome`, `link_redefinicao`) — the tags common to every template
+ * (empresa, logo_html, cor_primaria, ano) are always resolved here from
+ * Identidade visual. Shared by sendTemplatedMail (the real send) and
+ * previewTemplatedMail (the admin's live preview while editing), so both
+ * can never drift apart.
  */
-export async function sendTemplatedMail(type: EmailTemplateType, to: string, vars: Record<string, string>): Promise<SendMailResult> {
-  const [templates, branding] = await Promise.all([getEmailTemplates(), getBranding()]);
-  const template = templates[type];
-  if (!template.enabled) {
-    return { sent: false, reason: "Este e-mail está desativado em Configurações > Modelos de e-mail" };
-  }
-
+async function composeTemplatedMail(
+  type: EmailTemplateType,
+  template: Pick<EmailTemplateConfig, "subject" | "title" | "bodyText" | "buttonText">,
+  vars: Record<string, string>
+): Promise<{ subject: string; html: string }> {
+  const branding = await getBranding();
   const logoHtml = branding.logoUrl
     ? `<img src="${resolveLogoUrl(branding.logoUrl)}" alt="${branding.companyName}" width="160" style="display:block; border:0; max-width:160px; height:auto;">`
     : `<strong style="font-family:Helvetica,Arial,sans-serif; font-size:20px; color:${branding.primaryColor};">${branding.companyName}</strong>`;
@@ -90,7 +97,28 @@ export async function sendTemplatedMail(type: EmailTemplateType, to: string, var
     ...vars,
   };
 
-  const subject = renderTemplate(template.subject, allVars);
-  const html = renderTemplate(template.html, allVars);
+  return {
+    subject: renderTemplate(template.subject, allVars),
+    html: renderTemplate(renderEmailTemplateHtml(type, template), allVars),
+  };
+}
+
+/** Renders one of the system's configurable e-mail templates (Configurações > Modelos de e-mail) with the given tag values and sends it. See composeTemplatedMail for how `vars` is resolved. */
+export async function sendTemplatedMail(type: EmailTemplateType, to: string, vars: Record<string, string>): Promise<SendMailResult> {
+  const template = (await getEmailTemplates())[type];
+  if (!template.enabled) {
+    return { sent: false, reason: "Este e-mail está desativado em Configurações > Modelos de e-mail" };
+  }
+
+  const { subject, html } = await composeTemplatedMail(type, template, vars);
   return sendMail(to, subject, html, htmlToPlainText(html));
+}
+
+/** Renders a template with in-progress (possibly unsaved) field values — powers the live preview in Configurações > Modelos de e-mail without sending anything or touching what's stored. */
+export async function previewTemplatedMail(
+  type: EmailTemplateType,
+  draft: Pick<EmailTemplateConfig, "subject" | "title" | "bodyText" | "buttonText">,
+  vars: Record<string, string>
+): Promise<{ subject: string; html: string }> {
+  return composeTemplatedMail(type, draft, vars);
 }

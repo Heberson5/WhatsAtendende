@@ -10,7 +10,7 @@ import { requireAuth } from "../../middleware/auth";
 import { requirePermission } from "../../lib/permissions";
 import { PERMISSION } from "@whatsatendende/types";
 import { writeAudit } from "../../lib/audit";
-import { sendMail, sendTemplatedMail } from "../../lib/mail";
+import { sendMail, sendTemplatedMail, previewTemplatedMail } from "../../lib/mail";
 import { env } from "../../config/env";
 import * as service from "./settings.service";
 
@@ -228,7 +228,12 @@ settingsRouter.get(
   "/email-templates",
   requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
   asyncHandler(async (_req, res) => {
-    res.json({ templates: await service.getEmailTemplates(), tags: service.EMAIL_TEMPLATE_TAGS, commonTags: service.EMAIL_TEMPLATE_COMMON_TAGS });
+    res.json({
+      templates: await service.getEmailTemplates(),
+      tags: service.EMAIL_TEMPLATE_TAGS,
+      commonTags: service.EMAIL_TEMPLATE_COMMON_TAGS,
+      hasButton: service.EMAIL_TEMPLATE_HAS_BUTTON,
+    });
   })
 );
 
@@ -236,7 +241,10 @@ const emailTemplatePatchSchema = z
   .object({
     enabled: z.boolean().optional(),
     subject: z.string().min(1).max(200).optional(),
-    html: z.string().min(1).max(50_000).optional(),
+    title: z.string().min(1).max(200).optional(),
+    bodyText: z.string().min(1).max(20_000).optional(),
+    // Empty string is a valid value here — it's how the admin removes the button.
+    buttonText: z.string().max(100).optional(),
   })
   .strict();
 
@@ -253,9 +261,26 @@ settingsRouter.patch(
       entity: "SystemSetting",
       entityId: `emailTemplates:${type}`,
       ipAddress: req.ip ?? null,
-      metadata: { type, ...patch, html: patch.html ? "(alterado)" : undefined },
+      metadata: { type, ...patch, bodyText: patch.bodyText ? "(alterado)" : undefined },
     });
     res.json(templates);
+  })
+);
+
+const emailTemplatePreviewSchema = z.object({
+  subject: z.string().min(1).max(200),
+  title: z.string().min(1).max(200),
+  bodyText: z.string().min(1).max(20_000),
+  buttonText: z.string().max(100).optional().default(""),
+});
+
+settingsRouter.post(
+  "/email-templates/:type/preview",
+  requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
+  asyncHandler(async (req, res) => {
+    const type = emailTemplateTypeSchema.parse(req.params.type);
+    const draft = emailTemplatePreviewSchema.parse(req.body ?? {});
+    res.json(await previewTemplatedMail(type, draft, PREVIEW_SAMPLE_VARS[type]));
   })
 );
 

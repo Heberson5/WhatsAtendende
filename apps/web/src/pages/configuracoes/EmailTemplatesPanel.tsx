@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Send, Tag } from "lucide-react";
@@ -9,7 +9,9 @@ type EmailTemplateType = "PASSWORD_RESET" | "USER_WELCOME" | "USER_DEACTIVATED" 
 interface EmailTemplateConfig {
   enabled: boolean;
   subject: string;
-  html: string;
+  title: string;
+  bodyText: string;
+  buttonText: string;
 }
 
 interface TagInfo {
@@ -21,12 +23,7 @@ interface EmailTemplatesResponse {
   templates: Record<EmailTemplateType, EmailTemplateConfig>;
   tags: Record<EmailTemplateType, TagInfo[]>;
   commonTags: TagInfo[];
-}
-
-interface BrandingSummary {
-  companyName: string;
-  primaryColor: string;
-  logoUrl: string | null;
+  hasButton: Record<EmailTemplateType, boolean>;
 }
 
 const TYPE_LABEL: Record<EmailTemplateType, string> = {
@@ -43,18 +40,7 @@ const TYPE_HELP: Record<EmailTemplateType, string> = {
   PASSWORD_CHANGED: "Enviado automaticamente sempre que a senha é alterada — pela redefinição (esqueci minha senha) ou pelo próprio usuário em Meu Perfil.",
 };
 
-// Mirrors PREVIEW_SAMPLE_VARS on the backend — same fake values, so the
-// in-app preview matches what "Enviar teste" actually delivers.
-const PREVIEW_VARS: Record<EmailTemplateType, Record<string, string>> = {
-  PASSWORD_RESET: { nome: "Maria Souza", link_redefinicao: "https://exemplo.com/reset-password?token=amostra" },
-  USER_WELCOME: { nome: "João Pereira", email: "joao.pereira@exemplo.com", link_login: "https://exemplo.com/login" },
-  USER_DEACTIVATED: { nome: "Carlos Lima" },
-  PASSWORD_CHANGED: { nome: "Ana Torres" },
-};
-
-function renderTemplate(source: string, vars: Record<string, string>): string {
-  return source.replace(/\{\{(\w+)\}\}/g, (_match, key: string) => vars[key] ?? "");
-}
+type FocusableField = "subject" | "title" | "bodyText";
 
 export function EmailTemplatesPanel() {
   const queryClient = useQueryClient();
@@ -64,26 +50,30 @@ export function EmailTemplatesPanel() {
     queryKey: ["email-templates"],
     queryFn: async () => (await api.get<EmailTemplatesResponse>("/settings/email-templates")).data,
   });
-  const { data: branding } = useQuery({
-    queryKey: ["branding"],
-    queryFn: async () => (await api.get<BrandingSummary>("/settings/branding")).data,
-  });
 
   const [enabled, setEnabled] = useState(true);
   const [subject, setSubject] = useState("");
-  const [html, setHtml] = useState("");
+  const [title, setTitle] = useState("");
+  const [bodyText, setBodyText] = useState("");
+  const [buttonText, setButtonText] = useState("");
   const [testTo, setTestTo] = useState("");
+  // Which field "Tags disponíveis" inserts into — whichever the admin last clicked into.
+  const [lastFocusedField, setLastFocusedField] = useState<FocusableField>("bodyText");
 
   const current = data?.templates[type];
+  const hasButton = data?.hasButton[type] ?? false;
+
   useEffect(() => {
     if (!current) return;
     setEnabled(current.enabled);
     setSubject(current.subject);
-    setHtml(current.html);
+    setTitle(current.title);
+    setBodyText(current.bodyText);
+    setButtonText(current.buttonText);
   }, [current, type]);
 
   const saveMutation = useMutation({
-    mutationFn: () => api.patch(`/settings/email-templates/${type}`, { enabled, subject, html }),
+    mutationFn: () => api.patch(`/settings/email-templates/${type}`, { enabled, subject, title, bodyText, buttonText }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["email-templates"] });
       toast.success("Modelo de e-mail salvo.");
@@ -97,29 +87,31 @@ export function EmailTemplatesPanel() {
     onError: (err) => toast.error(getApiErrorMessage(err, "Falha ao enviar e-mail de teste")),
   });
 
-  const previewHtml = useMemo(() => {
-    if (!html) return "";
-    // Same absolute-URL shape the actual e-mail uses (see resolveLogoUrl in
-    // apps/api/src/lib/mail.ts) — a mail client has no page origin to
-    // resolve a relative src against, so the preview must match that
-    // instead of the relative path used elsewhere in the app (Sidebar, login).
-    const logoHtml = branding?.logoUrl
-      ? `<img src="${window.location.origin}${branding.logoUrl}" alt="${branding.companyName}" width="160" style="display:block;border:0;max-width:160px;height:auto;">`
-      : `<strong style="font-family:Helvetica,Arial,sans-serif;font-size:20px;color:${branding?.primaryColor ?? "#0097B4"};">${branding?.companyName ?? "Sua empresa"}</strong>`;
-    const vars: Record<string, string> = {
-      empresa: branding?.companyName ?? "Sua empresa",
-      logo_html: logoHtml,
-      cor_primaria: branding?.primaryColor ?? "#0097B4",
-      ano: String(new Date().getFullYear()),
-      ...PREVIEW_VARS[type],
-    };
-    return renderTemplate(html, vars);
-  }, [html, branding, type]);
+  // The real markup (layout, logo, button styling) only lives on the
+  // backend now (renderEmailTemplateHtml) — no HTML for the admin to touch
+  // — so the preview asks the server to render it from the current field
+  // values, debounced so it doesn't fire on every keystroke.
+  const [previewHtml, setPreviewHtml] = useState("");
+  useEffect(() => {
+    if (!title.trim() || !bodyText.trim()) {
+      setPreviewHtml("");
+      return;
+    }
+    const timer = setTimeout(() => {
+      api
+        .post<{ subject: string; html: string }>(`/settings/email-templates/${type}/preview`, { subject, title, bodyText, buttonText })
+        .then((res) => setPreviewHtml(res.data.html))
+        .catch(() => undefined); // best-effort — a transient failure just leaves the last preview showing
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [type, subject, title, bodyText, buttonText]);
 
   const tagList = [...(data?.tags[type] ?? []), ...(data?.commonTags ?? [])];
 
   function insertTag(tag: string) {
-    setHtml((prev) => prev + tag);
+    if (lastFocusedField === "subject") setSubject((prev) => prev + tag);
+    else if (lastFocusedField === "title") setTitle((prev) => prev + tag);
+    else setBodyText((prev) => prev + tag);
   }
 
   return (
@@ -153,24 +145,49 @@ export function EmailTemplatesPanel() {
             <input
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
+              onFocus={() => setLastFocusedField("subject")}
               className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm"
             />
           </label>
 
           <label className="block">
-            <span className="mb-1 block text-sm font-medium">HTML do e-mail</span>
-            <textarea
-              value={html}
-              onChange={(e) => setHtml(e.target.value)}
-              rows={16}
-              spellCheck={false}
-              className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 font-mono text-xs"
+            <span className="mb-1 block text-sm font-medium">Título</span>
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              onFocus={() => setLastFocusedField("title")}
+              placeholder="Aparece em destaque no topo do e-mail"
+              className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm"
             />
           </label>
 
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium">Texto do e-mail</span>
+            <textarea
+              value={bodyText}
+              onChange={(e) => setBodyText(e.target.value)}
+              onFocus={() => setLastFocusedField("bodyText")}
+              rows={10}
+              className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm"
+            />
+            <span className="mt-1 block text-xs text-muted">Deixe uma linha em branco para começar um novo parágrafo.</span>
+          </label>
+
+          {hasButton && (
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium">Texto do botão</span>
+              <input
+                value={buttonText}
+                onChange={(e) => setButtonText(e.target.value)}
+                placeholder="Deixe em branco para não mostrar nenhum botão"
+                className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm"
+              />
+            </label>
+          )}
+
           <div>
             <p className="mb-2 flex items-center gap-1.5 text-sm font-medium">
-              <Tag className="h-3.5 w-3.5" /> Tags disponíveis (clique para inserir no final do HTML)
+              <Tag className="h-3.5 w-3.5" /> Tags disponíveis (clique para inserir no campo selecionado)
             </p>
             <div className="flex flex-wrap gap-1.5">
               {tagList.map((t) => (
