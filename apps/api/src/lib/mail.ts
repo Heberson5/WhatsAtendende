@@ -41,6 +41,11 @@ export async function sendMail(to: string, subject: string, html: string, text: 
   }
 }
 
+/** Joins the configured web app URL with the branding logo's stored relative path (`/uploads/branding/...`), guarding against a double slash if `WEB_APP_URL` has a trailing one. Mail clients have no page origin to resolve a relative `src` against, so this must always be absolute — unlike the in-app logo (Sidebar, login, etc.), which uses the relative path as-is since it's already rendered from the app's own origin. */
+function resolveLogoUrl(logoUrl: string): string {
+  return `${env.WEB_APP_URL.replace(/\/$/, "")}${logoUrl}`;
+}
+
 function renderTemplate(source: string, vars: Record<string, string>): string {
   return source.replace(/\{\{(\w+)\}\}/g, (_match, key: string) => vars[key] ?? "");
 }
@@ -74,7 +79,7 @@ export async function sendTemplatedMail(type: EmailTemplateType, to: string, var
   }
 
   const logoHtml = branding.logoUrl
-    ? `<img src="${env.WEB_APP_URL}${branding.logoUrl}" alt="${branding.companyName}" width="160" style="display:block; border:0; max-width:160px; height:auto;">`
+    ? `<img src="${resolveLogoUrl(branding.logoUrl)}" alt="${branding.companyName}" width="160" style="display:block; border:0; max-width:160px; height:auto;">`
     : `<strong style="font-family:Helvetica,Arial,sans-serif; font-size:20px; color:${branding.primaryColor};">${branding.companyName}</strong>`;
 
   const allVars: Record<string, string> = {
