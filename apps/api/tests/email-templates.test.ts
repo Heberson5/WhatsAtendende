@@ -48,33 +48,66 @@ describe("e-mail de modelos automáticos (redefinição de senha, boas-vindas, c
     await prisma.$disconnect();
   });
 
-  it("traz os 4 modelos com valores padrão sensatos, todos habilitados", async () => {
+  it("traz os 4 modelos com valores padrão sensatos, todos habilitados, editáveis como texto puro (sem HTML)", async () => {
     const templates = await settingsService.getEmailTemplates();
     expect(Object.keys(templates).sort()).toEqual(["PASSWORD_CHANGED", "PASSWORD_RESET", "USER_DEACTIVATED", "USER_WELCOME"].sort());
     for (const type of ["PASSWORD_RESET", "USER_WELCOME", "USER_DEACTIVATED", "PASSWORD_CHANGED"] as const) {
       expect(templates[type].enabled).toBe(true);
       expect(templates[type].subject.length).toBeGreaterThan(0);
-      expect(templates[type].html).toContain("{{empresa}}");
+      expect(templates[type].title.length).toBeGreaterThan(0);
+      expect(templates[type].bodyText).not.toContain("<p>"); // plain text, not markup
+      // renderEmailTemplateHtml is what turns the plain-text fields into the
+      // actual markup — used both by mail.ts and the admin's live preview.
+      expect(settingsService.renderEmailTemplateHtml(type, templates[type])).toContain("{{empresa}}");
     }
-    expect(templates.PASSWORD_RESET.html).toContain("{{link_redefinicao}}");
-    expect(templates.USER_WELCOME.html).toContain("{{link_login}}");
+    expect(templates.PASSWORD_RESET.buttonText.length).toBeGreaterThan(0);
+    expect(settingsService.renderEmailTemplateHtml("PASSWORD_RESET", templates.PASSWORD_RESET)).toContain("{{link_redefinicao}}");
+    expect(templates.USER_WELCOME.buttonText.length).toBeGreaterThan(0);
+    expect(settingsService.renderEmailTemplateHtml("USER_WELCOME", templates.USER_WELCOME)).toContain("{{link_login}}");
+    // No button field is meaningful for these two — nothing renders even if buttonText were set.
+    expect(templates.USER_DEACTIVATED.buttonText).toBe("");
+    expect(templates.PASSWORD_CHANGED.buttonText).toBe("");
   });
 
-  it("persiste um patch (assunto, html, ativo) e o retorna depois", async () => {
+  it("persiste um patch (assunto, título, texto, botão, ativo) e o retorna depois", async () => {
     await settingsService.updateEmailTemplate("PASSWORD_RESET", {
       enabled: false,
       subject: "Assunto customizado",
-      html: "<p>{{nome}} - {{link_redefinicao}}</p>",
+      title: "Título customizado",
+      bodyText: "Olá, {{nome}}.\n\nUse o link: {{link_redefinicao}}",
+      buttonText: "Trocar senha",
     });
 
     const templates = await settingsService.getEmailTemplates();
     expect(templates.PASSWORD_RESET).toEqual({
       enabled: false,
       subject: "Assunto customizado",
-      html: "<p>{{nome}} - {{link_redefinicao}}</p>",
+      title: "Título customizado",
+      bodyText: "Olá, {{nome}}.\n\nUse o link: {{link_redefinicao}}",
+      buttonText: "Trocar senha",
     });
-    // The other two templates are untouched by a patch to one type.
+    // The other templates are untouched by a patch to one type.
     expect(templates.USER_WELCOME.enabled).toBe(true);
+  });
+
+  it("um texto sem botão configurado (buttonText vazio) não gera nenhum link/botão no HTML renderizado", async () => {
+    await settingsService.updateEmailTemplate("PASSWORD_RESET", { buttonText: "" });
+    const templates = await settingsService.getEmailTemplates();
+    const html = settingsService.renderEmailTemplateHtml("PASSWORD_RESET", templates.PASSWORD_RESET);
+    expect(html).not.toContain("{{link_redefinicao}}");
+    expect(html).not.toContain("<a href");
+  });
+
+  it("escapa caracteres HTML digitados no título/texto, para o admin não precisar entender HTML", async () => {
+    await settingsService.updateEmailTemplate("USER_DEACTIVATED", {
+      title: "Tí<tulo> & \"especial\"",
+      bodyText: "Texto com <script>alert(1)</script> & aspas \"assim\".",
+    });
+    const templates = await settingsService.getEmailTemplates();
+    const html = settingsService.renderEmailTemplateHtml("USER_DEACTIVATED", templates.USER_DEACTIVATED);
+    expect(html).not.toContain("<script>");
+    expect(html).toContain("&lt;script&gt;");
+    expect(html).toContain("Tí&lt;tulo&gt; &amp; &quot;especial&quot;");
   });
 
   it("envia o e-mail de boas-vindas ao criar um usuário, com as tags substituídas", async () => {
@@ -214,6 +247,17 @@ describe("e-mail de modelos automáticos (redefinição de senha, boas-vindas, c
     expect(listed.body.templates.PASSWORD_RESET.enabled).toBe(true);
     expect(listed.body.tags.PASSWORD_RESET.some((t: { tag: string }) => t.tag === "{{link_redefinicao}}")).toBe(true);
     expect(listed.body.commonTags.some((t: { tag: string }) => t.tag === "{{empresa}}")).toBe(true);
+    expect(listed.body.hasButton).toEqual({ PASSWORD_RESET: true, USER_WELCOME: true, USER_DEACTIVATED: false, PASSWORD_CHANGED: false });
+
+    const previewed = await request(app)
+      .post("/api/settings/email-templates/PASSWORD_RESET/preview")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ subject: "Assunto {{empresa}}", title: "Título de teste", bodyText: "Olá, {{nome}}.", buttonText: "Clique aqui" });
+    expect(previewed.status).toBe(200);
+    expect(previewed.body.subject).not.toContain("{{"); // {{empresa}} resolved from Identidade visual
+    expect(previewed.body.html).toContain("Título de teste");
+    expect(previewed.body.html).toContain("Clique aqui");
+    expect(previewed.body.html).toContain("Maria Souza"); // PREVIEW_SAMPLE_VARS.PASSWORD_RESET.nome
 
     const patched = await request(app)
       .patch("/api/settings/email-templates/USER_DEACTIVATED")

@@ -136,21 +136,68 @@ export async function updateEmailSettings(patch: Partial<EmailSettings>): Promis
 }
 
 // ---------------------------------------------------------------------------
-// E-mail templates (HTML + subject + on/off) for the system's automatic
-// e-mails — password reset, new-user welcome, account-deactivated notice.
+// E-mail templates (title + body text + subject + on/off, edited as plain
+// text — no HTML) for the system's automatic e-mails: password reset,
+// new-user welcome, account-deactivated notice, password-changed confirmation.
 // ---------------------------------------------------------------------------
 
 export type EmailTemplateType = "PASSWORD_RESET" | "USER_WELCOME" | "USER_DEACTIVATED" | "PASSWORD_CHANGED";
 
+// Plain-text fields only — no HTML editing. The admin types a title, the
+// message body (a blank line starts a new paragraph) and, for the 2
+// templates that carry a call-to-action link, the button's label; the actual
+// markup (layout, logo, colors, button styling) is always generated from
+// these by renderEmailTemplateHtml, so nobody who isn't comfortable reading
+// HTML has to touch it.
 export interface EmailTemplateConfig {
   enabled: boolean;
   subject: string;
-  html: string;
+  title: string;
+  bodyText: string;
+  /** Empty string = no button shown. Only meaningful for a type present in EMAIL_TEMPLATE_BUTTON_LINK_TAG. */
+  buttonText: string;
 }
 
 export type EmailTemplatesSettings = Record<EmailTemplateType, EmailTemplateConfig>;
 
 const EMAIL_TEMPLATES_KEY = "emailTemplates";
+
+/** The tag (without braces) each template's button links to — a type with no entry here never shows a button field at all. */
+const EMAIL_TEMPLATE_BUTTON_LINK_TAG: Partial<Record<EmailTemplateType, string>> = {
+  PASSWORD_RESET: "link_redefinicao",
+  USER_WELCOME: "link_login",
+};
+
+export const EMAIL_TEMPLATE_HAS_BUTTON: Record<EmailTemplateType, boolean> = {
+  PASSWORD_RESET: true,
+  USER_WELCOME: true,
+  USER_DEACTIVATED: false,
+  PASSWORD_CHANGED: false,
+};
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+/** A blank line starts a new `<p>`; a single line break inside a paragraph becomes `<br>`. `{{tags}}` pass through untouched (braces/letters need no escaping) so they still get resolved later by renderTemplate in mail.ts. */
+function renderBodyParagraphs(bodyText: string): string {
+  return bodyText
+    .split(/\n\s*\n/)
+    .map((block) => block.trim())
+    .filter(Boolean)
+    .map((block) => `<p>${escapeHtml(block).replace(/\n/g, "<br>")}</p>`)
+    .join("\n");
+}
+
+/** Builds the full send-ready HTML for a template from its plain-text fields — the single place that turns title/bodyText/buttonText into markup, used both when actually sending (mail.ts) and for the admin's live preview, so the two can never drift apart. */
+export function renderEmailTemplateHtml(type: EmailTemplateType, config: Pick<EmailTemplateConfig, "title" | "bodyText" | "buttonText">): string {
+  const linkTag = EMAIL_TEMPLATE_BUTTON_LINK_TAG[type];
+  const buttonHtml =
+    config.buttonText.trim() && linkTag
+      ? `<p style="text-align:center; padding:16px 0 0;"><a href="{{${linkTag}}}" style="display:inline-block; background-color:{{cor_primaria}}; color:#ffffff; text-decoration:none; padding:12px 28px; border-radius:6px; font-weight:600;">${escapeHtml(config.buttonText.trim())}</a></p>`
+      : "";
+  return baseTemplateHtml(escapeHtml(config.title), renderBodyParagraphs(config.bodyText) + buttonHtml);
+}
 
 // Shared table-based layout (works in Outlook/Gmail/etc, unlike flexbox/grid
 // e-mail markup) — {{logo_html}}/{{empresa}}/{{cor_primaria}}/{{ano}} are
@@ -200,44 +247,33 @@ const DEFAULT_EMAIL_TEMPLATES: EmailTemplatesSettings = {
   PASSWORD_RESET: {
     enabled: true,
     subject: "Redefinição de senha - {{empresa}}",
-    html: baseTemplateHtml(
-      "Redefinição de senha",
-      `<p>Olá, {{nome}}.</p>
-       <p>Recebemos uma solicitação para redefinir a senha da sua conta. Clique no botão abaixo para continuar (o link é válido por 1 hora):</p>
-       <p style="text-align:center; padding:12px 0;"><a href="{{link_redefinicao}}" style="display:inline-block; background-color:{{cor_primaria}}; color:#ffffff; text-decoration:none; padding:12px 28px; border-radius:6px; font-weight:600;">Redefinir senha</a></p>
-       <p style="font-size:12px; color:#9AA1A9;">Se o botão não funcionar, copie e cole este link no navegador: {{link_redefinicao}}</p>
-       <p>Se você não solicitou essa alteração, ignore este e-mail — sua senha permanece a mesma.</p>`
-    ),
+    title: "Redefinição de senha",
+    bodyText:
+      "Olá, {{nome}}.\n\nRecebemos uma solicitação para redefinir a senha da sua conta. Clique no botão abaixo para continuar (o link é válido por 1 hora).\n\nSe você não solicitou essa alteração, ignore este e-mail — sua senha permanece a mesma.",
+    buttonText: "Redefinir senha",
   },
   USER_WELCOME: {
     enabled: true,
     subject: "Bem-vindo(a) à {{empresa}}",
-    html: baseTemplateHtml(
-      "Bem-vindo(a)!",
-      `<p>Olá, {{nome}}.</p>
-       <p>Sua conta foi criada em {{empresa}}. Você já pode acessar a plataforma com o e-mail <strong>{{email}}</strong>.</p>
-       <p style="text-align:center; padding:12px 0;"><a href="{{link_login}}" style="display:inline-block; background-color:{{cor_primaria}}; color:#ffffff; text-decoration:none; padding:12px 28px; border-radius:6px; font-weight:600;">Acessar plataforma</a></p>`
-    ),
+    title: "Bem-vindo(a)!",
+    bodyText: "Olá, {{nome}}.\n\nSua conta foi criada em {{empresa}}. Você já pode acessar a plataforma com o e-mail {{email}}.",
+    buttonText: "Acessar plataforma",
   },
   USER_DEACTIVATED: {
     enabled: true,
     subject: "Sua conta foi desativada - {{empresa}}",
-    html: baseTemplateHtml(
-      "Conta desativada",
-      `<p>Olá, {{nome}}.</p>
-       <p>Sua conta em {{empresa}} foi desativada por um administrador. Se você acredita que isso é um engano, entre em contato com o time responsável.</p>`
-    ),
+    title: "Conta desativada",
+    bodyText:
+      "Olá, {{nome}}.\n\nSua conta em {{empresa}} foi desativada por um administrador. Se você acredita que isso é um engano, entre em contato com o time responsável.",
+    buttonText: "",
   },
   PASSWORD_CHANGED: {
     enabled: true,
     subject: "Sua senha foi alterada - {{empresa}}",
-    html: baseTemplateHtml(
-      "Senha alterada",
-      `<p>Olá, {{nome}}.</p>
-       <p>Confirmamos que a senha da sua conta em {{empresa}} foi alterada com sucesso.</p>
-       <p>Se foi você quem fez essa alteração, nenhuma ação é necessária.</p>
-       <p>Se você não reconhece essa alteração, entre em contato imediatamente com o administrador do sistema.</p>`
-    ),
+    title: "Senha alterada",
+    bodyText:
+      "Olá, {{nome}}.\n\nConfirmamos que a senha da sua conta em {{empresa}} foi alterada com sucesso.\n\nSe foi você quem fez essa alteração, nenhuma ação é necessária.\n\nSe você não reconhece essa alteração, entre em contato imediatamente com o administrador do sistema.",
+    buttonText: "",
   },
 };
 
