@@ -120,7 +120,7 @@ rem a parte para isso.
 rem =====================================================================
 :HARD_UPDATE_WHATSATENDENDE
 echo.
-echo [1/2] Sincronizando codigo (branch %BRANCH%)...
+echo [1/3] Sincronizando codigo (branch %BRANCH%)...
 ssh -i "%KEY%" %USER%@%IP% "cd %PROJETO% && echo === Commit ANTES da atualizacao === && git log -1 --oneline && git fetch origin && git checkout %BRANCH% && git reset --hard origin/%BRANCH% && echo === Commit DEPOIS da atualizacao === && git log -1 --oneline"
 if errorlevel 1 (
     echo.
@@ -130,7 +130,15 @@ if errorlevel 1 (
     exit /b 1
 )
 echo.
-echo [2/2] Reconstruindo e subindo os containers ^(pode demorar alguns minutos^)...
+rem Corrige em todo deploy (nao so no primeiro) um .env que ainda tenha
+rem ficado com o WEB_APP_URL antigo (http://IP:8080, de antes do dominio
+rem HTTPS existir) - sem isso o cookie de sessao nunca fica "Secure", o
+rem CORS pode rejeitar o dominio real, e os links/logo dos e-mails
+rem automaticos apontam para um endereco que ninguem de fora consegue abrir.
+echo [2/3] Conferindo WEB_APP_URL no .env da VPS...
+ssh -i "%KEY%" %USER%@%IP% "cd %PROJETO% && if [ -f .env ]; then if grep -q '^WEB_APP_URL=' .env; then if grep -qx 'WEB_APP_URL=%DOMINIO%' .env; then echo 'WEB_APP_URL ja esta correto.'; else sed -i 's#^WEB_APP_URL=.*#WEB_APP_URL=%DOMINIO%#' .env; echo 'WEB_APP_URL corrigido para %DOMINIO%.'; fi; else echo 'WEB_APP_URL=%DOMINIO%' >> .env; echo 'WEB_APP_URL adicionado ao .env (nao existia).'; fi; fi"
+echo.
+echo [3/3] Reconstruindo e subindo os containers ^(pode demorar alguns minutos^)...
 ssh -i "%KEY%" %USER%@%IP% "cd %PROJETO% && docker compose build && docker compose up -d --force-recreate --remove-orphans && docker image prune -f && echo === Containers - confira se o STATUS mostra Up ha poucos segundos === && docker compose ps"
 if errorlevel 1 (
     echo.
