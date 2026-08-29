@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { Send, Tag } from "lucide-react";
 import { api, getApiErrorMessage } from "../../lib/api";
 
-type EmailTemplateType = "PASSWORD_RESET" | "USER_WELCOME" | "USER_DEACTIVATED";
+type EmailTemplateType = "PASSWORD_RESET" | "USER_WELCOME" | "USER_DEACTIVATED" | "PASSWORD_CHANGED";
 
 interface EmailTemplateConfig {
   enabled: boolean;
@@ -33,12 +33,14 @@ const TYPE_LABEL: Record<EmailTemplateType, string> = {
   PASSWORD_RESET: "Redefinição de senha",
   USER_WELCOME: "Boas-vindas (novo usuário)",
   USER_DEACTIVATED: "Conta desativada",
+  PASSWORD_CHANGED: "Senha alterada",
 };
 
 const TYPE_HELP: Record<EmailTemplateType, string> = {
   PASSWORD_RESET: "Enviado quando um usuário pede para redefinir a senha.",
   USER_WELCOME: "Enviado automaticamente sempre que um novo usuário é criado em Usuários.",
   USER_DEACTIVATED: "Enviado automaticamente quando um usuário é desativado em Usuários.",
+  PASSWORD_CHANGED: "Enviado automaticamente sempre que a senha é alterada — pela redefinição (esqueci minha senha) ou pelo próprio usuário em Meu Perfil.",
 };
 
 // Mirrors PREVIEW_SAMPLE_VARS on the backend — same fake values, so the
@@ -47,6 +49,7 @@ const PREVIEW_VARS: Record<EmailTemplateType, Record<string, string>> = {
   PASSWORD_RESET: { nome: "Maria Souza", link_redefinicao: "https://exemplo.com/reset-password?token=amostra" },
   USER_WELCOME: { nome: "João Pereira", email: "joao.pereira@exemplo.com", link_login: "https://exemplo.com/login" },
   USER_DEACTIVATED: { nome: "Carlos Lima" },
+  PASSWORD_CHANGED: { nome: "Ana Torres" },
 };
 
 function renderTemplate(source: string, vars: Record<string, string>): string {

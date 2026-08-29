@@ -213,7 +213,7 @@ settingsRouter.post(
 // e-mails: password reset, new-user welcome, account-deactivated notice.
 // ---------------------------------------------------------------------------
 
-const emailTemplateTypeSchema = z.enum(["PASSWORD_RESET", "USER_WELCOME", "USER_DEACTIVATED"]);
+const emailTemplateTypeSchema = z.enum(["PASSWORD_RESET", "USER_WELCOME", "USER_DEACTIVATED", "PASSWORD_CHANGED"]);
 
 // Fake values for every tag the sample preview needs — same names sendTemplatedMail
 // resolves for real, so what the admin sees in "Pré-visualizar" matches what gets sent.
@@ -221,6 +221,7 @@ const PREVIEW_SAMPLE_VARS: Record<string, Record<string, string>> = {
   PASSWORD_RESET: { nome: "Maria Souza", link_redefinicao: "https://exemplo.com/reset-password?token=amostra" },
   USER_WELCOME: { nome: "João Pereira", email: "joao.pereira@exemplo.com", link_login: "https://exemplo.com/login" },
   USER_DEACTIVATED: { nome: "Carlos Lima" },
+  PASSWORD_CHANGED: { nome: "Ana Torres" },
 };
 
 settingsRouter.get(

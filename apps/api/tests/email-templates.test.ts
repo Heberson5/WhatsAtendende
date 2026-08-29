@@ -17,6 +17,7 @@ import { resetDatabase, createTestUser, TEST_PASSWORD } from "./helpers";
 import * as settingsService from "../src/modules/settings/settings.service";
 import * as usersService from "../src/modules/users/users.service";
 import * as authService from "../src/modules/auth/auth.service";
+import * as profileService from "../src/modules/profile/profile.service";
 
 const app = createApp();
 
@@ -47,10 +48,10 @@ describe("e-mail de modelos automáticos (redefinição de senha, boas-vindas, c
     await prisma.$disconnect();
   });
 
-  it("traz os 3 modelos com valores padrão sensatos, todos habilitados", async () => {
+  it("traz os 4 modelos com valores padrão sensatos, todos habilitados", async () => {
     const templates = await settingsService.getEmailTemplates();
-    expect(Object.keys(templates).sort()).toEqual(["PASSWORD_RESET", "USER_DEACTIVATED", "USER_WELCOME"].sort());
-    for (const type of ["PASSWORD_RESET", "USER_WELCOME", "USER_DEACTIVATED"] as const) {
+    expect(Object.keys(templates).sort()).toEqual(["PASSWORD_CHANGED", "PASSWORD_RESET", "USER_DEACTIVATED", "USER_WELCOME"].sort());
+    for (const type of ["PASSWORD_RESET", "USER_WELCOME", "USER_DEACTIVATED", "PASSWORD_CHANGED"] as const) {
       expect(templates[type].enabled).toBe(true);
       expect(templates[type].subject.length).toBeGreaterThan(0);
       expect(templates[type].html).toContain("{{empresa}}");
@@ -145,6 +146,44 @@ describe("e-mail de modelos automáticos (redefinição de senha, boas-vindas, c
     expect(mail.html).toContain(`token=${result!.token}`);
     expect(mail.html).not.toContain("{{nome}}");
     expect(mail.html).not.toContain("{{link_redefinicao}}");
+  });
+
+  it("envia o e-mail de confirmação de senha alterada ao concluir uma redefinição de senha", async () => {
+    await configureSmtp();
+    await createTestUser({ email: "fefe@test.dev", role: "AGENT", displayName: "Fefe" });
+
+    const result = await authService.requestPasswordReset("fefe@test.dev");
+    sendMailMock.mockClear(); // drop the reset-request e-mail
+
+    await authService.resetPassword(result!.token, "NovaSenha@1234");
+    expect(sendMailMock).toHaveBeenCalledTimes(1);
+    const mail = lastSentMail();
+    expect(mail.to).toBe("fefe@test.dev");
+    expect(mail.subject).toContain("senha foi alterada");
+    expect(mail.html).toContain("Fefe");
+    expect(mail.html).not.toContain("{{nome}}");
+  });
+
+  it("envia o e-mail de confirmação de senha alterada quando o próprio usuário troca a senha em Meu Perfil", async () => {
+    await configureSmtp();
+    const user = await createTestUser({ email: "gigi@test.dev", role: "AGENT", displayName: "Gigi" });
+    sendMailMock.mockClear();
+
+    await profileService.changeOwnPassword(user.id, TEST_PASSWORD, "OutraSenha@1234");
+    expect(sendMailMock).toHaveBeenCalledTimes(1);
+    const mail = lastSentMail();
+    expect(mail.to).toBe("gigi@test.dev");
+    expect(mail.html).toContain("Gigi");
+  });
+
+  it("não envia o e-mail de senha alterada quando o modelo está desativado", async () => {
+    await configureSmtp();
+    await settingsService.updateEmailTemplate("PASSWORD_CHANGED", { enabled: false });
+    const user = await createTestUser({ email: "hugo@test.dev", role: "AGENT", displayName: "Hugo" });
+    sendMailMock.mockClear();
+
+    await profileService.changeOwnPassword(user.id, TEST_PASSWORD, "OutraSenha@1234");
+    expect(sendMailMock).not.toHaveBeenCalled();
   });
 
   it("resolve as tags comuns (empresa/cor primária) a partir da Identidade visual", async () => {

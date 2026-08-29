@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
+import { sendTemplatedMail } from "../../lib/mail";
 
 const withConnection = { whatsappConnection: true } as const;
 
@@ -33,4 +34,5 @@ export async function changeOwnPassword(userId: string, currentPassword: string,
     // then re-authenticates with the new password like any other session.
     prisma.refreshToken.updateMany({ where: { userId }, data: { revokedAt: new Date() } }),
   ]);
+  await sendTemplatedMail("PASSWORD_CHANGED", user.email, { nome: user.displayName });
 }

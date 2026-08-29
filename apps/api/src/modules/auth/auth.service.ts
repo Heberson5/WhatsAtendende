@@ -160,12 +160,13 @@ export async function resetPassword(token: string, newPassword: string) {
   }
 
   const passwordHash = await bcrypt.hash(newPassword, 12);
-  await prisma.$transaction([
+  const [user] = await prisma.$transaction([
     prisma.user.update({ where: { id: record.userId }, data: { passwordHash } }),
     prisma.passwordResetToken.update({ where: { id: record.id }, data: { usedAt: new Date() } }),
     prisma.refreshToken.updateMany({ where: { userId: record.userId }, data: { revokedAt: new Date() } }),
   ]);
   await writeAudit({ userId: record.userId, action: "PASSWORD_RESET_COMPLETED", entity: "User", entityId: record.userId });
+  await sendTemplatedMail("PASSWORD_CHANGED", user.email, { nome: user.displayName });
 }
 
 export function refreshCookieOptions() {
