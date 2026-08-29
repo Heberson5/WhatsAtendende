@@ -98,9 +98,22 @@ export const realtimeEvents = {
   whatsappStatusChanged: (connectionId: string, status: unknown) => {
     getIO()?.emit("whatsapp:status", { connectionId, status });
   },
-  /** A QR/pairing-code scan linked a different phone number than this connection was originally paired with — the pairing was undone, never reaching CONNECTED. See PROMPT: reconnect only with the same number as before. */
-  whatsappPairingRejected: (connectionId: string, expectedNumber: string, gotNumber: string) => {
-    getIO()?.emit("whatsapp:pairing-rejected", { connectionId, expectedNumber, gotNumber });
+  /**
+   * A QR/pairing-code scan was undone right after reaching CONNECTED,
+   * before ever being persisted — two distinct reasons:
+   *  - MISMATCH: linked a different phone number than this connection was
+   *    originally paired with. See PROMPT: reconnect only with the same
+   *    number as before.
+   *  - ALREADY_LINKED: the scanned number is already the linked number of a
+   *    *different* connection row — otherConnectionName names it.
+   */
+  whatsappPairingRejected: (
+    connectionId: string,
+    scannedNumber: string,
+    reason: "MISMATCH" | "ALREADY_LINKED",
+    detail: { expectedNumber?: string; otherConnectionName?: string }
+  ) => {
+    getIO()?.emit("whatsapp:pairing-rejected", { connectionId, scannedNumber, reason, ...detail });
   },
   /** An admin merged a duplicate conversation into another — refreshes the Fila/Gestão views that could have shown either one. The surviving conversation's owner is notified separately via newMessage, below, since it just gained the duplicate's messages. */
   conversationsMerged: (connectionId: string) => {

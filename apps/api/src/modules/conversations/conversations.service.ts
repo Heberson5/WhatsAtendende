@@ -388,18 +388,46 @@ export async function findOrOpenConversationForInboundMessage(connectionId: stri
 /**
  * Same lookup as findOrOpenConversationForInboundMessage, but for a message
  * sent directly from the linked phone/another device (see
- * handleDeviceSentMessage in whatsapp.service.ts) with no active conversation
- * to attach it to yet. This must never create a NEW/WAITING conversation —
- * that would put a card in the live queue for a contact the agent is
- * already messaging outside this app, even though the customer never wrote
- * in. It opens straight into HANDLED_EXTERNALLY instead: same status
- * markConversationReadFromDevice uses for "being handled on the phone",
- * visible in Gestão but never in the Fila. See PROMPT: só deve aparecer na
- * fila quando o cliente envia mensagem.
+ * handleDeviceSentMessage in whatsapp.service.ts). This must never leave a
+ * NEW/WAITING conversation sitting in the live queue — that would keep
+ * showing a card for a contact the agent is already messaging outside this
+ * app. See PROMPT: só deve aparecer na fila quando o cliente envia mensagem.
+ *
+ * Three cases:
+ *  - No active conversation yet: opens straight into HANDLED_EXTERNALLY —
+ *    same status markConversationReadFromDevice uses for "being handled on
+ *    the phone", visible in Gestão but never in the Fila.
+ *  - An active conversation still sitting unassigned in the queue
+ *    (NEW/WAITING): replying to it from the phone is just as much "being
+ *    handled outside this app" as reading it is, so it gets the exact same
+ *    HANDLED_EXTERNALLY transition markConversationReadFromDevice performs
+ *    — this used to be skipped entirely (the conversation was returned
+ *    untouched), which is why a reply sent from the phone to an
+ *    already-queued conversation never made it leave the Fila.
+ *  - An active conversation already assigned to an agent (IN_PROGRESS/
+ *    TRANSFERRED): left alone, only its read marker is refreshed — replying
+ *    from the phone implies the customer's messages up to now have been
+ *    seen, same as markConversationReadFromDevice's read-marker-only branch.
  */
 export async function findOrOpenConversationForDeviceSentMessage(connectionId: string, contactId: string) {
   const active = await findActiveConversationForContact(contactId);
-  if (active) return { conversation: active, isNewConversation: false };
+  if (active) {
+    if (active.status === "NEW" || active.status === "WAITING") {
+      const conversation = await prisma.conversation.update({
+        where: { id: active.id },
+        data: { status: "HANDLED_EXTERNALLY", assignedAgentReadAt: new Date() },
+      });
+      await prisma.conversationEvent.create({
+        data: { conversationId: conversation.id, type: "HANDLED_EXTERNALLY", payload: { reason: "replied from device" } },
+      });
+      return { conversation, isNewConversation: false, leftQueue: true };
+    }
+    const conversation = await prisma.conversation.update({
+      where: { id: active.id },
+      data: { assignedAgentReadAt: new Date() },
+    });
+    return { conversation, isNewConversation: false, leftQueue: false };
+  }
 
   const conversation = await prisma.conversation.create({
     data: {
@@ -414,7 +442,7 @@ export async function findOrOpenConversationForDeviceSentMessage(connectionId: s
   await prisma.conversationEvent.create({
     data: { conversationId: conversation.id, type: "HANDLED_EXTERNALLY", payload: { reason: "started from device" } },
   });
-  return { conversation, isNewConversation: true };
+  return { conversation, isNewConversation: true, leftQueue: false };
 }
 
 /**

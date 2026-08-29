@@ -159,10 +159,36 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
             "rejected a WhatsApp pairing: the linked number does not match this connection's original number"
           );
           provider.disconnect().catch(() => undefined);
-          realtimeEvents.whatsappPairingRejected(connectionId, existing.linkedNumber, status.connectedNumber);
+          realtimeEvents.whatsappPairingRejected(connectionId, status.connectedNumber, "MISMATCH", { expectedNumber: existing.linkedNumber });
           return;
         }
-        if (!existing.linkedNumber) linkedNumberToSet = status.connectedNumber;
+        if (!existing.linkedNumber) {
+          // The complementary check to the one above: that one stops THIS
+          // connection from ever drifting onto a different number than its
+          // own history. This one stops the SAME real phone from ever being
+          // linked into a *second*, different connection row in the first
+          // place — e.g. an admin scanning the wrong QR code with a phone
+          // that's already the linked number of "Vendas" while setting up
+          // "Suporte". Two Baileys sessions authenticated as the very same
+          // WhatsApp identity fight over which one WhatsApp's own servers
+          // treat as the live device, corrupting message delivery on
+          // whichever one loses that fight — every account only ever gets
+          // to be genuinely CONNECTED in exactly one connection row.
+          const duplicate = await prisma.whatsAppConnection.findFirst({
+            where: { linkedNumber: status.connectedNumber, id: { not: connectionId } },
+            select: { name: true },
+          });
+          if (duplicate) {
+            logger.error(
+              { connectionId, number: status.connectedNumber, otherConnection: duplicate.name },
+              "rejected a WhatsApp pairing: this number is already linked to a different connection"
+            );
+            provider.disconnect().catch(() => undefined);
+            realtimeEvents.whatsappPairingRejected(connectionId, status.connectedNumber, "ALREADY_LINKED", { otherConnectionName: duplicate.name });
+            return;
+          }
+          linkedNumberToSet = status.connectedNumber;
+        }
       }
       await persistConnectionStatus(connectionId, status, linkedNumberToSet);
     } catch (err) {
@@ -246,7 +272,7 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
     // a fromMe message should never seed a brand-new contact's photo from
     // this account's own profile picture, so no getContactPhoto call here.
     const contact = await conversationsService.findOrCreateContact(connectionId, event.phone, null, event.chatId);
-    const { conversation } = await conversationsService.findOrOpenConversationForDeviceSentMessage(connectionId, contact.id);
+    const { conversation, leftQueue } = await conversationsService.findOrOpenConversationForDeviceSentMessage(connectionId, contact.id);
 
     const message = await messagesService.createOutboundMessageFromDevice({
       conversationId: conversation.id,
@@ -260,6 +286,11 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
 
     await addAttachmentsFromEvent(message.id, event);
     realtimeEvents.newMessage(conversation.id, conversation.assignedAgentId);
+    // A reply from the phone just moved a previously-queued conversation to
+    // HANDLED_EXTERNALLY — without this, every agent's live Fila kept
+    // showing the card until their next poll/refresh (same broadcast
+    // onChatRead below fires for the "read from device" case).
+    if (leftQueue) realtimeEvents.conversationHandledExternally(connectionId);
   }
 
   async function addAttachmentsFromEvent(messageId: string, event: InboundMessageEvent) {
