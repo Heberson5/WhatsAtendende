@@ -140,7 +140,7 @@ export async function updateEmailSettings(patch: Partial<EmailSettings>): Promis
 // e-mails — password reset, new-user welcome, account-deactivated notice.
 // ---------------------------------------------------------------------------
 
-export type EmailTemplateType = "PASSWORD_RESET" | "USER_WELCOME" | "USER_DEACTIVATED";
+export type EmailTemplateType = "PASSWORD_RESET" | "USER_WELCOME" | "USER_DEACTIVATED" | "PASSWORD_CHANGED";
 
 export interface EmailTemplateConfig {
   enabled: boolean;
@@ -228,6 +228,17 @@ const DEFAULT_EMAIL_TEMPLATES: EmailTemplatesSettings = {
        <p>Sua conta em {{empresa}} foi desativada por um administrador. Se você acredita que isso é um engano, entre em contato com o time responsável.</p>`
     ),
   },
+  PASSWORD_CHANGED: {
+    enabled: true,
+    subject: "Sua senha foi alterada - {{empresa}}",
+    html: baseTemplateHtml(
+      "Senha alterada",
+      `<p>Olá, {{nome}}.</p>
+       <p>Confirmamos que a senha da sua conta em {{empresa}} foi alterada com sucesso.</p>
+       <p>Se foi você quem fez essa alteração, nenhuma ação é necessária.</p>
+       <p>Se você não reconhece essa alteração, entre em contato imediatamente com o administrador do sistema.</p>`
+    ),
+  },
 };
 
 /** Tags specific to each template type — surfaced in the editor UI so the admin knows what's available. */
@@ -242,6 +253,7 @@ export const EMAIL_TEMPLATE_TAGS: Record<EmailTemplateType, { tag: string; descr
     { tag: "{{link_login}}", description: "Link para a tela de login" },
   ],
   USER_DEACTIVATED: [{ tag: "{{nome}}", description: "Nome de exibição do usuário desativado" }],
+  PASSWORD_CHANGED: [{ tag: "{{nome}}", description: "Nome de exibição do usuário" }],
 };
 
 /** Available in every template regardless of type — resolved automatically from Identidade visual. */
@@ -259,6 +271,7 @@ export async function getEmailTemplates(): Promise<EmailTemplatesSettings> {
     PASSWORD_RESET: { ...DEFAULT_EMAIL_TEMPLATES.PASSWORD_RESET, ...stored.PASSWORD_RESET },
     USER_WELCOME: { ...DEFAULT_EMAIL_TEMPLATES.USER_WELCOME, ...stored.USER_WELCOME },
     USER_DEACTIVATED: { ...DEFAULT_EMAIL_TEMPLATES.USER_DEACTIVATED, ...stored.USER_DEACTIVATED },
+    PASSWORD_CHANGED: { ...DEFAULT_EMAIL_TEMPLATES.PASSWORD_CHANGED, ...stored.PASSWORD_CHANGED },
   };
 }
 
