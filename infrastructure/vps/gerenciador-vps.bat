@@ -11,6 +11,11 @@ set USER=ubuntu
 set KEY=C:\Users\Heberson\Downloads\ssh-key-2026-08-01.key
 set PROJETO=~/whatsatendende
 set REPO_WHATSATENDENDE=https://github.com/Heberson5/WhatsAtendende.git
+rem Endereco publico HTTPS real do sistema (o que aparece na barra do
+rem navegador) - usado so no PRIMEIRO deploy, para gerar o .env da VPS
+rem com WEB_APP_URL correto (cookie de sessao "Secure", CORS e os links
+rem enviados por e-mail dependem disso comecar com "https://").
+set DOMINIO=https://atendimento.sauberlich.com.br
 rem Branch que a VPS deve seguir. As opcoes [1] e [15] agora fixam a VPS
 rem NESTA branch a cada atualizacao (git fetch + reset --hard), entao um
 rem "git pull" antigo apontando para outra branch nunca mais fica pra tras
@@ -193,7 +198,7 @@ pause
 goto MENU
 
 :SITE
-start http://%IP%:8080
+start %DOMINIO%
 goto MENU
 
 :DOWN
@@ -257,7 +262,7 @@ rem cria o .env com segredos novos (se ainda nao existe). Numa atualizacao
 rem normal, com o projeto ja clonado e o .env ja no lugar, este passo nao
 rem faz nada alem de trocar para a branch %BRANCH% - quem realmente
 rem atualiza o codigo e reconstroi tudo e a rotina HARD_UPDATE logo abaixo.
-ssh -i "%KEY%" %USER%@%IP% "if [ -d %PROJETO%/.git ]; then cd %PROJETO% && git checkout %BRANCH%; else rm -rf %PROJETO% && git clone -b %BRANCH% %REPO_WHATSATENDENDE% %PROJETO%; fi && cd %PROJETO% && if [ ! -f .env ]; then echo 'Criando .env com segredos novos (primeiro deploy)...'; { echo JWT_ACCESS_SECRET=$(openssl rand -hex 32); echo JWT_REFRESH_SECRET=$(openssl rand -hex 32); echo WHATSAPP_PROVIDER=baileys; echo WEB_APP_URL=http://%IP%:8080; } > .env; echo '.env criado - faca um backup deste arquivo (nao esta no git, sem ele os logins existentes param de funcionar num redeploy que o apague).'; fi"
+ssh -i "%KEY%" %USER%@%IP% "if [ -d %PROJETO%/.git ]; then cd %PROJETO% && git checkout %BRANCH%; else rm -rf %PROJETO% && git clone -b %BRANCH% %REPO_WHATSATENDENDE% %PROJETO%; fi && cd %PROJETO% && if [ ! -f .env ]; then echo 'Criando .env com segredos novos (primeiro deploy)...'; { echo JWT_ACCESS_SECRET=$(openssl rand -hex 32); echo JWT_REFRESH_SECRET=$(openssl rand -hex 32); echo WHATSAPP_PROVIDER=baileys; echo WEB_APP_URL=%DOMINIO%; } > .env; echo '.env criado - faca um backup deste arquivo (nao esta no git, sem ele os logins existentes param de funcionar num redeploy que o apague).'; fi"
 
 call :HARD_UPDATE_WHATSATENDENDE
 if errorlevel 1 (
@@ -268,7 +273,7 @@ if errorlevel 1 (
 )
 
 echo.
-echo WhatsAtendende atualizado e no ar em http://%IP%:8080
+echo WhatsAtendende atualizado e no ar em %DOMINIO%
 echo.
 echo Se ainda nao existe nenhum usuario cadastrado (primeiro deploy),
 echo use a opcao [21] para criar os usuarios iniciais e depois troque
