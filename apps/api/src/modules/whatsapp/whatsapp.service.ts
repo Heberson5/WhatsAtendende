@@ -232,6 +232,13 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
         type: event.type,
         body: event.body,
         replyToProviderMessageId: event.replyToProviderMessageId,
+        isQuotedStoryReply: event.isQuotedStoryReply,
+        quotedStoryText: event.quotedStoryText,
+        quotedStoryThumbnailBase64: event.quotedStoryThumbnailBase64,
+        linkPreviewTitle: event.linkPreviewTitle,
+        linkPreviewDescription: event.linkPreviewDescription,
+        linkPreviewUrl: event.linkPreviewUrl,
+        linkPreviewThumbnailBase64: event.linkPreviewThumbnailBase64,
       });
 
       await addAttachmentsFromEvent(message.id, event);
@@ -281,6 +288,13 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
       body: event.body,
       timestamp: event.timestamp,
       replyToProviderMessageId: event.replyToProviderMessageId,
+      isQuotedStoryReply: event.isQuotedStoryReply,
+      quotedStoryText: event.quotedStoryText,
+      quotedStoryThumbnailBase64: event.quotedStoryThumbnailBase64,
+      linkPreviewTitle: event.linkPreviewTitle,
+      linkPreviewDescription: event.linkPreviewDescription,
+      linkPreviewUrl: event.linkPreviewUrl,
+      linkPreviewThumbnailBase64: event.linkPreviewThumbnailBase64,
     });
     if (!message) return; // already recorded via this app's own send flow
 
@@ -602,7 +616,7 @@ export async function sendOutboundText(
       replyToProviderMessageId,
       replyToText,
     });
-    const message = await messagesService.markMessageSent(messageId, result.providerMessageId);
+    const message = await messagesService.markMessageSent(messageId, result.providerMessageId, result.linkPreview);
     return toMessageDTO(message);
   } catch (err) {
     logger.error({ err, messageId }, "failed to send outbound whatsapp text");

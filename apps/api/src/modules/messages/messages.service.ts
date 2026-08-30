@@ -82,7 +82,33 @@ export async function createOutboundMessage(input: CreateOutboundMessageInput) {
   return message;
 }
 
-export interface CreateOutboundMessageFromDeviceInput {
+export interface QuotedStoryInput {
+  isQuotedStoryReply?: boolean;
+  quotedStoryText?: string | null;
+  quotedStoryThumbnailBase64?: string | null;
+}
+
+export interface LinkPreviewInput {
+  linkPreviewTitle?: string | null;
+  linkPreviewDescription?: string | null;
+  linkPreviewUrl?: string | null;
+  linkPreviewThumbnailBase64?: string | null;
+}
+
+/** Shared by every message-creation path that can carry a story-reply marker and/or a link-preview card — keeps the Prisma `data` shape for both in exactly one place. */
+function storyAndLinkPreviewData(input: QuotedStoryInput & LinkPreviewInput) {
+  return {
+    isStoryReply: Boolean(input.isQuotedStoryReply),
+    storyReplyText: input.quotedStoryText ?? null,
+    storyReplyThumbnail: input.quotedStoryThumbnailBase64 ?? null,
+    linkPreviewTitle: input.linkPreviewTitle ?? null,
+    linkPreviewDescription: input.linkPreviewDescription ?? null,
+    linkPreviewUrl: input.linkPreviewUrl ?? null,
+    linkPreviewThumbnail: input.linkPreviewThumbnailBase64 ?? null,
+  };
+}
+
+export interface CreateOutboundMessageFromDeviceInput extends QuotedStoryInput, LinkPreviewInput {
   conversationId: string;
   providerMessageId: string;
   type: MessageType;
@@ -126,6 +152,7 @@ export async function createOutboundMessageFromDevice(input: CreateOutboundMessa
       providerMessageId: input.providerMessageId,
       replyToMessageId: replyTo?.id ?? null,
       createdAt: input.timestamp,
+      ...storyAndLinkPreviewData(input),
     },
     include: messageInclude,
   });
@@ -138,10 +165,25 @@ export async function createOutboundMessageFromDevice(input: CreateOutboundMessa
   return message;
 }
 
-export async function markMessageSent(messageId: string, providerMessageId: string) {
+export async function markMessageSent(
+  messageId: string,
+  providerMessageId: string,
+  linkPreview?: { title: string; description?: string | null; url: string; thumbnailBase64?: string | null } | null
+) {
   return prisma.message.update({
     where: { id: messageId },
-    data: { status: "SENT", providerMessageId },
+    data: {
+      status: "SENT",
+      providerMessageId,
+      ...(linkPreview
+        ? {
+            linkPreviewTitle: linkPreview.title,
+            linkPreviewDescription: linkPreview.description ?? null,
+            linkPreviewUrl: linkPreview.url,
+            linkPreviewThumbnail: linkPreview.thumbnailBase64 ?? null,
+          }
+        : {}),
+    },
     include: messageInclude,
   });
 }
@@ -167,7 +209,7 @@ export async function updateMessageStatusByProviderId(
   });
 }
 
-export interface CreateInboundMessageInput {
+export interface CreateInboundMessageInput extends QuotedStoryInput, LinkPreviewInput {
   conversationId: string;
   providerMessageId: string;
   type: MessageType;
@@ -189,6 +231,7 @@ export async function createInboundMessage(input: CreateInboundMessageInput) {
       body: input.body,
       providerMessageId: input.providerMessageId,
       replyToMessageId: replyTo?.id ?? null,
+      ...storyAndLinkPreviewData(input),
     },
     include: messageInclude,
   });

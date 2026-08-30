@@ -262,6 +262,26 @@ export function MessageBubble({
         </div>
       )}
 
+      {/*
+        A reply to a WhatsApp Status/Story rather than to another message
+        here — the story itself was never fetched or stored (WhatsApp
+        doesn't keep it once it expires), so this is a plain, non-clickable
+        marker + the small preview WhatsApp embedded in the reply itself,
+        same as WhatsApp Web shows it. Deliberately not a link/button:
+        there is nowhere for it to navigate to.
+      */}
+      {message.replyToStory && (
+        <div className="mb-1.5 flex items-center gap-2 rounded border-l-2 border-secondary bg-black/10 px-2 py-1 text-xs opacity-90">
+          {message.replyToStory.thumbnailUrl && (
+            <img src={message.replyToStory.thumbnailUrl} alt="" className="h-8 w-8 shrink-0 rounded object-cover" />
+          )}
+          <div className="min-w-0">
+            <p className="font-semibold">Respondeu a um status</p>
+            {message.replyToStory.text && <p className="truncate">{message.replyToStory.text}</p>}
+          </div>
+        </div>
+      )}
+
       {message.attachments.map((att) => (
         <div key={att.id} className="mb-1.5">
           <Attachment att={att} onOpenMedia={setOpenMedia} onStartConversation={readOnly ? undefined : onStartConversation} />
@@ -269,6 +289,25 @@ export function MessageBubble({
       ))}
 
       {message.body && <p className="whitespace-pre-wrap break-words">{renderWhatsAppFormatting(message.body)}</p>}
+
+      {/* Link-preview card (WhatsApp Web parity) — only present when a URL in the text actually resolved to Open Graph metadata; a plain/unfetchable link still renders clickable via renderWhatsAppFormatting above, just without this card. */}
+      {message.linkPreview && (
+        <a
+          href={message.linkPreview.url || undefined}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-1.5 flex overflow-hidden rounded border border-black/10 bg-black/5 hover:bg-black/10"
+        >
+          {message.linkPreview.thumbnailUrl && (
+            <img src={message.linkPreview.thumbnailUrl} alt="" className="h-16 w-16 shrink-0 object-cover" />
+          )}
+          <div className="min-w-0 px-2 py-1.5">
+            <p className="truncate text-xs font-semibold">{message.linkPreview.title}</p>
+            {message.linkPreview.description && <p className="line-clamp-2 text-xs opacity-75">{message.linkPreview.description}</p>}
+            <p className="truncate text-[11px] opacity-60">{message.linkPreview.url}</p>
+          </div>
+        </a>
+      )}
 
       <div className={clsx("mt-1 flex items-center gap-1 text-[11px] opacity-75", isOutbound ? "justify-end" : "justify-start")}>
         <span>{format(new Date(message.createdAt), "HH:mm")}</span>
