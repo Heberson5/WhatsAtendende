@@ -240,6 +240,19 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
           // (and this project's MockWhatsAppProvider) — Baileys itself
           // returns the 8 characters with no separator.
           const code = `${rawCode.slice(0, 4)}-${rawCode.slice(4)}`;
+          // Mirrors the QR flow's own "qr" handler below, which resets this
+          // on every successful QR render — reaching CODE_PENDING here is
+          // real, successful progress and must clear whatever retry count
+          // built up getting here. Without this, reconnectAttempts kept
+          // accumulating across the "restart required" reconnects that are
+          // a normal, expected part of *every* pairing-code attempt (see
+          // the close handler below) — so a session that had already run
+          // a few of these cycles today started the *next* attempt with
+          // the retry budget already exhausted, gave up on its very first
+          // restart-required close, and the freshly generated code never
+          // even reached the UI before being wiped again: "Gerando..." was
+          // all that ever showed.
+          this.reconnectAttempts = 0;
           this.setStatus({ ...this.status, state: "CODE_PENDING", pairingCode: code });
         } catch (err) {
           this.logger.error({ err }, "failed to request WhatsApp pairing code");
