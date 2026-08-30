@@ -6,10 +6,13 @@ import { env } from "../../config/env";
 import { prisma } from "../../lib/prisma";
 import { logger } from "../../lib/logger";
 import { Errors } from "../../lib/http-error";
+import type { Role } from "@prisma/client";
+import type { ManagerConnectionAccessDTO } from "@whatsatendende/types";
 import { realtimeEvents } from "../../realtime/realtime";
 import * as conversationsService from "../conversations/conversations.service";
 import * as messagesService from "../messages/messages.service";
 import { toMessageDTO } from "../messages/messages.mapper";
+import { getManagerConnectionIds } from "../../lib/connection-access";
 
 fs.mkdirSync(env.UPLOAD_DIR, { recursive: true });
 
@@ -490,12 +493,16 @@ export interface ConnectionSummaryDTO {
   linkedNumber: string | null;
   lastConnectedAt: string | null;
   agentCount: number;
+  createdByUserId: string | null;
+  createdByUserName: string | null;
 }
 
 // Distinct, readable-on-white swatches auto-assigned to new connections in
 // rotation so the admin doesn't have to pick a color for every one — still
 // changeable afterwards via PATCH /connections/:id.
 const COLOR_PALETTE = ["#0097B4", "#7C3AED", "#F97316", "#059669", "#DC2626", "#2563EB", "#DB2777", "#65A30D"];
+
+const connectionSummaryInclude = { _count: { select: { agents: true } }, createdByUser: { select: { id: true, displayName: true } } } as const;
 
 function toConnectionSummary(row: {
   id: string;
@@ -506,6 +513,7 @@ function toConnectionSummary(row: {
   linkedNumber: string | null;
   lastConnectedAt: Date | null;
   _count: { agents: number };
+  createdByUser: { id: string; displayName: string } | null;
 }): ConnectionSummaryDTO {
   const runtime = providers.get(row.id)?.getStatus();
   return {
@@ -519,13 +527,24 @@ function toConnectionSummary(row: {
     linkedNumber: row.linkedNumber,
     lastConnectedAt: (runtime?.lastConnectedAt ?? row.lastConnectedAt)?.toISOString?.() ?? null,
     agentCount: row._count.agents,
+    createdByUserId: row.createdByUser?.id ?? null,
+    createdByUserName: row.createdByUser?.displayName ?? null,
   };
 }
 
-export async function listConnections(): Promise<ConnectionSummaryDTO[]> {
+/**
+ * ADMIN sees every connection, unrestricted, same as always. A MANAGER
+ * only ever sees connections they created themselves or were explicitly
+ * granted "view/edit" access to — see PROMPT: "os gestores... podem ter
+ * acesso as conexões, mas somente nas conexões que foram cadastradas
+ * pelos gestores" (plus whatever an admin additionally designates).
+ */
+export async function listConnections(auth: { userId: string; role: Role }): Promise<ConnectionSummaryDTO[]> {
+  const allowedIds = auth.role === "MANAGER" ? await getManagerConnectionIds(auth.userId, "manage") : undefined;
   const rows = await prisma.whatsAppConnection.findMany({
+    where: allowedIds ? { id: { in: allowedIds } } : undefined,
     orderBy: { name: "asc" },
-    include: { _count: { select: { agents: true } } },
+    include: connectionSummaryInclude,
   });
   return rows.map(toConnectionSummary);
 }
@@ -533,18 +552,18 @@ export async function listConnections(): Promise<ConnectionSummaryDTO[]> {
 export async function getConnectionSummary(connectionId: string): Promise<ConnectionSummaryDTO> {
   const row = await prisma.whatsAppConnection.findUnique({
     where: { id: connectionId },
-    include: { _count: { select: { agents: true } } },
+    include: connectionSummaryInclude,
   });
   if (!row) throw Errors.notFound("Conexao de WhatsApp nao encontrada");
   return toConnectionSummary(row);
 }
 
-export async function createConnection(name: string, color?: string): Promise<ConnectionSummaryDTO> {
+export async function createConnection(name: string, color: string | undefined, createdByUserId: string): Promise<ConnectionSummaryDTO> {
   const existing = await prisma.whatsAppConnection.findUnique({ where: { name } });
   if (existing) throw Errors.conflict("Ja existe uma conexao com este nome");
   const existingCount = await prisma.whatsAppConnection.count();
   const row = await prisma.whatsAppConnection.create({
-    data: { name, color: color ?? COLOR_PALETTE[existingCount % COLOR_PALETTE.length] },
+    data: { name, color: color ?? COLOR_PALETTE[existingCount % COLOR_PALETTE.length], createdByUserId },
   });
   bootstrapConnection(row.id);
   return getConnectionSummary(row.id);
@@ -586,6 +605,67 @@ export async function deleteConnection(connectionId: string): Promise<void> {
   }
   providers.delete(connectionId);
   await prisma.whatsAppConnection.delete({ where: { id: connectionId } });
+}
+
+/**
+ * Every connection in the system, annotated with a given MANAGER's access
+ * to each — ADMIN-only, used to render the grant editor in Usuários. A
+ * connection the manager created themselves always comes back with both
+ * flags true and `owned: true` (implicit full access, no row needed —
+ * see WhatsAppConnection.createdByUserId); everything else reflects the
+ * actual ManagerConnectionAccess row, defaulting to false when none exists.
+ */
+export async function listConnectionAccessForManager(managerId: string): Promise<ManagerConnectionAccessDTO[]> {
+  const [connections, grants] = await Promise.all([
+    prisma.whatsAppConnection.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true, color: true, createdByUserId: true } }),
+    prisma.managerConnectionAccess.findMany({ where: { managerId } }),
+  ]);
+  const grantByConnectionId = new Map(grants.map((g) => [g.whatsappConnectionId, g]));
+  return connections.map((c) => {
+    const owned = c.createdByUserId === managerId;
+    const grant = grantByConnectionId.get(c.id);
+    return {
+      whatsappConnectionId: c.id,
+      whatsappConnectionName: c.name,
+      whatsappConnectionColor: c.color,
+      owned,
+      canManage: owned || (grant?.canManage ?? false),
+      canReceiveConversations: owned || (grant?.canReceiveConversations ?? false),
+    };
+  });
+}
+
+/**
+ * Replaces every ManagerConnectionAccess row for one manager with the
+ * given set — PUT (full-replace) semantics, same precedent as
+ * savePermissionPatch's role-permission matrix. Entries for a connection
+ * the manager already owns are silently dropped (that access is implicit
+ * and never needs a row), and an all-false entry is dropped too rather
+ * than stored as a no-op row.
+ */
+export async function setConnectionAccessForManager(
+  managerId: string,
+  entries: { whatsappConnectionId: string; canManage: boolean; canReceiveConversations: boolean }[]
+): Promise<void> {
+  const owned = await prisma.whatsAppConnection.findMany({ where: { createdByUserId: managerId }, select: { id: true } });
+  const ownedIds = new Set(owned.map((c) => c.id));
+  const toKeep = entries.filter((e) => !ownedIds.has(e.whatsappConnectionId) && (e.canManage || e.canReceiveConversations));
+
+  await prisma.$transaction([
+    prisma.managerConnectionAccess.deleteMany({ where: { managerId } }),
+    ...(toKeep.length > 0
+      ? [
+          prisma.managerConnectionAccess.createMany({
+            data: toKeep.map((e) => ({
+              managerId,
+              whatsappConnectionId: e.whatsappConnectionId,
+              canManage: e.canManage,
+              canReceiveConversations: e.canReceiveConversations,
+            })),
+          }),
+        ]
+      : []),
+  ]);
 }
 
 export async function connect(connectionId: string, phoneNumber?: string) {

@@ -85,6 +85,10 @@ export interface UserDTO {
   photoUrl: string | null;
   whatsappConnectionId: string | null;
   whatsappConnectionName: string | null;
+  // Live state of whatsappConnectionId's connection — null when the user
+  // has no fixed connection (only ever set for AGENT). Powers the "your
+  // connection is disconnected" banner in Atendimento.
+  whatsappConnectionStatus: WhatsAppConnectionStatus | null;
   createdAt: string;
   lastAccessAt: string | null;
 }
@@ -111,6 +115,34 @@ export interface WhatsAppConnectionSummaryDTO {
   connectedNumber: string | null;
   lastConnectedAt: string | null;
   agentCount: number;
+  // Who created this connection — a MANAGER always has full access (view/
+  // edit/receive) to a connection they created themselves, without needing
+  // an explicit grant. Null for a connection created before this field
+  // existed, or created directly by an ADMIN acting alone.
+  createdByUserId: string | null;
+  createdByUserName: string | null;
+}
+
+/**
+ * One MANAGER's access grant to a connection they did NOT create — set by
+ * an ADMIN in Usuários. Two independent flags, matching PROMPT: "designar
+ * qual conexão os gestores poderão ver/editar e também poderão receber
+ * novas conversas de quais conexões" — a manager can be granted either,
+ * both, or neither on any given connection (view/edit access to the
+ * connection's own settings vs. eligibility to receive/accept its queue).
+ * A connection the manager created themselves needs no row here at all —
+ * see WhatsAppConnectionSummaryDTO.createdByUserId.
+ */
+export interface ManagerConnectionAccessDTO {
+  whatsappConnectionId: string;
+  whatsappConnectionName: string;
+  whatsappConnectionColor: string;
+  // true when this manager created the connection themselves — canManage
+  // and canReceiveConversations are then always true and not editable
+  // (implicit full access, no grant row backing it).
+  owned: boolean;
+  canManage: boolean;
+  canReceiveConversations: boolean;
 }
 
 /** A contact saved on the connection's linked phone — used by "start a new conversation". */
@@ -138,6 +170,10 @@ export interface ConversationListItemDTO {
   whatsappConnectionId: string;
   whatsappConnectionName: string;
   whatsappConnectionColor: string;
+  // Live status of the owning connection — DISCONNECTED (or anything short
+  // of CONNECTED) blocks accepting/sending on this conversation and drives
+  // the disconnected-connection banner in the queue card and chat panel.
+  whatsappConnectionStatus: WhatsAppConnectionStatus;
   enteredQueueAt: string;
   acceptedAt: string | null;
   lastMessageAt: string;

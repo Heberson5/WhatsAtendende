@@ -23,8 +23,13 @@ export async function resetDatabase() {
   await prisma.rolePermission.deleteMany();
 }
 
-export async function createTestConnection(name: string) {
-  return prisma.whatsAppConnection.create({ data: { name } });
+// Defaults to CONNECTED — nearly every test using this helper is actually
+// exercising conversation/message flows that now require a live connection
+// (see acceptConversation / loadConversationForAgent's CONNECTED gate), not
+// testing connection status itself. Pass "DISCONNECTED" explicitly for a
+// test that specifically covers that gate.
+export async function createTestConnection(name: string, status: "DISCONNECTED" | "CONNECTED" = "CONNECTED") {
+  return prisma.whatsAppConnection.create({ data: { name, status } });
 }
 
 export async function createTestUser(input: {
@@ -46,6 +51,25 @@ export async function createTestUser(input: {
       presence: input.presence ?? "OFFLINE",
       passwordHash,
       whatsappConnectionId: input.whatsappConnectionId,
+    },
+  });
+}
+
+// A MANAGER only sees/receives from a connection they created themselves
+// or were explicitly granted (see connection-access.ts) — call this in a
+// test's setup to grant a test MANAGER access to a connection they didn't
+// create, same as an ADMIN would via PUT /whatsapp/managers/:userId/access.
+export async function grantManagerConnectionAccess(
+  managerId: string,
+  connectionId: string,
+  opts: { canManage?: boolean; canReceiveConversations?: boolean } = {}
+) {
+  return prisma.managerConnectionAccess.create({
+    data: {
+      managerId,
+      whatsappConnectionId: connectionId,
+      canManage: opts.canManage ?? true,
+      canReceiveConversations: opts.canReceiveConversations ?? true,
     },
   });
 }

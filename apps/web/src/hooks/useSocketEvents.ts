@@ -1,8 +1,10 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import type { WhatsAppConnectionStatus } from "@whatsatendende/types";
 import { getSocket } from "../lib/socket";
 import { notifyDesktop } from "./useDesktopNotifications";
+import { useAuthStore } from "../store/auth-store";
 
 /** Subscribes to server-pushed realtime events and invalidates the affected React Query caches — no polling. */
 export function useSocketEvents(activeConversationId: string | null) {
@@ -48,7 +50,18 @@ export function useSocketEvents(activeConversationId: string | null) {
     // on the phone, without waiting for the 20s poll.
     const onConversationRead = () => queryClient.invalidateQueries({ queryKey: ["mine"] });
     const onOversightUpdated = () => queryClient.invalidateQueries({ queryKey: ["oversight"] });
-    const onWhatsappStatus = () => queryClient.invalidateQueries({ queryKey: ["whatsapp-status"] });
+    // A connection's status changing affects every conversation/queue card
+    // tied to it (accept/send get enabled or disabled — see PROMPT: alerta
+    // e bloqueio para conexões desconectadas) and, for an AGENT whose own
+    // home connection this is, the banner in Atendimento — patched directly
+    // into the auth store (a no-op for MANAGER/ADMIN, who have none) so it
+    // updates instantly instead of waiting for the next login/refresh.
+    const onWhatsappStatus = (payload: { connectionId: string; status: { state: WhatsAppConnectionStatus } }) => {
+      queryClient.invalidateQueries({ queryKey: ["whatsapp-status"] });
+      queryClient.invalidateQueries({ queryKey: ["queue"] });
+      queryClient.invalidateQueries({ queryKey: ["mine"] });
+      useAuthStore.getState().updateOwnConnectionStatus(payload.connectionId, payload.status.state);
+    };
 
     socket.on("queue:updated", onQueueUpdated);
     socket.on("queue:new-conversation", onNewQueueConversation);

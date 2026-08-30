@@ -43,7 +43,7 @@ function formatDateTime(d: Date | null, tzOffsetMinutes = 0): string {
 }
 
 export async function getAttendanceReport({ from, to, agentId, connectionIds, tzOffsetMinutes = 0 }: ReportParams) {
-  const connectionFilter = connectionIds?.length ? { in: connectionIds } : undefined;
+  const connectionFilter = connectionIds === undefined ? undefined : { in: connectionIds };
   const conversations = await prisma.conversation.findMany({
     where: {
       createdAt: { gte: from, lte: to },
@@ -88,7 +88,7 @@ export async function getAttendanceReport({ from, to, agentId, connectionIds, tz
 }
 
 export async function getPerAgentReport({ from, to, connectionIds }: ReportParams) {
-  const connectionFilter = connectionIds?.length ? { in: connectionIds } : undefined;
+  const connectionFilter = connectionIds === undefined ? undefined : { in: connectionIds };
   const agents = await prisma.user.findMany({ where: { role: "AGENT" }, orderBy: { displayName: "asc" } });
 
   return Promise.all(
@@ -133,7 +133,7 @@ export async function getPerAgentReport({ from, to, connectionIds }: ReportParam
 }
 
 export async function getMessagesReport({ from, to, agentId, connectionIds }: ReportParams) {
-  const connectionFilter = connectionIds?.length ? { in: connectionIds } : undefined;
+  const connectionFilter = connectionIds === undefined ? undefined : { in: connectionIds };
   const conversationFilter = {
     ...(agentId ? { assignedAgentId: agentId } : {}),
     ...(connectionFilter ? { whatsappConnectionId: connectionFilter } : {}),

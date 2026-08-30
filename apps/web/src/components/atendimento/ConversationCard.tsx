@@ -31,6 +31,10 @@ export function ConversationCard({
   // needs to confirm/dial/search by, not just a name that could be wrong
   // or shared by two different contacts.
   const showPhoneSubtitle = Boolean(conversation.contact.name);
+  // A disconnected connection can't actually deliver anything — accepting
+  // from here would just leave the customer with no reply possible, so the
+  // button is disabled instead of letting the click fail server-side.
+  const connectionDisconnected = conversation.whatsappConnectionStatus !== "CONNECTED";
 
   return (
     <div
@@ -85,6 +89,11 @@ export function ConversationCard({
               Transferido de {conversation.transfer.fromAgentName}
             </span>
           )}
+          {connectionDisconnected && (
+            <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-medium text-red-700">
+              Conexão desconectada
+            </span>
+          )}
         </div>
 
         {conversation.lastMessagePreview ? (
@@ -99,10 +108,11 @@ export function ConversationCard({
               e.stopPropagation();
               onAccept();
             }}
-            disabled={accepting}
+            disabled={accepting || connectionDisconnected}
+            title={connectionDisconnected ? "Conexão desconectada — não é possível aceitar conversas" : undefined}
             className="focus-ring mt-2 w-full rounded-card bg-primary py-1.5 text-xs font-semibold text-primary-fg disabled:opacity-60"
           >
-            {accepting ? "Aceitando..." : "ACEITAR"}
+            {accepting ? "Aceitando..." : connectionDisconnected ? "Conexão desconectada" : "ACEITAR"}
           </button>
         )}
       </div>

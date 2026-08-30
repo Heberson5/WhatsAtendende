@@ -9,6 +9,7 @@ import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
 import { parseListParam } from "../../lib/parse-list-param";
 import { optionalDateQueryParam } from "../../lib/period";
+import { resolveAllowedConnectionIds, canManagerAccessConnection } from "../../lib/connection-access";
 import { toConversationListItemDTO } from "./conversations.mapper";
 import * as service from "./conversations.service";
 import { realtimeEvents } from "../../realtime/realtime";
@@ -33,8 +34,14 @@ conversationsRouter.get(
   requireAttendanceAccess,
   asyncHandler(async (req, res) => {
     const agent = await prisma.user.findUnique({ where: { id: req.auth!.userId }, select: { whatsappConnectionId: true } });
-    const connectionIds = agent?.whatsappConnectionId ? [agent.whatsappConnectionId] : parseListParam(req.query.connectionId as string | string[] | undefined);
+    let connectionIds = agent?.whatsappConnectionId ? [agent.whatsappConnectionId] : parseListParam(req.query.connectionId as string | string[] | undefined);
     if (req.auth!.role === "AGENT" && !agent?.whatsappConnectionId) return res.json([]); // agent not assigned to a connection yet — nothing to queue from
+    // A MANAGER only ever receives conversations from a connection they
+    // created themselves or were explicitly granted — see PROMPT: "também
+    // poderão receber novas conversas de quais conexões" (canReceiveConversations).
+    if (req.auth!.role === "MANAGER") {
+      connectionIds = await resolveAllowedConnectionIds(req.auth!, connectionIds, "receive");
+    }
     const conversations = await service.listQueue(connectionIds);
     res.json(conversations.map((c) => toConversationListItemDTO(c, false)));
   })
@@ -71,6 +78,9 @@ conversationsRouter.post(
     } else if (!targetConnectionId) {
       throw Errors.badRequest("Selecione a conexao de WhatsApp");
     }
+    if (req.auth!.role === "MANAGER" && !(await canManagerAccessConnection(req.auth!.userId, targetConnectionId, "receive"))) {
+      throw Errors.forbidden("Voce nao tem permissao para receber conversas desta conexao");
+    }
     const conversation = await service.startConversation(targetConnectionId, phone, name ?? null, req.auth!.userId);
     await writeAudit({ userId: req.auth!.userId, action: "CONVERSATION_STARTED", entity: "Conversation", entityId: conversation.id, ipAddress: req.ip ?? null, metadata: { connectionId: targetConnectionId, phone } });
     realtimeEvents.conversationAccepted(conversation.id, conversation.whatsappConnectionId, req.auth!.userId);
@@ -95,7 +105,10 @@ conversationsRouter.get(
   requirePermission(PERMISSION.GESTAO_ACESSAR),
   asyncHandler(async (req, res) => {
     const filters = oversightQuerySchema.parse(req.query);
-    const connectionIds = parseListParam(filters.connectionId);
+    let connectionIds = parseListParam(filters.connectionId);
+    if (req.auth!.role === "MANAGER") {
+      connectionIds = await resolveAllowedConnectionIds(req.auth!, connectionIds, "manage");
+    }
     const conversations = await service.listAllConversations({
       from: filters.from,
       to: filters.to,
@@ -126,6 +139,12 @@ conversationsRouter.post(
   "/:id/accept",
   requireAttendanceAccess,
   asyncHandler(async (req, res) => {
+    if (req.auth!.role === "MANAGER") {
+      const target = await prisma.conversation.findUnique({ where: { id: req.params.id }, select: { whatsappConnectionId: true } });
+      if (target && !(await canManagerAccessConnection(req.auth!.userId, target.whatsappConnectionId, "receive"))) {
+        throw Errors.forbidden("Voce nao tem permissao para receber conversas desta conexao");
+      }
+    }
     const conversation = await service.acceptConversation(req.params.id, req.auth!.userId);
     await writeAudit({ userId: req.auth!.userId, action: "CONVERSATION_ACCEPTED", entity: "Conversation", entityId: conversation.id, ipAddress: req.ip ?? null });
     realtimeEvents.conversationAccepted(conversation.id, conversation.whatsappConnectionId, req.auth!.userId);

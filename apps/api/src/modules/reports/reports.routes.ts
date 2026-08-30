@@ -6,6 +6,7 @@ import { requireAuth } from "../../middleware/auth";
 import { requirePermission } from "../../lib/permissions";
 import { resolvePeriod, optionalDateQueryParam } from "../../lib/period";
 import { parseListParam } from "../../lib/parse-list-param";
+import { resolveAllowedConnectionIds } from "../../lib/connection-access";
 import * as service from "./reports.service";
 
 export const reportsRouter = Router();
@@ -82,7 +83,7 @@ reportsRouter.get(
       from,
       to,
       agentId: query.agentId,
-      connectionIds: parseListParam(query.connectionId),
+      connectionIds: await resolveAllowedConnectionIds(req.auth!, parseListParam(query.connectionId)),
       tzOffsetMinutes: query.tzOffsetMinutes,
     });
     await respond(res, rows, query.format, "relatorio-atendimentos", "Relatório de Atendimentos", query.tzOffsetMinutes, parseListParam(query.columns));
@@ -94,7 +95,7 @@ reportsRouter.get(
   asyncHandler(async (req, res) => {
     const query = querySchema.parse(req.query);
     const { from, to } = resolvePeriod(query.period, query.from, query.to, query.tzOffsetMinutes);
-    const rows = await service.getPerAgentReport({ from, to, connectionIds: parseListParam(query.connectionId) });
+    const rows = await service.getPerAgentReport({ from, to, connectionIds: await resolveAllowedConnectionIds(req.auth!, parseListParam(query.connectionId)) });
     await respond(res, rows, query.format, "relatorio-por-atendente", "Relatório por Atendente", query.tzOffsetMinutes, parseListParam(query.columns));
   })
 );
@@ -104,7 +105,7 @@ reportsRouter.get(
   asyncHandler(async (req, res) => {
     const query = querySchema.parse(req.query);
     const { from, to } = resolvePeriod(query.period, query.from, query.to, query.tzOffsetMinutes);
-    const data = await service.getMessagesReport({ from, to, agentId: query.agentId, connectionIds: parseListParam(query.connectionId) });
+    const data = await service.getMessagesReport({ from, to, agentId: query.agentId, connectionIds: await resolveAllowedConnectionIds(req.auth!, parseListParam(query.connectionId)) });
     if (query.format === "json") return res.json(data);
     // The other export formats need rows, not a single stats object — wrap it as one row.
     await respond(res, [data], query.format, "relatorio-mensagens", "Relatório de Mensagens", query.tzOffsetMinutes);

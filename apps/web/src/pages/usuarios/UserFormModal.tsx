@@ -1,8 +1,9 @@
-import { useState, type FormEvent } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState, type FormEvent } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { X } from "lucide-react";
-import type { UserDTO, Role } from "@whatsatendende/types";
-import { api } from "../../lib/api";
+import type { UserDTO, Role, ManagerConnectionAccessDTO } from "@whatsatendende/types";
+import { api, getApiErrorMessage } from "../../lib/api";
 
 export interface UserFormValues {
   fullName: string;
@@ -129,8 +130,15 @@ export function UserFormModal({
             </Field>
           )}
 
+          {user && values.role === "MANAGER" && <ManagerConnectionAccessEditor managerId={user.id} />}
+
           {!user && (
             <>
+              {values.role === "MANAGER" && (
+                <p className="rounded-card bg-secondary/30 px-3 py-2 text-xs text-secondary-fg">
+                  Depois de criar este gestor, edite-o novamente para escolher quais conexões (além das que ele mesmo cadastrar) ele poderá ver/editar e receber conversas.
+                </p>
+              )}
               <Field label="Senha">
                 <input required type="password" minLength={8} value={values.password} onChange={(e) => setValues((v) => ({ ...v, password: e.target.value }))} className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm" />
               </Field>
@@ -203,5 +211,103 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <span className="mb-1 block text-sm font-medium">{label}</span>
       {children}
     </label>
+  );
+}
+
+/**
+ * ADMIN-only editor for which connections a MANAGER can see/edit and
+ * receive new conversations from — see PROMPT: "no acesso do
+ * administrador, poderá designar qual conexão os gestores poderão
+ * ver/editar e também poderão receber novas conversas de quais conexões".
+ * A connection this manager created themselves always shows both checked
+ * and disabled (implicit full access — see WhatsAppConnection.createdByUserId);
+ * every other connection defaults to unchecked until explicitly granted here.
+ */
+function ManagerConnectionAccessEditor({ managerId }: { managerId: string }) {
+  const queryClient = useQueryClient();
+  const queryKey = ["manager-connection-access", managerId];
+  const { data, isLoading } = useQuery({
+    queryKey,
+    queryFn: async () => (await api.get<ManagerConnectionAccessDTO[]>(`/whatsapp/managers/${managerId}/access`)).data,
+  });
+  const [rows, setRows] = useState<ManagerConnectionAccessDTO[]>([]);
+  useEffect(() => {
+    if (data) setRows(data);
+  }, [data]);
+
+  const saveMutation = useMutation({
+    mutationFn: async () =>
+      (
+        await api.put<ManagerConnectionAccessDTO[]>(`/whatsapp/managers/${managerId}/access`, {
+          entries: rows.filter((r) => !r.owned).map((r) => ({ whatsappConnectionId: r.whatsappConnectionId, canManage: r.canManage, canReceiveConversations: r.canReceiveConversations })),
+        })
+      ).data,
+    onSuccess: (saved) => {
+      setRows(saved);
+      queryClient.setQueryData(queryKey, saved);
+      toast.success("Permissões de conexão atualizadas.");
+    },
+    onError: (err) => toast.error(getApiErrorMessage(err, "Erro ao salvar as permissões de conexão")),
+  });
+
+  function toggle(connectionId: string, field: "canManage" | "canReceiveConversations") {
+    setRows((prev) => prev.map((r) => (r.whatsappConnectionId === connectionId ? { ...r, [field]: !r[field] } : r)));
+  }
+
+  return (
+    <div className="rounded-card border border-border p-3">
+      <p className="text-sm font-medium">Conexões que este gestor pode acessar</p>
+      <p className="mt-0.5 text-xs text-muted">
+        Por padrão, um gestor só vê as conexões que ele mesmo cadastrar. Marque abaixo para liberar outras.
+      </p>
+      {isLoading ? (
+        <p className="mt-2 text-xs text-muted">Carregando...</p>
+      ) : rows.length === 0 ? (
+        <p className="mt-2 text-xs text-muted">Nenhuma conexão cadastrada ainda.</p>
+      ) : (
+        <div className="mt-3 space-y-1.5">
+          <div className="grid grid-cols-[1fr_auto_auto] items-center gap-2 text-[11px] font-medium text-muted">
+            <span>Conexão</span>
+            <span className="w-16 text-center">Ver/editar</span>
+            <span className="w-16 text-center">Receber conversas</span>
+          </div>
+          {rows.map((row) => (
+            <div key={row.whatsappConnectionId} className="grid grid-cols-[1fr_auto_auto] items-center gap-2 rounded-card px-1 py-1 text-sm hover:bg-surface-alt">
+              <span className="flex items-center gap-1.5 truncate">
+                <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: row.whatsappConnectionColor }} />
+                <span className="truncate">{row.whatsappConnectionName}</span>
+                {row.owned && <span className="shrink-0 rounded-full bg-secondary/40 px-1.5 py-0.5 text-[10px] text-secondary-fg">própria</span>}
+              </span>
+              <span className="w-16 text-center">
+                <input
+                  type="checkbox"
+                  checked={row.canManage}
+                  disabled={row.owned}
+                  onChange={() => toggle(row.whatsappConnectionId, "canManage")}
+                  className="focus-ring h-4 w-4 rounded border-border disabled:opacity-60"
+                />
+              </span>
+              <span className="w-16 text-center">
+                <input
+                  type="checkbox"
+                  checked={row.canReceiveConversations}
+                  disabled={row.owned}
+                  onChange={() => toggle(row.whatsappConnectionId, "canReceiveConversations")}
+                  className="focus-ring h-4 w-4 rounded border-border disabled:opacity-60"
+                />
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={() => saveMutation.mutate()}
+        disabled={saveMutation.isPending || isLoading}
+        className="focus-ring mt-3 rounded-card border border-border px-3 py-1.5 text-xs font-semibold hover:bg-surface-alt disabled:opacity-60"
+      >
+        {saveMutation.isPending ? "Salvando..." : "Salvar permissões de conexão"}
+      </button>
+    </div>
   );
 }

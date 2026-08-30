@@ -120,6 +120,12 @@ function mimeToMessageType(mime: string): "IMAGE" | "VIDEO" | "AUDIO" | "DOCUMEN
 async function loadConversationForAgent(conversationId: string, agentId: string) {
   const conversation = await getConversationOrThrow(conversationId);
   assertAgentCanAccessConversation(conversation, { userId: agentId, role: "AGENT" });
+  // Shared by every outbound send route (text/file/audio/location) — a
+  // disconnected WhatsApp connection can't actually deliver anything, so
+  // block it here once instead of duplicating the check in each route.
+  if (conversation.whatsappConnection.status !== "CONNECTED") {
+    throw Errors.badRequest("A conexao de WhatsApp esta desconectada — nao e possivel enviar mensagens");
+  }
   return conversation;
 }
 

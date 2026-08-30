@@ -37,6 +37,9 @@ export function ChatPanel({
   const isAdmin = useAuthStore((s) => s.user?.role === "ADMIN");
   const canTransfer = permissions?.[PERMISSION.ATENDIMENTO_TRANSFERIR];
   const canClose = permissions?.[PERMISSION.ATENDIMENTO_ENCERRAR];
+  // A disconnected connection can't actually deliver anything — see PROMPT:
+  // "não permitindo enviar mensagens... de conexões desconectadas".
+  const connectionDisconnected = conversation.whatsappConnectionStatus !== "CONNECTED";
   const [messages, setMessages] = useState<MessageDTO[]>([]);
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const [replyTo, setReplyTo] = useState<MessageDTO | null>(null);
@@ -484,8 +487,14 @@ export function ChatPanel({
         </div>
       </div>
 
+      {connectionDisconnected && (
+        <div className="mx-4 mb-2 rounded-card bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
+          Esta conexão de WhatsApp está desconectada — não é possível enviar mensagens até que ela seja reconectada.
+        </div>
+      )}
+
       <Composer
-        disabled={sendTextMutation.isPending}
+        disabled={sendTextMutation.isPending || connectionDisconnected}
         quickReplies={quickRepliesQuery.data}
         replyTo={replyTo}
         onCancelReply={() => setReplyTo(null)}
