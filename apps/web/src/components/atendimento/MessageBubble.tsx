@@ -288,15 +288,13 @@ export function MessageBubble({
         </div>
       ))}
 
-      {message.body && <p className="whitespace-pre-wrap break-words">{renderWhatsAppFormatting(message.body)}</p>}
-
-      {/* Link-preview card (WhatsApp Web parity) — only present when a URL in the text actually resolved to Open Graph metadata; a plain/unfetchable link still renders clickable via renderWhatsAppFormatting above, just without this card. */}
+      {/* Link-preview card (WhatsApp Web parity) — above the text, same as WhatsApp Web itself; only present when a URL in the text actually resolved to Open Graph metadata — a plain/unfetchable link still renders clickable via renderWhatsAppFormatting below, just without this card. */}
       {message.linkPreview && (
         <a
           href={message.linkPreview.url || undefined}
           target="_blank"
           rel="noreferrer"
-          className="mt-1.5 flex overflow-hidden rounded border border-black/10 bg-black/5 hover:bg-black/10"
+          className="mb-1.5 flex overflow-hidden rounded border border-black/10 bg-black/5 hover:bg-black/10"
         >
           {message.linkPreview.thumbnailUrl && (
             <img src={message.linkPreview.thumbnailUrl} alt="" className="h-16 w-16 shrink-0 object-cover" />
@@ -308,6 +306,8 @@ export function MessageBubble({
           </div>
         </a>
       )}
+
+      {message.body && <p className="whitespace-pre-wrap break-words">{renderWhatsAppFormatting(message.body)}</p>}
 
       <div className={clsx("mt-1 flex items-center gap-1 text-[11px] opacity-75", isOutbound ? "justify-end" : "justify-start")}>
         <span>{format(new Date(message.createdAt), "HH:mm")}</span>
