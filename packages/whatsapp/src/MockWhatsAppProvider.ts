@@ -59,7 +59,11 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
   readonly readReceiptsSent: { chatId: string; providerMessageIds: string[] }[] = [];
 
   async connect(options?: ConnectOptions): Promise<void> {
-    this.setStatus({ ...this.status, state: "CONNECTING" });
+    // qrCodeDataUrl/pairingCode cleared here (not carried forward from the
+    // previous status) — mirrors the real BaileysWhatsAppProvider fix:
+    // switching connect mode on the same connection must not leave a stale
+    // one around to shadow the newly-generated one in the UI.
+    this.setStatus({ ...this.status, state: "CONNECTING", qrCodeDataUrl: null, pairingCode: null });
     await delay(400);
 
     if (options?.phoneNumber) {
