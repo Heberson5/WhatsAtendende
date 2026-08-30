@@ -208,7 +208,31 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
           this.setStatus({ ...this.status, state: "CODE_PENDING", pairingCode: code });
         } catch (err) {
           this.logger.error({ err }, "failed to request WhatsApp pairing code");
-          this.settleDisconnected();
+          // A transient hiccup here (the raw WebSocket never finished
+          // opening in time, a momentary network blip, WhatsApp briefly
+          // rejecting the request) used to give up immediately with no
+          // retry at all — unlike every other disconnect, which retries
+          // with backoff via the "close" handler below. That asymmetry
+          // meant any single bad moment during pairing silently killed
+          // the whole attempt, with no code ever shown to the admin, no
+          // matter how many times connect() itself was called. Retry it
+          // the same bounded, backed-off way instead of giving up on the
+          // first failure.
+          this.reconnectAttempts += 1;
+          if (!wasAlreadyLinked && this.reconnectAttempts > BaileysWhatsAppProvider.MAX_INITIAL_PAIRING_RETRIES) {
+            this.logger.error(
+              "giving up on WhatsApp pairing after repeated failed attempts — check that this host has outbound network access to WhatsApp's servers"
+            );
+            this.settleDisconnected();
+            return;
+          }
+          const delay = Math.min(
+            BaileysWhatsAppProvider.BASE_RECONNECT_DELAY_MS * 2 ** (this.reconnectAttempts - 1),
+            BaileysWhatsAppProvider.MAX_RECONNECT_DELAY_MS
+          );
+          this.reconnectTimer = setTimeout(() => {
+            this.connect(connectOptions).catch((retryErr) => this.logger.error({ err: retryErr }, "WhatsApp reconnect attempt failed"));
+          }, delay);
           return;
         }
       }
