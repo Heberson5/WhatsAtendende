@@ -342,6 +342,22 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
             !wasAlreadyLinked &&
             this.status.state === "CODE_PENDING";
 
+          if (connectOptions?.phoneNumber && !wasAlreadyLinked) {
+            // WHATSAPP_LOG_LEVEL defaults to "silent" (see the logger
+            // above), which was swallowing every diagnostic this file
+            // already logs for a failed pairing attempt — this line is
+            // the one that actually matters for telling apart "WhatsApp's
+            // own expected restart-required close, handled" from a real
+            // rejection (e.g. its own anti-abuse throttling after many
+            // pairing-code requests in a short time, which surfaces as a
+            // *different* statusCode here, not 515). Set
+            // WHATSAPP_LOG_LEVEL=info (or lower) to see it.
+            this.logger.warn(
+              { statusCode, isExpectedPairingRestart, reconnectAttempts: this.reconnectAttempts },
+              "WhatsApp connection closed during a pairing-code attempt"
+            );
+          }
+
           if (!isExpectedPairingRestart) {
             this.settleDisconnected();
           }
