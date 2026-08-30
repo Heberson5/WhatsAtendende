@@ -185,6 +185,39 @@ describe("WhatsApp connection color and pairing-code connect", () => {
     expect(connection.pairingCode).toMatch(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
   });
 
+  it("shows the pairing code (not a stale QR) after switching from QR Code to Conectar com número on the same connection", async () => {
+    // Regression: connect() used to spread the *previous* status forward
+    // (`{ ...this.status, state: "CONNECTING" }`), so a leftover
+    // qrCodeDataUrl from an earlier QR attempt survived into the new
+    // CODE_PENDING status. The panel checks qrCodeDataUrl before
+    // pairingCode, so that stale QR kept winning and the freshly-generated
+    // code never rendered — see PROMPT: "quando clico para gerar o código,
+    // não aparece qual é o código".
+    await createTestUser({ email: "admin4b@test.dev", role: "ADMIN" });
+    const token = await loginAs("admin4b@test.dev");
+    const created = await request(app).post("/api/whatsapp/connections").set("Authorization", `Bearer ${token}`).send({ name: "Suporte2b" });
+
+    // First, connect via QR (no phoneNumber) and let it reach QR_PENDING with a real qrCodeDataUrl.
+    await request(app).post(`/api/whatsapp/connections/${created.body.id}/connect`).set("Authorization", `Bearer ${token}`);
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const afterQr = await request(app).get("/api/whatsapp/connections").set("Authorization", `Bearer ${token}`);
+    const qrState = afterQr.body.find((c: { id: string }) => c.id === created.body.id);
+    expect(qrState.state).toBe("QR_PENDING");
+    expect(qrState.qrCodeDataUrl).toBeTruthy();
+
+    // Now switch to pairing-code mode on the SAME connection, same as clicking "Conectar com número" then "Gerar código".
+    await request(app)
+      .post(`/api/whatsapp/connections/${created.body.id}/connect`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ phoneNumber: "5511999997777" });
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const afterCode = await request(app).get("/api/whatsapp/connections").set("Authorization", `Bearer ${token}`);
+    const codeState = afterCode.body.find((c: { id: string }) => c.id === created.body.id);
+    expect(codeState.state).toBe("CODE_PENDING");
+    expect(codeState.pairingCode).toMatch(/^[A-Z0-9]{4}-[A-Z0-9]{4}$/);
+    expect(codeState.qrCodeDataUrl).toBeNull();
+  });
+
   it("lists device contacts once connected, restricted to the agent's own connection", async () => {
     await createTestUser({ email: "admin5@test.dev", role: "ADMIN" });
     const adminToken = await loginAs("admin5@test.dev");

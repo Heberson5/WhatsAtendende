@@ -145,7 +145,15 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
       this.socket = null;
     }
     this.lastConnectOptions = connectOptions;
-    this.setStatus({ ...this.status, state: "CONNECTING" });
+    // qrCodeDataUrl/pairingCode explicitly cleared here (not just spread
+    // forward from the previous status) — they're mutually exclusive
+    // artifacts of one specific connect attempt. Without this, switching
+    // from "QR Code" to "Conectar com número" (or back) on the same
+    // connection carried the OLD one over: the frontend checks
+    // qrCodeDataUrl before pairingCode, so a stale QR value from an earlier
+    // attempt kept winning and the newly-generated pairing code never
+    // rendered at all, even though it had, in fact, been generated.
+    this.setStatus({ ...this.status, state: "CONNECTING", qrCodeDataUrl: null, pairingCode: null });
 
     try {
       const { state, saveCreds } = await useMultiFileAuthState(this.options.authStateDir);
