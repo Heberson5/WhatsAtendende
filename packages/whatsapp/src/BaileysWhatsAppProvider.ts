@@ -188,7 +188,23 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
 
       if (connectOptions?.phoneNumber && !state.creds.registered) {
         try {
-          const code = await socket.requestPairingCode(connectOptions.phoneNumber.replace(/\D/g, ""));
+          // requestPairingCode() sends its request straight over the raw
+          // WebSocket with no internal wait — it throws "Connection Closed"
+          // immediately if that socket hasn't finished opening yet (the
+          // TCP/TLS handshake to WhatsApp's servers takes real time, and
+          // makeWASocket() returns long before it completes). Calling it
+          // right after makeWASocket(), with nothing awaited in between,
+          // hit that every time: the request failed before it ever reached
+          // WhatsApp, was swallowed by the catch below, and the connection
+          // just silently settled back to DISCONNECTED — no code was ever
+          // generated to show. waitForSocketOpen() is Baileys' own exposed
+          // helper for this exact ordering requirement.
+          await socket.waitForSocketOpen();
+          const rawCode = await socket.requestPairingCode(connectOptions.phoneNumber.replace(/\D/g, ""));
+          // Formatted to match WhatsApp's own on-phone display convention
+          // (and this project's MockWhatsAppProvider) — Baileys itself
+          // returns the 8 characters with no separator.
+          const code = `${rawCode.slice(0, 4)}-${rawCode.slice(4)}`;
           this.setStatus({ ...this.status, state: "CODE_PENDING", pairingCode: code });
         } catch (err) {
           this.logger.error({ err }, "failed to request WhatsApp pairing code");
