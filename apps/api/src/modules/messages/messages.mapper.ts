@@ -7,6 +7,10 @@ type MessageWithRelations = Message & {
   reactions: (MessageReaction & { user: User | null })[];
 };
 
+function base64ToDataUrl(base64: string | null): string | null {
+  return base64 ? `data:image/jpeg;base64,${base64}` : null;
+}
+
 export function toMessageDTO(message: MessageWithRelations): MessageDTO {
   return {
     id: message.id,
@@ -20,6 +24,17 @@ export function toMessageDTO(message: MessageWithRelations): MessageDTO {
     deliveredAt: message.deliveredAt ? message.deliveredAt.toISOString() : null,
     readAt: message.readAt ? message.readAt.toISOString() : null,
     replyToMessageId: message.replyToMessageId,
+    replyToStory: message.isStoryReply
+      ? { text: message.storyReplyText, thumbnailUrl: base64ToDataUrl(message.storyReplyThumbnail) }
+      : null,
+    linkPreview: message.linkPreviewTitle
+      ? {
+          title: message.linkPreviewTitle,
+          description: message.linkPreviewDescription,
+          url: message.linkPreviewUrl ?? "",
+          thumbnailUrl: base64ToDataUrl(message.linkPreviewThumbnail),
+        }
+      : null,
     attachments: message.attachments.map((a) => ({
       id: a.id,
       fileName: a.fileName,

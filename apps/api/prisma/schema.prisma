@@ -357,6 +357,27 @@ model Message {
   replyToMessageId      String?
   replies               Message[]         @relation("MessageReplies")
 
+  // A reply to a WhatsApp Status/Story ("respondendo a um story") instead of
+  // to another message in this conversation — the story itself is never
+  // fetched or stored anywhere (WhatsApp doesn't keep it once it expires,
+  // and there's no way to look one up afterward), so this carries only the
+  // small preview WhatsApp embeds directly inside the reply: its text, or a
+  // low-res thumbnail for a media story. See extractQuotedStory in
+  // BaileysWhatsAppProvider.ts.
+  isStoryReply          Boolean           @default(false)
+  storyReplyText        String?
+  storyReplyThumbnail   String? // base64 JPEG — WhatsApp's own embedded low-res preview, not a fetched/stored file
+
+  // Link-preview card (WhatsApp Web parity) — populated when this TEXT
+  // message's body contains a URL and a preview was generated, either by
+  // the sender's own phone (inbound / device-sent) or, for a message sent
+  // through this app, by Baileys' getUrlInfo helper on send. See
+  // linkPreviewUrl (the literal URL the card refers to) as its href.
+  linkPreviewTitle       String?
+  linkPreviewDescription String?
+  linkPreviewUrl         String?
+  linkPreviewThumbnail   String? // base64 JPEG
+
   createdAt             DateTime          @default(now())
   deliveredAt           DateTime?
   readAt                DateTime?

@@ -38,6 +38,30 @@ export interface InboundMessageEvent {
   eventStartAt?: Date;
   eventJoinLink?: string;
   replyToProviderMessageId?: string | null;
+  /**
+   * Set when this message replies to a WhatsApp Status/Story rather than to
+   * another message in the conversation (contextInfo.remoteJid ===
+   * "status@broadcast"). The story itself is never fetched or stored
+   * anywhere — WhatsApp doesn't keep it once it expires and there is no way
+   * to look one up afterward — so this only carries the small preview
+   * WhatsApp embeds directly inside the reply itself: the story's own text,
+   * or a low-res thumbnail for a media story.
+   */
+  isQuotedStoryReply?: boolean;
+  quotedStoryText?: string | null;
+  quotedStoryThumbnailBase64?: string | null;
+  /**
+   * Link-preview card (WhatsApp Web parity) — populated when this TEXT
+   * message's body contains a URL and either the sender's own phone (any
+   * inbound or device-sent message) or, for a message sent through this
+   * app, Baileys' own getUrlInfo helper (see sendText in
+   * BaileysWhatsAppProvider) generated Open Graph metadata for it.
+   */
+  linkPreviewTitle?: string | null;
+  linkPreviewDescription?: string | null;
+  /** The literal URL the preview refers to (WhatsApp's own "matched text") — used as the card's href. */
+  linkPreviewUrl?: string | null;
+  linkPreviewThumbnailBase64?: string | null;
   timestamp: Date;
   // true when this message was sent BY the connected account rather than
   // received from the customer — WhatsApp's multi-device protocol reports
@@ -68,6 +92,13 @@ export interface ReactionEvent {
 export interface SendResult {
   providerMessageId: string;
   timestamp: Date;
+  /** TEXT sends only — set when the sent text's URL got a generated link-preview card (see sendText). */
+  linkPreview?: {
+    title: string;
+    description?: string | null;
+    url: string;
+    thumbnailBase64?: string | null;
+  } | null;
 }
 
 export interface SendTextOptions {

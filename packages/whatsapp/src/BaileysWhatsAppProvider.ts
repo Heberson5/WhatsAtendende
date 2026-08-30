@@ -9,6 +9,7 @@ import makeWASocket, {
   downloadMediaMessage,
   type WASocket,
   type WAMessage,
+  type proto,
 } from "@whiskeysockets/baileys";
 import type {
   ChatIdentityResolvedEvent,
@@ -420,8 +421,27 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
           message: { conversation: options.replyToText ?? "" },
         }
       : undefined;
+    // Baileys already generates a link-preview card on its own for every
+    // text send whose body contains a URL (sendMessage wires its own
+    // getUrlInfo — Open Graph title/description + a compressed thumbnail —
+    // into the outgoing extendedTextMessage by default; see
+    // Socket/messages-send.js), the same rich card WhatsApp Web itself
+    // builds before a link leaves the composer. A fetch failure/timeout is
+    // swallowed internally there; the text still sends, just without a card.
     const sent = await socket.sendMessage(chatId, { text }, { quoted: quoted as any });
-    return { providerMessageId: sent?.key.id ?? "", timestamp: new Date() };
+    const sentExt = sent?.message?.extendedTextMessage;
+    return {
+      providerMessageId: sent?.key.id ?? "",
+      timestamp: new Date(),
+      linkPreview: sentExt?.title
+        ? {
+            title: sentExt.title,
+            description: sentExt.description ?? null,
+            url: sentExt.matchedText ?? "",
+            thumbnailBase64: sentExt.jpegThumbnail ? Buffer.from(sentExt.jpegThumbnail).toString("base64") : null,
+          }
+        : null,
+    };
   }
 
   async sendFile(
@@ -616,6 +636,7 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
     const content = message.message;
     if (!content) return;
 
+    const quotedStory = extractQuotedStory(content);
     const base = {
       providerMessageId: message.key.id ?? "",
       chatId,
@@ -625,15 +646,29 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
       contactName: message.key.fromMe ? null : (message.pushName ?? null),
       replyToProviderMessageId:
         content.extendedTextMessage?.contextInfo?.stanzaId ?? null,
+      isQuotedStoryReply: quotedStory !== null,
+      quotedStoryText: quotedStory?.text ?? null,
+      quotedStoryThumbnailBase64: quotedStory?.thumbnailBase64 ?? null,
       timestamp: new Date((Number(message.messageTimestamp) || Date.now() / 1000) * 1000),
       fromMe: Boolean(message.key.fromMe),
     };
 
     if (content.conversation || content.extendedTextMessage?.text) {
+      const ext = content.extendedTextMessage;
       this.emitter.emit("message", {
         ...base,
         type: "TEXT",
-        body: content.conversation ?? content.extendedTextMessage?.text ?? "",
+        body: content.conversation ?? ext?.text ?? "",
+        // Populated by the SENDER's own phone (customer, or the linked
+        // phone/another device sending directly) — WhatsApp generates a
+        // link preview client-side before the message ever leaves the
+        // device, so it always arrives pre-baked into extendedTextMessage
+        // rather than something this app needs to fetch itself for an
+        // inbound/device-sent message. See sendText for the outbound side.
+        linkPreviewTitle: ext?.title ?? null,
+        linkPreviewDescription: ext?.description ?? null,
+        linkPreviewUrl: ext?.matchedText ?? null,
+        linkPreviewThumbnailBase64: ext?.jpegThumbnail ? Buffer.from(ext.jpegThumbnail).toString("base64") : null,
       } satisfies InboundMessageEvent);
       return;
     }
@@ -725,6 +760,33 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
  */
 function isNonCustomerChat(chatId: string): boolean {
   return chatId.endsWith("@g.us") || chatId.endsWith("@broadcast") || chatId.endsWith("@newsletter");
+}
+
+/**
+ * A reply to a WhatsApp Status/Story carries contextInfo.remoteJid ===
+ * "status@broadcast" — WhatsApp embeds the story's own content directly in
+ * contextInfo.quotedMessage (its text, or a low-res jpegThumbnail for a
+ * media story), since the story itself is never persisted anywhere and
+ * can't be looked up after the fact once it expires. Checked across every
+ * message type that can carry contextInfo, not just extendedTextMessage —
+ * a story reply can be sent as media too, not only as typed text.
+ */
+function extractQuotedStory(content: proto.IMessage): { text: string | null; thumbnailBase64: string | null } | null {
+  const contextInfo =
+    content.extendedTextMessage?.contextInfo ??
+    content.imageMessage?.contextInfo ??
+    content.videoMessage?.contextInfo ??
+    content.audioMessage?.contextInfo ??
+    content.documentMessage?.contextInfo ??
+    content.locationMessage?.contextInfo ??
+    content.contactMessage?.contextInfo ??
+    undefined;
+  if (!contextInfo || contextInfo.remoteJid !== "status@broadcast") return null;
+
+  const quoted = contextInfo.quotedMessage;
+  const text = quoted?.conversation ?? quoted?.extendedTextMessage?.text ?? quoted?.imageMessage?.caption ?? quoted?.videoMessage?.caption ?? null;
+  const thumbnail = quoted?.imageMessage?.jpegThumbnail ?? quoted?.videoMessage?.jpegThumbnail ?? null;
+  return { text, thumbnailBase64: thumbnail ? Buffer.from(thumbnail).toString("base64") : null };
 }
 
 /**
