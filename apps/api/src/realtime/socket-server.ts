@@ -32,8 +32,17 @@ export function createSocketServer(httpServer: HttpServer): SocketIOServer {
     const auth = socket.data.auth as { userId: string; role: string };
     socket.join(ROOMS.user(auth.userId));
 
-    await registerConnection(auth.userId, socket.id);
+    // Registered before the await below (not after): registerConnection's
+    // own DB write is a real round trip, and a disconnect landing during
+    // that window would otherwise fire with no listener attached yet —
+    // Socket.IO only emits "disconnect" once, so a socket that connects and
+    // immediately drops in that gap would never be un-registered, leaving
+    // it stuck counted as an active connection forever (see
+    // presence-tracker.ts: a phantom entry in activeSocketsByUser blocks
+    // that user's presence from ever reaching zero sockets, so it can never
+    // become eligible for the OFFLINE grace timer at all).
     socket.on("disconnect", () => registerDisconnection(auth.userId, socket.id));
+    await registerConnection(auth.userId, socket.id);
 
     if (auth.role === "AGENT") {
       // Looked up fresh on every connect (rather than trusted from the JWT)
