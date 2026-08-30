@@ -80,6 +80,11 @@ export default function AtendimentoPage() {
           selectedConversation ? "hidden" : "flex"
         )}
       >
+        {hasFixedConnection && user?.whatsappConnectionStatus !== "CONNECTED" && (
+          <div className="border-b border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
+            Sua conexão de WhatsApp está desconectada — não é possível enviar mensagens nem aceitar conversas até que ela seja reconectada. Avise um administrador.
+          </div>
+        )}
         <div className="flex items-center gap-1.5 border-b border-border bg-surface-alt px-3 py-2">
           {canFilterByConnection ? (
             <div className="flex-1">

@@ -64,6 +64,14 @@ model User {
   messageReactions        MessageReaction[]
   auditLogs               AuditLog[]
   notifications           Notification[]
+  // Connections this user (a MANAGER, in practice) personally created —
+  // owning a connection grants full view/edit/receive access to it with no
+  // separate grant row needed. See PROMPT: "conexões que foram cadastradas
+  // pelos gestores".
+  createdConnections      WhatsAppConnection[]     @relation("ConnectionCreatedBy")
+  // Explicit ADMIN-granted access to a connection this user did NOT create
+  // — see ManagerConnectionAccess.
+  connectionGrants        ManagerConnectionAccess[]
 
   @@index([role])
   @@index([status])
@@ -130,6 +138,13 @@ model WhatsAppConnection {
   linkedNumber    String?
   lastConnectedAt DateTime?
   lastQrAt        DateTime?
+  // Whoever ran POST /connections to create this row — a MANAGER who
+  // created a connection themselves gets full view/edit/receive access to
+  // it automatically, with no ManagerConnectionAccess grant needed. Null
+  // for a connection created before this field existed, or created
+  // directly by an ADMIN with no meaningful "owner" concept for it.
+  createdByUser   User?                    @relation("ConnectionCreatedBy", fields: [createdByUserId], references: [id])
+  createdByUserId String?
   createdAt       DateTime                 @default(now())
   updatedAt       DateTime                 @updatedAt
 
@@ -137,8 +152,34 @@ model WhatsAppConnection {
   contacts      Contact[]
   conversations Conversation[]
   quickReplies  QuickReply[]
+  managerGrants ManagerConnectionAccess[]
 
   @@index([status])
+}
+
+// An ADMIN-granted exception to a MANAGER's default connection visibility
+// (which is otherwise limited to connections they personally created — see
+// WhatsAppConnection.createdByUserId). One row per (manager, connection)
+// pair the admin has explicitly opted in, with two independent grants —
+// see PROMPT: "designar qual conexão os gestores poderão ver/editar e
+// também poderão receber novas conversas de quais conexões". `manager`
+// is expected to be a Role.MANAGER user; enforced in the service layer,
+// not the DB, same precedent as User.whatsappConnectionId being AGENT-only.
+model ManagerConnectionAccess {
+  id                      String             @id @default(uuid())
+  manager                 User               @relation(fields: [managerId], references: [id], onDelete: Cascade)
+  managerId               String
+  whatsappConnection      WhatsAppConnection @relation(fields: [whatsappConnectionId], references: [id], onDelete: Cascade)
+  whatsappConnectionId    String
+  // View/edit the connection itself (Configurações, and counted toward the
+  // connection filters in Gestão/Dashboard/Relatórios).
+  canManage               Boolean            @default(false)
+  // Eligible to see and accept this connection's queue in Atendimento.
+  canReceiveConversations Boolean            @default(false)
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
+
+  @@unique([managerId, whatsappConnectionId])
 }
 
 // Canned messages an agent can drop into the composer by typing "/" followed

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import request from "supertest";
 import { createApp } from "../src/app";
 import { prisma } from "../src/lib/prisma";
-import { resetDatabase, createTestUser, createTestConnection, createWaitingConversation, TEST_PASSWORD } from "./helpers";
+import { resetDatabase, createTestUser, createTestConnection, createWaitingConversation, grantManagerConnectionAccess, TEST_PASSWORD } from "./helpers";
 import * as conversationsService from "../src/modules/conversations/conversations.service";
 
 const app = createApp();
@@ -222,7 +222,8 @@ describe("conversation queue and acceptance", () => {
 
   it("lets a MANAGER view any conversation via oversight (optionally filtered by connection), and a second accept on an already-taken one conflicts", async () => {
     await createTestUser({ email: "joao@test.dev", role: "AGENT", displayName: "Joao", whatsappConnectionId: connectionId });
-    await createTestUser({ email: "gestor@test.dev", role: "MANAGER" });
+    const gestor = await createTestUser({ email: "gestor@test.dev", role: "MANAGER" });
+    await grantManagerConnectionAccess(gestor.id, connectionId);
     const joaoToken = await loginAs("joao@test.dev");
     const gestorToken = await loginAs("gestor@test.dev");
     const { conversation } = await createWaitingConversation("5511999995555", connectionId);
@@ -246,9 +247,11 @@ describe("conversation queue and acceptance", () => {
   });
 
   it("lets a MANAGER (with no fixed connection) see the combined queue across connections, accept, and later receive a transfer", async () => {
-    await createTestUser({ email: "gestor2@test.dev", role: "MANAGER", presence: "ONLINE" });
+    const gestor2 = await createTestUser({ email: "gestor2@test.dev", role: "MANAGER", presence: "ONLINE" });
     const gestorToken = await loginAs("gestor2@test.dev");
     const vendas = await createTestConnection("Vendas2");
+    await grantManagerConnectionAccess(gestor2.id, connectionId);
+    await grantManagerConnectionAccess(gestor2.id, vendas.id);
     const { conversation: fromSuporte } = await createWaitingConversation("5511999994444", connectionId);
     const { conversation: fromVendas } = await createWaitingConversation("5511999993333", vendas.id);
 

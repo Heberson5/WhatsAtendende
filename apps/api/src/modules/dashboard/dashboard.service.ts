@@ -19,7 +19,7 @@ export interface DashboardParams {
  * messages in the same conversation still counts once.
  */
 export async function getDashboard({ from, to, agentId, connectionIds }: DashboardParams) {
-  const connectionFilter = connectionIds?.length ? { in: connectionIds } : undefined;
+  const connectionFilter = connectionIds === undefined ? undefined : { in: connectionIds };
   const whereBase = {
     createdAt: { gte: from, lte: to },
     ...(agentId ? { assignedAgentId: agentId } : {}),

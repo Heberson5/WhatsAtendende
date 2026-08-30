@@ -456,7 +456,11 @@ export async function findOrOpenConversationForDeviceSentMessage(connectionId: s
 export async function listQueue(connectionIds?: string[]) {
   const conversations = await prisma.conversation.findMany({
     where: {
-      whatsappConnectionId: connectionIds?.length ? { in: connectionIds } : undefined,
+      // undefined = no filter (see all); [] must mean "allowed to see
+      // none" and match nothing — NOT the same as no filter at all. A
+      // MANAGER scoped down to zero connections (see connection-access.ts)
+      // must get an empty queue, not everyone's.
+      whatsappConnectionId: connectionIds === undefined ? undefined : { in: connectionIds },
       status: { in: ["NEW", "WAITING"] },
     },
     include: conversationInclude,
@@ -618,7 +622,8 @@ export async function listAllConversations(filters: OversightFilters) {
       createdAt: filters.from || filters.to ? { gte: filters.from, lte: filters.to } : undefined,
       assignedAgentId: filters.agentId,
       status: filters.status ? (filters.status as any) : undefined,
-      whatsappConnectionId: filters.connectionIds?.length ? { in: filters.connectionIds } : undefined,
+      // Same undefined-vs-empty-array distinction as listQueue above.
+      whatsappConnectionId: filters.connectionIds === undefined ? undefined : { in: filters.connectionIds },
       contact: filters.contactSearch
         ? {
             OR: [
@@ -759,6 +764,15 @@ export function assertAgentCanAccessConversation(
  * read-then-write race window, whether we actually won the assignment.
  */
 export async function acceptConversation(conversationId: string, agentId: string) {
+  const target = await prisma.conversation.findUnique({
+    where: { id: conversationId },
+    select: { whatsappConnection: { select: { status: true } } },
+  });
+  if (!target) throw Errors.notFound("Conversa nao encontrada");
+  if (target.whatsappConnection.status !== "CONNECTED") {
+    throw Errors.badRequest("A conexao de WhatsApp esta desconectada — nao e possivel aceitar conversas");
+  }
+
   const now = new Date();
   const result = await prisma.conversation.updateMany({
     where: { id: conversationId, status: { in: ["NEW", "WAITING"] }, assignedAgentId: null },

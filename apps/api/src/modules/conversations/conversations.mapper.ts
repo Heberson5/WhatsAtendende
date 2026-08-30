@@ -37,6 +37,7 @@ export function toConversationListItemDTO(
     whatsappConnectionId: conversation.whatsappConnectionId,
     whatsappConnectionName: conversation.whatsappConnection.name,
     whatsappConnectionColor: conversation.whatsappConnection.color,
+    whatsappConnectionStatus: conversation.whatsappConnection.status,
     enteredQueueAt: conversation.enteredQueueAt.toISOString(),
     acceptedAt: conversation.acceptedAt ? conversation.acceptedAt.toISOString() : null,
     lastMessageAt: conversation.lastMessageAt.toISOString(),

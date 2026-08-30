@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { PermissionMap, UserDTO } from "@whatsatendende/types";
+import type { PermissionMap, UserDTO, WhatsAppConnectionStatus } from "@whatsatendende/types";
 
 interface AuthState {
   accessToken: string | null;
@@ -13,6 +13,13 @@ interface AuthState {
   setSession: (accessToken: string, user: UserDTO, permissions?: PermissionMap) => void;
   clearSession: () => void;
   setHydrated: () => void;
+  // Live-patches the current user's own connection status from the
+  // "whatsapp:status" socket event (see useSocketEvents) — powers the
+  // AGENT "sua conexão está desconectada" banner in Atendimento without
+  // waiting for the next login/refresh. No-op if the event isn't for this
+  // user's own connection (AGENT only ever has one; MANAGER/ADMIN have
+  // none, so this never matches for them).
+  updateOwnConnectionStatus: (connectionId: string, status: WhatsAppConnectionStatus) => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -24,4 +31,9 @@ export const useAuthStore = create<AuthState>((set) => ({
     set((state) => ({ accessToken, user, permissions: permissions ?? state.permissions })),
   clearSession: () => set({ accessToken: null, user: null, permissions: null }),
   setHydrated: () => set({ hydrated: true }),
+  updateOwnConnectionStatus: (connectionId, status) =>
+    set((state) => {
+      if (!state.user || state.user.whatsappConnectionId !== connectionId) return state;
+      return { user: { ...state.user, whatsappConnectionStatus: status } };
+    }),
 }));

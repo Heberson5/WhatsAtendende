@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import request from "supertest";
 import { createApp } from "../src/app";
 import { prisma } from "../src/lib/prisma";
-import { resetDatabase, createTestUser, createTestConnection, createWaitingConversation, TEST_PASSWORD } from "./helpers";
+import { resetDatabase, createTestUser, createTestConnection, createWaitingConversation, grantManagerConnectionAccess, TEST_PASSWORD } from "./helpers";
 
 const app = createApp();
 
@@ -53,7 +53,8 @@ describe("start a new conversation from a device contact", () => {
 
   it("refuses to start a conversation already owned by someone else, and requires a connectionId for a MANAGER", async () => {
     await createTestUser({ email: "joao3@test.dev", role: "AGENT", displayName: "Joao", whatsappConnectionId: connectionId });
-    await createTestUser({ email: "gestor@test.dev", role: "MANAGER" });
+    const gestor = await createTestUser({ email: "gestor@test.dev", role: "MANAGER" });
+    await grantManagerConnectionAccess(gestor.id, connectionId);
     const joaoToken = await loginAs("joao3@test.dev");
     const gestorToken = await loginAs("gestor@test.dev");
 
@@ -128,7 +129,8 @@ describe("transfer targets include MANAGER/ADMIN, who can also receive transfers
     // behind requireRole("AGENT") alone, so a MANAGER/ADMIN could accept a
     // conversation (allowed since round 37) but then get a 403 trying to
     // reply in it.
-    await createTestUser({ email: "gestor4@test.dev", role: "MANAGER", displayName: "Gestora" });
+    const gestor4 = await createTestUser({ email: "gestor4@test.dev", role: "MANAGER", displayName: "Gestora" });
+    await grantManagerConnectionAccess(gestor4.id, connectionId);
     const token = await loginAs("gestor4@test.dev");
     const { conversation } = await createWaitingConversation("5511990007777", connectionId);
 
