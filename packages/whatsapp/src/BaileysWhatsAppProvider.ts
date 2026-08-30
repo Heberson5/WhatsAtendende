@@ -247,7 +247,32 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
           if (this.shuttingDown) return; // see endForShutdown() — leave status/DB alone, this process is exiting
           const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
           const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-          this.settleDisconnected();
+
+          // WhatsApp always closes the connection once with "restart
+          // required" (515) right after requestPairingCode() succeeds —
+          // documented, expected multi-device protocol behavior, not a
+          // failure: the phone is still showing the code and waiting for
+          // it to be typed in, and the client is simply meant to
+          // reconnect. Tearing the status down to DISCONNECTED here wiped
+          // the just-generated pairingCode for the whole reconnect delay
+          // (and permanently once retries ran out) — from the admin's
+          // side the code flashed on screen for an instant and then
+          // vanished for good. While this fresh pairing-code attempt is
+          // still within its retry budget, leave the status (and the
+          // code still shown to the admin) alone; connect()'s own
+          // CONNECTING reset takes over once the reconnect actually runs
+          // moments later and requests a fresh code. QR-code connects are
+          // unaffected — this only applies to a phone-number attempt.
+          const isExpectedPairingRestart =
+            shouldReconnect &&
+            statusCode === DisconnectReason.restartRequired &&
+            Boolean(connectOptions?.phoneNumber) &&
+            !wasAlreadyLinked &&
+            this.status.state === "CODE_PENDING";
+
+          if (!isExpectedPairingRestart) {
+            this.settleDisconnected();
+          }
 
           if (!shouldReconnect) {
             // WhatsApp itself revoked this session (unlinked from the
@@ -277,6 +302,11 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
             this.logger.error(
               "giving up on WhatsApp pairing after repeated failed attempts — check that this host has outbound network access to WhatsApp's servers"
             );
+            // A restart-required close skipped settleDisconnected() above
+            // to keep the code on screen through what's normally a quick
+            // reconnect — but retries are now exhausted, so this really is
+            // a dead end and any lingering pairing code must be cleared.
+            this.settleDisconnected();
             return;
           }
           const delay = Math.min(
