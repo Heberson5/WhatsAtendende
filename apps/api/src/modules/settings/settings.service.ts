@@ -35,6 +35,40 @@ export async function updateBranding(patch: Partial<BrandingSettings>): Promise<
   return next;
 }
 
+// ---------------------------------------------------------------------------
+// Maintenance mode — see PROMPT: "botão em configurações para colocar o
+// site em manutenção... somente o administrador" pode acessar durante.
+// Read is public (the login screen needs it before anyone authenticates,
+// same precedent as branding above); write is ADMIN-only (see
+// settings.routes.ts — not the configurable CONFIGURACOES_GERENCIAR
+// permission, since this can lock every non-admin out of the whole system).
+// ---------------------------------------------------------------------------
+
+const MAINTENANCE_KEY = "maintenance";
+
+export interface MaintenanceSettings {
+  enabled: boolean;
+  message: string | null;
+}
+
+const DEFAULT_MAINTENANCE: MaintenanceSettings = { enabled: false, message: null };
+
+export async function getMaintenanceSettings(): Promise<MaintenanceSettings> {
+  const record = await prisma.systemSetting.findUnique({ where: { key: MAINTENANCE_KEY } });
+  return record ? { ...DEFAULT_MAINTENANCE, ...(record.value as object) } : DEFAULT_MAINTENANCE;
+}
+
+export async function updateMaintenanceSettings(patch: Partial<MaintenanceSettings>): Promise<MaintenanceSettings> {
+  const current = await getMaintenanceSettings();
+  const next = { ...current, ...patch };
+  await prisma.systemSetting.upsert({
+    where: { key: MAINTENANCE_KEY },
+    update: { value: next as unknown as Prisma.InputJsonValue },
+    create: { key: MAINTENANCE_KEY, value: next as unknown as Prisma.InputJsonValue },
+  });
+  return next;
+}
+
 export async function getBusinessSettings(): Promise<Record<string, unknown>> {
   const record = await prisma.systemSetting.findUnique({ where: { key: "business" } });
   return (record?.value as Record<string, unknown> | undefined) ?? DEFAULT_BUSINESS_SETTINGS;

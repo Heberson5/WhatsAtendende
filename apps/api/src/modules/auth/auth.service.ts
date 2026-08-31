@@ -5,6 +5,7 @@ import { Errors } from "../../lib/http-error";
 import { writeAudit } from "../../lib/audit";
 import { sendTemplatedMail } from "../../lib/mail";
 import { clearPendingTransferDeadlines } from "../conversations/conversations.service";
+import { getMaintenanceSettings } from "../settings/settings.service";
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from "./jwt";
 import { env } from "../../config/env";
 import { realtimeEvents } from "../../realtime/realtime";
@@ -40,6 +41,22 @@ export async function login(email: string, password: string, ip: string | null) 
   if (!valid) {
     await writeAudit({ userId: user.id, action: "LOGIN_FAILED", entity: "User", entityId: user.id, ipAddress: ip });
     throw Errors.unauthorized("E-mail ou senha invalidos");
+  }
+
+  // See PROMPT: "quem pode acessar quando está em manutenção é somente o
+  // administrador" — ADMIN always bypasses; every other role is blocked
+  // here. Checked only AFTER the password is confirmed correct (not
+  // earlier, alongside the INACTIVE check above) — otherwise a wrong
+  // password for a real non-admin account would return this same
+  // maintenance response, letting an unauthenticated caller enumerate
+  // which e-mails belong to a real (non-admin) account without ever
+  // knowing a valid password.
+  if (user.role !== "ADMIN") {
+    const maintenance = await getMaintenanceSettings();
+    if (maintenance.enabled) {
+      await writeAudit({ userId: user.id, action: "LOGIN_BLOCKED_MAINTENANCE", entity: "User", entityId: user.id, ipAddress: ip });
+      throw Errors.maintenance();
+    }
   }
 
   // Only one active login at a time — see PROMPT: o usuário não pode logar

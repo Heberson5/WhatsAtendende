@@ -25,7 +25,10 @@ function renderLoginPage() {
 describe("LoginPage", () => {
   beforeEach(() => {
     useAuthStore.setState({ accessToken: null, user: null, hydrated: true });
-    vi.mocked(api.get).mockResolvedValue({ data: { companyName: "WhatsAtendende", primaryColor: "#0097B4", secondaryColor: "#FFE450", logoUrl: null, faviconUrl: null } } as never);
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === "/settings/maintenance") return Promise.resolve({ data: { enabled: false, message: null } }) as never;
+      return Promise.resolve({ data: { companyName: "WhatsAtendende", primaryColor: "#0097B4", secondaryColor: "#FFE450", logoUrl: null, faviconUrl: null } }) as never;
+    });
     vi.mocked(api.post).mockReset();
   });
 
@@ -67,5 +70,38 @@ describe("LoginPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /entrar/i }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/nao foi possivel entrar/i);
+  });
+
+  it("shows the maintenance screen instead of the login form when maintenance mode is on, with the admin's custom message", async () => {
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === "/settings/maintenance") return Promise.resolve({ data: { enabled: true, message: "Voltamos às 14h." } }) as never;
+      return Promise.resolve({ data: { companyName: "WhatsAtendende", primaryColor: "#0097B4", secondaryColor: "#FFE450", logoUrl: null, faviconUrl: null } }) as never;
+    });
+
+    renderLoginPage();
+
+    expect(await screen.findByText(/Voltamos às 14h\./)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/e-mail/i)).not.toBeInTheDocument();
+  });
+
+  it("lets an admin reveal the normal login form from the maintenance screen via 'Acesso administrativo'", async () => {
+    vi.mocked(api.get).mockImplementation((url: string) => {
+      if (url === "/settings/maintenance") return Promise.resolve({ data: { enabled: true, message: null } }) as never;
+      return Promise.resolve({ data: { companyName: "WhatsAtendende", primaryColor: "#0097B4", secondaryColor: "#FFE450", logoUrl: null, faviconUrl: null } }) as never;
+    });
+
+    renderLoginPage();
+
+    const adminAccessButton = await screen.findByRole("button", { name: /acesso administrativo/i });
+    fireEvent.click(adminAccessButton);
+
+    expect(await screen.findByLabelText(/e-mail/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^senha$/i)).toBeInTheDocument();
+  });
+
+  it("does not show the maintenance screen when maintenance mode is off", async () => {
+    renderLoginPage();
+    await screen.findByLabelText(/e-mail/i);
+    expect(screen.queryByRole("button", { name: /acesso administrativo/i })).not.toBeInTheDocument();
   });
 });
