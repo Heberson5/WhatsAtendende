@@ -32,16 +32,16 @@ describe("LoginPage", () => {
     vi.mocked(api.post).mockReset();
   });
 
-  it("renders e-mail, password and submit fields", () => {
+  it("renders e-mail, password and submit fields", async () => {
     renderLoginPage();
-    expect(screen.getByLabelText(/e-mail/i)).toBeInTheDocument();
+    expect(await screen.findByLabelText(/e-mail/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/^senha$/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /entrar/i })).toBeInTheDocument();
   });
 
-  it("toggles password visibility", () => {
+  it("toggles password visibility", async () => {
     renderLoginPage();
-    const passwordInput = screen.getByLabelText(/^senha$/i) as HTMLInputElement;
+    const passwordInput = (await screen.findByLabelText(/^senha$/i)) as HTMLInputElement;
     expect(passwordInput.type).toBe("password");
     fireEvent.click(screen.getByLabelText(/mostrar senha/i));
     expect(passwordInput.type).toBe("text");
@@ -53,7 +53,7 @@ describe("LoginPage", () => {
     } as never);
 
     renderLoginPage();
-    fireEvent.change(screen.getByLabelText(/e-mail/i), { target: { value: "admin@test.dev" } });
+    fireEvent.change(await screen.findByLabelText(/e-mail/i), { target: { value: "admin@test.dev" } });
     fireEvent.change(screen.getByLabelText(/^senha$/i), { target: { value: "Admin@123" } });
     fireEvent.click(screen.getByRole("button", { name: /entrar/i }));
 
@@ -65,7 +65,7 @@ describe("LoginPage", () => {
     vi.mocked(api.post).mockRejectedValueOnce(new Error("invalid"));
 
     renderLoginPage();
-    fireEvent.change(screen.getByLabelText(/e-mail/i), { target: { value: "admin@test.dev" } });
+    fireEvent.change(await screen.findByLabelText(/e-mail/i), { target: { value: "admin@test.dev" } });
     fireEvent.change(screen.getByLabelText(/^senha$/i), { target: { value: "wrong" } });
     fireEvent.click(screen.getByRole("button", { name: /entrar/i }));
 

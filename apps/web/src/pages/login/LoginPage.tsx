@@ -11,7 +11,7 @@ import { MaintenanceScreen } from "./MaintenanceScreen";
 export default function LoginPage() {
   const { user, setSession } = useAuthStore();
   const { data: branding } = useBranding();
-  const { data: maintenance } = useMaintenanceStatus();
+  const { data: maintenance, isLoading: maintenanceLoading } = useMaintenanceStatus();
   const navigate = useNavigate();
 
   const [email, setEmail] = useState("");
@@ -31,6 +31,19 @@ export default function LoginPage() {
   const [showAdminLogin, setShowAdminLogin] = useState(false);
 
   if (user) return <Navigate to="/" replace />;
+
+  // Wait for the maintenance check before deciding which screen to render
+  // at all — without this, the very first paint had no data yet
+  // (maintenance still undefined/loading) and briefly showed the real
+  // login form before flipping to the maintenance screen a moment later,
+  // which is exactly the flash the user should never see.
+  if (maintenanceLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[var(--color-bg)]">
+        <Loader2 className="h-6 w-6 animate-spin text-muted" />
+      </div>
+    );
+  }
 
   if (maintenance?.enabled && !showAdminLogin) {
     return <MaintenanceScreen message={maintenance.message} onAdminAccess={() => setShowAdminLogin(true)} />;
