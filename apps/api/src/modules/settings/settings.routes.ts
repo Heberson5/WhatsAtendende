@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import rateLimit from "express-rate-limit";
 import { asyncHandler } from "../../lib/async-handler";
-import { requireAuth } from "../../middleware/auth";
+import { requireAuth, requireRole } from "../../middleware/auth";
 import { requirePermission } from "../../lib/permissions";
 import { PERMISSION } from "@whatsatendende/types";
 import { writeAudit } from "../../lib/audit";
@@ -49,7 +49,47 @@ settingsRouter.get(
   })
 );
 
+// Public, same reasoning as /branding above: the login screen needs to know
+// whether maintenance mode is on *before* anyone authenticates, so it can
+// show the maintenance screen instead of the normal form for a non-admin.
+settingsRouter.get(
+  "/maintenance",
+  asyncHandler(async (_req, res) => {
+    res.json(await service.getMaintenanceSettings());
+  })
+);
+
 settingsRouter.use(requireAuth);
+
+const maintenanceSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    message: z.string().max(500).nullable().optional(),
+  })
+  .strict();
+
+// ADMIN-only, checked directly via requireRole rather than the configurable
+// CONFIGURACOES_GERENCIAR permission — that one's grantable to a MANAGER
+// (for WhatsApp connections/branding/email), but toggling this can lock
+// every non-admin out of the entire system, so it stays out of that matrix
+// entirely (same precedent as the permissions matrix editor itself).
+settingsRouter.patch(
+  "/maintenance",
+  requireRole("ADMIN"),
+  asyncHandler(async (req, res) => {
+    const patch = maintenanceSchema.parse(req.body ?? {});
+    const settings = await service.updateMaintenanceSettings(patch);
+    await writeAudit({
+      userId: req.auth!.userId,
+      action: "SETTINGS_MAINTENANCE_UPDATED",
+      entity: "SystemSetting",
+      entityId: "maintenance",
+      ipAddress: req.ip ?? null,
+      metadata: patch,
+    });
+    res.json(settings);
+  })
+);
 
 const brandingSchema = z.object({
   companyName: z.string().min(1).optional(),

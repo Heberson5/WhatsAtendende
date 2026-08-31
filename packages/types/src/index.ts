@@ -267,6 +267,12 @@ export interface ApiErrorBody {
   details?: unknown;
 }
 
+/** GET/PATCH /settings/maintenance — GET is public (the login screen needs it before authenticating). */
+export interface MaintenanceSettingsDTO {
+  enabled: boolean;
+  message: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // Granular per-role permissions (Configurações > Permissões).
 //

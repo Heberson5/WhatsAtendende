@@ -5,10 +5,13 @@ import { toast } from "sonner";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
 import { useBranding } from "../../hooks/useBranding";
+import { useMaintenanceStatus } from "../../hooks/useMaintenanceStatus";
+import { MaintenanceScreen } from "./MaintenanceScreen";
 
 export default function LoginPage() {
   const { user, setSession } = useAuthStore();
   const { data: branding } = useBranding();
+  const { data: maintenance } = useMaintenanceStatus();
   const navigate = useNavigate();
 
   const [email, setEmail] = useState("");
@@ -18,8 +21,20 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [forgotOpen, setForgotOpen] = useState(false);
+  // See PROMPT: "isso é somente para o login de atendentes e gerente...
+  // somente o administrador" pode acessar durante manutenção. The screen
+  // replaces the login form by default (the app has no way to know who's
+  // about to log in before they type credentials) — this lets an admin
+  // reveal the real form instead. A non-admin who somehow still submits
+  // (e.g. right as maintenance flips on) gets the same MAINTENANCE error
+  // from the backend surfaced as the normal inline error below.
+  const [showAdminLogin, setShowAdminLogin] = useState(false);
 
   if (user) return <Navigate to="/" replace />;
+
+  if (maintenance?.enabled && !showAdminLogin) {
+    return <MaintenanceScreen message={maintenance.message} onAdminAccess={() => setShowAdminLogin(true)} />;
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
