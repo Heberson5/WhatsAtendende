@@ -133,7 +133,7 @@ function MaintenanceModeSection() {
           aria-label="Ativar modo de manutenção"
           className={`focus-ring relative h-7 w-12 shrink-0 rounded-full transition-colors disabled:opacity-60 ${enabled ? "bg-red-500" : "bg-border"}`}
         >
-          <span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-transform ${enabled ? "translate-x-6" : "translate-x-1"}`} />
+          <span className={`absolute left-1 top-1 h-5 w-5 rounded-full bg-white shadow transition-transform ${enabled ? "translate-x-5" : "translate-x-0"}`} />
         </button>
       </div>
 
