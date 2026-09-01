@@ -88,6 +88,7 @@ export function createApp() {
 
   app.use("/uploads/branding", express.static(path.join(env.UPLOAD_DIR, "branding")));
   app.use("/uploads/profile", express.static(path.join(env.UPLOAD_DIR, "profile")));
+  app.use("/uploads/contacts", express.static(path.join(env.UPLOAD_DIR, "contacts")));
 
   app.get("/api/health", (_req, res) => res.json({ status: "ok", timestamp: new Date().toISOString() }));
 

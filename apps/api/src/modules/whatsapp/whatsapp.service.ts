@@ -36,6 +36,47 @@ function extensionFor(mimeType: string, fileName?: string): string {
   return MEDIA_EXT_BY_MIME[mimeType] ?? "";
 }
 
+const CONTACT_PHOTO_DIR = path.join(env.UPLOAD_DIR, "contacts");
+fs.mkdirSync(CONTACT_PHOTO_DIR, { recursive: true });
+
+/**
+ * A contact's photoUrl is only ever worth storing as OUR OWN copy, never as
+ * the raw WhatsApp CDN link getContactPhoto() returns — those URLs are
+ * signed/short-lived and start returning 403/404 once they expire or the
+ * WhatsApp session that fetched them is replaced (e.g. a disconnect +
+ * reconnect), silently breaking every already-stored photo at once with no
+ * retry, since it's normally only ever fetched the one time. See PROMPT:
+ * "não está mais trazendo as fotos de perfil dos clientes". Downloads the
+ * image server-side and re-serves it from /uploads/contacts (same pattern
+ * as profile/branding photos), so once stored it never expires again.
+ * Best-effort: returns null on any failure, same contract as
+ * provider.getContactPhoto itself.
+ */
+async function downloadContactPhoto(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const contentType = res.headers.get("content-type") ?? "image/jpeg";
+    const ext = MEDIA_EXT_BY_MIME[contentType] ?? ".jpg";
+    const storageKey = `${randomUUID()}${ext}`;
+    const buffer = Buffer.from(await res.arrayBuffer());
+    fs.writeFileSync(path.join(CONTACT_PHOTO_DIR, storageKey), buffer);
+    return `/uploads/contacts/${storageKey}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * True once a contact's photoUrl already points at our own re-served copy
+ * — the only case genuinely safe to skip re-fetching. A raw WhatsApp CDN
+ * link (or no link at all) is always worth retrying, since the CDN link is
+ * either not-yet-migrated or has since expired (see downloadContactPhoto).
+ */
+function hasStoredContactPhoto(photoUrl: string | null): boolean {
+  return !!photoUrl && photoUrl.startsWith("/uploads/contacts/");
+}
+
 // One WhatsAppProvider instance per named connection (see PROMPT: "poderá
 // conectar vários WhatsApp"). Each instance owns its own session/QR/status
 // independently — nothing here assumes there's only one.
@@ -214,12 +255,14 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
       }
 
       const contact = await conversationsService.findOrCreateContact(connectionId, event.phone, event.contactName, event.chatId);
-      if (!contact.photoUrl) {
+      if (!hasStoredContactPhoto(contact.photoUrl)) {
         // Fire-and-forget: a WhatsApp profile-picture lookup must never
         // delay showing the message itself. Best-effort — getContactPhoto
-        // already swallows its own errors and resolves null.
+        // and downloadContactPhoto both already swallow their own errors
+        // and resolve null.
         provider
           .getContactPhoto(event.chatId)
+          .then((externalUrl) => (externalUrl ? downloadContactPhoto(externalUrl) : null))
           .then((photoUrl) => (photoUrl ? conversationsService.updateContactPhoto(contact.id, photoUrl) : undefined))
           .catch(() => undefined);
       }
@@ -390,8 +433,12 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
         // Best-effort: only touches contacts we already know about (created
         // by a live message or by this same import) — never creates a
         // Contact row just to hold a photo with no conversation behind it.
+        // Re-serves our own downloaded copy rather than the raw (expiring)
+        // WhatsApp CDN link — see downloadContactPhoto.
+        const photoUrl = await downloadContactPhoto(c.photoUrl).catch(() => null);
+        if (!photoUrl) continue;
         await prisma.contact
-          .updateMany({ where: { whatsappConnectionId: connectionId, phone: c.phone, photoUrl: null }, data: { photoUrl: c.photoUrl } })
+          .updateMany({ where: { whatsappConnectionId: connectionId, phone: c.phone, photoUrl: null }, data: { photoUrl } })
           .catch(() => undefined);
       }
       if (event.messages.length > 0) {
