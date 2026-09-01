@@ -420,9 +420,24 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
         (await prisma.contact.findUnique({
           where: { phone_whatsappConnectionId: { phone: event.phone, whatsappConnectionId: connectionId } },
         }));
-      if (!contact) return;
+      if (!contact) {
+        // Silent by design until now — but a contact that never resolves
+        // here is exactly why a device-side read sometimes never clears
+        // the badge/leaves the queue. Logged (not just swallowed) so a
+        // real occurrence is visible in production instead of looking
+        // like the whole feature silently does nothing.
+        logger.warn({ connectionId, chatId: event.chatId, phone: event.phone }, "chat-read event from linked phone: no matching contact found");
+        return;
+      }
       const conversation = await conversationsService.findActiveConversationForContact(contact.id);
-      if (!conversation) return;
+      if (!conversation) {
+        // Not a bug on its own — the contact's last conversation may
+        // already be CLOSED/HANDLED_EXTERNALLY — but logged at the same
+        // level as the contact-miss above so both silent-drop paths are
+        // equally visible when diagnosing a report that this isn't working.
+        logger.warn({ connectionId, contactId: contact.id }, "chat-read event from linked phone: no active conversation for this contact");
+        return;
+      }
       const { leftQueue } = await conversationsService.markConversationReadFromDevice(conversation.id);
       if (leftQueue) {
         realtimeEvents.conversationHandledExternally(connectionId);

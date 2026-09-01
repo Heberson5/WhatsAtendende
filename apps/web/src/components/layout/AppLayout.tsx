@@ -31,6 +31,23 @@ export function AppLayout() {
 
   useDesktopNotificationPermission();
   useIdleLogout();
+
+  // Declared BEFORE useSocketEvents below (not after): React fires a
+  // component's effects in the order they're declared during render, and
+  // useSocketEvents' own effect calls getSocket() synchronously — if this
+  // ran second, the very first mount would find no socket yet (still null,
+  // created only once this effect runs), silently attach zero listeners,
+  // and never retry until activeConversationId happened to change for some
+  // unrelated reason. That race is exactly why a one-time event like
+  // presence:self (emitted right when the socket connects, before the user
+  // has opened any conversation) was never seen — see PROMPT: "não está
+  // aparecendo Online" — and could just as easily eat the very first
+  // queue:updated/whatsapp:status of a session.
+  useEffect(() => {
+    if (accessToken) connectSocket(accessToken);
+    return () => disconnectSocket();
+  }, [accessToken]);
+
   // Mounted here (not inside AtendimentoPage) so new-queue-conversation and
   // new-message toasts/desktop notifications keep firing while the agent is
   // on any other screen (Dashboard, Gestão, Usuários...) — previously this
@@ -38,11 +55,6 @@ export function AppLayout() {
   // silently stopped every notification. See PROMPT: "não estou recebendo
   // notificação de novas conversas na fila e nem de novas mensagens".
   useSocketEvents(activeConversationId);
-
-  useEffect(() => {
-    if (accessToken) connectSocket(accessToken);
-    return () => disconnectSocket();
-  }, [accessToken]);
 
   // Either an admin disconnected this account from Usuários, or this same
   // account just logged in somewhere else (only one active session is

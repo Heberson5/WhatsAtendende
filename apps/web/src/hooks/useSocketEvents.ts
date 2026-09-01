@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import type { WhatsAppConnectionStatus } from "@whatsatendende/types";
+import type { AgentPresence, WhatsAppConnectionStatus } from "@whatsatendende/types";
 import { getSocket } from "../lib/socket";
 import { notifyDesktop } from "./useDesktopNotifications";
 import { useAuthStore } from "../store/auth-store";
@@ -9,6 +9,12 @@ import { useAuthStore } from "../store/auth-store";
 /** Subscribes to server-pushed realtime events and invalidates the affected React Query caches — no polling. */
 export function useSocketEvents(activeConversationId: string | null) {
   const queryClient = useQueryClient();
+  // A token refresh makes AppLayout call connectSocket() again, which
+  // creates a brand-new socket object (see lib/socket.ts) and discards the
+  // old one — without this dependency, this effect would never re-run to
+  // move its listeners onto the new socket, silently going deaf for the
+  // rest of the session after the first refresh.
+  const accessToken = useAuthStore((s) => s.accessToken);
 
   useEffect(() => {
     const socket = getSocket();
@@ -62,6 +68,14 @@ export function useSocketEvents(activeConversationId: string | null) {
       queryClient.invalidateQueries({ queryKey: ["mine"] });
       useAuthStore.getState().updateOwnConnectionStatus(payload.connectionId, payload.status.state);
     };
+    // Emitted once, right when this socket registers server-side — patches
+    // the topbar's presence dot instantly instead of leaving it stuck on
+    // whatever was last persisted (typically OFFLINE, from the previous
+    // session ending) until the next login/refresh. See PROMPT: "não está
+    // aparecendo Online".
+    const onPresenceSelf = (payload: { presence: AgentPresence }) => {
+      useAuthStore.getState().updateOwnPresence(payload.presence);
+    };
 
     socket.on("queue:updated", onQueueUpdated);
     socket.on("queue:new-conversation", onNewQueueConversation);
@@ -74,6 +88,7 @@ export function useSocketEvents(activeConversationId: string | null) {
     socket.on("conversation:read", onConversationRead);
     socket.on("oversight:updated", onOversightUpdated);
     socket.on("whatsapp:status", onWhatsappStatus);
+    socket.on("presence:self", onPresenceSelf);
 
     return () => {
       socket.off("queue:updated", onQueueUpdated);
@@ -87,8 +102,9 @@ export function useSocketEvents(activeConversationId: string | null) {
       socket.off("conversation:read", onConversationRead);
       socket.off("oversight:updated", onOversightUpdated);
       socket.off("whatsapp:status", onWhatsappStatus);
+      socket.off("presence:self", onPresenceSelf);
     };
-  }, [queryClient, activeConversationId]);
+  }, [queryClient, activeConversationId, accessToken]);
 
   useEffect(() => {
     const socket = getSocket();
