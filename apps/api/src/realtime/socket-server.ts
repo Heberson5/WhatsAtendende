@@ -43,6 +43,13 @@ export function createSocketServer(httpServer: HttpServer): SocketIOServer {
     // become eligible for the OFFLINE grace timer at all).
     socket.on("disconnect", () => registerDisconnection(auth.userId, socket.id));
     await registerConnection(auth.userId, socket.id);
+    // registerConnection just persisted presence=ONLINE for this user, but
+    // the login/refresh HTTP response the client already rendered from
+    // still carries whatever presence was last saved (typically OFFLINE,
+    // from the previous session ending) — nothing told it the flip
+    // happened, so the topbar kept showing the stale value. See PROMPT:
+    // "não está aparecendo Online".
+    socket.emit("presence:self", { presence: "ONLINE" });
 
     if (auth.role === "AGENT") {
       // Looked up fresh on every connect (rather than trusted from the JWT)

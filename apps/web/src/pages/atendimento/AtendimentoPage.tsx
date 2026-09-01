@@ -108,7 +108,7 @@ export default function AtendimentoPage() {
             onClick={() => setTab("mine")}
             className={`flex flex-1 items-center justify-center gap-1.5 py-3 text-sm font-medium ${tab === "mine" ? "border-b-2 border-primary text-primary" : "text-muted"}`}
           >
-            <Users2 className="h-4 w-4" /> Meus atendimentos ({mineQuery.data?.length ?? 0})
+            <Users2 className="h-4 w-4" /> Ativos ({mineQuery.data?.length ?? 0})
           </button>
           <button
             onClick={() => setTab("queue")}
