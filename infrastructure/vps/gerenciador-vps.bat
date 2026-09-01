@@ -101,26 +101,47 @@ goto MENU
 rem =====================================================================
 rem Rotina compartilhada por [1] e [15] - garante que toda atualizacao
 rem realmente aplica o codigo mais novo, sem depender de cache antigo.
-rem Dividida em 2 chamadas SSH separadas, cada uma com sua propria
+rem Dividida em chamadas SSH separadas, cada uma com sua propria
 rem checagem de sucesso/falha (%ERRORLEVEL%), em vez de um unico comando
-rem gigante onde uma falha no meio (ex.: rebuild sem memoria/disco numa
-rem VPS pequena) passava batido no meio da rolagem de texto:
-rem   [1/2] git fetch + reset --hard na branch %BRANCH% (nunca fica preso
+rem gigante onde uma falha no meio passava batido no meio da rolagem de
+rem texto:
+rem   [1/4] git fetch + reset --hard na branch %BRANCH% (nunca fica preso
 rem         numa branch antiga, nem trava por alteracao local na VPS) -
 rem         mostra o commit antes/depois, pra confirmar visualmente que
 rem         pegou a versao nova
-rem   [2/2] docker compose build (reconstroi as imagens com o codigo
-rem         novo) + up -d --force-recreate --remove-orphans (recria os
-rem         containers mesmo se o Docker achar, por engano, que nada
-rem         mudou) + docker image prune (limpa imagens antigas, evita
-rem         lotar o disco) + docker compose ps no final
+rem   [2/4] confere/corrige o WEB_APP_URL no .env
+rem   [3/4] docker compose down - ESSENCIAL nesta VPS pequena (<1GB RAM):
+rem         builda-lo com os containers antigos (Postgres/Redis/API/Web)
+rem         ainda rodando disputava a pouca RAM livre com o processo de
+rem         build do frontend (Vite/esbuild), que passou a falhar (ou
+rem         ficar lento demais por estar trocando com o swap) assim que o
+rem         bundle cresceu um pouco (gráficos 3D + exportação PPT) - o
+rem         "docker compose build" terminava sem erro nenhum reportado,
+rem         mas por causa do "&&" o "docker compose up" seguinte nunca
+rem         chegava a rodar, entao os containers ANTIGOS continuavam no
+rem         ar, servindo o bundle antigo pra sempre, com o deploy inteiro
+rem         parecendo ter funcionado. Ver PROMPT: "subi a atualização,
+rem         mas não apareceu as melhorias".
+rem   [4/4] docker compose build (reconstroi as imagens com o codigo
+rem         novo, agora com RAM livre) + up -d --remove-orphans (sobe os
+rem         containers novos) + docker image prune (limpa imagens
+rem         antigas, evita lotar o disco) + docker compose ps no final
 rem A migracao do banco (prisma migrate deploy) roda sozinha, dentro do
 rem container, antes do servidor da API iniciar - nao precisa fazer nada
 rem a parte para isso.
+rem
+rem Efeito colateral aceito: o sistema fica FORA DO AR durante o passo
+rem [4/4] (o tempo do build, alguns minutos) - antes o
+rem "--force-recreate" dava a impressao de zero downtime, mas na pratica
+rem o deploy so aparentava funcionar sem nunca aplicar o codigo novo, o
+rem que e bem pior. Se o build do passo [4/4] falhar, os containers ja
+rem estarao parados (o "docker compose down" do passo [3/4] ja rodou) -
+rem para voltar ao ar com a ultima imagem que build com sucesso enquanto
+rem investiga o erro, rode a opcao [12] Docker Compose Up.
 rem =====================================================================
 :HARD_UPDATE_WHATSATENDENDE
 echo.
-echo [1/3] Sincronizando codigo (branch %BRANCH%)...
+echo [1/4] Sincronizando codigo (branch %BRANCH%)...
 ssh -i "%KEY%" %USER%@%IP% "cd %PROJETO% && echo === Commit ANTES da atualizacao === && git log -1 --oneline && git fetch origin && git checkout %BRANCH% && git reset --hard origin/%BRANCH% && echo === Commit DEPOIS da atualizacao === && git log -1 --oneline"
 if errorlevel 1 (
     echo.
@@ -135,19 +156,29 @@ rem ficado com o WEB_APP_URL antigo (http://IP:8080, de antes do dominio
 rem HTTPS existir) - sem isso o cookie de sessao nunca fica "Secure", o
 rem CORS pode rejeitar o dominio real, e os links/logo dos e-mails
 rem automaticos apontam para um endereco que ninguem de fora consegue abrir.
-echo [2/3] Conferindo WEB_APP_URL no .env da VPS...
+echo [2/4] Conferindo WEB_APP_URL no .env da VPS...
 ssh -i "%KEY%" %USER%@%IP% "cd %PROJETO% && if [ -f .env ]; then if grep -q '^WEB_APP_URL=' .env; then if grep -qx 'WEB_APP_URL=%DOMINIO%' .env; then echo 'WEB_APP_URL ja esta correto.'; else sed -i 's#^WEB_APP_URL=.*#WEB_APP_URL=%DOMINIO%#' .env; echo 'WEB_APP_URL corrigido para %DOMINIO%.'; fi; else echo 'WEB_APP_URL=%DOMINIO%' >> .env; echo 'WEB_APP_URL adicionado ao .env (nao existia).'; fi; fi"
 echo.
-echo [3/3] Reconstruindo e subindo os containers ^(pode demorar alguns minutos^)...
-ssh -i "%KEY%" %USER%@%IP% "cd %PROJETO% && docker compose build && docker compose up -d --force-recreate --remove-orphans && docker image prune -f && echo === Containers - confira se o STATUS mostra Up ha poucos segundos === && docker compose ps"
+echo [3/4] Parando os containers atuais para liberar RAM para o build...
+ssh -i "%KEY%" %USER%@%IP% "cd %PROJETO% && docker compose down"
+if errorlevel 1 (
+    echo.
+    echo [ERRO] Falha ao parar os containers atuais. O build NAO foi
+    echo iniciado - o sistema continua no ar com a versao anterior.
+    exit /b 1
+)
+echo.
+echo [4/4] Reconstruindo e subindo os containers ^(pode demorar alguns minutos - o sistema fica FORA DO AR ate este passo terminar^)...
+ssh -i "%KEY%" %USER%@%IP% "cd %PROJETO% && docker compose build && docker compose up -d --remove-orphans && docker image prune -f && echo === Containers - confira se o STATUS mostra Up ha poucos segundos === && docker compose ps"
 if errorlevel 1 (
     echo.
     echo [ERRO] O codigo foi atualizado, mas a reconstrucao dos containers
-    echo FALHOU no meio do processo - o servidor pode ter ficado com uma
-    echo versao incompleta ou parada. Rode a opcao [5] para ver os logs
-    echo completos do erro, e a opcao [7] para checar memoria/disco ^(se a
-    echo VPS ficou sem memoria durante o build, crie o swap pela opcao
-    echo [18] e tente atualizar de novo^).
+    echo FALHOU no meio do processo - o sistema esta FORA DO AR agora
+    echo ^(o passo anterior ja tinha parado os containers antigos^). Rode a
+    echo opcao [12] Docker Compose Up para voltar ao ar com a ultima
+    echo imagem que build com sucesso enquanto investiga. Rode a opcao [5]
+    echo para ver os logs completos do erro, e a opcao [7] para checar
+    echo memoria/disco.
     exit /b 1
 )
 echo.
