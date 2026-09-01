@@ -1,11 +1,15 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { Inbox, MessageSquare, Timer, UserCheck, Users, Wifi } from "lucide-react";
+import { FileBarChart2, Inbox, MessageSquare, Timer, UserCheck, Users, Wifi } from "lucide-react";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { PeriodFilter, type PeriodValue } from "../../components/common/PeriodFilter";
 import { ConnectionFilter } from "../../components/common/ConnectionFilter";
 import { StatCard, formatMinutes } from "../../components/common/StatCard";
+import { DistributionChartCard } from "../../components/dashboard/DistributionChartCard";
+import { SeriesChartCard } from "../../components/dashboard/SeriesChartCard";
+import { useBranding } from "../../hooks/useBranding";
+import { NEUTRAL_SERIES_COLOR } from "../../lib/chart-theme";
+import { exportDashboardPptx } from "../../lib/exportDashboardPptx";
 
 interface AgentOption {
   id: string;
@@ -20,15 +24,23 @@ interface DashboardData {
   users: { online: number; active: number; total: number };
 }
 
-// Matches the app's own connection-color palette in spirit (teal primary,
-// yellow secondary) rather than introducing a third unrelated color set.
-const STATUS_COLORS = ["#F59E0B", "#0097B4", "#6B7280"]; // waiting, inProgress, closed
-const MESSAGE_COLORS = ["#0097B4", "#FFE450"]; // received, sent
+// Amber for "waiting" doesn't come from the brand (it's a status-severity
+// color, same convention as StatCard/queue badges elsewhere), the other two
+// slots follow the company's own primary/secondary — see PROMPT: "gráficos
+// neste estilo, mais apresentável com estilo de 3d e profundidade".
+const WAITING_COLOR = "#F59E0B";
 
 export default function DashboardPage() {
   const [period, setPeriod] = useState<PeriodValue>({ period: "today" });
   const [agentId, setAgentId] = useState("all");
   const [connectionIds, setConnectionIds] = useState<string[]>([]);
+  const [exportingPptx, setExportingPptx] = useState(false);
+  const { data: branding } = useBranding();
+  const primaryColor = branding?.primaryColor ?? "#0097B4";
+  const secondaryColor = branding?.secondaryColor ?? "#FFE450";
+  const statusColors = [WAITING_COLOR, primaryColor, NEUTRAL_SERIES_COLOR];
+  const messageColors = [primaryColor, secondaryColor];
+  const agentSeriesColors = [primaryColor, secondaryColor];
 
   const { data: agents } = useQuery({
     queryKey: ["agents"],
@@ -51,19 +63,48 @@ export default function DashboardPage() {
       ).data,
   });
 
+  // Native, editable PowerPoint charts (not screenshots) built straight from
+  // the same data already loaded here — see PROMPT: "forma de exportar em
+  // Power Point bem formatado para ser apresentável à diretoria".
+  async function handleExportPptx() {
+    if (!data) return;
+    setExportingPptx(true);
+    try {
+      await exportDashboardPptx({
+        data,
+        period,
+        branding: branding ?? null,
+        statusColors,
+        messageColors,
+        agentSeriesColors,
+      });
+    } finally {
+      setExportingPptx(false);
+    }
+  }
+
   return (
     <div className="h-full overflow-auto p-3 sm:p-6">
-      <div className="mb-6 flex flex-wrap items-center gap-3">
-        <PeriodFilter value={period} onChange={setPeriod} />
-        <select value={agentId} onChange={(e) => setAgentId(e.target.value)} className="focus-ring rounded-card border border-border bg-surface px-3 py-2 text-sm">
-          <option value="all">Todos os atendentes</option>
-          {agents?.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.displayName}
-            </option>
-          ))}
-        </select>
-        <ConnectionFilter value={connectionIds} onChange={setConnectionIds} />
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <PeriodFilter value={period} onChange={setPeriod} />
+          <select value={agentId} onChange={(e) => setAgentId(e.target.value)} className="focus-ring rounded-card border border-border bg-surface px-3 py-2 text-sm">
+            <option value="all">Todos os atendentes</option>
+            {agents?.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.displayName}
+              </option>
+            ))}
+          </select>
+          <ConnectionFilter value={connectionIds} onChange={setConnectionIds} />
+        </div>
+        <button
+          onClick={handleExportPptx}
+          disabled={!data || exportingPptx}
+          className="focus-ring flex items-center gap-1.5 rounded-card bg-primary px-3 py-2 text-sm font-semibold text-primary-fg hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <FileBarChart2 className="h-4 w-4" /> {exportingPptx ? "Gerando..." : "Exportar PPT"}
+        </button>
       </div>
 
       {isLoading && <p className="text-sm text-muted">Carregando indicadores...</p>}
@@ -108,62 +149,23 @@ export default function DashboardPage() {
           <section>
             <h2 className="mb-3 text-sm font-semibold text-muted">Distribuição no período</h2>
             <div className="grid gap-4 md:grid-cols-2">
-              <div className="shadow-soft rounded-card border border-border bg-surface p-4">
-                <p className="mb-2 text-xs font-medium text-muted">Conversas por status</p>
-                {data.conversations.received === 0 ? (
-                  <p className="py-8 text-center text-sm text-muted">Sem dados no período selecionado.</p>
-                ) : (
-                  <ResponsiveContainer width="100%" height={240}>
-                    <PieChart>
-                      <Pie
-                        data={[
-                          { name: "Aguardando", value: data.conversations.waiting },
-                          { name: "Em atendimento", value: data.conversations.inProgress },
-                          { name: "Encerradas", value: data.conversations.closed },
-                        ]}
-                        dataKey="value"
-                        nameKey="name"
-                        innerRadius={50}
-                        outerRadius={80}
-                      >
-                        {STATUS_COLORS.map((color) => (
-                          <Cell key={color} fill={color} />
-                        ))}
-                      </Pie>
-                      <Legend verticalAlign="bottom" height={24} wrapperStyle={{ fontSize: 12 }} />
-                      <Tooltip />
-                    </PieChart>
-                  </ResponsiveContainer>
-                )}
-              </div>
-
-              <div className="shadow-soft rounded-card border border-border bg-surface p-4">
-                <p className="mb-2 text-xs font-medium text-muted">Mensagens recebidas x enviadas</p>
-                {data.messages.total === 0 ? (
-                  <p className="py-8 text-center text-sm text-muted">Sem dados no período selecionado.</p>
-                ) : (
-                  <ResponsiveContainer width="100%" height={240}>
-                    <PieChart>
-                      <Pie
-                        data={[
-                          { name: "Recebidas", value: data.messages.received },
-                          { name: "Enviadas", value: data.messages.sent },
-                        ]}
-                        dataKey="value"
-                        nameKey="name"
-                        innerRadius={50}
-                        outerRadius={80}
-                      >
-                        {MESSAGE_COLORS.map((color) => (
-                          <Cell key={color} fill={color} />
-                        ))}
-                      </Pie>
-                      <Legend verticalAlign="bottom" height={24} wrapperStyle={{ fontSize: 12 }} />
-                      <Tooltip />
-                    </PieChart>
-                  </ResponsiveContainer>
-                )}
-              </div>
+              <DistributionChartCard
+                title="Conversas por status"
+                data={[
+                  { name: "Aguardando", value: data.conversations.waiting },
+                  { name: "Em atendimento", value: data.conversations.inProgress },
+                  { name: "Encerradas", value: data.conversations.closed },
+                ]}
+                colors={statusColors}
+              />
+              <DistributionChartCard
+                title="Mensagens recebidas x enviadas"
+                data={[
+                  { name: "Recebidas", value: data.messages.received },
+                  { name: "Enviadas", value: data.messages.sent },
+                ]}
+                colors={messageColors}
+              />
             </div>
           </section>
 
@@ -179,22 +181,15 @@ export default function DashboardPage() {
 
           <section>
             <h2 className="mb-3 text-sm font-semibold text-muted">Atendimentos por atendente</h2>
-            <div className="shadow-soft rounded-card border border-border bg-surface p-4">
-              {data.perAgent.length === 0 ? (
-                <p className="py-8 text-center text-sm text-muted">Sem dados no período selecionado.</p>
-              ) : (
-                <ResponsiveContainer width="100%" height={280}>
-                  <BarChart data={data.perAgent}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
-                    <XAxis dataKey="agentName" tick={{ fontSize: 12 }} />
-                    <YAxis tick={{ fontSize: 12 }} allowDecimals={false} />
-                    <Tooltip />
-                    <Bar dataKey="conversations" name="Conversas" fill="#0097B4" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="messagesSent" name="Mensagens enviadas" fill="#FFE450" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              )}
-            </div>
+            <SeriesChartCard
+              title="Conversas e mensagens enviadas por atendente"
+              data={data.perAgent}
+              categoryKey="agentName"
+              series={[
+                { key: "conversations", name: "Conversas", color: agentSeriesColors[0] },
+                { key: "messagesSent", name: "Mensagens enviadas", color: agentSeriesColors[1] },
+              ]}
+            />
           </section>
         </div>
       )}
