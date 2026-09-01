@@ -1,5 +1,4 @@
-﻿@echo off
-chcp 65001 > nul
+@echo off
 color 0A
 title GERENCIADOR DA VPS - ORACLE CLOUD
 
@@ -49,20 +48,20 @@ echo  [10] Abrir Sistema no Navegador
 echo  [11] Docker Compose Down
 echo  [12] Docker Compose Up
 echo  [13] Instalar Docker e Docker Compose
-echo  [14] Preparar VPS para Aplicação
+echo  [14] Preparar VPS para Aplicacao
 echo  [15] Deploy/Atualizar WhatsAtendende
 echo  [16] Deploy/Atualizar Treinamentos
 echo  [17] Abrir Treinamentos no Navegador
 echo  [18] Criar Swap (4GB) - Corrige falta de memoria
 echo  [19] Ver docker-compose.yml do WhatsAtendende
 echo  [20] Ver .env/commit/bundle do Treinamentos
-echo  [21] Popular usuários iniciais do WhatsAtendende (seed)
+echo  [21] Popular usuarios iniciais do WhatsAtendende (seed)
 echo  [22] Remover Chamados do VPS (containers + pasta)
 echo  [23] Ver versao (commit) do WhatsAtendende em producao
 echo.
 echo   [0] Sair
 echo.
-set /p op=Escolha uma opção:
+set /p op=Escolha uma opcao:
 
 if "%op%"=="1" goto UPDATE
 if "%op%"=="2" goto SSH
@@ -115,13 +114,13 @@ rem         builda-lo com os containers antigos (Postgres/Redis/API/Web)
 rem         ainda rodando disputava a pouca RAM livre com o processo de
 rem         build do frontend (Vite/esbuild), que passou a falhar (ou
 rem         ficar lento demais por estar trocando com o swap) assim que o
-rem         bundle cresceu um pouco (gráficos 3D + exportação PPT) - o
+rem         bundle cresceu um pouco (graficos 3D + exportacao PPT) - o
 rem         "docker compose build" terminava sem erro nenhum reportado,
 rem         mas por causa do "&&" o "docker compose up" seguinte nunca
 rem         chegava a rodar, entao os containers ANTIGOS continuavam no
 rem         ar, servindo o bundle antigo pra sempre, com o deploy inteiro
-rem         parecendo ter funcionado. Ver PROMPT: "subi a atualização,
-rem         mas não apareceu as melhorias".
+rem         parecendo ter funcionado. Ver PROMPT: "subi a atualizacao,
+rem         mas nao apareceu as melhorias".
 rem   [4/4] docker compose build (reconstroi as imagens com o codigo
 rem         novo, agora com RAM livre) + up -d --remove-orphans (sobe os
 rem         containers novos) + docker image prune (limpa imagens
