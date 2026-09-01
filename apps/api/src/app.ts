@@ -34,7 +34,25 @@ export function createApp() {
   // sole path to this process — see the TRUST_PROXY comment in env.ts/.env.example.
   if (env.TRUST_PROXY) app.set("trust proxy", 1);
 
-  app.use(helmet());
+  app.use(
+    helmet({
+      // Helmet's default img-src ('self' data:) blocks contact profile
+      // photos: those are stored as the raw WhatsApp CDN URL returned by
+      // Baileys' profilePictureUrl() (see whatsapp.service.ts /
+      // conversations.mapper.ts photoUrl), fetched directly by the
+      // browser rather than downloaded and re-served from this app — so
+      // the CSP has to explicitly allow WhatsApp's photo/media host.
+      // Never surfaced before because production had been stuck on a
+      // build from before this app.ts even existed — see PROMPT: "não
+      // está mais trazendo as fotos de perfil dos clientes".
+      contentSecurityPolicy: {
+        directives: {
+          ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+          "img-src": ["'self'", "data:", "https://*.whatsapp.net"],
+        },
+      },
+    })
+  );
   app.use(
     cors({
       origin: env.WEB_APP_URL,
