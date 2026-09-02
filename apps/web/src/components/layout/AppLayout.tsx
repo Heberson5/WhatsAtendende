@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
+import { BottomNav } from "./BottomNav";
 import { useAuthStore } from "../../store/auth-store";
 import { useActiveConversationStore } from "../../store/active-conversation-store";
 import { connectSocket, disconnectSocket, getSocket } from "../../lib/socket";
@@ -97,6 +98,14 @@ export function AppLayout() {
         <main className="flex-1 overflow-hidden">
           <Outlet />
         </main>
+        {/* Hidden while a conversation is open on mobile (Atendimento swaps
+            its list for the chat panel in place, not a route change) — the
+            chat's own composer already anchors the bottom there, and the
+            tab bar would otherwise eat into that screen's scarce height for
+            no benefit once you're already inside a conversation. See
+            PROMPT: "abrir em layout de aplicativo... facilitando a
+            navegação". */}
+        {!activeConversationId && <BottomNav onMoreClick={() => setMobileNavOpen(true)} />}
       </div>
     </div>
   );

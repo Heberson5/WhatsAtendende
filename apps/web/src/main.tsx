@@ -22,3 +22,14 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     </QueryClientProvider>
   </React.StrictMode>
 );
+
+// Registers the no-op pass-through service worker some browsers require
+// before offering "Add to Home Screen" — see PROMPT: "abrir em layout de
+// aplicativo". Never blocks first paint (fires after load) and is a no-op
+// in dev (no HTTPS/localhost service worker support quirks to chase) and
+// on browsers without SW support at all.
+if ("serviceWorker" in navigator && import.meta.env.PROD) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+  });
+}
