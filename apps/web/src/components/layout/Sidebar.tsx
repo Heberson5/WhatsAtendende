@@ -18,7 +18,7 @@ import { PERMISSION, type Permission } from "@whatsatendende/types";
 import { useAuthStore } from "../../store/auth-store";
 import { useBranding } from "../../hooks/useBranding";
 
-interface MenuItem {
+export interface MenuItem {
   to: string;
   label: string;
   icon: typeof MessagesSquare;
@@ -28,7 +28,9 @@ interface MenuItem {
 // What's shown here is governed by Configurações > Permissões, not a fixed
 // role list — an ADMIN always sees everything (their permissions are always
 // all-true), while AGENT/MANAGER visibility follows whatever's configured.
-const MENU_ITEMS: MenuItem[] = [
+// Exported so BottomNav can build its own (permission-filtered, same order)
+// mobile tab bar from the exact same list instead of duplicating it.
+export const MENU_ITEMS: MenuItem[] = [
   { to: "/atendimento", label: "Atendimento", icon: MessagesSquare, permission: PERMISSION.ATENDIMENTO_ACESSAR },
   { to: "/gestao", label: "Gestão", icon: Eye, permission: PERMISSION.GESTAO_ACESSAR },
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, permission: PERMISSION.DASHBOARD_ACESSAR },
@@ -39,13 +41,18 @@ const MENU_ITEMS: MenuItem[] = [
   { to: "/auditoria", label: "Auditoria", icon: ScrollText, permission: PERMISSION.AUDITORIA_ACESSAR },
 ];
 
-export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: boolean; onMobileClose?: () => void }) {
-  const [collapsed, setCollapsed] = useState(false);
+/** Same permission filter Sidebar and BottomNav both need, kept in one place so they can never drift apart. */
+export function useVisibleMenuItems(): MenuItem[] {
   const user = useAuthStore((s) => s.user);
   const permissions = useAuthStore((s) => s.permissions);
+  return MENU_ITEMS.filter((item) => user && permissions?.[item.permission]);
+}
+
+export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: boolean; onMobileClose?: () => void }) {
+  const [collapsed, setCollapsed] = useState(false);
   const { data: branding } = useBranding();
 
-  const visibleItems = MENU_ITEMS.filter((item) => user && permissions?.[item.permission]);
+  const visibleItems = useVisibleMenuItems();
 
   return (
     <>
