@@ -21,7 +21,7 @@ export function BottomNav({ onMoreClick }: { onMoreClick: () => void }) {
 
   return (
     <nav
-      className="flex shrink-0 items-stretch border-t border-border bg-surface md:hidden"
+      className="flex min-h-[64px] shrink-0 items-stretch border-t border-border bg-surface md:hidden"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       aria-label="Navegação principal"
     >
@@ -31,23 +31,27 @@ export function BottomNav({ onMoreClick }: { onMoreClick: () => void }) {
           to={item.to}
           className={({ isActive }) =>
             clsx(
-              "focus-ring flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-medium",
+              "focus-ring flex flex-1 flex-col items-center justify-center gap-1 py-2.5 text-xs font-medium",
               isActive ? "text-primary" : "text-muted"
             )
           }
         >
-          <item.icon className="h-5 w-5" aria-hidden />
-          <span className="max-w-full truncate px-1">{item.label}</span>
+          {({ isActive }) => (
+            <>
+              <item.icon className="h-6 w-6 shrink-0" strokeWidth={isActive ? 2.5 : 2} aria-hidden />
+              <span className="max-w-full truncate px-1 leading-tight">{item.label}</span>
+            </>
+          )}
         </NavLink>
       ))}
       {hasOverflow && (
         <button
           type="button"
           onClick={onMoreClick}
-          className="focus-ring flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-medium text-muted"
+          className="focus-ring flex flex-1 flex-col items-center justify-center gap-1 py-2.5 text-xs font-medium text-muted"
         >
-          <MoreHorizontal className="h-5 w-5" aria-hidden />
-          <span>Mais</span>
+          <MoreHorizontal className="h-6 w-6 shrink-0" aria-hidden />
+          <span className="leading-tight">Mais</span>
         </button>
       )}
     </nav>
