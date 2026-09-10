@@ -78,7 +78,16 @@ describe("reading a conversation from the linked phone (markConversationReadFrom
     expect(result.conversation.assignedAgentReadAt).not.toBeNull();
   });
 
-  it("a further message from the same contact after HANDLED_EXTERNALLY starts a brand-new conversation, same as CLOSED", async () => {
+  it("a further message from the same contact after HANDLED_EXTERNALLY reuses the SAME conversation, unlike CLOSED", async () => {
+    // Unlike CLOSED, HANDLED_EXTERNALLY isn't a deliberate "attendance
+    // finished" action by an agent — it just means the customer's thread is
+    // being handled directly on the linked phone. Treating it as terminal
+    // used to spawn a brand-new Conversation row on every single message
+    // exchanged from then on (inbound or another device reply), turning one
+    // ongoing WhatsApp thread into dozens of near-empty rows in Gestão — see
+    // PROMPT: "em Gestão ... está trazendo mais de uma linha para a mesma
+    // conversa, isso significa que a cada mensagem recebida ou enviada, está
+    // acrescentando uma nova linha".
     const { contact, conversation } = await createWaitingConversation("5511990009999", connectionId);
     await conversationsService.markConversationReadFromDevice(conversation.id);
 
@@ -86,8 +95,8 @@ describe("reading a conversation from the linked phone (markConversationReadFrom
       connectionId,
       contact.id
     );
-    expect(isNewConversation).toBe(true);
-    expect(reopened.id).not.toBe(conversation.id);
-    expect(reopened.status).toBe("NEW");
+    expect(isNewConversation).toBe(false);
+    expect(reopened.id).toBe(conversation.id);
+    expect(reopened.status).toBe("HANDLED_EXTERNALLY");
   });
 });
