@@ -288,10 +288,25 @@ export async function importHistoricalMessages(connectionId: string, messages: H
  * one — this keeps reporting/"conversas unicas" counts meaningful and gives
  * the agent an explicit new queue card. Default routing target is the
  * queue (not the last agent), per spec section 28's default.
+ *
+ * HANDLED_EXTERNALLY is deliberately included here, unlike CLOSED/ABANDONED:
+ * it isn't a deliberate "this attendance is over" action by an agent, just a
+ * passive marker that the customer's messages are being handled directly on
+ * the linked phone instead of through this app. Treating it as terminal
+ * (excluded from "active") used to mean every single message exchanged while
+ * a chat sat in that state — inbound from the customer, or another
+ * device-sent reply — reopened it into a BRAND NEW Conversation row each
+ * time, since neither findOrOpenConversationForInboundMessage nor
+ * findOrOpenConversationForDeviceSentMessage below could find the existing
+ * one anymore. On any real account where staff sometimes reply straight from
+ * the phone, that turned one ongoing WhatsApp thread into dozens of
+ * near-empty Conversation rows — see PROMPT: "em Gestão ... está trazendo
+ * mais de uma linha para a mesma conversa, isso significa que a cada
+ * mensagem recebida ou enviada, está acrescentando uma nova linha".
  */
 export async function findActiveConversationForContact(contactId: string) {
   return prisma.conversation.findFirst({
-    where: { contactId, status: { in: ["NEW", "WAITING", "IN_PROGRESS", "TRANSFERRED"] } },
+    where: { contactId, status: { in: ["NEW", "WAITING", "IN_PROGRESS", "TRANSFERRED", "HANDLED_EXTERNALLY"] } },
     orderBy: { createdAt: "desc" },
   });
 }
@@ -405,9 +420,10 @@ export async function findOrOpenConversationForInboundMessage(connectionId: stri
  *    untouched), which is why a reply sent from the phone to an
  *    already-queued conversation never made it leave the Fila.
  *  - An active conversation already assigned to an agent (IN_PROGRESS/
- *    TRANSFERRED): left alone, only its read marker is refreshed — replying
- *    from the phone implies the customer's messages up to now have been
- *    seen, same as markConversationReadFromDevice's read-marker-only branch.
+ *    TRANSFERRED) — or already HANDLED_EXTERNALLY from an earlier device
+ *    reply: left alone, only its read marker is refreshed — replying from
+ *    the phone implies the customer's messages up to now have been seen,
+ *    same as markConversationReadFromDevice's read-marker-only branch.
  */
 export async function findOrOpenConversationForDeviceSentMessage(connectionId: string, contactId: string) {
   const active = await findActiveConversationForContact(contactId);
@@ -722,8 +738,11 @@ export async function mergeConversations(duplicateConversationId: string, intoCo
  * most recently.
  */
 async function foldActiveConversationDuplicates(contactId: string): Promise<void> {
+  // Same status set as findActiveConversationForContact — HANDLED_EXTERNALLY
+  // included so a stray duplicate left over from before that fix (or from
+  // any other race) still gets folded away instead of lingering forever.
   const actives = await prisma.conversation.findMany({
-    where: { contactId, status: { in: ["NEW", "WAITING", "IN_PROGRESS", "TRANSFERRED"] } },
+    where: { contactId, status: { in: ["NEW", "WAITING", "IN_PROGRESS", "TRANSFERRED", "HANDLED_EXTERNALLY"] } },
   });
   if (actives.length < 2) return;
 
