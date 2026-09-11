@@ -41,11 +41,64 @@ const upload = multer({
   },
 });
 
+const EXT_TO_MIME_TYPE: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".webp": "image/webp",
+  ".ico": "image/vnd.microsoft.icon",
+};
+
+/** Recovers the MIME type of an uploaded branding asset from its stored extension — the manifest's icons[].type needs it, and we only ever store the extension, not the original MIME string. */
+function mimeTypeForBrandingAsset(url: string): string {
+  return EXT_TO_MIME_TYPE[path.extname(url).toLowerCase()] ?? "image/png";
+}
+
 // Public: the login screen needs the logo/colors before the user authenticates.
 settingsRouter.get(
   "/branding",
   asyncHandler(async (_req, res) => {
     res.json(await service.getBranding());
+  })
+);
+
+// Public web app manifest — the browser fetches this on its own (from the
+// <link rel="manifest"> tag) to decide what to show once the app is
+// installed on Android/desktop Chrome/Edge as a home-screen/taskbar icon,
+// well before anyone has logged in, so this can never require auth. Built
+// live from the current branding settings rather than served as a static
+// file so an admin's saved app name/icon takes effect on the very next
+// install with no rebuild/redeploy — see PROMPT: "Deve ter nas
+// configurações a opção de incluir o ícone e nome do aplicativo".
+settingsRouter.get(
+  "/manifest.webmanifest",
+  asyncHandler(async (_req, res) => {
+    const branding = await service.getBranding();
+    const name = branding.appName ?? branding.companyName;
+    const iconUrl = branding.appIconUrl;
+    const iconType = iconUrl ? mimeTypeForBrandingAsset(iconUrl) : "image/png";
+    res.type("application/manifest+json").json({
+      name,
+      // Android truncates a long label on the home screen grid — keep it tight.
+      short_name: name.slice(0, 12),
+      description: "Plataforma de atendimento multiusuário via WhatsApp",
+      start_url: "/",
+      scope: "/",
+      display: "standalone",
+      orientation: "portrait-primary",
+      background_color: "#F4F6F8",
+      theme_color: branding.primaryColor,
+      icons: iconUrl
+        ? [
+            { src: iconUrl, sizes: "192x192", type: iconType, purpose: "any" },
+            { src: iconUrl, sizes: "512x512", type: iconType, purpose: "any" },
+            { src: iconUrl, sizes: "512x512", type: iconType, purpose: "maskable" },
+          ]
+        : [
+            { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+            { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+            { src: "/icons/icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+          ],
+    });
   })
 );
 
@@ -95,6 +148,10 @@ const brandingSchema = z.object({
   companyName: z.string().min(1).optional(),
   primaryColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
   secondaryColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+  // Home-screen label once installed — kept short since Android truncates a
+  // long "short_name" on the launcher grid; null clears it back to falling
+  // through to companyName.
+  appName: z.string().trim().min(1).max(30).nullable().optional(),
 });
 
 settingsRouter.patch(
@@ -120,6 +177,20 @@ settingsRouter.post(
     fs.writeFileSync(path.join(brandingAssetDir, fileName), req.file.buffer);
     const branding = await service.updateBranding({ logoUrl: `/uploads/branding/${fileName}` });
     await writeAudit({ userId: req.auth!.userId, action: "SETTINGS_LOGO_UPLOADED", entity: "SystemSetting", entityId: "branding", ipAddress: req.ip ?? null });
+    res.json(branding);
+  })
+);
+
+settingsRouter.post(
+  "/branding/app-icon",
+  requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
+  upload.single("file"),
+  asyncHandler(async (req, res) => {
+    if (!req.file) return res.status(400).json({ error: "BAD_REQUEST", message: "Nenhum arquivo enviado" });
+    const fileName = `app-icon-${randomUUID()}${ALLOWED_BRANDING_MIME_TO_EXT[req.file.mimetype]}`;
+    fs.writeFileSync(path.join(brandingAssetDir, fileName), req.file.buffer);
+    const branding = await service.updateBranding({ appIconUrl: `/uploads/branding/${fileName}` });
+    await writeAudit({ userId: req.auth!.userId, action: "SETTINGS_APP_ICON_UPLOADED", entity: "SystemSetting", entityId: "branding", ipAddress: req.ip ?? null });
     res.json(branding);
   })
 );

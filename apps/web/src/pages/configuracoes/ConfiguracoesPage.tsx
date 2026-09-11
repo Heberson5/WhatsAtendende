@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { WhatsAppConnectionPanel } from "./WhatsAppConnectionPanel";
 import { BrandingPanel } from "./BrandingPanel";
+import { AppInstallPanel } from "./AppInstallPanel";
 import { EmailSettingsPanel } from "./EmailSettingsPanel";
 import { EmailTemplatesPanel } from "./EmailTemplatesPanel";
 import { PermissionsPanel } from "./PermissionsPanel";
@@ -46,7 +47,12 @@ export default function ConfiguracoesPage() {
       </div>
 
       {tab === "whatsapp" && <WhatsAppConnectionPanel />}
-      {tab === "branding" && <BrandingPanel />}
+      {tab === "branding" && (
+        <div className="space-y-6">
+          <BrandingPanel />
+          <AppInstallPanel />
+        </div>
+      )}
       {tab === "email" && <EmailSettingsPanel />}
       {tab === "email-templates" && <EmailTemplatesPanel />}
       {tab === "seguranca" && role === "ADMIN" && <SecuritySettingsPanel />}
