@@ -9,6 +9,14 @@ export interface BrandingSettings {
   secondaryColor: string;
   logoUrl: string | null;
   faviconUrl: string | null;
+  // Identity used when the app is installed as a PWA (Android/iOS/desktop
+  // home screen icon + label) — deliberately separate from
+  // companyName/logoUrl: the logo shown inside the app can be a wide,
+  // non-square image with text, but an OS home-screen/taskbar icon needs a
+  // square image, and the installed label has its own length limits. null
+  // falls back to companyName / the bundled default icon.
+  appName: string | null;
+  appIconUrl: string | null;
 }
 
 const DEFAULT_BRANDING: BrandingSettings = {
@@ -17,6 +25,8 @@ const DEFAULT_BRANDING: BrandingSettings = {
   secondaryColor: "#FFE450",
   logoUrl: null,
   faviconUrl: null,
+  appName: null,
+  appIconUrl: null,
 };
 
 export async function getBranding(): Promise<BrandingSettings> {
