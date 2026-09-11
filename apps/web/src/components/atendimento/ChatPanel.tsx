@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, ArrowRightLeft, CheckCircle2, ChevronDown, ChevronUp, Phone, Search, X as CloseIcon } from "lucide-react";
+import { ArrowLeft, ArrowRightLeft, CheckCircle2, ChevronDown, ChevronUp, Paperclip, Phone, Search, X as CloseIcon } from "lucide-react";
 import { PERMISSION, type ConversationListItemDTO, type MessageDTO, type PaginatedResult, type QuickReplyDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { getSocket } from "../../lib/socket";
 import { useAuthStore } from "../../store/auth-store";
 import { MessageBubble } from "./MessageBubble";
-import { Composer } from "./Composer";
+import { Composer, type ComposerHandle } from "./Composer";
 import { TransferModal } from "./TransferModal";
 
 async function fetchMessages(conversationId: string, cursor?: string) {
@@ -45,6 +45,17 @@ export function ChatPanel({
   const [replyTo, setReplyTo] = useState<MessageDTO | null>(null);
   const [transferOpen, setTransferOpen] = useState(false);
   const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
+  const composerRef = useRef<ComposerHandle>(null);
+  // Whether a file is currently being dragged over this conversation, to
+  // show the "solte para anexar" overlay — see PROMPT: "podendo também
+  // arrastar de uma pasta para dentro da conversa, igual ao WhatsApp Web".
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
+  // dragenter/dragleave fire on every child element the pointer crosses, not
+  // just on entering/leaving the outer container — a plain boolean flips on
+  // and off as the drag moves over child elements, making the overlay
+  // flicker. A depth counter (incremented on enter, decremented on leave,
+  // "dragging" only while > 0) is the standard fix.
+  const dragDepthRef = useRef(0);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   // Wraps just the message bubbles (not the scroll container itself, whose
   // own box size is fixed by the flex layout and wouldn't report content
@@ -358,8 +369,57 @@ export function ChatPanel({
   const displayName = conversation.contact.name || conversation.contact.phone;
   const messageById = new Map(messages.map((m) => [m.id, m]));
 
+  // A dragged file (or several) can be dropped anywhere over the
+  // conversation — the whole message list too, not just the composer bar —
+  // same as WhatsApp Web. Text/link drags (e.g. dragging a URL from the
+  // address bar) carry no File objects, so those are silently ignored
+  // rather than opening an empty attach preview.
+  function handleDragEnter(e: React.DragEvent) {
+    if (connectionDisconnected) return;
+    e.preventDefault();
+    dragDepthRef.current += 1;
+    if (e.dataTransfer.types.includes("Files")) setIsDraggingFile(true);
+  }
+
+  function handleDragOver(e: React.DragEvent) {
+    // Required for onDrop to ever fire at all — browsers reject a drop by
+    // default unless dragover explicitly opts in.
+    if (connectionDisconnected) return;
+    e.preventDefault();
+  }
+
+  function handleDragLeave(e: React.DragEvent) {
+    if (connectionDisconnected) return;
+    e.preventDefault();
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setIsDraggingFile(false);
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    dragDepthRef.current = 0;
+    setIsDraggingFile(false);
+    if (connectionDisconnected) return;
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 0) composerRef.current?.addFiles(files);
+  }
+
   return (
-    <div className="flex h-full flex-col">
+    <div
+      className="relative flex h-full flex-col"
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {isDraggingFile && (
+        <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-primary/10 backdrop-blur-[1px]">
+          <div className="flex flex-col items-center gap-2 rounded-card border-2 border-dashed border-primary bg-surface px-8 py-6 shadow-elevated">
+            <Paperclip className="h-8 w-8 text-primary" />
+            <p className="text-sm font-medium text-primary">Solte os arquivos aqui para anexar</p>
+          </div>
+        </div>
+      )}
       <div className="flex items-center justify-between gap-2 border-b border-border bg-surface px-2 py-3 sm:px-4">
         <div className="flex min-w-0 items-center gap-3">
           {onBack && (
@@ -494,6 +554,7 @@ export function ChatPanel({
       )}
 
       <Composer
+        ref={composerRef}
         disabled={sendTextMutation.isPending || connectionDisconnected}
         quickReplies={quickRepliesQuery.data}
         replyTo={replyTo}

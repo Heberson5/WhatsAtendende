@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import clsx from "clsx";
-import { Mic, Paperclip, Pause, Play, Send, Trash2, X, MapPin, Bold, Italic, Strikethrough, Code } from "lucide-react";
+import { Mic, Paperclip, Pause, Play, Plus, Send, Trash2, X, MapPin, Bold, Italic, Strikethrough, Code } from "lucide-react";
 import type { MessageDTO } from "@whatsatendende/types";
 
 // How many bars the live/frozen waveform keeps — older samples scroll off
@@ -93,27 +93,35 @@ export interface QuickReplyOption {
   text: string;
 }
 
-export function Composer({
-  onSendText,
-  onSendFile,
-  onSendAudio,
-  onSendLocation,
-  quickReplies = [],
-  replyTo,
-  onCancelReply,
-  disabled,
-}: {
-  onSendText: (text: string, replyToMessageId?: string) => Promise<void>;
-  onSendFile: (file: File, caption?: string) => Promise<void>;
-  /** A recorded voice note (mic button) — sent as WhatsApp's native PTT bubble, distinct from an attached audio file via onSendFile. */
-  onSendAudio: (file: File) => Promise<void>;
-  onSendLocation: (lat: number, lng: number) => Promise<void>;
-  /** Cadastradas em Respostas Rápidas, já filtradas pela conexão desta conversa. */
-  quickReplies?: QuickReplyOption[];
-  replyTo: MessageDTO | null;
-  onCancelReply: () => void;
-  disabled?: boolean;
-}) {
+/** One file staged for sending, alongside the caption typed for it specifically — see the pendingFiles filmstrip below. */
+interface PendingAttachment {
+  file: File;
+  caption: string;
+}
+
+export interface ComposerHandle {
+  /** Stages one or more files for sending, exactly like picking them via the paperclip button — used by ChatPanel's drag-and-drop-from-folder handler so a drop anywhere over the conversation feeds the same preview/caption flow. */
+  addFiles: (files: File[]) => void;
+}
+
+export const Composer = forwardRef<
+  ComposerHandle,
+  {
+    onSendText: (text: string, replyToMessageId?: string) => Promise<void>;
+    onSendFile: (file: File, caption?: string) => Promise<void>;
+    /** A recorded voice note (mic button) — sent as WhatsApp's native PTT bubble, distinct from an attached audio file via onSendFile. */
+    onSendAudio: (file: File) => Promise<void>;
+    onSendLocation: (lat: number, lng: number) => Promise<void>;
+    /** Cadastradas em Respostas Rápidas, já filtradas pela conexão desta conversa. */
+    quickReplies?: QuickReplyOption[];
+    replyTo: MessageDTO | null;
+    onCancelReply: () => void;
+    disabled?: boolean;
+  }
+>(function Composer(
+  { onSendText, onSendFile, onSendAudio, onSendLocation, quickReplies = [], replyTo, onCancelReply, disabled },
+  ref
+) {
   const [text, setText] = useState("");
   const [showEmoji, setShowEmoji] = useState(false);
   const [sending, setSending] = useState(false);
@@ -128,9 +136,13 @@ export function Composer({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewPlaying, setPreviewPlaying] = useState(false);
   const [previewProgress, setPreviewProgress] = useState(0); // 0..1
-  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingFiles, setPendingFiles] = useState<PendingAttachment[]>([]);
+  const [activeFileIndex, setActiveFileIndex] = useState(0);
+  const [sendingFileProgress, setSendingFileProgress] = useState<{ done: number; total: number } | null>(null);
   const [pendingLocation, setPendingLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [locationRequesting, setLocationRequesting] = useState(false);
+  // Location's caption is unrelated to a file's — kept as its own piece of
+  // state rather than folded into pendingFiles, which only ever holds files.
   const [caption, setCaption] = useState("");
   const [selectionBubble, setSelectionBubble] = useState<{ top: number; left: number } | null>(null);
   const [quickReplyActiveIndex, setQuickReplyActiveIndex] = useState(0);
@@ -144,6 +156,23 @@ export function Composer({
   const analyserRef = useRef<AnalyserNode | null>(null);
   const waveformTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const previewAudioRef = useRef<HTMLAudioElement>(null);
+  // Object URLs for staged image/video previews, keyed by File identity (not
+  // regenerated on every render/caption keystroke) — the filmstrip can hold
+  // many thumbnails at once, and pendingFiles gets a new array reference on
+  // every caption edit, so recreating these inline on each render would leak
+  // a fresh blob URL per keystroke instead of one per file.
+  const previewUrlCacheRef = useRef(new Map<File, string>());
+
+  function getPreviewUrl(file: File): string | null {
+    if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) return null;
+    const cache = previewUrlCacheRef.current;
+    let url = cache.get(file);
+    if (!url) {
+      url = URL.createObjectURL(file);
+      cache.set(file, url);
+    }
+    return url;
+  }
 
   // WhatsApp Business App-style slash command: the picker only ever opens
   // when "/" is the very first character and nothing after it is a space
@@ -230,27 +259,75 @@ export function Composer({
     }
   }
 
+  // Appended after whatever's already staged (not replaced) — both the
+  // paperclip picker's "add more" affordance and a drop onto an
+  // already-open preview extend the same batch, matching WhatsApp Web.
+  // Jumps to the first newly-added file so it's immediately visible.
+  function addFiles(files: File[]) {
+    if (files.length === 0) return;
+    setActiveFileIndex(pendingFiles.length);
+    setPendingFiles((prev) => [...prev, ...files.map((file) => ({ file, caption: "" }))]);
+  }
+
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (file) {
-      setPendingFile(file);
-      setCaption("");
-    }
+    addFiles(Array.from(e.target.files ?? []));
     e.target.value = "";
   }
 
-  async function confirmSendFile() {
-    if (!pendingFile) return;
+  function removePendingFile(index: number) {
+    setPendingFiles((prev) => prev.filter((_, i) => i !== index));
+    setActiveFileIndex((prev) => Math.max(0, Math.min(prev, pendingFiles.length - 2)));
+  }
+
+  function updateActiveCaption(text: string) {
+    setPendingFiles((prev) => prev.map((entry, i) => (i === activeFileIndex ? { ...entry, caption: text } : entry)));
+  }
+
+  async function confirmSendFiles() {
+    if (pendingFiles.length === 0) return;
     setSending(true);
+    setSendingFileProgress({ done: 0, total: pendingFiles.length });
     try {
-      await onSendFile(pendingFile, caption.trim() || undefined);
-      setPendingFile(null);
-      setCaption("");
+      // Sent one at a time (not Promise.all) so they land in the chat — and
+      // on WhatsApp itself — in the same order they were staged, same as
+      // WhatsApp Web's own batch-send behavior.
+      for (let i = 0; i < pendingFiles.length; i++) {
+        const { file, caption: fileCaption } = pendingFiles[i];
+        await onSendFile(file, fileCaption.trim() || undefined);
+        setSendingFileProgress({ done: i + 1, total: pendingFiles.length });
+      }
+      setPendingFiles([]);
+      setActiveFileIndex(0);
       requestAnimationFrame(() => textareaRef.current?.focus());
     } finally {
       setSending(false);
+      setSendingFileProgress(null);
     }
   }
+
+  useImperativeHandle(ref, () => ({ addFiles }));
+
+  // Revokes the object URL for any file removed from (or sent out of)
+  // pendingFiles — the cache would otherwise hold every staged file for the
+  // lifetime of the whole conversation.
+  useEffect(() => {
+    const cache = previewUrlCacheRef.current;
+    const stillPending = new Set(pendingFiles.map((p) => p.file));
+    for (const [file, url] of cache) {
+      if (!stillPending.has(file)) {
+        URL.revokeObjectURL(url);
+        cache.delete(file);
+      }
+    }
+  }, [pendingFiles]);
+
+  useEffect(() => {
+    const cache = previewUrlCacheRef.current;
+    return () => {
+      for (const url of cache.values()) URL.revokeObjectURL(url);
+      cache.clear();
+    };
+  }, []);
 
   function handleShareLocation() {
     // Both the API itself and the permission prompt require a secure
@@ -679,43 +756,96 @@ export function Composer({
     );
   }
 
-  if (pendingFile) {
-    const isImage = pendingFile.type.startsWith("image/");
-    const isVideo = pendingFile.type.startsWith("video/");
-    const previewUrl = isImage || isVideo ? URL.createObjectURL(pendingFile) : null;
+  if (pendingFiles.length > 0) {
+    const active = pendingFiles[activeFileIndex];
+    const activeUrl = active ? getPreviewUrl(active.file) : null;
+    const activeIsImage = active?.file.type.startsWith("image/");
+    const activeIsVideo = active?.file.type.startsWith("video/");
     return (
       <div className="border-t border-border bg-surface p-4">
-        <div className="mb-3 flex items-center gap-3 rounded-card border border-border bg-surface-alt p-3">
-          {isImage && previewUrl ? (
-            <img src={previewUrl} alt={pendingFile.name} className="h-16 w-16 rounded object-cover" />
-          ) : isVideo && previewUrl ? (
-            <video src={previewUrl} className="h-16 w-16 rounded object-cover" />
-          ) : (
-            <div className="flex h-16 w-16 items-center justify-center rounded bg-surface text-xs text-muted">Arquivo</div>
-          )}
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium">{pendingFile.name}</p>
-            <p className="text-xs text-muted">{(pendingFile.size / 1024).toFixed(0)} KB</p>
+        {/* Filmstrip — only worth showing once there's more than one file to
+            switch between, same as WhatsApp Web's own multi-attachment picker. */}
+        {pendingFiles.length > 1 && (
+          <div className="mb-3 flex items-center gap-2 overflow-x-auto pb-1">
+            {pendingFiles.map((entry, i) => {
+              const thumbUrl = getPreviewUrl(entry.file);
+              const isImage = entry.file.type.startsWith("image/");
+              const isVideo = entry.file.type.startsWith("video/");
+              return (
+                <div key={i} className="group relative shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setActiveFileIndex(i)}
+                    className={`h-14 w-14 overflow-hidden rounded-card border-2 ${i === activeFileIndex ? "border-primary" : "border-transparent"}`}
+                  >
+                    {isImage && thumbUrl ? (
+                      <img src={thumbUrl} alt={entry.file.name} className="h-full w-full object-cover" />
+                    ) : isVideo && thumbUrl ? (
+                      <video src={thumbUrl} className="h-full w-full object-cover" />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center bg-surface-alt text-[10px] text-muted">Arquivo</div>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => removePendingFile(i)}
+                    className="focus-ring absolute -right-1 -top-1 rounded-full bg-surface p-0.5 text-muted shadow-soft hover:text-red-600"
+                    aria-label={`Remover ${entry.file.name}`}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="focus-ring flex h-14 w-14 shrink-0 items-center justify-center rounded-card border border-dashed border-border text-muted hover:bg-surface-alt"
+              aria-label="Adicionar mais arquivos"
+            >
+              <Plus className="h-5 w-5" />
+            </button>
           </div>
-          <button onClick={() => setPendingFile(null)} className="focus-ring shrink-0 rounded-full p-1.5 text-muted hover:bg-surface" aria-label="Cancelar envio">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+        )}
+
+        {active && (
+          <div className="mb-3 flex items-center gap-3 rounded-card border border-border bg-surface-alt p-3">
+            {activeIsImage && activeUrl ? (
+              <img src={activeUrl} alt={active.file.name} className="h-16 w-16 rounded object-cover" />
+            ) : activeIsVideo && activeUrl ? (
+              <video src={activeUrl} className="h-16 w-16 rounded object-cover" />
+            ) : (
+              <div className="flex h-16 w-16 items-center justify-center rounded bg-surface text-xs text-muted">Arquivo</div>
+            )}
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium">{active.file.name}</p>
+              <p className="text-xs text-muted">{(active.file.size / 1024).toFixed(0)} KB</p>
+            </div>
+            {pendingFiles.length === 1 && (
+              <button onClick={() => removePendingFile(activeFileIndex)} className="focus-ring shrink-0 rounded-full p-1.5 text-muted hover:bg-surface" aria-label="Cancelar envio">
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+        )}
+
         <div className="flex items-center gap-2">
           <input
-            value={caption}
-            onChange={(e) => setCaption(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && confirmSendFile()}
-            placeholder="Adicionar legenda (opcional)"
+            key={activeFileIndex}
+            value={active?.caption ?? ""}
+            onChange={(e) => updateActiveCaption(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && confirmSendFiles()}
+            placeholder={pendingFiles.length > 1 ? "Adicionar legenda a este anexo (opcional)" : "Adicionar legenda (opcional)"}
             autoFocus
             className="focus-ring flex-1 rounded-full border border-border bg-transparent px-4 py-2 text-sm"
           />
           <button
-            onClick={confirmSendFile}
+            onClick={confirmSendFiles}
             disabled={sending}
             className="focus-ring flex shrink-0 items-center gap-2 rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-primary-fg disabled:opacity-60"
           >
-            <Send className="h-4 w-4" /> Enviar
+            <Send className="h-4 w-4" />
+            {sendingFileProgress ? `Enviando ${sendingFileProgress.done}/${sendingFileProgress.total}...` : pendingFiles.length > 1 ? `Enviar (${pendingFiles.length})` : "Enviar"}
           </button>
         </div>
       </div>
@@ -854,7 +984,7 @@ export function Composer({
         <button onClick={() => fileInputRef.current?.click()} className="focus-ring rounded-full p-2 text-muted hover:bg-surface-alt" aria-label="Anexar arquivo" type="button">
           <Paperclip className="h-5 w-5" />
         </button>
-        <input ref={fileInputRef} type="file" hidden onChange={handleFileChange} />
+        <input ref={fileInputRef} type="file" multiple hidden onChange={handleFileChange} />
 
         <button
           onClick={handleShareLocation}
@@ -903,4 +1033,4 @@ export function Composer({
       </div>
     </>
   );
-}
+});
