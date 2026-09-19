@@ -91,6 +91,50 @@ export interface UserDTO {
   whatsappConnectionStatus: WhatsAppConnectionStatus | null;
   createdAt: string;
   lastAccessAt: string | null;
+  // Where this user works — drives which STATE/MUNICIPAL holidays block
+  // their access automatically. Both null = only NATIONAL holidays (if
+  // any) can ever apply to this user.
+  workState: string | null;
+  workCity: string | null;
+  // Per-weekday allowed access window — a day absent/undefined here means
+  // unrestricted (24h) for that weekday. null as a whole = every day
+  // unrestricted (the common case: no access-hours restriction at all).
+  accessSchedule: AccessSchedule | null;
+}
+
+// HH:mm, 24h, e.g. "08:00" / "18:30".
+export interface AccessScheduleWindow {
+  start: string;
+  end: string;
+}
+
+export const WEEKDAY_KEYS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"] as const;
+export type WeekdayKey = (typeof WEEKDAY_KEYS)[number];
+
+export type AccessSchedule = Partial<Record<WeekdayKey, AccessScheduleWindow>>;
+
+export const HOLIDAY_SCOPE = {
+  NATIONAL: "NATIONAL",
+  STATE: "STATE",
+  MUNICIPAL: "MUNICIPAL",
+} as const;
+export type HolidayScope = (typeof HOLIDAY_SCOPE)[keyof typeof HOLIDAY_SCOPE];
+
+export const HOLIDAY_SOURCE = {
+  MANUAL: "MANUAL",
+  AUTO: "AUTO",
+} as const;
+export type HolidaySource = (typeof HOLIDAY_SOURCE)[keyof typeof HOLIDAY_SOURCE];
+
+export interface HolidayDTO {
+  id: string;
+  date: string; // YYYY-MM-DD
+  name: string;
+  scope: HolidayScope;
+  state: string | null;
+  city: string | null;
+  source: HolidaySource;
+  year: number;
 }
 
 export interface QuickReplyDTO {

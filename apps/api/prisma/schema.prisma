@@ -43,6 +43,22 @@ model User {
   updatedAt     DateTime      @updatedAt
   lastAccessAt  DateTime?
 
+  // Where this user works — drives which STATE/MUNICIPAL holidays block
+  // their access automatically (a NATIONAL holiday always applies
+  // regardless of these). Both null = no city on file, so only NATIONAL
+  // holidays (if any apply) affect this user. See PROMPT: "no cadastro do
+  // usuário, indicar qual cidade trabalha".
+  workState     String?       // UF, e.g. "MT" — IBGE 2-letter code
+  workCity      String?       // município name, as returned by the IBGE API for workState
+
+  // Per-weekday allowed access window — see PROMPT: "horário que é
+  // permitido acessar... pode variar, portanto precisa ser por cada dia da
+  // semana". A day left out/blank means unrestricted (24h) for that
+  // weekday specifically, not "no access" — see accessSchedule.ts for the
+  // shape this JSON actually holds ({ MON?: {start,end}, TUE?: ..., ... },
+  // HH:mm strings) and resolveAccessWindow, the single place that reads it.
+  accessSchedule Json?
+
   // An agent's "home" WhatsApp connection: which queue they see and can
   // accept from. Required in practice for role=AGENT (enforced in the
   // users service, not the DB, since ADMIN/MANAGER never need one — they
@@ -535,4 +551,78 @@ model RolePermission {
   updatedAt  DateTime @updatedAt
 
   @@unique([role, permission])
+}
+
+// ---------------------------------------------------------------------------
+// Feriados — bloqueio de acesso automático por horário/feriado (see PROMPT:
+// "cadastro de feriados... nacional, estadual... ou municipal", "no cadastro
+// do usuário, indicar qual cidade trabalha").
+// ---------------------------------------------------------------------------
+
+enum HolidayScope {
+  NATIONAL
+  STATE
+  MUNICIPAL
+}
+
+enum HolidaySource {
+  // Typed by an admin in Configurações — an automatic sync must never
+  // overwrite or delete this row, and must never be treated as "already
+  // covered" by it either (see @@unique below: source is part of the key,
+  // so a MANUAL row and an AUTO row for the literal same
+  // scope/state/city/date/name can coexist rather than colliding).
+  MANUAL
+  // Written by the sync job (BrasilAPI for NATIONAL, a municipal provider
+  // for MUNICIPAL) — safe to re-upsert on every sync run.
+  AUTO
+}
+
+// One row per city (not a join table to several cities) — a holiday that
+// applies to 3 cities is 3 rows. Denormalized on purpose: every enforcement
+// check is a single flat WHERE (scope=NATIONAL OR (STATE AND state=?) OR
+// (MUNICIPAL AND state=? AND city=?)) with no join, and the per-city AUTO
+// sync naturally writes one row per city it fetched anyway.
+model Holiday {
+  id         String        @id @default(uuid())
+  date       DateTime      @db.Date
+  name       String
+  scope      HolidayScope
+  // Required for STATE and MUNICIPAL, null for NATIONAL.
+  state      String?
+  // Required for MUNICIPAL only.
+  city       String?
+  source     HolidaySource
+  // The calendar year `date` falls in — movable holidays (Sexta-feira
+  // Santa etc.) get a new row every year, and this is what
+  // HolidaySyncCursor and the once-per-city-per-year sync cap key off.
+  year       Int
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  // Lets an AUTO sync re-run safely (upsert instead of insert) without ever
+  // duplicating a row it already wrote, while a MANUAL entry for the exact
+  // same date/name/place is a distinct row (source is part of the key) —
+  // see PROMPT: "ao atualizar automaticamente não irá apagar o cadastro
+  // manual e nem duplicar caso traga do automático".
+  @@unique([scope, state, city, date, name, source])
+  @@index([scope, state, city, year])
+  @@index([date])
+}
+
+// Marks "this scope/state/city has already been auto-synced for this
+// year" — the once-per-city-per-year cap from PROMPT: "dentro do mesmo ano
+// não irá realizar outra consulta de cidades que já foram consultadas...
+// Só no próximo ano que irá atualizar". Checked (and written) instead of
+// inferring from Holiday rows directly, so a city that legitimately has
+// zero holidays this year still counts as "synced" and isn't re-queried
+// every month.
+model HolidaySyncCursor {
+  id        String       @id @default(uuid())
+  scope     HolidayScope
+  state     String?
+  city      String?
+  year      Int
+  syncedAt  DateTime     @default(now())
+
+  @@unique([scope, state, city, year])
 }

@@ -11,7 +11,7 @@ export function useBootstrapSession() {
   useEffect(() => {
     if (hydrated) return;
     api
-      .post("/auth/refresh")
+      .post("/auth/refresh", null, { params: { tzOffsetMinutes: new Date().getTimezoneOffset() } })
       .then((res) => setSession(res.data.accessToken, res.data.user, res.data.permissions))
       .catch(() => undefined)
       .finally(() => setHydrated());

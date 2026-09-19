@@ -3,11 +3,16 @@ import { createApp } from "./app";
 import { createSocketServer } from "./realtime/socket-server";
 import { initWhatsAppConnections, shutdownAllConnections } from "./modules/whatsapp/whatsapp.service";
 import { revertExpiredTransfers } from "./modules/conversations/conversations.service";
+import { runHolidaySyncIfDue } from "./modules/holidays/holidays.service";
 import { env } from "./config/env";
 import { logger } from "./lib/logger";
 import { prisma } from "./lib/prisma";
 
 const TRANSFER_SWEEP_INTERVAL_MS = 5 * 60 * 1000; // see PROMPT: revert an unaccepted offline transfer after 2h
+// Cheap to check daily — runHolidaySyncIfDue itself only does real work
+// (BrasilAPI/municipal fetches) once its own ~monthly cadence marker says
+// it's due, so most days this is a single no-op SystemSetting read.
+const HOLIDAY_SYNC_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 async function main() {
   // Presence is otherwise only ever kept correct by live socket connections
@@ -30,6 +35,14 @@ async function main() {
   }, TRANSFER_SWEEP_INTERVAL_MS);
   transferSweepTimer.unref(); // never keeps the process alive by itself
 
+  const holidaySyncTimer = setInterval(() => {
+    runHolidaySyncIfDue().catch((err) => logger.error({ err }, "failed to run the periodic holiday sync check"));
+  }, HOLIDAY_SYNC_CHECK_INTERVAL_MS);
+  holidaySyncTimer.unref();
+  // Also checked once right at boot — a deploy that stays up for weeks at a
+  // time shouldn't have to wait a full day for the first check.
+  runHolidaySyncIfDue().catch((err) => logger.error({ err }, "failed to run the startup holiday sync check"));
+
   httpServer.listen(env.PORT, () => {
     logger.info(`API listening on port ${env.PORT} (env=${env.NODE_ENV}, whatsapp=${env.WHATSAPP_PROVIDER})`);
   });
@@ -37,6 +50,7 @@ async function main() {
   const shutdown = async (signal: string) => {
     logger.info(`${signal} received, shutting down`);
     clearInterval(transferSweepTimer);
+    clearInterval(holidaySyncTimer);
     httpServer.close();
     // Every deploy sends this signal to the outgoing container — ending
     // each WhatsApp connection's socket cleanly here (rather than letting

@@ -5,6 +5,24 @@ import { Errors } from "../../lib/http-error";
 import { sendTemplatedMail } from "../../lib/mail";
 import { env } from "../../config/env";
 import type { Role } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+import type { AccessSchedule, WeekdayKey } from "@whatsatendende/types";
+
+const WEEKDAY_KEYS: WeekdayKey[] = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
+const HHMM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** Rejects a malformed schedule outright rather than silently storing something resolveAccessDecision can't parse — see lib/access-schedule.ts. */
+function validateAccessSchedule(schedule: AccessSchedule | null | undefined) {
+  if (!schedule) return;
+  for (const [day, window] of Object.entries(schedule)) {
+    if (!WEEKDAY_KEYS.includes(day as WeekdayKey)) throw Errors.badRequest(`Dia da semana invalido no horario de acesso: ${day}`);
+    if (!window) continue;
+    if (!HHMM_RE.test(window.start) || !HHMM_RE.test(window.end)) {
+      throw Errors.badRequest(`Horario invalido para ${day} — use o formato HH:mm`);
+    }
+    if (window.start >= window.end) throw Errors.badRequest(`O horario final deve ser depois do inicial (${day})`);
+  }
+}
 
 const withConnection = { whatsappConnection: true } as const;
 
@@ -34,9 +52,14 @@ export async function createUser(input: {
   password: string;
   role: Role;
   whatsappConnectionId?: string | null;
+  workState?: string | null;
+  workCity?: string | null;
+  accessSchedule?: AccessSchedule | null;
 }) {
   const existing = await prisma.user.findUnique({ where: { email: input.email.toLowerCase() } });
   if (existing) throw Errors.conflict("Ja existe um usuario com este e-mail");
+  if (input.workCity && !input.workState) throw Errors.badRequest("Selecione o estado antes da cidade");
+  validateAccessSchedule(input.accessSchedule);
 
   const whatsappConnectionId = await resolveConnectionAssignment(input.role, input.whatsappConnectionId);
   const passwordHash = await bcrypt.hash(input.password, 12);
@@ -48,6 +71,9 @@ export async function createUser(input: {
       passwordHash,
       role: input.role,
       whatsappConnectionId,
+      workState: input.workState ?? null,
+      workCity: input.workCity ?? null,
+      accessSchedule: (input.accessSchedule ?? undefined) as Prisma.InputJsonValue | undefined,
     },
     include: withConnection,
   });
@@ -64,7 +90,17 @@ export async function createUser(input: {
 
 export async function updateUser(
   id: string,
-  input: Partial<{ fullName: string; displayName: string; email: string; role: Role; whatsappConnectionId: string | null; password: string }>
+  input: Partial<{
+    fullName: string;
+    displayName: string;
+    email: string;
+    role: Role;
+    whatsappConnectionId: string | null;
+    password: string;
+    workState: string | null;
+    workCity: string | null;
+    accessSchedule: AccessSchedule | null;
+  }>
 ) {
   const current = await getUser(id);
   const nextRole = input.role ?? current.role;
@@ -76,6 +112,10 @@ export async function updateUser(
       ? await resolveConnectionAssignment(nextRole, input.whatsappConnectionId ?? current.whatsappConnectionId)
       : undefined;
   const passwordHash = input.password ? await bcrypt.hash(input.password, 12) : undefined;
+  const nextWorkState = "workState" in input ? input.workState : current.workState;
+  const nextWorkCity = "workCity" in input ? input.workCity : current.workCity;
+  if (nextWorkCity && !nextWorkState) throw Errors.badRequest("Selecione o estado antes da cidade");
+  if ("accessSchedule" in input) validateAccessSchedule(input.accessSchedule);
 
   const user = await prisma.user.update({
     where: { id },
@@ -86,6 +126,13 @@ export async function updateUser(
       email: input.email ? input.email.toLowerCase() : undefined,
       whatsappConnectionId,
       passwordHash,
+      workState: "workState" in input ? nextWorkState : undefined,
+      workCity: "workCity" in input ? nextWorkCity : undefined,
+      accessSchedule: "accessSchedule" in input
+        ? input.accessSchedule === null
+          ? Prisma.JsonNull
+          : (input.accessSchedule as Prisma.InputJsonValue)
+        : undefined,
     },
     include: withConnection,
   });

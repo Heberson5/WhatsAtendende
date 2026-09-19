@@ -54,7 +54,7 @@ export default function LoginPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.post("/auth/login", { email, password });
+      const res = await api.post("/auth/login", { email, password, tzOffsetMinutes: new Date().getTimezoneOffset() });
       setSession(res.data.accessToken, res.data.user, res.data.permissions);
       if (remember) localStorage.setItem("lastEmail", email);
       navigate("/");

@@ -37,6 +37,23 @@ usersRouter.get(
   })
 );
 
+const accessScheduleWindowSchema = z.object({
+  start: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+  end: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+});
+const accessScheduleSchema = z
+  .object({
+    MON: accessScheduleWindowSchema.optional(),
+    TUE: accessScheduleWindowSchema.optional(),
+    WED: accessScheduleWindowSchema.optional(),
+    THU: accessScheduleWindowSchema.optional(),
+    FRI: accessScheduleWindowSchema.optional(),
+    SAT: accessScheduleWindowSchema.optional(),
+    SUN: accessScheduleWindowSchema.optional(),
+  })
+  .strict()
+  .nullable();
+
 const createSchema = z.object({
   fullName: z.string().min(2),
   displayName: z.string().min(1),
@@ -47,6 +64,9 @@ const createSchema = z.object({
   // Required for role=AGENT (validated in the service, since it depends on
   // the role also present in this same payload); ignored for ADMIN/MANAGER.
   whatsappConnectionId: z.string().uuid().nullable().optional(),
+  workState: z.string().length(2).nullable().optional(),
+  workCity: z.string().min(1).nullable().optional(),
+  accessSchedule: accessScheduleSchema.optional(),
 });
 
 usersRouter.post(
@@ -71,6 +91,9 @@ const updateSchema = z.object({
   whatsappConnectionId: z.string().uuid().nullable().optional(),
   password: z.string().min(8).optional(),
   confirmPassword: z.string().min(8).optional(),
+  workState: z.string().length(2).nullable().optional(),
+  workCity: z.string().min(1).nullable().optional(),
+  accessSchedule: accessScheduleSchema.optional(),
 });
 
 usersRouter.patch(

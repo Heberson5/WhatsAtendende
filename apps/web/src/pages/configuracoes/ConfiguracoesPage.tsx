@@ -2,19 +2,21 @@ import { useState } from "react";
 import { WhatsAppConnectionPanel } from "./WhatsAppConnectionPanel";
 import { BrandingPanel } from "./BrandingPanel";
 import { AppInstallPanel } from "./AppInstallPanel";
+import { FeriadosPanel } from "./FeriadosPanel";
 import { EmailSettingsPanel } from "./EmailSettingsPanel";
 import { EmailTemplatesPanel } from "./EmailTemplatesPanel";
 import { PermissionsPanel } from "./PermissionsPanel";
 import { SecuritySettingsPanel } from "./SecuritySettingsPanel";
 import { useAuthStore } from "../../store/auth-store";
 
-type Tab = "whatsapp" | "branding" | "email" | "email-templates" | "seguranca" | "permissoes";
+type Tab = "whatsapp" | "branding" | "email" | "email-templates" | "feriados" | "seguranca" | "permissoes";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "whatsapp", label: "WhatsApp" },
   { key: "branding", label: "Identidade visual" },
   { key: "email", label: "E-mail" },
   { key: "email-templates", label: "Modelos de e-mail" },
+  { key: "feriados", label: "Feriados" },
   { key: "seguranca", label: "Segurança" },
   { key: "permissoes", label: "Permissões" },
 ];
@@ -55,6 +57,7 @@ export default function ConfiguracoesPage() {
       )}
       {tab === "email" && <EmailSettingsPanel />}
       {tab === "email-templates" && <EmailTemplatesPanel />}
+      {tab === "feriados" && <FeriadosPanel />}
       {tab === "seguranca" && role === "ADMIN" && <SecuritySettingsPanel />}
       {tab === "permissoes" && role === "ADMIN" && <PermissionsPanel />}
     </div>

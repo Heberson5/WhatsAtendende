@@ -21,6 +21,8 @@ export async function resetDatabase() {
   await prisma.quickReply.deleteMany();
   await prisma.whatsAppConnection.deleteMany();
   await prisma.rolePermission.deleteMany();
+  await prisma.holiday.deleteMany();
+  await prisma.holidaySyncCursor.deleteMany();
 }
 
 // Defaults to CONNECTED — nearly every test using this helper is actually
@@ -39,6 +41,9 @@ export async function createTestUser(input: {
   status?: "ACTIVE" | "INACTIVE";
   presence?: "ONLINE" | "AWAY" | "OFFLINE";
   whatsappConnectionId?: string;
+  workState?: string;
+  workCity?: string;
+  accessSchedule?: object;
 }) {
   const passwordHash = await bcrypt.hash("Test@1234", 4);
   return prisma.user.create({
@@ -51,6 +56,9 @@ export async function createTestUser(input: {
       presence: input.presence ?? "OFFLINE",
       passwordHash,
       whatsappConnectionId: input.whatsappConnectionId,
+      workState: input.workState,
+      workCity: input.workCity,
+      accessSchedule: input.accessSchedule,
     },
   });
 }

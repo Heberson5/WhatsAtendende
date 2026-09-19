@@ -30,7 +30,7 @@ api.interceptors.response.use(
       original._retry = true;
       if (!refreshPromise) {
         refreshPromise = api
-          .post("/auth/refresh")
+          .post("/auth/refresh", null, { params: { tzOffsetMinutes: new Date().getTimezoneOffset() } })
           .then((res) => {
             useAuthStore.getState().setSession(res.data.accessToken, res.data.user, res.data.permissions);
             return res.data.accessToken as string;
