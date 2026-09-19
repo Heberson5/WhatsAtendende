@@ -84,14 +84,20 @@ export const realtimeEvents = {
    * an ADMIN force-disconnecting them from Usuários ("ADMIN"), or the user
    * themselves logging in again somewhere else while an old session is
    * still around ("NEW_LOGIN" — see PROMPT: only one active login at a
-   * time). Revoking refresh tokens alone leaves an already-issued access
-   * token working for up to its own remaining TTL — genuinely instant means
-   * also killing the live socket(s) right now, which is what
-   * disconnectSockets does; the frontend's own force-logout listener (on
-   * the emitted event) clears its session and redirects before that
-   * disconnect even lands, and uses `reason` to show the right message.
+   * time), or the access-hours/holiday window they're allowed to be logged
+   * in under just closed ("SCHEDULE" — emitted by
+   * useAccessWindow-triggered logout on the frontend itself once its own
+   * countdown hits zero, not by the backend directly; included here so
+   * every other open tab/device for the same account gets the same
+   * explanation instead of the generic ADMIN one). Revoking refresh tokens
+   * alone leaves an already-issued access token working for up to its own
+   * remaining TTL — genuinely instant means also killing the live
+   * socket(s) right now, which is what disconnectSockets does; the
+   * frontend's own force-logout listener (on the emitted event) clears its
+   * session and redirects before that disconnect even lands, and uses
+   * `reason` to show the right message.
    */
-  userForceLoggedOut: (userId: string, reason: "ADMIN" | "NEW_LOGIN" = "ADMIN") => {
+  userForceLoggedOut: (userId: string, reason: "ADMIN" | "NEW_LOGIN" | "SCHEDULE" = "ADMIN") => {
     getIO()?.to(ROOMS.user(userId)).emit("user:force-logout", { reason });
     getIO()?.in(ROOMS.user(userId)).disconnectSockets(true);
   },

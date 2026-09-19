@@ -6,9 +6,12 @@ import { writeAudit } from "../../lib/audit";
 import { sendTemplatedMail } from "../../lib/mail";
 import { clearPendingTransferDeadlines } from "../conversations/conversations.service";
 import { getMaintenanceSettings } from "../settings/settings.service";
+import { resolveAccessDecision, resolveLocalNow } from "../../lib/access-schedule";
+import { findApplicableHoliday } from "../holidays/holidays.service";
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from "./jwt";
 import { env } from "../../config/env";
 import { realtimeEvents } from "../../realtime/realtime";
+import type { AccessSchedule } from "@whatsatendende/types";
 
 const REFRESH_TOKEN_DAYS = 7;
 
@@ -22,7 +25,49 @@ function hashToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
-export async function login(email: string, password: string, ip: string | null) {
+/**
+ * See PROMPT: "horário que é permitido acessar... bloqueio de feriados...
+ * bloqueia (não permite acessar e informa ao usuário)". Checked for anyone
+ * with an accessSchedule or workState/workCity on file — a user with
+ * neither is never affected (resolveAccessDecision treats a missing
+ * schedule as unrestricted, and findApplicableHoliday only ever matches
+ * NATIONAL when workState/workCity are both null). Shared by login() and
+ * refresh() so a session can't outlive the window by simply reloading the
+ * page after it closes.
+ *
+ * ADMIN always bypasses — same precedent as the maintenance-mode check
+ * right above this one. Not just role-parity: a NATIONAL holiday applies
+ * to literally every account regardless of what's on that user's own
+ * record, so without this a national holiday would lock every single
+ * account — including whoever would need to log in and fix a
+ * misconfigured holiday/schedule — out of the entire system with no way
+ * back in short of direct database access. Confirmed by hitting exactly
+ * that lockout live while testing this feature.
+ */
+async function assertWithinAccessWindow(
+  user: { id: string; role: string; accessSchedule: unknown; workState: string | null; workCity: string | null },
+  tzOffsetMinutes: number,
+  ip: string | null
+) {
+  if (user.role === "ADMIN") return;
+  const now = new Date();
+  const { dateKey } = resolveLocalNow(now, tzOffsetMinutes);
+  const holiday = await findApplicableHoliday(dateKey, user.workState, user.workCity);
+  const decision = resolveAccessDecision(now, tzOffsetMinutes, user.accessSchedule as AccessSchedule | null, holiday?.name ?? null);
+  if (!decision.allowed) {
+    await writeAudit({
+      userId: user.id,
+      action: "LOGIN_BLOCKED_ACCESS_WINDOW",
+      entity: "User",
+      entityId: user.id,
+      ipAddress: ip,
+      metadata: { reason: decision.reason },
+    });
+    throw Errors.forbidden(decision.message ?? "Acesso bloqueado no momento.");
+  }
+}
+
+export async function login(email: string, password: string, ip: string | null, tzOffsetMinutes = 0) {
   const user = await prisma.user.findUnique({ where: { email: email.toLowerCase() }, include: { whatsappConnection: true } });
   if (!user) {
     // Do the same bcrypt work a real lookup would, so a non-existent e-mail
@@ -59,6 +104,13 @@ export async function login(email: string, password: string, ip: string | null) 
     }
   }
 
+  // See PROMPT: "servirá para quem tem esta marcação no cadastro" — for
+  // non-ADMIN roles this depends only on THIS user's own
+  // accessSchedule/workState/workCity, not their role. ADMIN is the one
+  // exception, same as maintenance mode above — see
+  // assertWithinAccessWindow's own doc comment for why.
+  await assertWithinAccessWindow(user, tzOffsetMinutes, ip);
+
   // Only one active login at a time — see PROMPT: o usuário não pode logar
   // mais de uma vez. Revoking here (never deleting — keeps the audit trail
   // via each row's own timestamps) happens BEFORE this login mints its own
@@ -94,7 +146,7 @@ export async function login(email: string, password: string, ip: string | null) 
   return { accessToken, refreshToken, user };
 }
 
-export async function refresh(refreshToken: string) {
+export async function refresh(refreshToken: string, tzOffsetMinutes = 0, ip: string | null = null) {
   let payload: { sub: string };
   try {
     payload = verifyRefreshToken(refreshToken);
@@ -110,6 +162,22 @@ export async function refresh(refreshToken: string) {
 
   const user = await prisma.user.findUnique({ where: { id: payload.sub }, include: { whatsappConnection: true } });
   if (!user || user.status === "INACTIVE") throw Errors.unauthorized("Sessao invalida");
+
+  // Same reasoning as login()'s own check — a session must not outlive the
+  // window (or survive into a holiday) just by refreshing silently in the
+  // background. The frontend's live warning/countdown (see useAccessWindow)
+  // is expected to have already logged the user out by this point in the
+  // common case; this is the authoritative backstop for whenever it hasn't
+  // (a backgrounded tab whose poll got throttled, clock drift). Also kills
+  // any other live socket for this account right now — see
+  // realtimeEvents.userForceLoggedOut — rather than leaving a second open
+  // tab to notice on its own next poll.
+  try {
+    await assertWithinAccessWindow(user, tzOffsetMinutes, ip);
+  } catch (err) {
+    realtimeEvents.userForceLoggedOut(user.id, "SCHEDULE");
+    throw err;
+  }
 
   // Rotate refresh token to limit replay window.
   await prisma.refreshToken.update({ where: { id: stored.id }, data: { revokedAt: new Date() } });

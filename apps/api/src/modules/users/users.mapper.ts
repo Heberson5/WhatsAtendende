@@ -1,5 +1,5 @@
 import type { User, WhatsAppConnection } from "@prisma/client";
-import type { UserDTO } from "@whatsatendende/types";
+import type { AccessSchedule, UserDTO } from "@whatsatendende/types";
 
 type UserWithConnection = User & { whatsappConnection: WhatsAppConnection | null };
 
@@ -18,5 +18,8 @@ export function toUserDTO(user: UserWithConnection): UserDTO {
     whatsappConnectionStatus: user.whatsappConnection?.status ?? null,
     createdAt: user.createdAt.toISOString(),
     lastAccessAt: user.lastAccessAt ? user.lastAccessAt.toISOString() : null,
+    workState: user.workState,
+    workCity: user.workCity,
+    accessSchedule: (user.accessSchedule as AccessSchedule | null) ?? null,
   };
 }

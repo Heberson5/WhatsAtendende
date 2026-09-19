@@ -9,6 +9,9 @@ import * as authService from "./auth.service";
 import { refreshCookieOptions } from "./auth.service";
 import { prisma } from "../../lib/prisma";
 import { getPermissionsForRole } from "../../lib/permissions";
+import { resolveAccessDecision, resolveLocalNow } from "../../lib/access-schedule";
+import { findApplicableHoliday } from "../holidays/holidays.service";
+import type { AccessSchedule } from "@whatsatendende/types";
 
 export const authRouter = Router();
 
@@ -26,25 +29,32 @@ const passwordResetLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, stan
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
+  // Browser's Date.prototype.getTimezoneOffset() — see lib/access-schedule.ts
+  // for why this (not the server's own clock) decides "what time is it for
+  // this person right now" when checking their access window/holiday.
+  tzOffsetMinutes: z.coerce.number().int().optional().default(0),
 });
 
 authRouter.post(
   "/login",
   loginLimiter,
   asyncHandler(async (req, res) => {
-    const { email, password } = loginSchema.parse(req.body);
-    const { accessToken, refreshToken, user } = await authService.login(email, password, req.ip ?? null);
+    const { email, password, tzOffsetMinutes } = loginSchema.parse(req.body);
+    const { accessToken, refreshToken, user } = await authService.login(email, password, req.ip ?? null, tzOffsetMinutes);
     res.cookie("refreshToken", refreshToken, refreshCookieOptions());
     res.json({ accessToken, user: toUserDTO(user), permissions: await getPermissionsForRole(user.role) });
   })
 );
+
+const refreshQuerySchema = z.object({ tzOffsetMinutes: z.coerce.number().int().optional().default(0) });
 
 authRouter.post(
   "/refresh",
   asyncHandler(async (req, res) => {
     const token = req.cookies?.refreshToken as string | undefined;
     if (!token) return res.status(401).json({ error: "UNAUTHORIZED", message: "Sessao nao encontrada" });
-    const { accessToken, refreshToken, user } = await authService.refresh(token);
+    const { tzOffsetMinutes } = refreshQuerySchema.parse(req.query);
+    const { accessToken, refreshToken, user } = await authService.refresh(token, tzOffsetMinutes, req.ip ?? null);
     res.cookie("refreshToken", refreshToken, refreshCookieOptions());
     res.json({ accessToken, user: toUserDTO(user), permissions: await getPermissionsForRole(user.role) });
   })
@@ -67,6 +77,36 @@ authRouter.get(
   asyncHandler(async (req, res) => {
     const user = await prisma.user.findUniqueOrThrow({ where: { id: req.auth!.userId }, include: { whatsappConnection: true } });
     res.json({ ...toUserDTO(user), permissions: await getPermissionsForRole(user.role) });
+  })
+);
+
+const accessStatusQuerySchema = z.object({ tzOffsetMinutes: z.coerce.number().int().optional().default(0) });
+
+// Polled live by the frontend (see useAccessWindow) to drive the 20/10/1
+// minute warnings and the forced logout when today's allowed window closes
+// or a holiday starts mid-session — see PROMPT: "quando está próximo de
+// encerrar o horário limite de acesso, aparece um pop up". Read-only: this
+// never itself ends the session (login()/refresh() are the authoritative
+// enforcement points) — the frontend calls POST /auth/logout once
+// minutesRemainingToday hits zero.
+authRouter.get(
+  "/access-status",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    // ADMIN always bypasses — same exemption as login()/refresh()'s own
+    // check (see assertWithinAccessWindow's doc comment) — otherwise an
+    // admin would see spurious 20/10/1-minute warnings for a logout that,
+    // per that same exemption, is never actually going to happen.
+    if (req.auth!.role === "ADMIN") {
+      return res.json({ allowed: true, minutesRemainingToday: null });
+    }
+    const { tzOffsetMinutes } = accessStatusQuerySchema.parse(req.query);
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: req.auth!.userId } });
+    const now = new Date();
+    const { dateKey } = resolveLocalNow(now, tzOffsetMinutes);
+    const holiday = await findApplicableHoliday(dateKey, user.workState, user.workCity);
+    const decision = resolveAccessDecision(now, tzOffsetMinutes, user.accessSchedule as AccessSchedule | null, holiday?.name ?? null);
+    res.json(decision);
   })
 );
 

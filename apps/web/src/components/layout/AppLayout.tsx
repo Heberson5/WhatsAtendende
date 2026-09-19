@@ -9,6 +9,7 @@ import { useActiveConversationStore } from "../../store/active-conversation-stor
 import { connectSocket, disconnectSocket, getSocket } from "../../lib/socket";
 import { useDesktopNotificationPermission } from "../../hooks/useDesktopNotifications";
 import { useIdleLogout } from "../../hooks/useIdleLogout";
+import { useAccessWindow } from "../../hooks/useAccessWindow";
 import { useSocketEvents } from "../../hooks/useSocketEvents";
 
 const TITLES: Record<string, string> = {
@@ -32,6 +33,7 @@ export function AppLayout() {
 
   useDesktopNotificationPermission();
   useIdleLogout();
+  useAccessWindow();
 
   // Declared BEFORE useSocketEvents below (not after): React fires a
   // component's effects in the order they're declared during render, and
@@ -66,11 +68,13 @@ export function AppLayout() {
   useEffect(() => {
     const socket = getSocket();
     if (!socket) return;
-    const handler = (payload?: { reason?: "ADMIN" | "NEW_LOGIN" }) => {
+    const handler = (payload?: { reason?: "ADMIN" | "NEW_LOGIN" | "SCHEDULE" }) => {
       toast.error(
         payload?.reason === "NEW_LOGIN"
           ? "Sua conta foi acessada em outro local. Esta sessão foi encerrada."
-          : "Sua sessão foi encerrada por um administrador."
+          : payload?.reason === "SCHEDULE"
+            ? "Sua sessão foi encerrada: fora do horário de acesso permitido ou feriado."
+            : "Sua sessão foi encerrada por um administrador."
       );
       clearSession();
       navigate("/login");

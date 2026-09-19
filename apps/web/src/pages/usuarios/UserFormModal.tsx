@@ -2,8 +2,20 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { X } from "lucide-react";
-import type { UserDTO, Role, ManagerConnectionAccessDTO } from "@whatsatendende/types";
+import type { UserDTO, Role, ManagerConnectionAccessDTO, AccessSchedule, WeekdayKey } from "@whatsatendende/types";
+import { WEEKDAY_KEYS } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
+import { StateCitySelect } from "../../components/common/StateCitySelect";
+
+const WEEKDAY_LABELS: Record<WeekdayKey, string> = {
+  MON: "Segunda",
+  TUE: "Terça",
+  WED: "Quarta",
+  THU: "Quinta",
+  FRI: "Sexta",
+  SAT: "Sábado",
+  SUN: "Domingo",
+};
 
 export interface UserFormValues {
   fullName: string;
@@ -13,6 +25,9 @@ export interface UserFormValues {
   confirmPassword?: string;
   role: Role;
   whatsappConnectionId: string | null;
+  workState: string | null;
+  workCity: string | null;
+  accessSchedule: AccessSchedule | null;
 }
 
 interface ConnectionOption {
@@ -42,6 +57,9 @@ export function UserFormModal({
     confirmPassword: "",
     role: user?.role ?? "AGENT",
     whatsappConnectionId: user?.whatsappConnectionId ?? null,
+    workState: user?.workState ?? null,
+    workCity: user?.workCity ?? null,
+    accessSchedule: user?.accessSchedule ?? null,
   });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -130,6 +148,22 @@ export function UserFormModal({
             </Field>
           )}
 
+          <Field label="Cidade onde trabalha">
+            <StateCitySelect
+              state={values.workState}
+              city={values.workCity}
+              onChange={({ state, city }) => setValues((v) => ({ ...v, workState: state, workCity: city }))}
+            />
+            <p className="mt-1 text-xs text-muted">
+              Usada para bloquear o acesso automaticamente em feriados estaduais/municipais desta cidade — deixe em branco se não quiser esse bloqueio.
+            </p>
+          </Field>
+
+          <AccessScheduleField
+            value={values.accessSchedule}
+            onChange={(accessSchedule) => setValues((v) => ({ ...v, accessSchedule }))}
+          />
+
           {user && values.role === "MANAGER" && <ManagerConnectionAccessEditor managerId={user.id} />}
 
           {!user && (
@@ -211,6 +245,67 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <span className="mb-1 block text-sm font-medium">{label}</span>
       {children}
     </label>
+  );
+}
+
+/**
+ * Per-weekday allowed access window — see PROMPT: "horário que é permitido
+ * acessar... pode variar, portanto precisa ser por cada dia da semana...
+ * Caso o campo de horário esteja em branco, será considerado 24h (sem
+ * bloqueio)". A day's row starts unchecked (= unrestricted, the default for
+ * every day); checking it reveals start/end time inputs for that day only.
+ */
+function AccessScheduleField({ value, onChange }: { value: AccessSchedule | null; onChange: (next: AccessSchedule | null) => void }) {
+  const schedule = value ?? {};
+
+  function setDay(day: WeekdayKey, window: { start: string; end: string } | null) {
+    const next = { ...schedule };
+    if (window) next[day] = window;
+    else delete next[day];
+    onChange(Object.keys(next).length > 0 ? next : null);
+  }
+
+  return (
+    <div className="rounded-card border border-border p-3">
+      <p className="text-sm font-medium">Horário de acesso permitido</p>
+      <p className="mt-0.5 text-xs text-muted">Dias não marcados ficam liberados 24h. Fora do horário marcado, o acesso é bloqueado.</p>
+      <div className="mt-3 space-y-1.5">
+        {WEEKDAY_KEYS.map((day) => {
+          const window = schedule[day];
+          const restricted = Boolean(window);
+          return (
+            <div key={day} className="flex items-center gap-2">
+              <label className="flex w-28 shrink-0 items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={restricted}
+                  onChange={(e) => setDay(day, e.target.checked ? { start: "08:00", end: "18:00" } : null)}
+                  className="focus-ring h-4 w-4 rounded border-border"
+                />
+                {WEEKDAY_LABELS[day]}
+              </label>
+              {restricted && window && (
+                <div className="flex flex-1 items-center gap-1.5">
+                  <input
+                    type="time"
+                    value={window.start}
+                    onChange={(e) => setDay(day, { ...window, start: e.target.value })}
+                    className="focus-ring w-full rounded-card border border-border bg-transparent px-2 py-1 text-sm"
+                  />
+                  <span className="text-xs text-muted">até</span>
+                  <input
+                    type="time"
+                    value={window.end}
+                    onChange={(e) => setDay(day, { ...window, end: e.target.value })}
+                    className="focus-ring w-full rounded-card border border-border bg-transparent px-2 py-1 text-sm"
+                  />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
