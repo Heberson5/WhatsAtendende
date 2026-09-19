@@ -74,9 +74,10 @@ holidaysRouter.delete(
 );
 
 // Manual trigger, in addition to server.ts's own periodic (roughly-monthly)
-// check — lets an admin pull the current year's national holidays (and
-// kick off municipal sync for MT cities in use) on demand right after
-// setting this up, instead of waiting for the next scheduled run.
+// check — lets an admin pull the current year's national holidays on
+// demand right after setting this up, instead of waiting for the next
+// scheduled run. Estadual/municipal stay manual-only — see PROMPT: "deixe
+// o cadastro de feriado municipal manual".
 holidaysRouter.post(
   "/sync",
   requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
