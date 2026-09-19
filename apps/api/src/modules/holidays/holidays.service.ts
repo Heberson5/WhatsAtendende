@@ -4,11 +4,6 @@ import { logger } from "../../lib/logger";
 import { computeMovableHolidays } from "../../lib/easter";
 import type { HolidayScope } from "@prisma/client";
 
-// States currently covered by the automatic municipal sync — see PROMPT:
-// "por enquanto quero somente para o estado de MT". Extending coverage
-// later is just adding a UF here; nothing else needs to change.
-export const AUTO_SYNC_MUNICIPAL_STATES = ["MT"];
-
 export interface HolidayFilter {
   scope?: HolidayScope;
   state?: string;
@@ -200,76 +195,16 @@ export async function syncNationalHolidays(year: number): Promise<{ imported: nu
 }
 
 /**
- * Municipal auto-sync, scoped to the cities users are actually registered
- * in for the states listed in AUTO_SYNC_MUNICIPAL_STATES — see PROMPT:
- * "Estas consultas na API será somente para as cidades que tem usuários
- * cadastrados... dentro do mesmo ano não irá realizar outra consulta de
- * cidades que já foram consultadas e já atualizadas... Só no próximo ano
- * que irá atualizar". Each (state, city) is synced at most once per
- * calendar year regardless of how often this function runs (see
- * HolidaySyncCursor) — the caller (server.ts's periodic check) is what
- * additionally caps actual invocations to roughly once a month.
- *
- * No municipal-holiday data provider is wired in yet — every third-party
- * candidate found (feriadosapi.com, feriados-brasil, calendario.com.br)
- * needs an account/API key and its exact contract wasn't verified from
- * this environment (outbound access to those domains is blocked here).
- * This still runs the city-selection/cursor logic for real so it's ready
- * to plug a provider into — see fetchMunicipalHolidaysFromProvider below.
+ * Municipal holidays are deliberately never auto-imported — see PROMPT:
+ * "deixe o cadastro de feriado municipal manual". They stay entirely
+ * MANUAL, cadastrado em Configurações, same as before any auto-sync
+ * existed — findApplicableHoliday above still matches them automatically
+ * against a user's own workState/workCity once entered, only the
+ * *sourcing* of the holiday itself is manual.
  */
-export async function syncMunicipalHolidays(year: number): Promise<{ citiesSynced: number; citiesSkipped: number }> {
-  let citiesSynced = 0;
-  let citiesSkipped = 0;
-
-  for (const state of AUTO_SYNC_MUNICIPAL_STATES) {
-    const citiesInUse = await prisma.user.findMany({
-      where: { workState: state, workCity: { not: null } },
-      select: { workCity: true },
-      distinct: ["workCity"],
-    });
-
-    for (const { workCity: city } of citiesInUse) {
-      if (!city) continue;
-      if (await alreadySyncedThisYear("MUNICIPAL", state, city, year)) {
-        citiesSkipped++;
-        continue;
-      }
-      try {
-        const holidays = await fetchMunicipalHolidaysFromProvider(state, city, year);
-        for (const h of holidays) {
-          await upsertAutoHoliday({ date: dateKeyToDate(h.date), name: h.name, scope: "MUNICIPAL", state, city });
-        }
-        await markSynced("MUNICIPAL", state, city, year);
-        citiesSynced++;
-      } catch (err) {
-        // A failed city doesn't block the others, and doesn't mark this
-        // city as synced — it's retried the next time this runs (still at
-        // most monthly, per server.ts's cadence) instead of silently
-        // giving up on it for the rest of the year.
-        logger.warn({ err, state, city, year }, "falha ao sincronizar feriados municipais desta cidade");
-      }
-    }
-  }
-
-  return { citiesSynced, citiesSkipped };
-}
-
-/**
- * Not yet wired to a real provider — see syncMunicipalHolidays's doc
- * comment. Returns no holidays rather than fabricating data, so a city
- * with nothing here shows up in Configurações exactly as "sem feriados
- * municipais importados ainda", never as a false negative disguised as a
- * successful empty sync (this throws instead of returning [], so the
- * city is correctly retried next month rather than marked done).
- */
-async function fetchMunicipalHolidaysFromProvider(_state: string, _city: string, _year: number): Promise<{ date: string; name: string }[]> {
-  throw new Error("Nenhum provedor de feriados municipais configurado ainda");
-}
-
 export async function runHolidaySync(year: number) {
   const national = await syncNationalHolidays(year);
-  const municipal = await syncMunicipalHolidays(year);
-  return { national, municipal };
+  return { national };
 }
 
 const SYNC_CADENCE_KEY = "holidaySyncLastRunAt";

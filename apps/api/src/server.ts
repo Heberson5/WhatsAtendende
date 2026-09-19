@@ -10,8 +10,10 @@ import { prisma } from "./lib/prisma";
 
 const TRANSFER_SWEEP_INTERVAL_MS = 5 * 60 * 1000; // see PROMPT: revert an unaccepted offline transfer after 2h
 // Cheap to check daily — runHolidaySyncIfDue itself only does real work
-// (BrasilAPI/municipal fetches) once its own ~monthly cadence marker says
-// it's due, so most days this is a single no-op SystemSetting read.
+// (a BrasilAPI fetch for national holidays — estadual/municipal stay
+// manual-only, see PROMPT: "deixe o cadastro de feriado municipal
+// manual") once its own ~monthly cadence marker says it's due, so most
+// days this is a single no-op SystemSetting read.
 const HOLIDAY_SYNC_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 async function main() {

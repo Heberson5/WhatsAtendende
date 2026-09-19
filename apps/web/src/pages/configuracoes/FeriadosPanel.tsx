@@ -47,14 +47,14 @@ export function FeriadosPanel() {
   });
 
   const syncMutation = useMutation({
-    mutationFn: () => api.post<{ national: { imported: number; skipped: boolean }; municipal: { citiesSynced: number; citiesSkipped: number } }>("/holidays/sync"),
+    mutationFn: () => api.post<{ national: { imported: number; skipped: boolean } }>("/holidays/sync"),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ["holidays"] });
-      const { national, municipal } = res.data;
+      const { national } = res.data;
       toast.success(
         national.skipped
-          ? `Feriados nacionais já sincronizados este ano. Cidades municipais sincronizadas: ${municipal.citiesSynced} (${municipal.citiesSkipped} já em dia).`
-          : `${national.imported} feriados nacionais importados. Cidades municipais sincronizadas: ${municipal.citiesSynced} (${municipal.citiesSkipped} já em dia).`
+          ? "Feriados nacionais já sincronizados este ano."
+          : `${national.imported} feriados nacionais importados.`
       );
     },
     onError: (err) => toast.error(getApiErrorMessage(err)),
@@ -86,15 +86,14 @@ export function FeriadosPanel() {
           className="focus-ring flex shrink-0 items-center gap-1.5 rounded-card border border-border px-3 py-1.5 text-xs font-medium hover:bg-surface-alt disabled:opacity-60"
         >
           <RefreshCw className={`h-3.5 w-3.5 ${syncMutation.isPending ? "animate-spin" : ""}`} />
-          Sincronizar automaticamente
+          Sincronizar feriados nacionais
         </button>
       </div>
 
       <p className="text-xs text-muted">
-        A sincronização automática busca os feriados nacionais do ano (via BrasilAPI) e os feriados municipais das cidades de MT
-        que têm usuário cadastrado — uma vez por cidade por ano. Feriados estaduais/municipais de outros estados, e os que a
-        sincronização automática não cobrir, podem ser cadastrados manualmente abaixo sem risco de serem apagados ou duplicados
-        pela sincronização.
+        A sincronização automática busca somente os feriados nacionais do ano (via BrasilAPI), uma vez por ano. Feriados
+        estaduais e municipais são sempre cadastrados manualmente abaixo, sem risco de serem apagados ou duplicados pela
+        sincronização.
       </p>
 
       <div className="rounded-card border border-border p-3">
