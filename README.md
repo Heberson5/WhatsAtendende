@@ -151,6 +151,7 @@ Principais variáveis da API:
 |---|---|
 | `DATABASE_URL` | Connection string do PostgreSQL |
 | `JWT_ACCESS_SECRET` / `JWT_REFRESH_SECRET` | Segredos de assinatura dos tokens — gerar com `openssl rand -hex 32` |
+| `SETTINGS_ENCRYPTION_KEY` | Criptografa em repouso segredos salvos no banco (ex.: senha SMTP em Configurações) — gerar com `openssl rand -hex 32`, nunca reaproveitar os segredos JWT acima |
 | `WHATSAPP_PROVIDER` | `mock` (padrão, sem WhatsApp real) ou `baileys` (conexão real) |
 | `WHATSAPP_AUTH_DIR` | Diretório onde o Baileys persiste a sessão pareada |
 | `UPLOAD_DIR` / `UPLOAD_MAX_SIZE_MB` | Armazenamento local de anexos e limite de tamanho |
@@ -172,7 +173,7 @@ Em produção, o container da API roda `prisma migrate deploy` automaticamente a
 ## Docker
 
 ```bash
-cp .env.example .env   # preencha JWT_ACCESS_SECRET e JWT_REFRESH_SECRET reais
+cp .env.example .env   # preencha JWT_ACCESS_SECRET, JWT_REFRESH_SECRET e SETTINGS_ENCRYPTION_KEY reais
 docker compose up --build
 ```
 

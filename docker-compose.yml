@@ -41,6 +41,7 @@ services:
       REDIS_URL: redis://redis:6379
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?set a random secret in .env}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?set a random secret in .env}
+      SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:?set a random secret in .env}
       WHATSAPP_PROVIDER: ${WHATSAPP_PROVIDER:-mock}
       WHATSAPP_AUTH_DIR: /data/whatsapp-sessions
       # Left "silent" (the default) normally — Baileys logs every raw
