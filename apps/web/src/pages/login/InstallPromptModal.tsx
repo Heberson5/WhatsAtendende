@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { Download, X } from "lucide-react";
-import { toast } from "sonner";
 import { useInstallPrompt } from "../../hooks/useInstallPrompt";
 import { useBranding } from "../../hooks/useBranding";
 
@@ -18,45 +17,56 @@ function wasRecentlyDismissed(): boolean {
   return !Number.isNaN(dismissedAt) && Date.now() - dismissedAt < RESHOW_AFTER_MS;
 }
 
+function isAndroid(): boolean {
+  return /android/i.test(navigator.userAgent);
+}
+
 /**
  * Shown on the login screen (before any credentials are entered) inviting
  * the visitor to install the app first — see PROMPT: "ao acessar pelo
  * navegador do celular, não está aparecendo um pop up para instalar o app
  * antes de fazer o login, isso tem que aparecer no computador também".
- * Reuses the same useInstallPrompt as the in-app Topbar button (Chrome/Edge
- * desktop and Android get the real native install dialog; iOS gets manual
- * "Compartilhar > Adicionar à Tela de Início" instructions instead, since
- * Safari never fires beforeinstallprompt at all).
+ *
+ * Deliberately does NOT gate visibility on canPromptInstall/isIosManual the
+ * way the Topbar's InstallAppButton does — Chrome only fires
+ * beforeinstallprompt once its own engagement heuristic is satisfied
+ * (roughly: a few visits over a few minutes), which is exactly why "isso
+ * tem que aparecer" was reported as broken: on an early visit the earlier
+ * version simply rendered nothing at all, on desktop AND Android alike.
+ * This always shows something instead (unless already installed/dismissed)
+ * — a one-click native install once the browser offers it, and clear
+ * manual instructions for that platform otherwise, upgrading in place to
+ * the native button the moment beforeinstallprompt does fire.
  */
 export function InstallPromptModal() {
   const { data: branding } = useBranding();
   const { installed, canPromptInstall, isIosManual, promptInstall } = useInstallPrompt();
   const [dismissed, setDismissed] = useState(() => wasRecentlyDismissed());
 
-  // canPromptInstall/isIosManual can both start false and flip true a beat
-  // later (the beforeinstallprompt event fires asynchronously after page
-  // load) — re-checking dismissal here would be pointless since it's a pure
-  // localStorage read, so this only needs the modal to actually mount once
-  // that happens; no extra effect required beyond the hook's own state.
-
   function dismiss() {
     localStorage.setItem(DISMISSED_AT_KEY, String(Date.now()));
     setDismissed(true);
   }
 
-  function handleInstall() {
+  function handlePrimaryAction() {
     if (canPromptInstall) {
       promptInstall();
       dismiss();
       return;
     }
-    toast.info('Para instalar: toque no ícone de Compartilhar e depois em "Adicionar à Tela de Início".', { duration: 8000 });
+    // No native dialog available (yet) — the instructions are already
+    // visible in the modal body, so the button just acknowledges/dismisses.
     dismiss();
   }
 
-  if (installed || dismissed || (!canPromptInstall && !isIosManual)) return null;
+  if (installed || dismissed) return null;
 
   const appName = branding?.appName ?? branding?.companyName ?? "o aplicativo";
+  const manualInstructions = isIosManual
+    ? 'Toque no ícone de Compartilhar (⬆️) na barra do navegador e depois em "Adicionar à Tela de Início".'
+    : isAndroid()
+      ? 'Toque no menu (⋮) do navegador e escolha "Instalar aplicativo" ou "Adicionar à tela inicial".'
+      : "Clique no ícone de instalar (⊕) na barra de endereço, ou no menu do navegador escolha \"Instalar app\".";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
@@ -74,16 +84,17 @@ export function InstallPromptModal() {
           Instale para abrir direto da tela inicial ou da área de trabalho, sem precisar do navegador — é mais rápido e funciona como um
           aplicativo de verdade.
         </p>
+        {!canPromptInstall && <p className="mt-2 rounded-card bg-surface-alt px-3 py-2 text-xs text-muted">{manualInstructions}</p>}
         <div className="mt-5 flex gap-2">
           <button type="button" onClick={dismiss} className="focus-ring flex-1 rounded-card border border-border py-2 text-sm">
             Agora não
           </button>
           <button
             type="button"
-            onClick={handleInstall}
+            onClick={handlePrimaryAction}
             className="focus-ring flex-1 rounded-card bg-primary py-2 text-sm font-semibold text-primary-fg"
           >
-            Instalar
+            {canPromptInstall ? "Instalar" : "Entendi"}
           </button>
         </div>
       </div>

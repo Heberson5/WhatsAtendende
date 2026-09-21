@@ -2,7 +2,7 @@ import { Router, type Request } from "express";
 import { z } from "zod";
 import { PERMISSION } from "@whatsatendende/types";
 import { asyncHandler } from "../../lib/async-handler";
-import { requireAuth } from "../../middleware/auth";
+import { requireAuth, requireRole } from "../../middleware/auth";
 import { requirePermission } from "../../lib/permissions";
 import { writeAudit } from "../../lib/audit";
 import { Errors } from "../../lib/http-error";
@@ -144,6 +144,21 @@ usersRouter.post(
     await usersService.forceLogoutUser(req.params.id);
     realtimeEvents.userForceLoggedOut(req.params.id);
     await writeAudit({ userId: req.auth!.userId, action: "USER_FORCE_LOGGED_OUT", entity: "User", entityId: req.params.id, ipAddress: req.ip ?? null });
+    res.status(204).end();
+  })
+);
+
+// ADMIN-only, checked directly via requireRole rather than the configurable
+// USUARIOS_GERENCIAR permission — that one's grantable to a MANAGER, but
+// deleting an account is irreversible (unlike deactivate, which already
+// exists and stays available to a delegated user manager), so it stays out
+// of that matrix entirely. See PROMPT: "somente para o acesso Administrador".
+usersRouter.delete(
+  "/:id",
+  requireRole("ADMIN"),
+  asyncHandler(async (req, res) => {
+    await usersService.deleteUser(req.params.id, req.auth!.userId);
+    await writeAudit({ userId: req.auth!.userId, action: "USER_DELETED", entity: "User", entityId: req.params.id, ipAddress: req.ip ?? null });
     res.status(204).end();
   })
 );
