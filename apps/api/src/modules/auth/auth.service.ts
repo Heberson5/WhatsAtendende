@@ -122,16 +122,18 @@ export async function login(email: string, password: string, ip: string | null, 
     data: { revokedAt: new Date() },
   });
 
-  const accessToken = signAccessToken({ sub: user.id, role: user.role, displayName: user.displayName });
   const refreshToken = signRefreshToken(user.id);
-
-  await prisma.refreshToken.create({
+  // Created before signAccessToken below so its own id exists to embed as
+  // `sid` — see AccessTokenPayload's doc comment for why the access token
+  // needs to point back at the row that backs it.
+  const refreshTokenRow = await prisma.refreshToken.create({
     data: {
       userId: user.id,
       tokenHash: hashToken(refreshToken),
       expiresAt: new Date(Date.now() + REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000),
     },
   });
+  const accessToken = signAccessToken({ sub: user.id, role: user.role, displayName: user.displayName, sid: refreshTokenRow.id });
 
   if (revoked.count > 0) {
     realtimeEvents.userForceLoggedOut(user.id, "NEW_LOGIN");
@@ -182,7 +184,7 @@ export async function refresh(refreshToken: string, tzOffsetMinutes = 0, ip: str
   // Rotate refresh token to limit replay window.
   await prisma.refreshToken.update({ where: { id: stored.id }, data: { revokedAt: new Date() } });
   const newRefreshToken = signRefreshToken(user.id);
-  await prisma.refreshToken.create({
+  const newRefreshTokenRow = await prisma.refreshToken.create({
     data: {
       userId: user.id,
       tokenHash: hashToken(newRefreshToken),
@@ -190,7 +192,7 @@ export async function refresh(refreshToken: string, tzOffsetMinutes = 0, ip: str
     },
   });
 
-  const accessToken = signAccessToken({ sub: user.id, role: user.role, displayName: user.displayName });
+  const accessToken = signAccessToken({ sub: user.id, role: user.role, displayName: user.displayName, sid: newRefreshTokenRow.id });
   return { accessToken, refreshToken: newRefreshToken, user };
 }
 

@@ -9,6 +9,7 @@ import { asyncHandler } from "../../lib/async-handler";
 import { requireAuth, requireRole } from "../../middleware/auth";
 import { requirePermission } from "../../lib/permissions";
 import { verifyAccessToken } from "../auth/jwt";
+import { isSessionActive } from "../../lib/session";
 import { Errors } from "../../lib/http-error";
 import { env } from "../../config/env";
 import { prisma } from "../../lib/prisma";
@@ -29,13 +30,20 @@ export const messagesRouter = Router();
 // TTL as everywhere else), so this only exposes a brief window even if a
 // URL leaks via referrer/history — an acceptable trade-off for an internal
 // tool versus fetching every message image as an authenticated blob.
-function requireAuthFromHeaderOrQuery(req: Request, _res: Response, next: NextFunction) {
+async function requireAuthFromHeaderOrQuery(req: Request, _res: Response, next: NextFunction) {
   const header = req.headers.authorization;
   const queryToken = typeof req.query.token === "string" ? req.query.token : undefined;
   const token = header?.startsWith("Bearer ") ? header.slice("Bearer ".length) : queryToken;
   if (!token) return next(Errors.unauthorized());
   try {
     const payload = verifyAccessToken(token);
+    // See lib/session.ts / middleware/auth.ts's requireAuth — same
+    // single-active-session enforcement, applied here too since this route
+    // is the one place that accepts the access token outside the
+    // Authorization header (see the comment above).
+    if (!(await isSessionActive(payload.sid))) {
+      return next(Errors.unauthorized("Sessao encerrada — login realizado em outro dispositivo"));
+    }
     req.auth = { userId: payload.sub, role: payload.role, displayName: payload.displayName };
     next();
   } catch {

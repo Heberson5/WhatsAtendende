@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import type { Role } from "@prisma/client";
 import { verifyAccessToken } from "../modules/auth/jwt";
+import { isSessionActive } from "../lib/session";
 import { Errors } from "../lib/http-error";
 
 declare global {
@@ -12,12 +13,19 @@ declare global {
   }
 }
 
-export function requireAuth(req: Request, _res: Response, next: NextFunction) {
+export async function requireAuth(req: Request, _res: Response, next: NextFunction) {
   const header = req.headers.authorization;
   if (!header?.startsWith("Bearer ")) return next(Errors.unauthorized());
 
   try {
     const payload = verifyAccessToken(header.slice("Bearer ".length));
+    // See lib/session.ts — without this, a device logged out by a second
+    // login elsewhere keeps working on every REST call until this token's
+    // own (short) TTL happens to expire, not the instant the other device
+    // logged in — see PROMPT: "não poderá acessar 2x ou mais simultaneamente".
+    if (!(await isSessionActive(payload.sid))) {
+      return next(Errors.unauthorized("Sessao encerrada — login realizado em outro dispositivo"));
+    }
     req.auth = { userId: payload.sub, role: payload.role, displayName: payload.displayName };
     next();
   } catch {

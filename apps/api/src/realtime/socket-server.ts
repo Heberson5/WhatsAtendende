@@ -1,6 +1,7 @@
 import type { Server as HttpServer } from "node:http";
 import { Server as SocketIOServer } from "socket.io";
 import { verifyAccessToken } from "../modules/auth/jwt";
+import { isSessionActive } from "../lib/session";
 import { env } from "../config/env";
 import { setIO, ROOMS } from "./realtime";
 import { registerConnection, registerDisconnection } from "./presence-tracker";
@@ -16,11 +17,18 @@ export function createSocketServer(httpServer: HttpServer): SocketIOServer {
   // auth. Sockets are placed into rooms based on role, so events are only
   // ever broadcast to clients authorized to see them (mirrors the REST RBAC
   // rules; the frontend cannot widen its own visibility by connecting raw).
-  io.use((socket, next) => {
+  io.use(async (socket, next) => {
     const token = socket.handshake.auth?.token as string | undefined;
     if (!token) return next(new Error("unauthorized"));
     try {
       const payload = verifyAccessToken(token);
+      // Same single-active-session check as requireAuth (see lib/session.ts)
+      // — otherwise a device already kicked by a second login could still
+      // open a brand-new socket connection with its old, not-yet-expired
+      // access token and keep receiving live events.
+      if (!(await isSessionActive(payload.sid))) {
+        return next(new Error("unauthorized"));
+      }
       socket.data.auth = { userId: payload.sub, role: payload.role, displayName: payload.displayName };
       next();
     } catch {
