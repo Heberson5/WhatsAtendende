@@ -11,6 +11,10 @@ const schema = z.object({
   // to satisfy with a weak, short, guessable value.
   JWT_ACCESS_SECRET: z.string().min(32),
   JWT_REFRESH_SECRET: z.string().min(32),
+  // Encrypts secrets stored in SystemSetting.value (currently the SMTP
+  // password) at rest — see lib/crypto.ts. Same length rationale/generation
+  // command as the JWT secrets above; never reuse either of those for this.
+  SETTINGS_ENCRYPTION_KEY: z.string().min(32),
   JWT_ACCESS_TTL: z.string().default("15m"),
   JWT_REFRESH_TTL: z.string().default("7d"),
   WHATSAPP_PROVIDER: z.enum(["mock", "baileys"]).default("mock"),

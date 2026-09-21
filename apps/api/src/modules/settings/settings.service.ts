@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
+import { encryptSecret, decryptSecret } from "../../lib/crypto";
 
 export const BRANDING_KEY = "branding";
 
@@ -147,7 +148,8 @@ const DEFAULT_EMAIL_SETTINGS: EmailSettings = {
 export async function getEmailSettings(): Promise<EmailSettings | null> {
   const record = await prisma.systemSetting.findUnique({ where: { key: EMAIL_KEY } });
   if (!record) return null;
-  return { ...DEFAULT_EMAIL_SETTINGS, ...(record.value as Partial<EmailSettings>) };
+  const settings = { ...DEFAULT_EMAIL_SETTINGS, ...(record.value as Partial<EmailSettings>) };
+  return { ...settings, password: settings.password ? decryptSecret(settings.password) : null };
 }
 
 /** Safe to return to the client: the password is never echoed back, only whether one is set. */
@@ -171,10 +173,16 @@ export async function updateEmailSettings(patch: Partial<EmailSettings>): Promis
     fromName: patch.fromName ?? current.fromName,
     fromEmail: patch.fromEmail ?? current.fromEmail,
   };
+  // getEmailSettings() above already decrypted `current.password` for the
+  // "keep unchanged" branch — encrypt right before writing so the DB never
+  // holds it in plain text, whether it's a brand-new password or a
+  // legacy-plaintext one being upgraded to encrypted-at-rest just by being
+  // re-saved (see decryptSecret's own doc comment).
+  const stored = { ...next, password: next.password ? encryptSecret(next.password) : null };
   await prisma.systemSetting.upsert({
     where: { key: EMAIL_KEY },
-    update: { value: next as unknown as Prisma.InputJsonValue },
-    create: { key: EMAIL_KEY, value: next as unknown as Prisma.InputJsonValue },
+    update: { value: stored as unknown as Prisma.InputJsonValue },
+    create: { key: EMAIL_KEY, value: stored as unknown as Prisma.InputJsonValue },
   });
   return getEmailSettingsMasked();
 }
