@@ -3,6 +3,16 @@
 @tailwind utilities;
 
 :root {
+  /* Tells the browser which palette to use for UI it renders itself —
+     native <select>/<option> dropdown popups, date/time pickers, the
+     default scrollbar — none of which read the --color-* custom
+     properties above. Without this, a <select> styled with light text
+     (var(--color-text) in dark mode) still opens its native options
+     list on the OS's default *light* background, since nothing told the
+     browser this page is dark — light text on a light popup is exactly
+     the "dropdown text disappears in dark mode" bug this fixes. */
+  color-scheme: light;
+
   --color-primary: #0097b4;
   --color-primary-fg: #ffffff;
   --color-secondary: #ffe450;
@@ -26,6 +36,8 @@
 }
 
 .dark {
+  color-scheme: dark;
+
   --color-surface: #12181f;
   --color-surface-alt: #1a222b;
   --color-border: #2a343e;

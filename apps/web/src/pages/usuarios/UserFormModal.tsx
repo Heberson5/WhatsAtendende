@@ -94,16 +94,23 @@ export function UserFormModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <form onSubmit={handleSubmit} className="w-full max-w-md rounded-card border border-border bg-surface p-5 shadow-elevated">
-        <div className="mb-4 flex items-center justify-between">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-8">
+      {/* flex-col + max-h-full on the form itself (not just this wrapper) is
+          what keeps the header/footer always visible: the form's own height
+          is capped to the available viewport space, and only the middle
+          section scrolls — otherwise a form this long (horário por dia da
+          semana, cidade, permissões de conexão...) grows taller than the
+          screen with nothing to shrink it, pushing the X/Cancelar/Salvar
+          buttons out of view with no way to reach them. */}
+      <form onSubmit={handleSubmit} className="flex max-h-full w-full max-w-md flex-col overflow-hidden rounded-card border border-border bg-surface shadow-elevated">
+        <div className="flex shrink-0 items-center justify-between border-b border-border p-5 pb-4">
           <h2 className="text-base font-semibold">{user ? "Editar usuário" : "Novo usuário"}</h2>
           <button type="button" onClick={onClose} className="focus-ring rounded-full p-1 text-muted hover:bg-surface-alt" aria-label="Fechar">
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        <div className="space-y-3">
+        <div className="flex-1 space-y-3 overflow-y-auto p-5">
           <Field label="Nome completo">
             <input required value={values.fullName} onChange={(e) => setValues((v) => ({ ...v, fullName: e.target.value }))} className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm" />
           </Field>
@@ -224,15 +231,16 @@ export function UserFormModal({
           )}
         </div>
 
-        {error && <p className="mt-3 rounded-card bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-
-        <div className="mt-5 flex gap-2">
-          <button type="button" onClick={onClose} className="focus-ring flex-1 rounded-card border border-border py-2 text-sm">
-            Cancelar
-          </button>
-          <button type="submit" disabled={loading} className="focus-ring flex-1 rounded-card bg-primary py-2 text-sm font-semibold text-primary-fg disabled:opacity-60">
-            {loading ? "Salvando..." : "Salvar"}
-          </button>
+        <div className="shrink-0 border-t border-border p-5 pt-4">
+          {error && <p className="mb-3 rounded-card bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+          <div className="flex gap-2">
+            <button type="button" onClick={onClose} className="focus-ring flex-1 rounded-card border border-border py-2 text-sm">
+              Cancelar
+            </button>
+            <button type="submit" disabled={loading} className="focus-ring flex-1 rounded-card bg-primary py-2 text-sm font-semibold text-primary-fg disabled:opacity-60">
+              {loading ? "Salvando..." : "Salvar"}
+            </button>
+          </div>
         </div>
       </form>
     </div>
