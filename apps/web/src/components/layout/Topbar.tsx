@@ -5,6 +5,7 @@ import { api } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
 import { useTheme } from "../../hooks/useTheme";
 import { disconnectSocket } from "../../lib/socket";
+import { InstallAppButton } from "./InstallAppButton";
 
 const PRESENCE_LABEL: Record<string, string> = { ONLINE: "Online", AWAY: "Ausente", OFFLINE: "Offline" };
 
@@ -36,6 +37,7 @@ export function Topbar({ title, onMenuClick }: { title: string; onMenuClick?: ()
         <h1 className="truncate text-lg font-semibold">{title}</h1>
       </div>
       <div className="flex shrink-0 items-center gap-2 sm:gap-4">
+        <InstallAppButton />
         <div className="flex items-center gap-0.5 rounded-full border border-border p-1 sm:gap-1">
           <button
             className={`focus-ring rounded-full p-1.5 ${preference === "LIGHT" ? "bg-secondary text-secondary-fg" : "text-muted"}`}
