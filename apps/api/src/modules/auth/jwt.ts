@@ -7,6 +7,20 @@ export interface AccessTokenPayload {
   sub: string; // user id
   role: Role;
   displayName: string;
+  // The RefreshToken row this access token was minted alongside — see
+  // PROMPT: "não poderá acessar 2x ou mais simultaneamente". A JWT is
+  // normally self-contained/stateless (no DB hit to verify), which is
+  // exactly the problem for instant single-session enforcement: revoking a
+  // refresh token stops that device's *next* silent refresh, but its
+  // already-issued access token stays valid — and independently
+  // verifiable — until its own TTL expires on its own, up to
+  // JWT_ACCESS_TTL later. Carrying this id lets every access-token check
+  // (requireAuth, the attachment-download route, socket auth) also confirm
+  // the backing session hasn't been revoked in the meantime, so a second
+  // login elsewhere (or an admin's force-logout) cuts off the first
+  // session's API/socket access immediately, not just its ability to
+  // refresh.
+  sid: string;
 }
 
 // Explicit algorithm allowlist on both sign and verify: without this,
