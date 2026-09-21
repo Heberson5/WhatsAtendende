@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { KeyRound, LogOut, Pencil, Plus, UserCheck, UserX } from "lucide-react";
+import { KeyRound, LogOut, Pencil, Plus, Trash2, UserCheck, UserX } from "lucide-react";
 import { toast } from "sonner";
 import type { UserDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
@@ -14,7 +14,9 @@ const PRESENCE_LABEL: Record<string, string> = { ONLINE: "Online", AWAY: "Ausent
 export default function UsuariosPage() {
   const queryClient = useQueryClient();
   const currentUserId = useAuthStore((s) => s.user?.id);
+  const currentUserRole = useAuthStore((s) => s.user?.role);
   const [modalUser, setModalUser] = useState<UserDTO | null | "new">(null);
+  const [deletingUser, setDeletingUser] = useState<UserDTO | null>(null);
 
   const { data: users, isLoading } = useQuery({
     queryKey: ["users"],
@@ -59,6 +61,16 @@ export default function UsuariosPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["users"] });
       toast.success("Usuário desconectado.");
+    },
+    onError: (err) => toast.error(getApiErrorMessage(err)),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/users/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+      toast.success("Usuário excluído.");
+      setDeletingUser(null);
     },
     onError: (err) => toast.error(getApiErrorMessage(err)),
   });
@@ -164,6 +176,16 @@ export default function UsuariosPage() {
                     >
                       <KeyRound className="h-4 w-4" />
                     </button>
+                    {currentUserRole === "ADMIN" && u.id !== currentUserId && (
+                      <button
+                        onClick={() => setDeletingUser(u)}
+                        className="focus-ring rounded-card p-1.5 text-muted hover:bg-red-50 hover:text-red-600"
+                        aria-label="Excluir"
+                        title="Excluir"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>
@@ -174,6 +196,35 @@ export default function UsuariosPage() {
 
       {modalUser && (
         <UserFormModal user={modalUser === "new" ? null : modalUser} onClose={() => setModalUser(null)} onSubmit={handleSubmit} />
+      )}
+
+      {deletingUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="shadow-elevated w-full max-w-sm rounded-card border border-border bg-surface p-6">
+            <h2 className="text-base font-semibold">Excluir usuário</h2>
+            <p className="mt-2 text-sm text-muted">
+              Tem certeza que deseja excluir <span className="font-medium">{deletingUser.fullName}</span>? Essa ação não pode
+              ser desfeita. Se este usuário já tiver atendimentos ou mensagens registrados, use "Inativar" em vez de excluir.
+            </p>
+            <div className="mt-5 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setDeletingUser(null)}
+                className="focus-ring flex-1 rounded-card border border-border py-2 text-sm"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => deleteMutation.mutate(deletingUser.id)}
+                disabled={deleteMutation.isPending}
+                className="focus-ring flex-1 rounded-card bg-red-600 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+              >
+                {deleteMutation.isPending ? "Excluindo..." : "Excluir"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

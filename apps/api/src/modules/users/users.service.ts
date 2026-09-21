@@ -171,6 +171,43 @@ export async function forceLogoutUser(id: string) {
   ]);
 }
 
+/**
+ * Hard delete — distinct from setUserStatus("INACTIVE") above, which only
+ * blocks login and keeps everything else intact. See PROMPT: "função de
+ * excluir usuário, somente para o acesso Administrador".
+ *
+ * Only actually possible for an account with no history: every relation
+ * that points at a user (messages sent, conversations assigned/transferred,
+ * audit log entries, WhatsApp connections they created) has no onDelete
+ * rule in the schema, so Postgres refuses the delete outright (a foreign
+ * key violation) the moment any of that exists — which in practice is
+ * almost every real account. That's deliberate, not a gap to work around:
+ * deleting a user who sent real messages would either cascade away actual
+ * conversation history or leave it silently orphaned, and an audit log
+ * entry that no longer names who did what defeats its entire purpose. The
+ * route-level permission gate keeps this ADMIN-only; the checks below are
+ * about not leaving the system in a broken/lockout state, not about who's
+ * allowed to call this.
+ */
+export async function deleteUser(id: string, requestingUserId: string) {
+  const target = await getUser(id);
+  if (id === requestingUserId) throw Errors.badRequest("Você não pode excluir sua própria conta");
+  if (target.role === "ADMIN") {
+    const otherAdmins = await prisma.user.count({ where: { role: "ADMIN", id: { not: id } } });
+    if (otherAdmins === 0) throw Errors.badRequest("Não é possível excluir o único administrador do sistema");
+  }
+  try {
+    await prisma.user.delete({ where: { id } });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2003") {
+      throw Errors.badRequest(
+        "Este usuário já tem atendimentos, mensagens ou outro histórico registrado e não pode ser excluído — use \"Desativar\" para bloquear o acesso mantendo o histórico."
+      );
+    }
+    throw err;
+  }
+}
+
 export async function resetUserPassword(id: string): Promise<{ temporaryPassword: string }> {
   await getUser(id);
   const temporaryPassword = crypto.randomBytes(6).toString("base64url");
