@@ -188,7 +188,8 @@ export interface HistoricalMessageInput {
  * (browsable from Gestão, never surfaced in the live queue). Idempotent by
  * providerMessageId so re-syncs (e.g. every reconnect) never duplicate.
  */
-export async function importHistoricalMessages(connectionId: string, messages: HistoricalMessageInput[]): Promise<void> {
+export async function importHistoricalMessages(connectionId: string, messages: HistoricalMessageInput[]): Promise<Set<string>> {
+  const touchedConversationIds = new Set<string>();
   for (const m of messages) {
     if (!m.providerMessageId) continue;
     const existing = await prisma.message.findUnique({ where: { providerMessageId: m.providerMessageId } });
@@ -277,7 +278,29 @@ export async function importHistoricalMessages(connectionId: string, messages: H
         data: { lastMessageAt: m.timestamp, lastMessageDirection: m.fromMe ? "OUTBOUND" : "INBOUND" },
       });
     }
+    touchedConversationIds.add(conversation.id);
   }
+  return touchedConversationIds;
+}
+
+/**
+ * The earliest message this app already has for a contact (scoped the same
+ * way listMessages is — by contact, not by one Conversation row, since a
+ * closed-then-reopened contact's history spans several) — the anchor
+ * fetchOlderHistory needs to ask WhatsApp for whatever came before it. Only
+ * a message that actually reached WhatsApp (has a providerMessageId) can
+ * anchor a real request.
+ */
+export async function getOldestMessageAnchor(
+  contactId: string
+): Promise<{ providerMessageId: string; fromMe: boolean; timestamp: Date } | null> {
+  const message = await prisma.message.findFirst({
+    where: { conversation: { contactId }, providerMessageId: { not: null }, deletedAt: null },
+    orderBy: { createdAt: "asc" },
+    select: { providerMessageId: true, direction: true, createdAt: true },
+  });
+  if (!message?.providerMessageId) return null;
+  return { providerMessageId: message.providerMessageId, fromMe: message.direction === "OUTBOUND", timestamp: message.createdAt };
 }
 
 /**

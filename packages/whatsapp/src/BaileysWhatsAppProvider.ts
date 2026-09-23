@@ -694,11 +694,29 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
     return Array.from(this.contacts.values());
   }
 
-  async syncHistory(): Promise<void> {
-    // Baileys can sync history via syncFullHistory during pairing; on-demand
-    // backfill for an already-linked session is intentionally not enabled
-    // by default (large payloads, WhatsApp rate limits). Documented as a
-    // roadmap item — see docs/whatsapp-integration.md.
+  /**
+   * On-demand backfill for ONE chat, bounded by `count` — deliberately not
+   * the same thing as syncFullHistory above. That flag makes WhatsApp push
+   * the *entire* account's history across every chat during the connect
+   * handshake, uncontrolled and all at once; re-enabling it once already
+   * destabilized a live account (see the comment on syncFullHistory).
+   * fetchMessageHistory instead asks for a specific, capped batch of
+   * messages older than one this app already has, for one chat, whenever
+   * the caller chooses to ask — see PROMPT: "mensagens de antes de
+   * conectar o WhatsApp" (an agent opening a conversation that predates
+   * this app being linked never saw anything from before that point).
+   * Results (if WhatsApp has any to give) arrive later through the same
+   * "messaging-history.set" listener as every other history batch, above —
+   * there is nothing else to do with the resolved requestId Baileys
+   * returns, so it's discarded.
+   */
+  async fetchOlderHistory(chatId: string, anchor: { providerMessageId: string; fromMe: boolean; timestamp: Date }, count: number): Promise<void> {
+    const socket = this.requireSocket();
+    await socket.fetchMessageHistory(
+      count,
+      { remoteJid: chatId, id: anchor.providerMessageId, fromMe: anchor.fromMe },
+      Math.floor(anchor.timestamp.getTime() / 1000)
+    );
   }
 
   onConnectionUpdate(listener: (status: WhatsAppStatusSnapshot) => void): void {

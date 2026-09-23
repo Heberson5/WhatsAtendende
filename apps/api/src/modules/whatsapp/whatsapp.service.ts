@@ -119,6 +119,35 @@ export async function syncReadReceiptToDevice(conversationId: string): Promise<v
   }
 }
 
+// A single WhatsApp round trip per click, capped well below anything that
+// could look like the account-wide dump syncFullHistory does — see
+// BaileysWhatsAppProvider's fetchOlderHistory for why that one is off.
+const HISTORY_BACKFILL_BATCH_SIZE = 50;
+
+/**
+ * Agent-triggered, bounded backfill of one conversation's older WhatsApp
+ * history — see PROMPT: "mensagens de antes de conectar o WhatsApp" (a
+ * contact whose WhatsApp relationship predates this app being linked never
+ * showed any of that earlier history). Deliberately on-demand and scoped to
+ * one contact at a time; the route calling this also rate-limits how often
+ * an agent can trigger it. Unlike syncReadReceiptToDevice above, this is
+ * the primary action the agent asked for, not a side-effect, so it throws
+ * instead of swallowing failures — the UI needs to tell them it didn't work.
+ */
+export async function requestOlderHistory(conversationId: string): Promise<void> {
+  const conversation = await conversationsService.getConversationOrThrow(conversationId);
+  if (conversation.whatsappConnection.status !== "CONNECTED") {
+    throw Errors.badRequest("A conexao de WhatsApp esta desconectada — nao e possivel buscar historico anterior");
+  }
+  const anchor = await conversationsService.getOldestMessageAnchor(conversation.contactId);
+  if (!anchor) {
+    throw Errors.badRequest("Esta conversa ainda nao tem nenhuma mensagem para ancorar a busca de historico anterior");
+  }
+  const provider = getProvider(conversation.whatsappConnectionId);
+  const chatId = conversation.contact.providerChatId ?? toChatId(conversation.contact.phone);
+  await provider.fetchOlderHistory(chatId, anchor, HISTORY_BACKFILL_BATCH_SIZE);
+}
+
 /**
  * Called once from server.ts's SIGTERM/SIGINT handler, before the process
  * exits (every deploy sends one of these to the outgoing container). Ends
@@ -442,8 +471,18 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
           .catch(() => undefined);
       }
       if (event.messages.length > 0) {
-        await conversationsService.importHistoricalMessages(connectionId, event.messages);
+        const touchedConversationIds = await conversationsService.importHistoricalMessages(connectionId, event.messages);
         logger.info({ connectionId, count: event.messages.length }, "imported a WhatsApp history sync batch");
+        // Without this, a conversation already open in ChatPanel when an
+        // on-demand history batch lands (see requestOlderHistory below)
+        // never picked it up live — only the next unrelated refetch or the
+        // 20s safety poll would surface it. agentId is left null here on
+        // purpose: this only needs to reach whoever has that conversation's
+        // room joined right now (ChatPanel joins it explicitly while open),
+        // not any specific agent's own room.
+        for (const conversationId of touchedConversationIds) {
+          realtimeEvents.newMessage(conversationId, null);
+        }
       }
     } catch (err) {
       logger.error({ err, connectionId }, "failed to import WhatsApp history sync batch");

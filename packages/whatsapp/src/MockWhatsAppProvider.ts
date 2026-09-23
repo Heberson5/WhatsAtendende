@@ -5,6 +5,7 @@ import type {
   ConnectOptions,
   ContactInfo,
   DeliveryEvent,
+  HistorySyncEvent,
   InboundMessageEvent,
   ReactionEvent,
   SendResult,
@@ -160,6 +161,23 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
     return null;
   }
 
+  /** Simulates finding a couple of older messages predating whatever this app already has — see BaileysWhatsAppProvider's real implementation. */
+  async fetchOlderHistory(chatId: string, anchor: { providerMessageId: string; fromMe: boolean; timestamp: Date }, count: number): Promise<void> {
+    this.ensureConnected();
+    const phone = chatId.replace(/\D/g, "");
+    const batchSize = Math.min(count, 3);
+    const messages = Array.from({ length: batchSize }, (_, i) => ({
+      providerMessageId: `mock-hist-${randomUUID()}`,
+      chatId,
+      phone,
+      fromMe: i % 2 === 0,
+      type: "TEXT" as const,
+      body: `Mensagem anterior a conexao (simulada) ${batchSize - i}`,
+      timestamp: new Date(anchor.timestamp.getTime() - (i + 1) * 60_000),
+    }));
+    setTimeout(() => this.emitter.emit("historySync", { contacts: [], messages } satisfies HistorySyncEvent), 300);
+  }
+
   async listContacts(): Promise<ContactInfo[]> {
     if (this.status.state !== "CONNECTED") return [];
     return DEVICE_CONTACTS.map((c) => ({ phone: c.phone, name: c.name, photoUrl: null }));
@@ -181,8 +199,8 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
     this.emitter.on("reaction", listener);
   }
 
-  onHistorySync(): void {
-    // Mock provider has no historical backlog to sync.
+  onHistorySync(listener: (event: HistorySyncEvent) => void): void {
+    this.emitter.on("historySync", listener);
   }
 
   onChatRead(): void {
