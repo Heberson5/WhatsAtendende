@@ -141,3 +141,100 @@ button.shadow-soft:not(:disabled):hover {
     var(--shadow-elevated),
     var(--shadow-inset-highlight);
 }
+
+/* Login screen's background glow blobs (see LoginPage.tsx) — each one
+   travels a wide, irregular path (corner -> near-center -> opposite corner)
+   instead of a small wobble, since a subtle sway was invisible behind the
+   heavy blur. Only ever translation, never rotation — an earlier spinning
+   version read as jarring. Durations/delays are deliberately mismatched per
+   blob so the four never look synchronized. */
+@keyframes login-drift-a {
+  0% {
+    transform: translate(0, 0);
+  }
+  20% {
+    transform: translate(260px, 140px);
+  }
+  45% {
+    transform: translate(80px, 340px);
+  }
+  70% {
+    transform: translate(340px, 60px);
+  }
+  100% {
+    transform: translate(0, 0);
+  }
+}
+@keyframes login-drift-b {
+  0% {
+    transform: translate(0, 0);
+  }
+  25% {
+    transform: translate(-300px, 180px);
+  }
+  50% {
+    transform: translate(-120px, 380px);
+  }
+  75% {
+    transform: translate(-320px, 80px);
+  }
+  100% {
+    transform: translate(0, 0);
+  }
+}
+@keyframes login-drift-c {
+  0% {
+    transform: translate(0, 0);
+  }
+  22% {
+    transform: translate(220px, -200px);
+  }
+  48% {
+    transform: translate(-60px, -360px);
+  }
+  74% {
+    transform: translate(300px, -120px);
+  }
+  100% {
+    transform: translate(0, 0);
+  }
+}
+@keyframes login-drift-d {
+  0% {
+    transform: translate(0, 0);
+  }
+  28% {
+    transform: translate(-240px, -160px);
+  }
+  55% {
+    transform: translate(40px, -320px);
+  }
+  80% {
+    transform: translate(-260px, -40px);
+  }
+  100% {
+    transform: translate(0, 0);
+  }
+}
+.animate-login-drift-a {
+  animation: login-drift-a 26s ease-in-out infinite;
+}
+.animate-login-drift-b {
+  animation: login-drift-b 31s ease-in-out infinite;
+}
+.animate-login-drift-c {
+  animation: login-drift-c 29s ease-in-out infinite;
+  animation-delay: -6s;
+}
+.animate-login-drift-d {
+  animation: login-drift-d 23s ease-in-out infinite;
+  animation-delay: -11s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-login-drift-a,
+  .animate-login-drift-b,
+  .animate-login-drift-c,
+  .animate-login-drift-d {
+    animation: none;
+  }
+}
