@@ -87,6 +87,7 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
     });
 
     this.scheduleSimulatedInboundTraffic();
+    this.simulatePreExistingUnreadChat();
   }
 
   async disconnect(): Promise<void> {
@@ -175,7 +176,7 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
       body: `Mensagem anterior a conexao (simulada) ${batchSize - i}`,
       timestamp: new Date(anchor.timestamp.getTime() - (i + 1) * 60_000),
     }));
-    setTimeout(() => this.emitter.emit("historySync", { contacts: [], messages } satisfies HistorySyncEvent), 300);
+    setTimeout(() => this.emitter.emit("historySync", { contacts: [], chats: [], messages } satisfies HistorySyncEvent), 300);
   }
 
   async listContacts(): Promise<ContactInfo[]> {
@@ -272,6 +273,46 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
         seed.name
       );
     }, 45_000);
+  }
+
+  /**
+   * Simulates the one-time discovery of a chat that already had unread
+   * messages on the phone before this connection was ever linked here — the
+   * real equivalent of a Baileys RECENT history sync revealing a chat's
+   * unreadCount. See PROMPT: "conversas no WhatsApp que não foram lidas não
+   * aparecem na fila". Fixed (not random) providerMessageIds so repeated
+   * connects in the same dev session stay idempotent, same as the real
+   * provider re-syncing on every reconnect.
+   */
+  private simulatePreExistingUnreadChat() {
+    const contact = DEVICE_CONTACTS.find((c) => c.phone === "5511955554444")!; // Ana Ribeiro
+    const chatId = `${contact.phone}@s.whatsapp.net`;
+    setTimeout(() => {
+      this.emitter.emit("historySync", {
+        contacts: [],
+        chats: [{ chatId, unreadCount: 2 }],
+        messages: [
+          {
+            providerMessageId: "mock-preexisting-unread-1",
+            chatId,
+            phone: contact.phone,
+            fromMe: false,
+            type: "TEXT",
+            body: "Oi, ainda estou esperando retorno sobre minha compra.",
+            timestamp: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+          },
+          {
+            providerMessageId: "mock-preexisting-unread-2",
+            chatId,
+            phone: contact.phone,
+            fromMe: false,
+            type: "TEXT",
+            body: "Alguem pode me ajudar?",
+            timestamp: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000),
+          },
+        ],
+      } satisfies HistorySyncEvent);
+    }, 800);
   }
 }
 

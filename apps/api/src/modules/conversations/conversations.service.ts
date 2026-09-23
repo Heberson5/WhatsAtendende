@@ -188,27 +188,57 @@ export interface HistoricalMessageInput {
  * (browsable from Gestão, never surfaced in the live queue). Idempotent by
  * providerMessageId so re-syncs (e.g. every reconnect) never duplicate.
  */
-export async function importHistoricalMessages(connectionId: string, messages: HistoricalMessageInput[]): Promise<Set<string>> {
+/**
+ * unreadChatIds: chats a history sync reported as having unread messages
+ * (see BaileysWhatsAppProvider's RECENT sync handling) that this app has
+ * never seen before become live queue entries instead of silent CLOSED
+ * archives — the same NEW status a brand-new live inbound message gets
+ * (see findOrOpenConversationForInboundMessage). A chat in this set whose
+ * contact already has an active conversation here (even from a much
+ * earlier sync) is left alone: the app already knows about it, so its
+ * messages just attach normally below. See PROMPT: "conversas no WhatsApp
+ * que não foram lidas não aparecem na fila, pois são conversas que já
+ * estavam sem ler antes de conectar o WhatsApp".
+ */
+export async function importHistoricalMessages(
+  connectionId: string,
+  messages: HistoricalMessageInput[],
+  unreadChatIds: Set<string> = new Set()
+): Promise<{ touchedConversationIds: Set<string>; newQueueConversationIds: Set<string> }> {
   const touchedConversationIds = new Set<string>();
+  const newQueueConversationIds = new Set<string>();
   for (const m of messages) {
     if (!m.providerMessageId) continue;
     const existing = await prisma.message.findUnique({ where: { providerMessageId: m.providerMessageId } });
     if (existing) continue;
 
+    const promoteToQueue = Boolean(m.chatId && unreadChatIds.has(m.chatId));
     const contact = await findOrCreateContact(connectionId, m.phone, null, m.chatId);
-    let conversation = await prisma.conversation.findFirst({ where: { contactId: contact.id }, orderBy: { createdAt: "desc" } });
+    let conversation = promoteToQueue
+      ? await findActiveConversationForContact(contact.id)
+      : await prisma.conversation.findFirst({ where: { contactId: contact.id }, orderBy: { createdAt: "desc" } });
     if (!conversation) {
       conversation = await prisma.conversation.create({
-        data: {
-          contactId: contact.id,
-          whatsappConnectionId: connectionId,
-          status: "CLOSED",
-          enteredQueueAt: m.timestamp,
-          closedAt: m.timestamp,
-          lastMessageAt: m.timestamp,
-          createdAt: m.timestamp,
-        },
+        data: promoteToQueue
+          ? {
+              contactId: contact.id,
+              whatsappConnectionId: connectionId,
+              status: "NEW",
+              enteredQueueAt: m.timestamp,
+              lastMessageAt: m.timestamp,
+              createdAt: m.timestamp,
+            }
+          : {
+              contactId: contact.id,
+              whatsappConnectionId: connectionId,
+              status: "CLOSED",
+              enteredQueueAt: m.timestamp,
+              closedAt: m.timestamp,
+              lastMessageAt: m.timestamp,
+              createdAt: m.timestamp,
+            },
       });
+      if (promoteToQueue) newQueueConversationIds.add(conversation.id);
     }
 
     await prisma.message.create({
@@ -280,7 +310,7 @@ export async function importHistoricalMessages(connectionId: string, messages: H
     }
     touchedConversationIds.add(conversation.id);
   }
-  return touchedConversationIds;
+  return { touchedConversationIds, newQueueConversationIds };
 }
 
 /**

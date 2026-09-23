@@ -7,9 +7,9 @@ import makeWASocket, {
   DisconnectReason,
   useMultiFileAuthState,
   downloadMediaMessage,
+  proto,
   type WASocket,
   type WAMessage,
-  type proto,
 } from "@whiskeysockets/baileys";
 import type {
   ChatIdentityResolvedEvent,
@@ -17,6 +17,7 @@ import type {
   ConnectOptions,
   ContactInfo,
   DeliveryEvent,
+  HistoryChatInfo,
   HistoryMessageEvent,
   HistorySyncEvent,
   InboundMessageEvent,
@@ -190,6 +191,26 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
         // chunked/rate-limited approach than a blanket flag flip; not
         // attempting that again against a live account blind.
         syncFullHistory: false,
+        // Independent of syncFullHistory above (Baileys defaults this to
+        // `() => !!syncFullHistory` when left unset, which would also
+        // reject the two sync types below) — lets through only the two
+        // history-sync payloads that are safe by construction:
+        // RECENT is the same small "chat list + a handful of recent
+        // messages per chat, plus unread counts" sync every normal
+        // WhatsApp Web/multi-device linking already receives regardless of
+        // this app — not the account-wide FULL dump that broke a live
+        // account before (see syncFullHistory's own comment). It's how a
+        // chat that already had unread messages before this app was ever
+        // linked gets discovered at all — see PROMPT: "conversas no
+        // WhatsApp que não foram lidas não aparecem na fila, pois são
+        // conversas que já estavam sem ler antes de conectar o WhatsApp".
+        // ON_DEMAND is the response to this app's own bounded,
+        // one-chat-at-a-time fetchOlderHistory request below — without
+        // this, that response would be silently dropped here before ever
+        // reaching the "messaging-history.set" listener.
+        shouldSyncHistoryMessage: (msg) =>
+          msg.syncType === proto.Message.HistorySyncNotification.HistorySyncType.RECENT ||
+          msg.syncType === proto.Message.HistorySyncNotification.HistorySyncType.ON_DEMAND,
         // Pairing-code linking and QR linking are mutually exclusive per
         // Baileys session: suppress the QR event entirely when a phone number
         // was given, since we're about to request a code instead.
@@ -417,7 +438,7 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
       socket.ev.on("contacts.upsert", (contacts) => this.upsertContacts(contacts));
       socket.ev.on("contacts.update", (contacts) => this.upsertContacts(contacts));
 
-      socket.ev.on("messaging-history.set", ({ contacts, messages }) => {
+      socket.ev.on("messaging-history.set", ({ contacts, messages, chats }) => {
         this.upsertContacts(contacts);
         const converted: HistoryMessageEvent[] = [];
         for (const message of messages) {
@@ -426,9 +447,13 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
           const entry = convertHistoryMessage(message, chatId);
           if (entry) converted.push(entry);
         }
-        if (converted.length > 0 || contacts.length > 0) {
+        const unreadChats: HistoryChatInfo[] = chats
+          .filter((c) => c.id && !isNonCustomerChat(c.id) && Number(c.unreadCount ?? 0) > 0)
+          .map((c) => ({ chatId: c.id, unreadCount: Number(c.unreadCount) }));
+        if (converted.length > 0 || contacts.length > 0 || unreadChats.length > 0) {
           this.emitter.emit("historySync", {
             contacts: Array.from(this.contacts.values()),
+            chats: unreadChats,
             messages: converted,
           } satisfies HistorySyncEvent);
         }

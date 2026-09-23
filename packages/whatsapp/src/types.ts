@@ -138,8 +138,22 @@ export interface HistoryMessageEvent {
   timestamp: Date;
 }
 
+/**
+ * Chat-level metadata from a history sync — separate from the messages
+ * array because unreadCount lives on the chat itself, not on any one
+ * message. See PROMPT: "conversas no WhatsApp que não foram lidas não
+ * aparecem na fila, pois são conversas que já estavam sem ler antes de
+ * conectar o WhatsApp" — this is how the app learns a chat already had
+ * unread messages before it was ever linked.
+ */
+export interface HistoryChatInfo {
+  chatId: string;
+  unreadCount: number;
+}
+
 export interface HistorySyncEvent {
   contacts: ContactInfo[];
+  chats: HistoryChatInfo[];
   messages: HistoryMessageEvent[];
 }
 
