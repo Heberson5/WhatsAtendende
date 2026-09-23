@@ -10,16 +10,20 @@ import { useTheme } from "../../hooks/useTheme";
 import { MaintenanceScreen } from "./MaintenanceScreen";
 import { InstallPromptModal } from "./InstallPromptModal";
 
-// Soft, static glow blobs behind the card — tinted from the active brand
-// colors via color-mix (same technique the global body background already
-// uses in styles/index.css) so they re-tint automatically for a custom
-// brand palette and re-shade automatically between light/dark, with no
-// per-theme values to keep in sync by hand.
-const GLOW_SPOTS: { className: string; color: "primary" | "secondary"; strength: number }[] = [
-  { className: "-left-40 -top-40 h-[560px] w-[560px]", color: "primary", strength: 20 },
-  { className: "-right-48 -top-24 h-[520px] w-[520px]", color: "secondary", strength: 26 },
-  { className: "-bottom-56 left-1/3 h-[620px] w-[620px]", color: "primary", strength: 16 },
-  { className: "-bottom-40 -right-40 h-[480px] w-[480px]", color: "secondary", strength: 14 },
+// Glow blobs behind the card — tinted from the active brand colors via
+// color-mix (same technique the global body background already uses in
+// styles/index.css) so they re-tint automatically for a custom brand
+// palette and re-shade automatically between light/dark, with no per-theme
+// values to keep in sync by hand. Each drifts along its own wide, irregular
+// path (see the login-drift-* keyframes in index.css) — a first pass with a
+// small wobble read as motionless against the blur, and a rotating version
+// before that read as jarring, so this is translation only, sized to
+// actually be seen.
+const GLOW_SPOTS: { className: string; color: "primary" | "secondary"; strength: number; drift: string }[] = [
+  { className: "-left-32 -top-36 h-[520px] w-[520px]", color: "primary", strength: 24, drift: "animate-login-drift-a" },
+  { className: "-right-36 -top-32 h-[480px] w-[480px]", color: "secondary", strength: 30, drift: "animate-login-drift-b" },
+  { className: "-bottom-40 left-[20%] h-[560px] w-[560px]", color: "primary", strength: 20, drift: "animate-login-drift-c" },
+  { className: "-bottom-36 -right-32 h-[440px] w-[440px]", color: "secondary", strength: 18, drift: "animate-login-drift-d" },
 ];
 
 export default function LoginPage() {
@@ -90,12 +94,13 @@ export default function LoginPage() {
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[var(--color-bg)] px-4">
       <InstallPromptModal />
 
-      {/* Static depth layer — never animated (see PROMPT: motion here read as "horrível" on an earlier pass) */}
+      {/* The glow blobs drift slowly (see GLOW_SPOTS); the card and its
+          layered-glass panels below stay completely still. */}
       <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
         {GLOW_SPOTS.map((spot, i) => (
           <div
             key={i}
-            className={`absolute rounded-full blur-[80px] ${spot.className}`}
+            className={`absolute rounded-full blur-[70px] ${spot.className} ${spot.drift}`}
             style={{
               background: `radial-gradient(circle, color-mix(in srgb, var(--color-${spot.color}) ${spot.strength}%, transparent), transparent 68%)`,
             }}
