@@ -9,6 +9,7 @@ import { Errors } from "../../lib/http-error";
 import type { Role } from "@prisma/client";
 import type { ManagerConnectionAccessDTO } from "@whatsatendende/types";
 import { realtimeEvents } from "../../realtime/realtime";
+import { writeAudit } from "../../lib/audit";
 import * as conversationsService from "../conversations/conversations.service";
 import * as messagesService from "../messages/messages.service";
 import { toMessageDTO } from "../messages/messages.mapper";
@@ -471,8 +472,16 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
           .catch(() => undefined);
       }
       if (event.messages.length > 0) {
-        const touchedConversationIds = await conversationsService.importHistoricalMessages(connectionId, event.messages);
-        logger.info({ connectionId, count: event.messages.length }, "imported a WhatsApp history sync batch");
+        const unreadChatIds = new Set(event.chats.filter((c) => c.unreadCount > 0).map((c) => c.chatId));
+        const { touchedConversationIds, newQueueConversationIds } = await conversationsService.importHistoricalMessages(
+          connectionId,
+          event.messages,
+          unreadChatIds
+        );
+        logger.info(
+          { connectionId, count: event.messages.length, newQueueConversations: newQueueConversationIds.size },
+          "imported a WhatsApp history sync batch"
+        );
         // Without this, a conversation already open in ChatPanel when an
         // on-demand history batch lands (see requestOlderHistory below)
         // never picked it up live — only the next unrelated refetch or the
@@ -482,6 +491,31 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
         // not any specific agent's own room.
         for (const conversationId of touchedConversationIds) {
           realtimeEvents.newMessage(conversationId, null);
+        }
+        // A chat that already had unread messages before this connection
+        // was ever linked just became a real queue entry (see
+        // importHistoricalMessages' promoteToQueue) — announce it exactly
+        // like a brand-new live inbound message would, so it doesn't just
+        // sit there until someone happens to refresh Atendimento. See
+        // PROMPT: "conversas no WhatsApp que não foram lidas não aparecem
+        // na fila, pois são conversas que já estavam sem ler antes de
+        // conectar o WhatsApp".
+        if (newQueueConversationIds.size > 0) {
+          const newConversations = await prisma.conversation.findMany({
+            where: { id: { in: Array.from(newQueueConversationIds) } },
+            include: { contact: true },
+          });
+          for (const conversation of newConversations) {
+            realtimeEvents.newQueueConversation(connectionId, conversation.id, conversation.contact.name ?? conversation.contact.phone);
+            await writeAudit({
+              userId: null,
+              action: "WHATSAPP_UNREAD_HISTORY_QUEUED",
+              entity: "Conversation",
+              entityId: conversation.id,
+              ipAddress: null,
+              metadata: { connectionId, contactPhone: conversation.contact.phone },
+            });
+          }
         }
       }
     } catch (err) {
