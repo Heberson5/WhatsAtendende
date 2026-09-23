@@ -1,18 +1,38 @@
 import { useState, type FormEvent } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
-import { Eye, EyeOff, Loader2 } from "lucide-react";
+import { Eye, EyeOff, Loader2, Lock, Mail } from "lucide-react";
 import { toast } from "sonner";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
 import { useBranding } from "../../hooks/useBranding";
 import { useMaintenanceStatus } from "../../hooks/useMaintenanceStatus";
+import { useTheme } from "../../hooks/useTheme";
 import { MaintenanceScreen } from "./MaintenanceScreen";
 import { InstallPromptModal } from "./InstallPromptModal";
+
+// Soft, static glow blobs behind the card — tinted from the active brand
+// colors via color-mix (same technique the global body background already
+// uses in styles/index.css) so they re-tint automatically for a custom
+// brand palette and re-shade automatically between light/dark, with no
+// per-theme values to keep in sync by hand.
+const GLOW_SPOTS: { className: string; color: "primary" | "secondary"; strength: number }[] = [
+  { className: "-left-40 -top-40 h-[560px] w-[560px]", color: "primary", strength: 20 },
+  { className: "-right-48 -top-24 h-[520px] w-[520px]", color: "secondary", strength: 26 },
+  { className: "-bottom-56 left-1/3 h-[620px] w-[620px]", color: "primary", strength: 16 },
+  { className: "-bottom-40 -right-40 h-[480px] w-[480px]", color: "secondary", strength: 14 },
+];
 
 export default function LoginPage() {
   const { user, setSession } = useAuthStore();
   const { data: branding } = useBranding();
   const { data: maintenance, isLoading: maintenanceLoading } = useMaintenanceStatus();
+  // The login screen renders before AppLayout (and its Topbar, the only
+  // other place this hook was called) ever mounts, so without this the
+  // saved/system theme was never applied here — the background and glass
+  // card stayed stuck in light mode regardless of the account's or OS's
+  // dark-mode preference. See PROMPT: "adaptável para o tema escuro e
+  // adaptável quando altera o tema nas configurações".
+  useTheme();
   const navigate = useNavigate();
 
   const [email, setEmail] = useState("");
@@ -67,95 +87,131 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[var(--color-bg)] px-4">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[var(--color-bg)] px-4">
       <InstallPromptModal />
-      <div className="shadow-soft w-full max-w-md rounded-card border border-border bg-surface p-8">
-        <div className="mb-8 flex flex-col items-center gap-3 text-center">
-          {branding?.logoUrl ? (
-            <img src={branding.logoUrl} alt={branding.companyName} className="h-14 w-14 object-contain" />
-          ) : (
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary text-xl font-bold text-primary-fg">
-              {(branding?.companyName ?? "WA").slice(0, 2).toUpperCase()}
+
+      {/* Static depth layer — never animated (see PROMPT: motion here read as "horrível" on an earlier pass) */}
+      <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+        {GLOW_SPOTS.map((spot, i) => (
+          <div
+            key={i}
+            className={`absolute rounded-full blur-[80px] ${spot.className}`}
+            style={{
+              background: `radial-gradient(circle, color-mix(in srgb, var(--color-${spot.color}) ${spot.strength}%, transparent), transparent 68%)`,
+            }}
+          />
+        ))}
+      </div>
+
+      <div className="relative w-full max-w-md">
+        {/* Two offset "echo" panels behind the main card — the layered-glass
+            depth cue, entirely static (no blur/opacity animation either). */}
+        <div
+          aria-hidden
+          className="absolute inset-0 translate-x-5 translate-y-6 rounded-[22px] border border-border/60"
+          style={{ background: "color-mix(in srgb, var(--color-surface) 45%, transparent)" }}
+        />
+        <div
+          aria-hidden
+          className="absolute inset-0 translate-x-2.5 translate-y-3 rounded-[22px] border border-border/70"
+          style={{ background: "color-mix(in srgb, var(--color-surface) 62%, transparent)" }}
+        />
+
+        <div
+          className="shadow-elevated relative rounded-[20px] border border-border p-8 backdrop-blur-xl sm:p-10"
+          style={{ background: "color-mix(in srgb, var(--color-surface) 80%, transparent)" }}
+        >
+          <div className="mb-8 flex flex-col items-center gap-3 text-center">
+            {branding?.logoUrl ? (
+              <img src={branding.logoUrl} alt={branding.companyName} className="h-14 w-14 object-contain" />
+            ) : (
+              <div className="shadow-soft flex h-14 w-14 items-center justify-center rounded-2xl bg-primary text-xl font-bold text-primary-fg">
+                {(branding?.companyName ?? "WA").slice(0, 2).toUpperCase()}
+              </div>
+            )}
+            <div>
+              <h1 className="text-xl font-semibold">{branding?.companyName ?? "WhatsAtendende"}</h1>
+              <p className="text-sm text-muted">Plataforma de atendimento via WhatsApp</p>
             </div>
-          )}
-          <div>
-            <h1 className="text-xl font-semibold">{branding?.companyName ?? "WhatsAtendende"}</h1>
-            <p className="text-sm text-muted">Plataforma de atendimento via WhatsApp</p>
           </div>
-        </div>
 
-        {forgotOpen ? (
-          <ForgotPasswordForm onBack={() => setForgotOpen(false)} />
-        ) : (
-          <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-            <div>
-              <label htmlFor="email" className="mb-1 block text-sm font-medium">
-                E-mail
-              </label>
-              <input
-                id="email"
-                type="email"
-                required
-                autoComplete="username"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2.5 text-sm"
-                placeholder="voce@empresa.com"
-              />
-            </div>
+          {forgotOpen ? (
+            <ForgotPasswordForm onBack={() => setForgotOpen(false)} />
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-4" noValidate>
+              <div>
+                <label htmlFor="email" className="mb-1 block text-sm font-medium">
+                  E-mail
+                </label>
+                <div className="relative flex items-center">
+                  <Mail className="pointer-events-none absolute left-3.5 h-4 w-4 text-muted" />
+                  <input
+                    id="email"
+                    type="email"
+                    required
+                    autoComplete="username"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="focus-ring w-full rounded-card border border-border bg-[var(--color-surface-alt)] py-2.5 pl-10 pr-3 text-sm"
+                    placeholder="voce@empresa.com"
+                  />
+                </div>
+              </div>
 
-            <div>
-              <label htmlFor="password" className="mb-1 block text-sm font-medium">
-                Senha
-              </label>
-              <div className="relative">
-                <input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
-                  required
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2.5 pr-10 text-sm"
-                  placeholder="********"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((s) => !s)}
-                  className="focus-ring absolute right-2 top-1/2 -translate-y-1/2 text-muted"
-                  aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
-                >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              <div>
+                <label htmlFor="password" className="mb-1 block text-sm font-medium">
+                  Senha
+                </label>
+                <div className="relative flex items-center">
+                  <Lock className="pointer-events-none absolute left-3.5 h-4 w-4 text-muted" />
+                  <input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    required
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="focus-ring w-full rounded-card border border-border bg-[var(--color-surface-alt)] py-2.5 pl-10 pr-10 text-sm"
+                    placeholder="********"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((s) => !s)}
+                    className="focus-ring absolute right-2 text-muted"
+                    aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between text-sm">
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
+                  Lembrar acesso
+                </label>
+                <button type="button" onClick={() => setForgotOpen(true)} className="focus-ring text-primary hover:underline">
+                  Recuperar senha
                 </button>
               </div>
-            </div>
 
-            <div className="flex items-center justify-between text-sm">
-              <label className="flex items-center gap-2">
-                <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
-                Lembrar acesso
-              </label>
-              <button type="button" onClick={() => setForgotOpen(true)} className="focus-ring text-primary hover:underline">
-                Recuperar senha
+              {error && (
+                <p role="alert" className="rounded-card bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {error}
+                </p>
+              )}
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="focus-ring flex w-full items-center justify-center gap-2 rounded-card bg-primary py-2.5 text-sm font-semibold text-primary-fg disabled:opacity-60"
+              >
+                {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+                Entrar
               </button>
-            </div>
-
-            {error && (
-              <p role="alert" className="rounded-card bg-red-50 px-3 py-2 text-sm text-red-700">
-                {error}
-              </p>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="focus-ring flex w-full items-center justify-center gap-2 rounded-card bg-primary py-2.5 text-sm font-semibold text-primary-fg transition hover:opacity-90 disabled:opacity-60"
-            >
-              {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-              Entrar
-            </button>
-          </form>
-        )}
+            </form>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -199,7 +255,7 @@ function ForgotPasswordForm({ onBack }: { onBack: () => void }) {
         required
         value={email}
         onChange={(e) => setEmail(e.target.value)}
-        className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2.5 text-sm"
+        className="focus-ring w-full rounded-card border border-border bg-[var(--color-surface-alt)] px-3 py-2.5 text-sm"
         placeholder="voce@empresa.com"
       />
       <div className="flex gap-2">
