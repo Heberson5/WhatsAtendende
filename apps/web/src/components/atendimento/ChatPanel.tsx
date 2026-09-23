@@ -97,6 +97,18 @@ export function ChatPanel({
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["mine"] }),
   });
 
+  // On-demand backfill of messages older than whatever this app already has
+  // for this contact — see PROMPT: "mensagens de antes de conectar o
+  // WhatsApp". Fire-and-forget from the UI's point of view: any messages
+  // WhatsApp actually has land later through the normal live-update path
+  // (message:new -> this same ["messages", conversation.id] query
+  // invalidates), same as a message arriving from anywhere else.
+  const syncOlderHistoryMutation = useMutation({
+    mutationFn: () => api.post(`/conversations/${conversation.id}/sync-older-history`),
+    onSuccess: () => toast.info("Buscando mensagens anteriores no WhatsApp..."),
+    onError: (err) => toast.error(getApiErrorMessage(err)),
+  });
+
   // Powers the "/" quick-reply picker in the Composer — scoped server-side
   // to this conversation's WhatsApp connection (see quick-replies.routes.ts),
   // so the same list an admin can also see doesn't leak across connections.
@@ -521,6 +533,20 @@ export function ChatPanel({
         {cursor && (
           <div className="text-center">
             <p className="text-xs text-muted">Carregando histórico...</p>
+          </div>
+        )}
+        {/* Only once this app's own local pagination is exhausted (no more
+            `cursor`) does it make sense to ask WhatsApp itself for whatever
+            came before that — see syncOlderHistoryMutation above. */}
+        {!cursor && messages.length > 0 && !connectionDisconnected && (
+          <div className="mb-3 text-center">
+            <button
+              onClick={() => syncOlderHistoryMutation.mutate()}
+              disabled={syncOlderHistoryMutation.isPending}
+              className="focus-ring text-xs font-medium text-primary hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {syncOlderHistoryMutation.isPending ? "Buscando..." : "Buscar mensagens anteriores no WhatsApp"}
+            </button>
           </div>
         )}
         <div ref={contentRef} className="space-y-3">

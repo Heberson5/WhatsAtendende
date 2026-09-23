@@ -228,6 +228,16 @@ export interface WhatsAppProvider {
   getContactInfo(chatId: string): Promise<ContactInfo>;
   getContactPhoto(chatId: string): Promise<string | null>;
 
+  /**
+   * Requests ONE bounded batch of older messages for a single chat,
+   * anchored just before a message this app already has — never a
+   * blanket/automatic account-wide sync (see BaileysWhatsAppProvider's
+   * fetchOlderHistory for the safety rationale). Results, if any, arrive
+   * later through onHistorySync below, same as any other history batch —
+   * this call only sends the request.
+   */
+  fetchOlderHistory(chatId: string, anchor: { providerMessageId: string; fromMe: boolean; timestamp: Date }, count: number): Promise<void>;
+
   onConnectionUpdate(listener: (status: WhatsAppStatusSnapshot) => void): void;
   onMessage(listener: (event: InboundMessageEvent) => void): void;
   onDelivery(listener: (event: DeliveryEvent) => void): void;

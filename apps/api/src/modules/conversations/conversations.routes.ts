@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
+import rateLimit from "express-rate-limit";
 import { PERMISSION } from "@whatsatendende/types";
 import { asyncHandler } from "../../lib/async-handler";
 import { requireAuth, requireRole } from "../../middleware/auth";
@@ -7,13 +8,14 @@ import { requirePermission } from "../../lib/permissions";
 import { writeAudit } from "../../lib/audit";
 import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
+import { env } from "../../config/env";
 import { parseListParam } from "../../lib/parse-list-param";
 import { optionalDateQueryParam } from "../../lib/period";
 import { resolveAllowedConnectionIds, canManagerAccessConnection } from "../../lib/connection-access";
 import { toConversationListItemDTO } from "./conversations.mapper";
 import * as service from "./conversations.service";
 import { realtimeEvents } from "../../realtime/realtime";
-import { syncReadReceiptToDevice } from "../whatsapp/whatsapp.service";
+import { syncReadReceiptToDevice, requestOlderHistory } from "../whatsapp/whatsapp.service";
 
 export const conversationsRouter = Router();
 conversationsRouter.use(requireAuth);
@@ -24,6 +26,16 @@ conversationsRouter.use(requireAuth);
 // Permissões; defaults (AGENT/MANAGER true, ADMIN always true) reproduce
 // what used to be the hardcoded ATTENDANCE_ROLES check.
 const requireAttendanceAccess = requirePermission(PERMISSION.ATENDIMENTO_ACESSAR);
+
+// Skipped only under NODE_ENV=test — same reasoning as auth.routes.ts's own
+// copy of this: a single test file can legitimately trigger this well past
+// the limit across its scenarios, which is test volume, not the repeated
+// clicking this limiter exists to slow down. On-demand history backfill
+// talks to WhatsApp's real servers per request (see requestOlderHistory) —
+// this exists so mashing the button can't turn into something that looks
+// like the account-wide dump BaileysWhatsAppProvider deliberately avoids.
+const skipInTests = () => env.NODE_ENV === "test";
+const historyBackfillLimiter = rateLimit({ windowMs: 60 * 1000, max: 5, standardHeaders: true, legacyHeaders: false, skip: skipInTests });
 
 // Queue: an AGENT only ever sees their own WhatsApp connection's queue.
 // MANAGER/ADMIN have no fixed connection, so they see every connection's
@@ -180,6 +192,25 @@ conversationsRouter.post(
     await service.markConversationRead(req.params.id, req.auth!.userId);
     realtimeEvents.conversationRead(req.params.id, req.auth!.userId);
     res.status(204).end();
+  })
+);
+
+// On-demand, agent-triggered backfill of messages older than whatever this
+// app already has for the conversation's contact — see PROMPT: "mensagens
+// de antes de conectar o WhatsApp". Only the owning agent can trigger it
+// (same boundary as /:id/transfer above); Gestão stays read-only. 202
+// because the actual messages (if WhatsApp has any) arrive later, async,
+// through the normal history-sync path — see requestOlderHistory.
+conversationsRouter.post(
+  "/:id/sync-older-history",
+  requireAttendanceAccess,
+  historyBackfillLimiter,
+  asyncHandler(async (req, res) => {
+    const conversation = await service.getConversationOrThrow(req.params.id);
+    service.assertAgentCanAccessConversation(conversation, req.auth!);
+    await requestOlderHistory(req.params.id);
+    await writeAudit({ userId: req.auth!.userId, action: "WHATSAPP_HISTORY_BACKFILL_REQUESTED", entity: "Conversation", entityId: req.params.id, ipAddress: req.ip ?? null });
+    res.status(202).end();
   })
 );
 
