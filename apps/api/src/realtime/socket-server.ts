@@ -70,8 +70,12 @@ export function createSocketServer(httpServer: HttpServer): SocketIOServer {
 
     // Unlike the REST layer, a socket event has no per-route middleware to
     // enforce this, so the ownership check has to happen right here: an
-    // AGENT must only be able to join the room for a conversation actually
-    // assigned to them, otherwise they could listen in on another agent's
+    // AGENT must only be able to join the room for a conversation they
+    // either own or personally transferred away (read-only "Transferidas"
+    // watch — see PROMPT: "possa abrir a conversa para acompanhar em tempo
+    // real sem poder interferir"; joining a room only ever lets a socket
+    // receive events, never send anything, so this stays read-only by
+    // construction), otherwise they could listen in on any other agent's
     // conversation just by guessing/observing its ID. MANAGER/ADMIN keep
     // the same unrestricted oversight access they already have via REST.
     socket.on("conversation:join", async (conversationId: unknown) => {
@@ -81,7 +85,15 @@ export function createSocketServer(httpServer: HttpServer): SocketIOServer {
           where: { id: conversationId },
           select: { assignedAgentId: true },
         });
-        if (!conversation || conversation.assignedAgentId !== auth.userId) return;
+        if (!conversation) return;
+        const isOwner = conversation.assignedAgentId === auth.userId;
+        if (!isOwner) {
+          const transferredByMe = await prisma.conversationTransfer.findFirst({
+            where: { conversationId, fromAgentId: auth.userId },
+            select: { id: true },
+          });
+          if (!transferredByMe) return;
+        }
       }
       socket.join(ROOMS.conversation(conversationId));
     });
