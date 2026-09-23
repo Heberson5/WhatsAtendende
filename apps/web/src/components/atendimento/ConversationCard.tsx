@@ -2,6 +2,7 @@ import clsx from "clsx";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import type { ConversationListItemDTO } from "@whatsatendende/types";
+import { contactDisplayName } from "../../lib/contact-display";
 
 function initials(name: string) {
   return name
@@ -25,12 +26,13 @@ export function ConversationCard({
   onAccept?: () => void;
   accepting?: boolean;
 }) {
-  const displayName = conversation.contact.name || conversation.contact.phone;
+  const displayName = contactDisplayName(conversation.contact);
   // When there's a saved name, displayName hides the phone entirely — show
   // it as a subtitle too, since the phone number is what an agent actually
   // needs to confirm/dial/search by, not just a name that could be wrong
-  // or shared by two different contacts.
-  const showPhoneSubtitle = Boolean(conversation.contact.name);
+  // or shared by two different contacts. Nothing to show when WhatsApp
+  // hasn't revealed the real number yet (contact.phone is then null).
+  const showPhoneSubtitle = Boolean(conversation.contact.name && conversation.contact.phone);
   // A disconnected connection can't actually deliver anything — accepting
   // from here would just leave the customer with no reply possible, so the
   // button is disabled instead of letting the click fail server-side.
