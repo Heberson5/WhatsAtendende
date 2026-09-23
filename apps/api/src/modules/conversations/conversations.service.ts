@@ -3,7 +3,7 @@ import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
 import { writeAudit } from "../../lib/audit";
 import { realtimeEvents } from "../../realtime/realtime";
-import type { Role } from "@prisma/client";
+import type { Contact, Role } from "@prisma/client";
 
 const TRANSFER_OFFLINE_GRACE_MS = 2 * 60 * 60 * 1000; // 2h — see PROMPT: transfer to an offline agent auto-reverts if they don't log in in time.
 
@@ -60,8 +60,42 @@ async function getUnreadCounts(conversationIds: string[]): Promise<Map<string, n
  * legacy heal path for a row created back when only the @lid digits were
  * known and stored as its phone, before providerChatId existed at all;
  * (4) a genuinely new contact.
+ *
+ * `opts.preferIncomingName` lets an authoritative name source (the phone's
+ * own saved address-book entry — see PROMPT: "sincronizar com os contatos
+ * já salvo no celular") override a name already on file, instead of the
+ * default "never clobber a known name with a fresh pushName" rule.
+ * `opts.createIfMissing` (default true) set to false turns this into a
+ * passive enrichment lookup that never creates a Contact — used by the
+ * device-address-book sync, where a match against a phone nobody has ever
+ * actually messaged this connection through would otherwise pollute
+ * Fila/Gestão with contacts that have no conversation behind them.
  */
-export async function findOrCreateContact(connectionId: string, phone: string, name: string | null, providerChatId?: string) {
+export async function findOrCreateContact(
+  connectionId: string,
+  phone: string,
+  name: string | null,
+  providerChatId?: string,
+  opts?: { preferIncomingName?: boolean; createIfMissing?: true }
+): Promise<Contact>;
+export async function findOrCreateContact(
+  connectionId: string,
+  phone: string,
+  name: string | null,
+  providerChatId: string | undefined,
+  opts: { preferIncomingName?: boolean; createIfMissing: false }
+): Promise<Contact | null>;
+export async function findOrCreateContact(
+  connectionId: string,
+  phone: string,
+  name: string | null,
+  providerChatId?: string,
+  opts?: { preferIncomingName?: boolean; createIfMissing?: boolean }
+): Promise<Contact | null> {
+  const createIfMissing = opts?.createIfMissing ?? true;
+  const resolveName = (existingName: string | null, incomingName: string | null) =>
+    opts?.preferIncomingName && incomingName ? incomingName : (existingName ?? incomingName ?? undefined);
+
   if (providerChatId) {
     const byChatId = await prisma.contact.findFirst({
       where: { whatsappConnectionId: connectionId, providerChatId },
@@ -115,7 +149,7 @@ export async function findOrCreateContact(connectionId: string, phone: string, n
       }
       return prisma.contact.update({
         where: { id: byChatId.id },
-        data: { lastInteractionAt: new Date(), name: byChatId.name ?? name ?? undefined, phone: resolvedPhone },
+        data: { lastInteractionAt: new Date(), name: resolveName(byChatId.name, name), phone: resolvedPhone },
       });
     }
   }
@@ -128,14 +162,13 @@ export async function findOrCreateContact(connectionId: string, phone: string, n
       where: { id: existing.id },
       data: {
         lastInteractionAt: new Date(),
-        // Only overwrite the saved name if we didn't have one yet — an
-        // agent-entered/CRM name should not be clobbered by WhatsApp's
-        // pushName on every message.
-        name: existing.name ?? name ?? undefined,
+        name: resolveName(existing.name, name),
         providerChatId: existing.providerChatId ?? providerChatId ?? undefined,
       },
     });
   }
+
+  if (!createIfMissing) return null;
 
   if (providerChatId) {
     const priorPhone = providerChatId.split("@")[0];
@@ -147,7 +180,7 @@ export async function findOrCreateContact(connectionId: string, phone: string, n
         return prisma.contact
           .update({
             where: { id: byPriorPhone.id },
-            data: { phone, providerChatId, lastInteractionAt: new Date(), name: byPriorPhone.name ?? name ?? undefined },
+            data: { phone, providerChatId, lastInteractionAt: new Date(), name: resolveName(byPriorPhone.name, name) },
           })
           .catch(() => byPriorPhone); // extremely rare unique-constraint race — keep the old phone rather than fail the message
       }
@@ -506,7 +539,10 @@ export async function startConversation(connectionId: string, phone: string, nam
   const normalizedPhone = phone.replace(/\D/g, "");
   if (!normalizedPhone) throw Errors.badRequest("Numero de telefone invalido");
 
-  const contact = await findOrCreateContact(connectionId, normalizedPhone, name);
+  // `name` is picked straight from the device address book (see
+  // NovaConversaModal) — authoritative over whatever pushName a prior
+  // inbound message might have left on an already-existing contact.
+  const contact = await findOrCreateContact(connectionId, normalizedPhone, name, undefined, { preferIncomingName: true });
 
   const active = await prisma.conversation.findFirst({
     where: { contactId: contact.id, status: { in: ["NEW", "WAITING", "IN_PROGRESS", "TRANSFERRED"] } },

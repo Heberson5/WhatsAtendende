@@ -198,7 +198,11 @@ export interface WhatsAppDeviceContactDTO {
 
 export interface ContactDTO {
   id: string;
-  phone: string;
+  // null when WhatsApp hasn't revealed this contact's real phone number yet
+  // (still only known by its opaque @lid privacy id) — see
+  // conversations.mapper.ts. Never the meaningless @lid digits: those look
+  // like a real number but aren't one an agent could recognize or call.
+  phone: string | null;
   name: string | null;
   photoUrl: string | null;
   firstConversationAt: string;

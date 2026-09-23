@@ -10,6 +10,15 @@ type ConversationWithRelations = Conversation & {
   _unreadCount?: number;
 };
 
+// True when this contact's `phone` is still just the raw digits of its @lid
+// privacy id — a placeholder stored because nothing better was known yet
+// (see findOrCreateContact), not a real phone number. Showing it as "the
+// number" in Atendimento/Gestão is what used to look like "aparece o número
+// do WhatsApp e não o número real do cliente" — see PROMPT.
+function isUnresolvedLidPhone(contact: Contact): boolean {
+  return Boolean(contact.providerChatId?.endsWith("@lid") && contact.phone === contact.providerChatId.split("@")[0]);
+}
+
 /**
  * Maps a conversation for queue/list display. `revealPreview` controls the
  * privacy rule from PROMPT section 9/10: before an agent accepts a
@@ -25,7 +34,7 @@ export function toConversationListItemDTO(
     id: conversation.id,
     contact: {
       id: conversation.contact.id,
-      phone: conversation.contact.phone,
+      phone: isUnresolvedLidPhone(conversation.contact) ? null : conversation.contact.phone,
       name: conversation.contact.name,
       photoUrl: conversation.contact.photoUrl,
       firstConversationAt: conversation.contact.firstConversationAt.toISOString(),

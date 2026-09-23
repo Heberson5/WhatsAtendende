@@ -5,6 +5,7 @@ import { ptBR } from "date-fns/locale";
 import { Eye, GitMerge } from "lucide-react";
 import type { ConversationListItemDTO } from "@whatsatendende/types";
 import { api } from "../../lib/api";
+import { contactDisplayName } from "../../lib/contact-display";
 import { useAuthStore } from "../../store/auth-store";
 import { PeriodFilter, type PeriodValue } from "../../components/common/PeriodFilter";
 import { ConnectionFilter } from "../../components/common/ConnectionFilter";
@@ -137,12 +138,12 @@ export default function GestaoPage() {
                       <img src={c.contact.photoUrl} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover" />
                     ) : (
                       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-alt text-xs font-semibold text-muted">
-                        {(c.contact.name || c.contact.phone).slice(0, 2).toUpperCase()}
+                        {contactDisplayName(c.contact).slice(0, 2).toUpperCase()}
                       </div>
                     )}
                     <div className="min-w-0">
-                      <div className="truncate font-medium">{c.contact.name || c.contact.phone}</div>
-                      <div className="text-xs text-muted">{c.contact.phone}</div>
+                      <div className="truncate font-medium">{contactDisplayName(c.contact)}</div>
+                      {c.contact.phone && <div className="text-xs text-muted">{c.contact.phone}</div>}
                     </div>
                   </div>
                 </td>

@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { X, Phone } from "lucide-react";
 import type { ConversationListItemDTO, MessageDTO, PaginatedResult } from "@whatsatendende/types";
 import { api } from "../../lib/api";
+import { contactDisplayName } from "../../lib/contact-display";
 import { MessageBubble } from "../atendimento/MessageBubble";
 
 async function fetchMessages(conversationId: string, cursor?: string) {
@@ -96,7 +97,7 @@ export function ReadOnlyConversationDrawer({
   }, [cursor, conversation.id]);
 
   const isLoading = messagesQuery.isLoading;
-  const displayName = conversation.contact.name || conversation.contact.phone;
+  const displayName = contactDisplayName(conversation.contact);
   const messageById = new Map(messages.map((m) => [m.id, m]));
 
   return (
@@ -117,7 +118,12 @@ export function ReadOnlyConversationDrawer({
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold">{displayName}</p>
               <p className="flex items-center gap-1 text-xs text-muted">
-                <Phone className="h-3 w-3" /> {conversation.contact.phone} · Atendente: {conversation.assignedAgentName ?? "-"}
+                {conversation.contact.phone && (
+                  <>
+                    <Phone className="h-3 w-3" /> {conversation.contact.phone} ·{" "}
+                  </>
+                )}
+                Atendente: {conversation.assignedAgentName ?? "-"}
               </p>
             </div>
           </div>
