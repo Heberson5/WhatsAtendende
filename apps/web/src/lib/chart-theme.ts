@@ -41,8 +41,5 @@ export function gradientId(prefix: string, color: string): string {
   return `${prefix}-${color.replace("#", "")}`;
 }
 
-/** Soft elevation shared by every chart card — the "profundidade" the flat cards were missing. */
-export const CHART_CARD_SHADOW = "shadow-[0_1px_2px_rgba(0,0,0,0.06),0_12px_28px_-8px_rgba(0,0,0,0.18)]";
-
 /** CSS filter applied to the whole plotted area so bars/slices/lines look like they're floating above the card, matching the reference screenshot. */
 export const CHART_DEPTH_FILTER = "drop-shadow(0 10px 14px rgba(0,0,0,0.16))";

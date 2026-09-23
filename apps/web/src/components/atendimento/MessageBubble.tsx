@@ -356,7 +356,7 @@ export function MessageBubble({
         {showReactions && (
           <div
             className={clsx(
-              "absolute top-8 z-10 flex gap-1 rounded-full border border-border bg-surface px-2 py-1 shadow-lg",
+              "absolute top-8 z-10 flex gap-1 rounded-full border border-border bg-surface px-2 py-1 shadow-elevated",
               isOutbound ? "right-0" : "left-0"
             )}
           >

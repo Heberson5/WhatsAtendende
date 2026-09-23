@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { CheckCircle2, Eye, EyeOff, Loader2 } from "lucide-react";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { useBranding } from "../../hooks/useBranding";
+import { Tilt3D } from "../../components/common/Tilt3D";
 
 export default function ResetPasswordPage() {
   const [searchParams] = useSearchParams();
@@ -37,8 +38,8 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[var(--color-bg)] px-4">
-      <div className="shadow-soft w-full max-w-md rounded-card border border-border bg-surface p-8">
+    <div className="flex min-h-screen items-center justify-center px-4">
+      <Tilt3D maxTilt={4} className="shadow-elevated w-full max-w-md rounded-card border border-border bg-surface p-8">
         <div className="mb-8 flex flex-col items-center gap-3 text-center">
           {branding?.logoUrl ? (
             <img src={branding.logoUrl} alt={branding.companyName} className="h-14 w-14 object-contain" />
@@ -78,7 +79,7 @@ export default function ResetPasswordPage() {
                   autoComplete="new-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2.5 pr-10 text-sm"
+                  className="focus-ring w-full rounded-card border border-border bg-surface-alt px-3 py-2.5 pr-10 text-sm"
                 />
                 <button
                   type="button"
@@ -103,7 +104,7 @@ export default function ResetPasswordPage() {
                 autoComplete="new-password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2.5 text-sm"
+                className="focus-ring w-full rounded-card border border-border bg-surface-alt px-3 py-2.5 text-sm"
               />
             </div>
 
@@ -129,7 +130,7 @@ export default function ResetPasswordPage() {
             Voltar ao login
           </Link>
         </p>
-      </div>
+      </Tilt3D>
     </div>
   );
 }

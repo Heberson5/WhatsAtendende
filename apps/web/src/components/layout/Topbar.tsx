@@ -80,7 +80,7 @@ export function Topbar({ title, onMenuClick }: { title: string; onMenuClick?: ()
             </div>
           </button>
           {menuOpen && (
-            <div className="absolute right-0 top-12 z-20 w-44 rounded-card border border-border bg-surface py-1 shadow-lg">
+            <div className="absolute right-0 top-12 z-20 w-44 rounded-card border border-border bg-surface py-1 shadow-elevated">
               <button
                 onClick={() => {
                   setMenuOpen(false);
