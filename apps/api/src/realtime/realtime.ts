@@ -73,6 +73,23 @@ export const realtimeEvents = {
     if (agentId) getIO()?.to(ROOMS.user(agentId)).emit("conversation:read", { conversationId });
     getIO()?.to(ROOMS.oversight()).emit("oversight:updated");
   },
+  /**
+   * The agent read a conversation directly in this app (opening it clears
+   * its badge — see conversations.routes.ts's POST /:id/read). Unlike
+   * conversationReadFromDevice above, this used to be a silent DB write
+   * with no broadcast at all: a manager watching Gestão, or the same agent
+   * with a second tab/device open on the same account, never saw the
+   * unread badge clear until their next unrelated refetch (or the 20s
+   * safety poll) — see PROMPT: "não está sincronizando em tempo real as
+   * conversas não lidas e lidas, isso independente de qual dispositivo foi
+   * aberto". Same event/rooms as the from-device path, since both mean the
+   * same thing to every other open screen: this conversation's unread
+   * state changed, refresh it.
+   */
+  conversationRead: (conversationId: string, agentId: string) => {
+    getIO()?.to(ROOMS.user(agentId)).emit("conversation:read", { conversationId });
+    getIO()?.to(ROOMS.oversight()).emit("oversight:updated");
+  },
   /** A still-queued conversation was read directly on the linked phone and left the queue (HANDLED_EXTERNALLY) — see markConversationReadFromDevice. Same queue-refresh broadcast as conversationAccepted, just with no owning agent to notify. */
   conversationHandledExternally: (connectionId: string) => {
     getIO()?.to(ROOMS.queue(connectionId)).emit("queue:updated");

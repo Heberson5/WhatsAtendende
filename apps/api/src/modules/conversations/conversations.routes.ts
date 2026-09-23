@@ -178,6 +178,7 @@ conversationsRouter.post(
     // the agent's own "mark read" click shouldn't wait on that.
     void syncReadReceiptToDevice(req.params.id);
     await service.markConversationRead(req.params.id, req.auth!.userId);
+    realtimeEvents.conversationRead(req.params.id, req.auth!.userId);
     res.status(204).end();
   })
 );
