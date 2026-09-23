@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { X, Phone } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { X, Phone, StickyNote } from "lucide-react";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
 import type { ConversationListItemDTO, MessageDTO, PaginatedResult } from "@whatsatendende/types";
 import { api } from "../../lib/api";
+import { getSocket } from "../../lib/socket";
 import { MessageBubble } from "../atendimento/MessageBubble";
 
 async function fetchMessages(conversationId: string, cursor?: string) {
@@ -36,16 +39,55 @@ export function ReadOnlyConversationDrawer({
   // the loadOlder-style scroll-position restore in the [cursor] effect.
   const nearBottomRef = useRef(true);
 
+  const queryClient = useQueryClient();
+
   const messagesQuery = useQuery({
     queryKey: ["oversight-messages", conversation.id],
     queryFn: () => fetchMessages(conversation.id),
   });
 
+  // Upserts page 1 into whatever's already loaded instead of replacing it
+  // outright — same merge ChatPanel uses for its own live updates, needed
+  // here for the same reason: a realtime event below invalidates this
+  // query and refetches page 1 in the background, and a plain "replace
+  // wholesale" would silently drop any older history already scrolled
+  // into view via loadOlder.
   useEffect(() => {
     if (!messagesQuery.data) return;
-    setMessages((prev) => (prev.length === 0 ? messagesQuery.data.items : prev));
+    setMessages((prev) => {
+      if (prev.length === 0) return messagesQuery.data.items;
+      const byId = new Map(prev.map((m) => [m.id, m]));
+      for (const m of messagesQuery.data.items) byId.set(m.id, m);
+      return Array.from(byId.values()).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    });
     setCursor((prev) => prev ?? messagesQuery.data.nextCursor ?? undefined);
   }, [messagesQuery.data]);
+
+  // Joins this conversation's own socket room so new messages/status
+  // changes reach this drawer live — scoped independently of ChatPanel's
+  // own room subscription, since this can be watching a completely
+  // different conversation than whatever's open elsewhere for this same
+  // user. See PROMPT: "possa abrir a conversa para acompanhar em tempo
+  // real sem poder interferir".
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+    const join = () => socket.emit("conversation:join", conversation.id);
+    join();
+    socket.on("connect", join);
+    const onLiveUpdate = (payload: { conversationId: string }) => {
+      if (payload.conversationId !== conversation.id) return;
+      queryClient.invalidateQueries({ queryKey: ["oversight-messages", conversation.id] });
+    };
+    socket.on("message:new", onLiveUpdate);
+    socket.on("message:status", onLiveUpdate);
+    return () => {
+      socket.off("connect", join);
+      socket.off("message:new", onLiveUpdate);
+      socket.off("message:status", onLiveUpdate);
+      socket.emit("conversation:leave", conversation.id);
+    };
+  }, [conversation.id, queryClient]);
 
   useEffect(() => {
     const container = scrollContainerRef.current;
@@ -126,6 +168,21 @@ export function ReadOnlyConversationDrawer({
           </button>
         </div>
 
+        {/* Same internal annotation ChatPanel shows the receiving agent —
+            app-only data, never sent to WhatsApp. See its own comment for
+            the full rationale. */}
+        {conversation.transfer?.note && (
+          <div className="mx-4 mt-3 flex items-start gap-2 rounded-card border border-secondary/50 bg-secondary/20 px-3 py-2">
+            <StickyNote className="mt-0.5 h-4 w-4 shrink-0 text-secondary-fg" />
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-secondary-fg">
+                Observação de {conversation.transfer.fromAgentName} · {format(new Date(conversation.transfer.at), "dd/MM 'às' HH:mm", { locale: ptBR })}
+              </p>
+              <p className="mt-0.5 whitespace-pre-wrap text-sm text-secondary-fg">{conversation.transfer.note}</p>
+            </div>
+          </div>
+        )}
+
         <div ref={scrollContainerRef} className="flex-1 overflow-y-auto bg-[var(--color-bg)] px-4 py-4">
           {(isLoading || cursor) && <p className="text-center text-sm text-muted">Carregando histórico...</p>}
           <div ref={contentRef} className="space-y-3">
@@ -143,7 +200,7 @@ export function ReadOnlyConversationDrawer({
         </div>
 
         <div className="border-t border-border px-5 py-3 text-center text-xs text-muted">
-          Modo de visualização — gestores não podem interagir nesta conversa.
+          Modo de visualização — não é possível interagir nesta conversa.
         </div>
       </div>
     </div>

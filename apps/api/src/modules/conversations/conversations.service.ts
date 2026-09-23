@@ -326,8 +326,10 @@ function stripDiacritics(text: string): string {
  * a prefix of another (e.g. "@Joao" alongside a "João Silva" on the roster).
  * Requires a non-letter/digit right after the matched name (or end of
  * string) so "@Joao" doesn't false-match into "@Joaozinho". Zero or
- * genuinely ambiguous (same-length tie) matches return null — the
- * conversation falls through to the normal queue, same as no mention at all.
+ * genuinely ambiguous (same-length tie) matches fall through to
+ * findMentionedAgentByTypo below rather than returning null outright — see
+ * PROMPT: "o cliente digita @gleici, mas no sistema o nome do atendente
+ * está Gleicy... existe estes erros dos clientes que devem estar mapeados".
  */
 export async function findMentionedAgent(body: string | null | undefined): Promise<{ id: string; displayName: string } | null> {
   if (!body || !body.includes("@")) return null;
@@ -356,6 +358,65 @@ export async function findMentionedAgent(body: string | null | undefined): Promi
       tied = false;
     } else if (needle.length === bestLength) {
       tied = true;
+    }
+  }
+
+  if (tied) return null; // ambiguous exact match (two agents share a name) — never guess
+  if (best) return best;
+  return findMentionedAgentByTypo(normalizedBody, agents);
+}
+
+function levenshteinDistance(a: string, b: string): number {
+  const dp: number[][] = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0));
+  for (let i = 0; i <= a.length; i++) dp[i][0] = i;
+  for (let j = 0; j <= b.length; j++) dp[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+    }
+  }
+  return dp[a.length][b.length];
+}
+
+/**
+ * Typo-tolerant fallback for findMentionedAgent, above — only reached when
+ * no exact "@displayName" substring matched anywhere in the message. Scans
+ * every "@word" token in the message against every active agent's
+ * (already-normalized) displayName by edit distance, e.g. a customer typing
+ * "@gleici" still resolves to an agent whose displayName is "Gleicy" (one
+ * substitution). Bounded tightly (1 edit for names of 4 letters or fewer, 2
+ * otherwise, and only compared against names within 2 characters of the
+ * token's own length) so this stays a typo correction, not a loose fuzzy
+ * search that could route a stranger's name to the wrong agent. Same
+ * tie-breaks-to-null safety as the exact path: a typo close enough to two
+ * different agents isn't a confident enough signal to skip the queue on.
+ */
+function findMentionedAgentByTypo(
+  normalizedBody: string,
+  agents: { id: string; displayName: string }[]
+): { id: string; displayName: string } | null {
+  const tokens = Array.from(normalizedBody.matchAll(/@([a-z0-9]+)/g), (m) => m[1]);
+  if (tokens.length === 0) return null;
+
+  let best: { id: string; displayName: string } | null = null;
+  let bestDistance = Infinity;
+  let tied = false;
+
+  for (const token of tokens) {
+    for (const agent of agents) {
+      const name = stripDiacritics(agent.displayName).toLowerCase();
+      if (Math.abs(token.length - name.length) > 2) continue;
+      const distance = levenshteinDistance(token, name);
+      const maxAllowed = name.length <= 4 ? 1 : 2;
+      if (distance === 0 || distance > maxAllowed) continue; // 0 would already have matched exactly above
+
+      if (distance < bestDistance) {
+        best = agent;
+        bestDistance = distance;
+        tied = false;
+      } else if (distance === bestDistance) {
+        tied = true;
+      }
     }
   }
 
@@ -550,6 +611,48 @@ export async function listMyConversations(agentId: string) {
   });
   const unreadCounts = await getUnreadCounts(conversations.map((c) => c.id));
   return conversations.map((c) => Object.assign(c, { _unreadCount: unreadCounts.get(c.id) ?? 0 }));
+}
+
+/**
+ * Conversations this agent personally transferred away — a dedicated
+ * "Transferidas" list beside Fila/Ativos so an agent can see who they sent
+ * a conversation to and when, and reopen it read-only to watch it live
+ * without being able to act on it (see conversations.routes.ts's
+ * "/transferred-out" and ReadOnlyConversationDrawer's reuse for agents).
+ * See PROMPT: "função de transferidas ao lado de Fila, para que o
+ * atendente saiba para quem transferiu e horário, e possa abrir a
+ * conversa para acompanhar em tempo real sem poder interferir".
+ *
+ * One row per conversation, using the most recent transfer THIS agent
+ * initiated for it — even if it has since moved on again to a third agent,
+ * that's still the answer to "who did I send it to". A conversation that
+ * came back to this same agent since (a revert, or a later transfer back)
+ * belongs in Ativos instead, not here.
+ */
+export async function listTransferredOutByAgent(agentId: string) {
+  const transfers = await prisma.conversationTransfer.findMany({
+    where: { fromAgentId: agentId },
+    orderBy: { createdAt: "desc" },
+    include: { toAgent: true },
+  });
+
+  const seenConversationIds = new Set<string>();
+  const rows: {
+    conversation: Prisma.ConversationGetPayload<{ include: typeof conversationInclude }>;
+    toAgentName: string;
+    transferredAt: Date;
+    note: string | null;
+  }[] = [];
+  for (const t of transfers) {
+    if (seenConversationIds.has(t.conversationId)) continue; // only the latest transfer I made per conversation
+    seenConversationIds.add(t.conversationId);
+
+    const conversation = await prisma.conversation.findUnique({ where: { id: t.conversationId }, include: conversationInclude });
+    if (!conversation || conversation.assignedAgentId === agentId) continue;
+
+    rows.push({ conversation, toAgentName: t.toAgent.displayName, transferredAt: t.createdAt, note: t.note });
+  }
+  return rows;
 }
 
 /** Marks a conversation as read by its assigned agent — clears the unread badge. */
@@ -772,6 +875,29 @@ export function assertAgentCanAccessConversation(
   auth: { userId: string; role: Role }
 ) {
   if (conversation.assignedAgentId !== auth.userId) throw Errors.forbidden("Esta conversa pertence a outro atendente");
+}
+
+/**
+ * Read-only relaxation of assertAgentCanAccessConversation, above —
+ * deliberately used ONLY by the GET .../messages route and the socket's
+ * conversation:join, never by anything that sends/transfers/closes. The
+ * current owner can always read (same as before); an agent who personally
+ * transferred this conversation away can also read it (but not act on
+ * it — assertAgentCanAccessConversation still guards every mutating
+ * route), so "Transferidas" can watch it live without interfering. See
+ * PROMPT: "possa abrir a conversa para acompanhar em tempo real sem poder
+ * interferir".
+ */
+export async function assertAgentCanReadConversation(
+  conversation: { id: string; assignedAgentId: string | null },
+  auth: { userId: string; role: Role }
+): Promise<void> {
+  if (conversation.assignedAgentId === auth.userId) return;
+  const transferredByMe = await prisma.conversationTransfer.findFirst({
+    where: { conversationId: conversation.id, fromAgentId: auth.userId },
+    select: { id: true },
+  });
+  if (!transferredByMe) throw Errors.forbidden("Esta conversa pertence a outro atendente");
 }
 
 /**

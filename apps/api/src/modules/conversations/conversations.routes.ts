@@ -56,6 +56,31 @@ conversationsRouter.get(
   })
 );
 
+// "Transferidas" — conversations this agent sent to someone else, so they
+// can see who and when without it cluttering Ativos/Fila. See
+// listTransferredOutByAgent for why the transfer object here is built from
+// this agent's own transfer record rather than toConversationListItemDTO's
+// default (the conversation's overall latest transfer, which could by now
+// belong to someone else entirely if it moved on again).
+conversationsRouter.get(
+  "/transferred-out",
+  requireAttendanceAccess,
+  asyncHandler(async (req, res) => {
+    const rows = await service.listTransferredOutByAgent(req.auth!.userId);
+    res.json(
+      rows.map((r) => ({
+        ...toConversationListItemDTO(r.conversation, true),
+        transfer: {
+          fromAgentName: req.auth!.displayName,
+          toAgentName: r.toAgentName,
+          at: r.transferredAt.toISOString(),
+          note: r.note,
+        },
+      }))
+    );
+  })
+);
+
 const startSchema = z.object({
   connectionId: z.string().uuid().optional(),
   phone: z.string().trim().min(8).max(20),
