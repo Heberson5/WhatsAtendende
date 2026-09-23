@@ -15,7 +15,7 @@ import {
 } from "recharts";
 import { AreaChart as AreaChartIcon, BarChart3, LineChart as LineChartIcon } from "lucide-react";
 import { ChartTypeMenu } from "./ChartTypeMenu";
-import { CHART_CARD_SHADOW, CHART_DEPTH_FILTER, darken, gradientId, lighten } from "../../lib/chart-theme";
+import { CHART_DEPTH_FILTER, darken, gradientId, lighten } from "../../lib/chart-theme";
 
 type SeriesKind = "bar" | "line" | "area";
 
@@ -60,7 +60,7 @@ export function SeriesChartCard({
   const areaIds = series.map((s) => gradientId("sarea", s.color));
 
   return (
-    <div className={`rounded-card border border-border bg-surface p-4 ${CHART_CARD_SHADOW}`}>
+    <div className="shadow-soft rounded-card border border-border bg-surface p-4">
       <div className="mb-2 flex items-center justify-between">
         <p className="text-xs font-medium text-muted">{title}</p>
         <ChartTypeMenu value={kind} onChange={setKind} options={KIND_OPTIONS} />

@@ -8,6 +8,7 @@ import { useBranding } from "../../hooks/useBranding";
 import { useMaintenanceStatus } from "../../hooks/useMaintenanceStatus";
 import { MaintenanceScreen } from "./MaintenanceScreen";
 import { InstallPromptModal } from "./InstallPromptModal";
+import { Tilt3D } from "../../components/common/Tilt3D";
 
 export default function LoginPage() {
   const { user, setSession } = useAuthStore();
@@ -40,7 +41,7 @@ export default function LoginPage() {
   // which is exactly the flash the user should never see.
   if (maintenanceLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[var(--color-bg)]">
+      <div className="flex min-h-screen items-center justify-center">
         <Loader2 className="h-6 w-6 animate-spin text-muted" />
       </div>
     );
@@ -67,9 +68,9 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[var(--color-bg)] px-4">
+    <div className="flex min-h-screen items-center justify-center px-4">
       <InstallPromptModal />
-      <div className="shadow-soft w-full max-w-md rounded-card border border-border bg-surface p-8">
+      <Tilt3D maxTilt={4} className="shadow-elevated w-full max-w-md rounded-card border border-border bg-surface p-8">
         <div className="mb-8 flex flex-col items-center gap-3 text-center">
           {branding?.logoUrl ? (
             <img src={branding.logoUrl} alt={branding.companyName} className="h-14 w-14 object-contain" />
@@ -99,7 +100,7 @@ export default function LoginPage() {
                 autoComplete="username"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2.5 text-sm"
+                className="focus-ring w-full rounded-card border border-border bg-surface-alt px-3 py-2.5 text-sm"
                 placeholder="voce@empresa.com"
               />
             </div>
@@ -116,7 +117,7 @@ export default function LoginPage() {
                   autoComplete="current-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2.5 pr-10 text-sm"
+                  className="focus-ring w-full rounded-card border border-border bg-surface-alt px-3 py-2.5 pr-10 text-sm"
                   placeholder="********"
                 />
                 <button
@@ -156,7 +157,7 @@ export default function LoginPage() {
             </button>
           </form>
         )}
-      </div>
+      </Tilt3D>
     </div>
   );
 }
@@ -199,7 +200,7 @@ function ForgotPasswordForm({ onBack }: { onBack: () => void }) {
         required
         value={email}
         onChange={(e) => setEmail(e.target.value)}
-        className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2.5 text-sm"
+        className="focus-ring w-full rounded-card border border-border bg-surface-alt px-3 py-2.5 text-sm"
         placeholder="voce@empresa.com"
       />
       <div className="flex gap-2">

@@ -95,7 +95,7 @@ export function AppLayout() {
   const title = TITLES[location.pathname] ?? "WhatsAtendende";
 
   return (
-    <div className="flex h-screen gap-2 overflow-hidden bg-[var(--color-bg)] p-2 sm:gap-3 sm:p-3">
+    <div className="flex h-screen gap-2 overflow-hidden p-2 sm:gap-3 sm:p-3">
       <Sidebar mobileOpen={mobileNavOpen} onMobileClose={() => setMobileNavOpen(false)} />
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-card border border-border bg-surface shadow-soft">
         <Topbar title={title} onMenuClick={() => setMobileNavOpen(true)} />

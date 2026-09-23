@@ -2,6 +2,18 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Self-hosted (not a Google Fonts CDN <link>) so the app keeps working
+   offline/PWA-installed and never depends on a third-party request at
+   runtime. Single variable file covers the whole 400-800 weight range used
+   across headings/body/buttons. */
+@font-face {
+  font-family: "Plus Jakarta Sans";
+  src: url("/fonts/plus-jakarta-sans-variable.woff2") format("woff2");
+  font-weight: 400 800;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   /* Tells the browser which palette to use for UI it renders itself —
      native <select>/<option> dropdown popups, date/time pickers, the
@@ -61,16 +73,34 @@ body,
 
 body {
   background-color: var(--color-bg);
-  background-image: radial-gradient(circle at top left, color-mix(in srgb, var(--color-primary) 6%, transparent), transparent 55%);
+  /* Layered mesh instead of a single top-left glow — same color-mix
+     approach so it stays correct under any admin-set brand color and in
+     both themes, just spread across three anchor points for more depth. */
+  background-image:
+    radial-gradient(circle at 8% 8%, color-mix(in srgb, var(--color-primary) 8%, transparent), transparent 45%),
+    radial-gradient(circle at 92% 12%, color-mix(in srgb, var(--color-secondary) 10%, transparent), transparent 40%),
+    radial-gradient(circle at 50% 100%, color-mix(in srgb, var(--color-primary) 5%, transparent), transparent 50%);
+  background-attachment: fixed;
   color: var(--color-text);
   font-family:
-    "Inter",
+    "Plus Jakarta Sans",
     system-ui,
     -apple-system,
     "Segoe UI",
     Roboto,
     sans-serif;
   -webkit-font-smoothing: antialiased;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 ::-webkit-scrollbar {
@@ -97,6 +127,33 @@ body {
   box-shadow:
     var(--shadow-elevated),
     var(--shadow-inset-highlight);
+}
+
+/* Glass surfaces, applied via compound selector so every card/panel that
+   already combines bg-surface with shadow-soft/shadow-elevated (the app's
+   own consistent "panel" convention, used on every page) picks this up
+   automatically — no per-component edits needed. Two tiers, same as the
+   shadow tiers they ride on:
+   - shadow-soft (resting cards, stat tiles, chart cards): light
+     translucency, no blur — the mesh background stays visible through them
+     without costing render performance on every card at once.
+   - shadow-elevated (modals, drawers, the Topbar menu, popovers): full
+     glass with backdrop-blur, since these float above other content and
+     benefit most from separating themselves from what's behind them. */
+.bg-surface.shadow-soft {
+  background-color: color-mix(in srgb, var(--color-surface) 88%, transparent);
+}
+.bg-surface.shadow-elevated {
+  background-color: color-mix(in srgb, var(--color-surface) 85%, transparent);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+}
+
+/* Recessed form controls (selects, date inputs) — light tint, no blur,
+   same "sits below the surface" logic as the inputs on every other screen. */
+select.bg-surface,
+input.bg-surface {
+  background-color: color-mix(in srgb, var(--color-surface) 80%, transparent);
 }
 
 /* Tactile 3D press affordance on every primary-colored button system-wide —
