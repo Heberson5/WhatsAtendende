@@ -830,6 +830,18 @@ export async function listContacts(connectionId: string) {
   return getProvider(connectionId).listContacts();
 }
 
+/**
+ * Validates a manually-typed number against WhatsApp itself before starting
+ * a conversation with it — one bounded lookup, not a bulk address-book
+ * dump. See PROMPT: "Tem a possibilidade de buscar no celular somente o
+ * que digitar, pelo número". Name search has no equivalent: WhatsApp's
+ * protocol has no per-query "look this name up on the phone" call, only
+ * the gradual contacts.upsert stream listContacts above already reads from.
+ */
+export async function lookupNumber(connectionId: string, phone: string) {
+  return getProvider(connectionId).lookupNumber(phone);
+}
+
 // Comfortably under Baileys' own ~60s internal query timeout for
 // sendMessage, so this guard is always the one that fires first and the UI
 // always gets a definitive outcome instead of the clock icon forever. See

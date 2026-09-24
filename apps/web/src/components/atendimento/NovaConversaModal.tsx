@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Search, UserPlus, X } from "lucide-react";
+import { Search, UserPlus, X, CheckCircle2, XCircle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import type { ConversationListItemDTO, WhatsAppDeviceContactDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
@@ -48,6 +48,22 @@ export function NovaConversaModal({
     },
     onError: (err) => toast.error(getApiErrorMessage(err)),
   });
+
+  const manualDigits = manualPhone.replace(/\D/g, "");
+  // Validates a typed number against WhatsApp itself (one bounded lookup —
+  // see PROMPT: "buscar no celular somente o que digitar, pelo número")
+  // instead of silently letting a typo start a "conversation" with a
+  // number that isn't even on WhatsApp. Only runs once the number looks
+  // plausible, and never blocks starting while it's still pending/errored
+  // — only an explicit "not found" holds the button back.
+  const numberLookup = useQuery({
+    queryKey: ["whatsapp-number-lookup", connectionId, manualDigits],
+    queryFn: async () =>
+      (await api.get<{ exists: boolean; phone: string | null }>(`/whatsapp/connections/${connectionId}/lookup-number`, { params: { phone: manualDigits } }))
+        .data,
+    enabled: mode === "manual" && Boolean(connectionId) && manualDigits.length >= 10,
+  });
+  const numberConfirmedMissing = mode === "manual" && numberLookup.isSuccess && !numberLookup.data.exists;
 
   const filtered = (contacts ?? []).filter((c) => {
     const q = search.trim().toLowerCase();
@@ -144,6 +160,23 @@ export function NovaConversaModal({
                 placeholder="5511999999999"
                 className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm"
               />
+              {manualDigits.length >= 10 && connectionId && (
+                <p className="mt-1.5 flex items-center gap-1.5 text-xs">
+                  {numberLookup.isFetching ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-muted" /> <span className="text-muted">Verificando no WhatsApp...</span>
+                    </>
+                  ) : numberConfirmedMissing ? (
+                    <>
+                      <XCircle className="h-3.5 w-3.5 text-red-500" /> <span className="text-red-600">Este número não está no WhatsApp.</span>
+                    </>
+                  ) : numberLookup.isSuccess && numberLookup.data.exists ? (
+                    <>
+                      <CheckCircle2 className="h-3.5 w-3.5 text-green-500" /> <span className="text-green-700">Número confirmado no WhatsApp.</span>
+                    </>
+                  ) : null}
+                </p>
+              )}
             </label>
             <label className="block text-sm">
               <span className="mb-1 block font-medium">Nome (opcional)</span>
@@ -155,7 +188,7 @@ export function NovaConversaModal({
             </label>
             <button
               onClick={() => manualPhone.trim() && startMutation.mutate({ phone: manualPhone.trim(), name: manualName.trim() || null })}
-              disabled={!manualPhone.trim() || !connectionId || startMutation.isPending}
+              disabled={!manualPhone.trim() || !connectionId || startMutation.isPending || numberConfirmedMissing}
               className="focus-ring flex w-full items-center justify-center gap-2 rounded-card bg-primary py-2.5 text-sm font-semibold text-primary-fg disabled:opacity-60"
             >
               <UserPlus className="h-4 w-4" /> {startMutation.isPending ? "Iniciando..." : "Iniciar conversa"}

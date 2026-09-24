@@ -216,6 +216,17 @@ export interface WhatsAppProvider {
   /** Contacts saved on the linked phone — powers "start a new conversation" from Atendimento. Empty while not CONNECTED. */
   listContacts(): Promise<ContactInfo[]>;
 
+  /**
+   * Checks whether a single phone number is registered on WhatsApp — one
+   * bounded server query (the same lookup WhatsApp Web's own "start new
+   * chat by number" uses), never the linked phone's address book. Safe to
+   * call per-keystroke/per-submit in a way a bulk contacts dump is not (see
+   * listContacts' own gradual-population note and syncFullHistory's
+   * comment in BaileysWhatsAppProvider for why a full sync was reverted).
+   * Returns the canonical registered phone when it exists, null otherwise.
+   */
+  lookupNumber(phone: string): Promise<{ phone: string } | null>;
+
   sendText(chatId: string, text: string, options?: SendTextOptions): Promise<SendResult>;
   sendFile(
     chatId: string,
