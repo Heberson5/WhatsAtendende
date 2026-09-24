@@ -3,14 +3,16 @@ import fs from "node:fs";
 import path from "node:path";
 import * as QRCode from "qrcode";
 import pino from "pino";
-import makeWASocket, {
-  DisconnectReason,
-  useMultiFileAuthState,
-  downloadMediaMessage,
-  proto,
-  type WASocket,
-  type WAMessage,
-} from "@whiskeysockets/baileys";
+// @whiskeysockets/baileys 7.x is a pure-ESM package ("type": "module") —
+// this whole app is CommonJS end to end (Express, Prisma, the Docker
+// `node dist/server.js` start command), and CJS code can never `require()`
+// an ESM-only package. dynamic `import()` is the one thing that can — it
+// works from CJS and returns a promise for the module namespace — so the
+// actual Baileys module is loaded lazily via loadBaileysModule() below
+// instead of a top-level import. `import type` stays static: TypeScript
+// always erases a type-only import at compile time, so it never turns into
+// a runtime require/import and never hits this restriction.
+import type { proto, WAMessage, WASocket } from "@whiskeysockets/baileys";
 import type {
   ChatIdentityResolvedEvent,
   ChatReadEvent,
@@ -31,6 +33,16 @@ import type {
 export interface BaileysProviderOptions {
   /** Directory where Baileys persists the multi-device auth/session state. */
   authStateDir: string;
+}
+
+type BaileysModule = typeof import("@whiskeysockets/baileys");
+
+// Shared across every connection (every BaileysWhatsAppProvider instance) —
+// the actual package only ever needs loading once per process.
+let baileysModulePromise: Promise<BaileysModule> | null = null;
+function loadBaileysModule(): Promise<BaileysModule> {
+  baileysModulePromise ??= import("@whiskeysockets/baileys");
+  return baileysModulePromise;
 }
 
 /**
@@ -56,6 +68,12 @@ export interface BaileysProviderOptions {
 export class BaileysWhatsAppProvider implements WhatsAppProvider {
   private emitter = new EventEmitter();
   private socket: WASocket | null = null;
+  // Set once, at the top of connect() — see loadBaileysModule's own
+  // comment. Read directly (no null-guard) by handleIncomingMessage below,
+  // which — like every other place this class touches Baileys — is only
+  // ever reachable through a socket event, and a socket only exists once
+  // connect() has already set this.
+  private baileysModule!: BaileysModule;
   private status: WhatsAppStatusSnapshot = {
     state: "DISCONNECTED",
     qrCodeDataUrl: null,
@@ -199,6 +217,9 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
     this.setStatus({ ...this.status, state: "CONNECTING", qrCodeDataUrl: null, pairingCode: null });
 
     try {
+      this.baileysModule ??= await loadBaileysModule();
+      const { default: makeWASocket, DisconnectReason, useMultiFileAuthState, proto } = this.baileysModule;
+
       const { state, saveCreds } = await useMultiFileAuthState(this.options.authStateDir);
       const wasAlreadyLinked = Boolean(state.creds.registered);
 
@@ -238,8 +259,7 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
         // this, that response would be silently dropped here before ever
         // reaching the "messaging-history.set" listener.
         shouldSyncHistoryMessage: (msg) =>
-          msg.syncType === proto.Message.HistorySyncNotification.HistorySyncType.RECENT ||
-          msg.syncType === proto.Message.HistorySyncNotification.HistorySyncType.ON_DEMAND,
+          msg.syncType === proto.Message.HistorySyncType.RECENT || msg.syncType === proto.Message.HistorySyncType.ON_DEMAND,
         // Pairing-code linking and QR linking are mutually exclusive per
         // Baileys session: suppress the QR event entirely when a phone number
         // was given, since we're about to request a code instead.
@@ -350,15 +370,16 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
 
         if (connection === "open") {
           this.reconnectAttempts = 0;
-          // Prefer the phone-number JID (`jid`) over the raw session id —
-          // same @lid privacy migration as everywhere else in this file:
-          // `id` can itself be `<lid>:<device>@lid` for an account WhatsApp
-          // has moved to a LID-based identity, which used to surface as a
-          // meaningless "connected number" and — worse — as a false
-          // same-number mismatch on every later reconnect (see
-          // whatsapp.service.ts), since it no longer matched the real
-          // number recorded the first time this connection was paired.
-          const ownIdentity = socket.user?.jid ?? socket.user?.id ?? null;
+          // Prefer the phone-number JID (`phoneNumber`) over the raw
+          // session id (`id`) — same @lid privacy migration as everywhere
+          // else in this file: `id` can itself be `<lid>:<device>@lid` for
+          // an account WhatsApp has moved to a LID-based identity, which
+          // used to surface as a meaningless "connected number" and —
+          // worse — as a false same-number mismatch on every later
+          // reconnect (see whatsapp.service.ts), since it no longer
+          // matched the real number recorded the first time this
+          // connection was paired.
+          const ownIdentity = socket.user?.phoneNumber ?? socket.user?.id ?? null;
           const connectedNumber = ownIdentity ? ownIdentity.split(":")[0].split("@")[0] : null;
           this.setStatus({
             state: "CONNECTED",
@@ -482,7 +503,7 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
         }
         const unreadChats: HistoryChatInfo[] = chats
           .filter((c) => c.id && !isNonCustomerChat(c.id) && Number(c.unreadCount ?? 0) > 0)
-          .map((c) => ({ chatId: c.id, unreadCount: Number(c.unreadCount) }));
+          .map((c) => ({ chatId: c.id!, unreadCount: Number(c.unreadCount) }));
         if (converted.length > 0 || contacts.length > 0 || unreadChats.length > 0) {
           this.emitter.emit("historySync", {
             contacts: Array.from(this.contacts.values()),
@@ -894,7 +915,7 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
     const base = {
       providerMessageId: message.key.id ?? "",
       chatId,
-      phone: phoneFromJid(chatId, message.key.senderPn ?? message.key.participantPn),
+      phone: phoneFromJid(chatId, message.key.remoteJidAlt ?? message.key.participantAlt),
       // pushName on a fromMe message is this account's own name, not the
       // customer's — never let it overwrite the contact's stored name.
       contactName: message.key.fromMe ? null : (message.pushName ?? null),
@@ -987,7 +1008,7 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
 
     if (mediaType) {
       try {
-        const buffer = (await downloadMediaMessage(message, "buffer", {})) as Buffer;
+        const buffer = (await this.baileysModule.downloadMediaMessage(message, "buffer", {})) as Buffer;
         const mediaMsg =
           content.imageMessage ?? content.videoMessage ?? content.audioMessage ?? content.documentMessage;
         this.emitter.emit("message", {
@@ -1049,8 +1070,8 @@ function extractQuotedStory(content: proto.IMessage): { text: string | null; thu
  * on a `@lid` JID is a meaningless internal number — not a phone number an
  * agent could recognize, call, or save — which used to show up as "the
  * wrong number" for the contact everywhere in the app. WhatsApp separately
- * hands back the real phone number wherever it's known (a message's
- * senderPn/participantPn, a chat's pnJid, a contact's jid); this picks
+ * hands back the real phone number wherever it's known (a message key's
+ * remoteJidAlt/participantAlt, a chat's pnJid, a contact's phoneNumber); this picks
  * that up when available, falling back to the LID digits only when
  * WhatsApp hasn't told us the real number for this chat yet.
  */
@@ -1077,7 +1098,7 @@ function convertHistoryMessage(message: WAMessage, chatId: string): HistoryMessa
   const base = {
     providerMessageId: message.key.id ?? "",
     chatId,
-    phone: phoneFromJid(chatId, message.key.senderPn ?? message.key.participantPn),
+    phone: phoneFromJid(chatId, message.key.remoteJidAlt ?? message.key.participantAlt),
     fromMe: Boolean(message.key.fromMe),
     timestamp: new Date((Number(message.messageTimestamp) || Date.now() / 1000) * 1000),
   };
