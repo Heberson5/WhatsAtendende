@@ -16,8 +16,9 @@ import { toConversationListItemDTO } from "./conversations.mapper";
 import * as service from "./conversations.service";
 import { realtimeEvents } from "../../realtime/realtime";
 import { syncReadReceiptToDevice, requestOlderHistory, sendOutboundText } from "../whatsapp/whatsapp.service";
-import { createOutboundMessage } from "../messages/messages.service";
+import { createOutboundMessage, createSystemOutboundMessage } from "../messages/messages.service";
 import { getActiveClosingMessageForAgent } from "../closing-messages/closing-messages.service";
+import { getActiveTemplateFor, renderAutoMessageTemplate } from "../auto-message-templates/auto-message-templates.service";
 
 export const conversationsRouter = Router();
 conversationsRouter.use(requireAuth);
@@ -174,6 +175,27 @@ conversationsRouter.get(
   })
 );
 
+// "*Sistema:*" (not an agent's name) prefixes the actual WhatsApp text —
+// see createSystemOutboundMessage's own doc comment for why the in-app
+// bubble shows no sender badge at all. No-op when no ACTIVE template is
+// configured for that trigger (see Respostas > Transferência/Aceite) — an
+// admin who never touches those tabs sees no behavior change at all.
+async function sendAutoMessage(
+  trigger: "TRANSFER" | "ACCEPT",
+  conversation: { id: string; whatsappConnectionId: string; assignedAgentId: string | null; contact: { phone: string; name: string | null } },
+  atendenteDisplayName: string
+): Promise<void> {
+  const template = await getActiveTemplateFor(trigger);
+  if (!template) return;
+  const text = renderAutoMessageTemplate(template.text, {
+    atendente: atendenteDisplayName,
+    cliente: conversation.contact.name ?? conversation.contact.phone,
+  });
+  const message = await createSystemOutboundMessage({ conversationId: conversation.id, type: "TEXT", body: text });
+  await sendOutboundText(conversation.whatsappConnectionId, message.id, conversation.contact.phone, text, "Sistema");
+  realtimeEvents.newMessage(conversation.id, conversation.assignedAgentId);
+}
+
 conversationsRouter.post(
   "/:id/accept",
   requireAttendanceAccess,
@@ -187,6 +209,7 @@ conversationsRouter.post(
     const conversation = await service.acceptConversation(req.params.id, req.auth!.userId);
     await writeAudit({ userId: req.auth!.userId, action: "CONVERSATION_ACCEPTED", entity: "Conversation", entityId: conversation.id, ipAddress: req.ip ?? null });
     realtimeEvents.conversationAccepted(conversation.id, conversation.whatsappConnectionId, req.auth!.userId);
+    await sendAutoMessage("ACCEPT", conversation, req.auth!.displayName);
     res.json(toConversationListItemDTO(conversation, true));
   })
 );
@@ -203,6 +226,7 @@ conversationsRouter.post(
     const conversation = await service.transferConversation(req.params.id, req.auth!.userId, toAgentId, req.auth!.userId, note);
     await writeAudit({ userId: req.auth!.userId, action: "CONVERSATION_TRANSFERRED", entity: "Conversation", entityId: conversation.id, ipAddress: req.ip ?? null, metadata: { toAgentId, note, offlineAtTransfer: conversation.pendingTransferDeadline !== null } });
     realtimeEvents.conversationTransferred(conversation.id, req.auth!.userId, toAgentId);
+    await sendAutoMessage("TRANSFER", conversation, conversation.assignedAgent?.displayName ?? "");
     res.json(toConversationListItemDTO(conversation, true));
   })
 );

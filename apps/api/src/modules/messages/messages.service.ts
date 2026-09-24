@@ -82,6 +82,53 @@ export async function createOutboundMessage(input: CreateOutboundMessageInput) {
   return message;
 }
 
+export interface CreateSystemOutboundMessageInput {
+  conversationId: string;
+  type: MessageType;
+  body?: string | null;
+}
+
+/**
+ * A message from no particular agent — senderAgentId stays null, so the
+ * in-app bubble shows no sender-name badge (see MessageBubble's `isOutbound
+ * && message.senderAgentDisplayName` guard); the literal WhatsApp text
+ * itself carries a "*Sistema:*" prefix instead (see the caller's use of
+ * withSenderPrefix/sendOutboundText with senderDisplayName="Sistema").
+ * Unlike createOutboundMessage above, there's no "this agent owns it" check
+ * to satisfy — a system notice has no owner — so this can run right after
+ * a transfer/accept completes, using whichever agent the operation itself
+ * already resolved, rather than needing to run before it like the
+ * Encerramento auto-message does. See PROMPT: "na mesma lógica que mostra
+ * o nome do atendente quando está conversando... informa em cima que é
+ * sistema".
+ */
+export async function createSystemOutboundMessage(input: CreateSystemOutboundMessageInput) {
+  const conversation = await prisma.conversation.findUnique({ where: { id: input.conversationId } });
+  if (!conversation) throw Errors.notFound("Conversa nao encontrada");
+  if (!["IN_PROGRESS", "TRANSFERRED"].includes(conversation.status)) {
+    throw Errors.badRequest("Conversa nao esta em atendimento");
+  }
+
+  const message = await prisma.message.create({
+    data: {
+      conversationId: input.conversationId,
+      direction: "OUTBOUND",
+      type: input.type,
+      status: "PENDING",
+      body: input.body ?? null,
+      senderAgentId: null,
+    },
+    include: messageInclude,
+  });
+
+  await prisma.conversation.update({
+    where: { id: input.conversationId },
+    data: { lastMessageAt: new Date(), lastMessageDirection: "OUTBOUND" },
+  });
+
+  return message;
+}
+
 export interface QuotedStoryInput {
   isQuotedStoryReply?: boolean;
   quotedStoryText?: string | null;

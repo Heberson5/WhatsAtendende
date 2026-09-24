@@ -1,0 +1,86 @@
+import { Router } from "express";
+import { z } from "zod";
+import { PERMISSION } from "@whatsatendende/types";
+import { asyncHandler } from "../../lib/async-handler";
+import { requireAuth } from "../../middleware/auth";
+import { requirePermission } from "../../lib/permissions";
+import { writeAudit } from "../../lib/audit";
+import { toAutoMessageTemplateDTO } from "./auto-message-templates.mapper";
+import * as service from "./auto-message-templates.service";
+
+export const autoMessageTemplatesRouter = Router();
+
+autoMessageTemplatesRouter.use(requireAuth);
+// Same audience as respostas rápidas/encerramento — see PROMPT: "O menu de
+// Respostas, deverá estar habilitado nas permissões para o administrador e
+// gestor."
+autoMessageTemplatesRouter.use(requirePermission(PERMISSION.RESPOSTAS_RAPIDAS_GERENCIAR));
+
+const triggerQuerySchema = z.object({ trigger: z.enum(["TRANSFER", "ACCEPT"]).optional() });
+
+autoMessageTemplatesRouter.get(
+  "/",
+  asyncHandler(async (req, res) => {
+    const { trigger } = triggerQuerySchema.parse(req.query);
+    const rows = await service.listAutoMessageTemplates(trigger);
+    res.json(rows.map(toAutoMessageTemplateDTO));
+  })
+);
+
+const bodySchema = z.object({
+  trigger: z.enum(["TRANSFER", "ACCEPT"]),
+  name: z.string().min(1).max(120),
+  text: z.string().min(1).max(4096),
+  active: z.boolean(),
+});
+
+autoMessageTemplatesRouter.post(
+  "/",
+  asyncHandler(async (req, res) => {
+    const input = bodySchema.parse(req.body);
+    const row = await service.createAutoMessageTemplate(input);
+    await writeAudit({
+      userId: req.auth!.userId,
+      action: "AUTO_MESSAGE_TEMPLATE_CREATED",
+      entity: "AutoMessageTemplate",
+      entityId: row.id,
+      ipAddress: req.ip ?? null,
+      metadata: { trigger: input.trigger, name: input.name, active: input.active },
+    });
+    res.status(201).json(toAutoMessageTemplateDTO(row));
+  })
+);
+
+const updateSchema = bodySchema.partial();
+
+autoMessageTemplatesRouter.patch(
+  "/:id",
+  asyncHandler(async (req, res) => {
+    const input = updateSchema.parse(req.body);
+    const row = await service.updateAutoMessageTemplate(req.params.id, input);
+    await writeAudit({
+      userId: req.auth!.userId,
+      action: "AUTO_MESSAGE_TEMPLATE_UPDATED",
+      entity: "AutoMessageTemplate",
+      entityId: row.id,
+      ipAddress: req.ip ?? null,
+      metadata: input,
+    });
+    res.json(toAutoMessageTemplateDTO(row));
+  })
+);
+
+autoMessageTemplatesRouter.delete(
+  "/:id",
+  asyncHandler(async (req, res) => {
+    await service.deleteAutoMessageTemplate(req.params.id);
+    await writeAudit({
+      userId: req.auth!.userId,
+      action: "AUTO_MESSAGE_TEMPLATE_DELETED",
+      entity: "AutoMessageTemplate",
+      entityId: req.params.id,
+      ipAddress: req.ip ?? null,
+    });
+    res.status(204).end();
+  })
+);
