@@ -2,11 +2,12 @@ import { useEffect, useState } from "react";
 import clsx from "clsx";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Inbox, Plus, Radio, Users2 } from "lucide-react";
+import { ArrowRightLeft, Inbox, Plus, Radio, Users2 } from "lucide-react";
 import type { ConversationListItemDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { ConversationCard } from "../../components/atendimento/ConversationCard";
 import { ChatPanel } from "../../components/atendimento/ChatPanel";
+import { ReadOnlyConversationDrawer } from "../../components/gestao/ReadOnlyConversationDrawer";
 import { ConnectionFilter } from "../../components/common/ConnectionFilter";
 import { NovaConversaModal } from "../../components/atendimento/NovaConversaModal";
 import { useActiveConversationStore } from "../../store/active-conversation-store";
@@ -14,9 +15,16 @@ import { useAuthStore } from "../../store/auth-store";
 
 export default function AtendimentoPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [tab, setTab] = useState<"queue" | "mine">("mine");
+  const [tab, setTab] = useState<"queue" | "mine" | "transferred">("mine");
   const [connectionIds, setConnectionIds] = useState<string[]>([]);
   const [novaConversaOpen, setNovaConversaOpen] = useState(false);
+  // A transferred-out conversation opens read-only in its own overlay (see
+  // ReadOnlyConversationDrawer) rather than replacing the main ChatPanel —
+  // it's no longer this agent's to act on, only to watch. Separate from
+  // selectedId on purpose, so watching one doesn't disturb whatever's
+  // already open in "Ativos". See PROMPT: "possa abrir a conversa para
+  // acompanhar em tempo real sem poder interferir".
+  const [watchingConversation, setWatchingConversation] = useState<ConversationListItemDTO | null>(null);
   const queryClient = useQueryClient();
   const user = useAuthStore((s) => s.user);
   const setActiveConversationId = useActiveConversationStore((s) => s.setActiveConversationId);
@@ -52,6 +60,12 @@ export default function AtendimentoPage() {
   const mineQuery = useQuery({
     queryKey: ["mine"],
     queryFn: async () => (await api.get<ConversationListItemDTO[]>("/conversations/mine")).data,
+    refetchInterval: 20_000,
+  });
+
+  const transferredOutQuery = useQuery({
+    queryKey: ["transferred-out"],
+    queryFn: async () => (await api.get<ConversationListItemDTO[]>("/conversations/transferred-out")).data,
     refetchInterval: 20_000,
   });
 
@@ -116,6 +130,12 @@ export default function AtendimentoPage() {
           >
             <Inbox className="h-4 w-4" /> Fila ({queueQuery.data?.length ?? 0})
           </button>
+          <button
+            onClick={() => setTab("transferred")}
+            className={`flex flex-1 items-center justify-center gap-1.5 py-3 text-sm font-medium ${tab === "transferred" ? "border-b-2 border-primary text-primary" : "text-muted"}`}
+          >
+            <ArrowRightLeft className="h-4 w-4" /> Transferidas ({transferredOutQuery.data?.length ?? 0})
+          </button>
         </div>
 
         <div className="flex-1 space-y-2 overflow-y-auto p-3">
@@ -145,6 +165,15 @@ export default function AtendimentoPage() {
               ))
             ) : (
               <EmptyState message="Nenhuma conversa aguardando." />
+            ))}
+
+          {tab === "transferred" &&
+            (transferredOutQuery.data?.length ? (
+              transferredOutQuery.data.map((c) => (
+                <ConversationCard key={c.id} conversation={c} transferredOutView onSelect={() => setWatchingConversation(c)} />
+              ))
+            ) : (
+              <EmptyState message="Você ainda não transferiu nenhuma conversa." />
             ))}
         </div>
       </div>
@@ -179,6 +208,10 @@ export default function AtendimentoPage() {
             setNovaConversaOpen(false);
           }}
         />
+      )}
+
+      {watchingConversation && (
+        <ReadOnlyConversationDrawer conversation={watchingConversation} onClose={() => setWatchingConversation(null)} />
       )}
     </div>
   );

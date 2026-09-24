@@ -19,7 +19,7 @@ import * as service from "./messages.service";
 import { toMessageDTO } from "./messages.mapper";
 import * as whatsappService from "../whatsapp/whatsapp.service";
 import { realtimeEvents } from "../../realtime/realtime";
-import { assertAgentCanAccessConversation, getConversationOrThrow } from "../conversations/conversations.service";
+import { assertAgentCanAccessConversation, assertAgentCanReadConversation, getConversationOrThrow } from "../conversations/conversations.service";
 
 export const messagesRouter = Router();
 
@@ -143,7 +143,7 @@ messagesRouter.get(
   "/conversations/:conversationId",
   asyncHandler(async (req, res) => {
     const conversation = await getConversationOrThrow(req.params.conversationId);
-    if (req.auth!.role === "AGENT") assertAgentCanAccessConversation(conversation, req.auth!);
+    if (req.auth!.role === "AGENT") await assertAgentCanReadConversation(conversation, req.auth!);
     const { cursor, limit } = querySchema.parse(req.query);
     const result = await service.listMessages({ contactId: conversation.contactId, cursor, limit });
     res.json({ items: result.items.map(toMessageDTO), nextCursor: result.nextCursor });

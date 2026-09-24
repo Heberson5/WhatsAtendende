@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, ArrowRightLeft, CheckCircle2, ChevronDown, ChevronUp, Paperclip, Phone, Search, X as CloseIcon } from "lucide-react";
+import { ArrowLeft, ArrowRightLeft, CheckCircle2, ChevronDown, ChevronUp, Paperclip, Phone, Search, StickyNote, X as CloseIcon } from "lucide-react";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
 import { PERMISSION, type ConversationListItemDTO, type MessageDTO, type PaginatedResult, type QuickReplyDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { contactDisplayName } from "../../lib/contact-display";
@@ -529,6 +531,25 @@ export function ChatPanel({
           <button onClick={closeSearch} className="focus-ring shrink-0 rounded-full p-1 text-muted hover:bg-surface-alt" aria-label="Fechar pesquisa">
             <CloseIcon className="h-4 w-4" />
           </button>
+        </div>
+      )}
+
+      {/* Internal annotation left by whoever transferred this conversation —
+          app-only data (conversation.transfer.note, never a Message row),
+          so it can never reach WhatsApp/the customer no matter what. Shown
+          as a distinct note card (not a chat bubble) so it's never confused
+          with something the customer said. See PROMPT: "isso deve aparecer
+          para o outro atendente dentro da conversa como uma Anotação/
+          Observação sem que apareça para o cliente". */}
+      {conversation.transfer?.note && (
+        <div className="mx-3 mt-3 flex items-start gap-2 rounded-card border border-secondary/50 bg-secondary/20 px-3 py-2 sm:mx-4">
+          <StickyNote className="mt-0.5 h-4 w-4 shrink-0 text-secondary-fg" />
+          <div className="min-w-0">
+            <p className="text-xs font-semibold text-secondary-fg">
+              Observação de {conversation.transfer.fromAgentName} · {format(new Date(conversation.transfer.at), "dd/MM 'às' HH:mm", { locale: ptBR })}
+            </p>
+            <p className="mt-0.5 whitespace-pre-wrap text-sm text-secondary-fg">{conversation.transfer.note}</p>
+          </div>
         </div>
       )}
 

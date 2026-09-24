@@ -19,12 +19,19 @@ export function ConversationCard({
   onSelect,
   onAccept,
   accepting,
+  transferredOutView,
 }: {
   conversation: ConversationListItemDTO;
   selected?: boolean;
   onSelect?: () => void;
   onAccept?: () => void;
   accepting?: boolean;
+  // "Transferidas" tab: this agent's own transfer is the point of the
+  // card, so the badge and timestamp read from conversation.transfer
+  // (who *I* sent it to, and when) instead of the usual "who sent it to
+  // me" badge and the queue-entry timestamp. See PROMPT: "para que o
+  // atendente saiba para quem transferiu e horário".
+  transferredOutView?: boolean;
 }) {
   const displayName = contactDisplayName(conversation.contact);
   // When there's a saved name, displayName hides the phone entirely — show
@@ -72,7 +79,10 @@ export function ConversationCard({
         <div className="flex items-center justify-between gap-2">
           <p className={clsx("truncate text-sm", conversation.unreadCount > 0 ? "font-bold" : "font-semibold")}>{displayName}</p>
           <span className="shrink-0 text-xs text-muted">
-            {formatDistanceToNow(new Date(conversation.enteredQueueAt), { locale: ptBR, addSuffix: false })}
+            {formatDistanceToNow(new Date(transferredOutView && conversation.transfer ? conversation.transfer.at : conversation.enteredQueueAt), {
+              locale: ptBR,
+              addSuffix: false,
+            })}
           </span>
         </div>
 
@@ -88,7 +98,7 @@ export function ConversationCard({
           </span>
           {conversation.transfer && (
             <span className="inline-flex items-center rounded-full bg-secondary/40 px-2 py-0.5 text-[11px] font-medium text-secondary-fg">
-              Transferido de {conversation.transfer.fromAgentName}
+              {transferredOutView ? `Transferido para ${conversation.transfer.toAgentName}` : `Transferido de ${conversation.transfer.fromAgentName}`}
             </span>
           )}
           {connectionDisconnected && (

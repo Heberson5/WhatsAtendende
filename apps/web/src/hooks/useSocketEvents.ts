@@ -31,7 +31,13 @@ export function useSocketEvents(activeConversationId: string | null) {
       queryClient.invalidateQueries({ queryKey: ["queue"] });
       toast.success("Nova conversa aceita.");
     };
-    const onRemoved = () => queryClient.invalidateQueries({ queryKey: ["mine"] });
+    const onRemoved = () => {
+      queryClient.invalidateQueries({ queryKey: ["mine"] });
+      // A transfer-out is the only thing that fires conversation:removed for
+      // the FROM side — this keeps "Transferidas" live the moment an agent
+      // sends one away, without waiting for the 20s poll.
+      queryClient.invalidateQueries({ queryKey: ["transferred-out"] });
+    };
     const onTransferredIn = () => {
       queryClient.invalidateQueries({ queryKey: ["mine"] });
       toast.info("Uma conversa foi transferida para você.");
