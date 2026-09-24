@@ -1002,6 +1002,116 @@ export async function transferConversation(
   return getConversationOrThrow(conversationId);
 }
 
+// Same "still active" scope as findActiveConversationForContact — CLOSED/
+// ABANDONED are terminal on purpose (see that function's own doc comment)
+// and stay out of Gestão's reach here too; a genuinely new conversation for
+// that contact is what picks the thread back up from those.
+const GESTAO_TRANSFERABLE_STATUSES: ConversationStatus[] = ["NEW", "WAITING", "IN_PROGRESS", "TRANSFERRED", "HANDLED_EXTERNALLY"];
+
+/**
+ * Gestão (MANAGER/ADMIN) directly assigning or reassigning a conversation to
+ * an agent. Unlike the agent-initiated transferConversation above — which
+ * only ever works from the current owner's own conversation, already
+ * IN_PROGRESS/TRANSFERRED — this works from ANY still-active status,
+ * including one nobody has ever claimed (NEW/WAITING) or one parked in
+ * HANDLED_EXTERNALLY with no agent at all. See PROMPT: "No menu gestão,
+ * precisa ter a opção de transferir para algum atendente ou enviar para
+ * fila."
+ */
+export async function assignConversationFromGestao(conversationId: string, toAgentId: string, initiatedById: string) {
+  const existing = await getConversationOrThrow(conversationId);
+  if (!GESTAO_TRANSFERABLE_STATUSES.includes(existing.status)) {
+    throw Errors.badRequest("Esta conversa nao pode ser transferida neste status");
+  }
+  if (existing.assignedAgentId === toAgentId) {
+    throw Errors.badRequest("A conversa ja esta com este atendente");
+  }
+
+  const target = await prisma.user.findUnique({ where: { id: toAgentId } });
+  if (!target || target.status !== "ACTIVE" || target.role !== "AGENT") {
+    throw Errors.badRequest("Atendente de destino invalido");
+  }
+
+  const previousAgentId = existing.assignedAgentId;
+  const pendingTransferDeadline = target.presence === "ONLINE" ? null : new Date(Date.now() + TRANSFER_OFFLINE_GRACE_MS);
+
+  await prisma.conversation.update({
+    where: { id: conversationId },
+    data: {
+      // A conversation that already had an owner keeps reading as a
+      // transfer (TRANSFERRED); one nobody had yet reads as a normal
+      // pickup (IN_PROGRESS) — same distinction acceptConversation vs.
+      // transferConversation already draw, just both reachable from here.
+      status: previousAgentId ? "TRANSFERRED" : "IN_PROGRESS",
+      assignedAgentId: toAgentId,
+      acceptedAt: new Date(),
+      // The new agent hasn't read anything yet — same as transferConversation.
+      assignedAgentReadAt: null,
+      pendingTransferDeadline,
+    },
+  });
+
+  if (previousAgentId) {
+    await prisma.$transaction([
+      prisma.conversationTransfer.create({
+        data: { conversationId, fromAgentId: previousAgentId, toAgentId, initiatedById, note: "Transferido pela Gestão" },
+      }),
+      prisma.conversationAssignment.create({
+        data: { conversationId, fromAgentId: previousAgentId, toAgentId, reason: "TRANSFER" },
+      }),
+      prisma.conversationEvent.create({
+        data: { conversationId, type: "TRANSFERRED", payload: { fromAgentId: previousAgentId, toAgentId, initiatedById, viaGestao: true } },
+      }),
+    ]);
+  } else {
+    await prisma.$transaction([
+      prisma.conversationAssignment.create({
+        data: { conversationId, toAgentId, reason: "MANAGER_ASSIGNED" },
+      }),
+      prisma.conversationEvent.create({
+        data: { conversationId, type: "MANAGER_ASSIGNED", payload: { toAgentId, initiatedById } },
+      }),
+    ]);
+  }
+
+  return { conversation: await getConversationOrThrow(conversationId), previousAgentId };
+}
+
+/**
+ * Gestão (MANAGER/ADMIN) sending a conversation back to the queue,
+ * unassigned — same reach as assignConversationFromGestao above, minus a
+ * conversation that's already sitting in the queue (nothing to do there).
+ */
+export async function returnConversationToQueue(conversationId: string, initiatedById: string) {
+  const existing = await getConversationOrThrow(conversationId);
+  if (existing.status === "NEW" || existing.status === "WAITING") {
+    throw Errors.badRequest("Esta conversa ja esta na fila");
+  }
+  if (!GESTAO_TRANSFERABLE_STATUSES.includes(existing.status)) {
+    throw Errors.badRequest("Esta conversa nao pode ser enviada para a fila neste status");
+  }
+
+  const previousAgentId = existing.assignedAgentId;
+
+  await prisma.conversation.update({
+    where: { id: conversationId },
+    data: {
+      status: "WAITING",
+      assignedAgentId: null,
+      acceptedAt: null,
+      assignedAgentReadAt: null,
+      pendingTransferDeadline: null,
+      enteredQueueAt: new Date(),
+    },
+  });
+
+  await prisma.conversationEvent.create({
+    data: { conversationId, type: "RETURNED_TO_QUEUE", payload: { previousAgentId, initiatedById } },
+  });
+
+  return { conversation: await getConversationOrThrow(conversationId), previousAgentId };
+}
+
 export async function closeConversation(conversationId: string, agentId: string) {
   const result = await prisma.conversation.updateMany({
     where: { id: conversationId, assignedAgentId: agentId, status: { in: ["IN_PROGRESS", "TRANSFERRED"] } },

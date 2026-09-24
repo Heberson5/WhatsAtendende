@@ -50,6 +50,15 @@ export const realtimeEvents = {
     getIO()?.to(ROOMS.oversight()).emit("queue:new-conversation", { conversationId, contactName });
     getIO()?.to(ROOMS.oversight()).emit("oversight:updated");
   },
+  /** Gestão (MANAGER/ADMIN) sent a conversation back to the queue — from an agent's list, or out of HANDLED_EXTERNALLY/unclaimed. Same broadcast as newQueueConversation, plus removing it from whoever had it, if anyone did. */
+  conversationReturnedToQueue: (conversationId: string, connectionId: string, contactName: string, previousAgentId: string | null) => {
+    if (previousAgentId) getIO()?.to(ROOMS.user(previousAgentId)).emit("conversation:removed", { conversationId });
+    getIO()?.to(ROOMS.queue(connectionId)).emit("queue:updated");
+    getIO()?.to(ROOMS.queue(connectionId)).emit("queue:new-conversation", { conversationId, contactName });
+    getIO()?.to(ROOMS.oversight()).emit("queue:updated");
+    getIO()?.to(ROOMS.oversight()).emit("queue:new-conversation", { conversationId, contactName });
+    getIO()?.to(ROOMS.oversight()).emit("oversight:updated");
+  },
   /** A new inbound message landed in a conversation the agent already owns — used for the toast, separate from the generic refresh-only newMessage. */
   inboundMessageNotification: (conversationId: string, agentId: string, contactName: string, preview: string) => {
     getIO()?.to(ROOMS.user(agentId)).emit("message:inbound-notification", { conversationId, contactName, preview });
