@@ -2,50 +2,51 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import type { QuickReplyDTO } from "@whatsatendende/types";
+import type { ClosingMessageDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
-import { QuickReplyFormModal, type QuickReplyFormValues } from "./QuickReplyFormModal";
+import { EncerramentoFormModal, type EncerramentoFormValues } from "./EncerramentoFormModal";
 
-export default function RespostasRapidasPage() {
+/** Cadastro de mensagens de encerramento automático — ver PROMPT: "Encerramento, o cadastro deverá ser similar com a resposta rápida, mas com alguns diferenciais." */
+export function EncerramentoTab() {
   const queryClient = useQueryClient();
-  const [modalQuickReply, setModalQuickReply] = useState<QuickReplyDTO | null | "new">(null);
-  const [deleteTarget, setDeleteTarget] = useState<QuickReplyDTO | null>(null);
+  const [modalTarget, setModalTarget] = useState<ClosingMessageDTO | null | "new">(null);
+  const [deleteTarget, setDeleteTarget] = useState<ClosingMessageDTO | null>(null);
 
-  const { data: quickReplies, isLoading } = useQuery({
-    queryKey: ["quick-replies"],
-    queryFn: async () => (await api.get<QuickReplyDTO[]>("/quick-replies")).data,
+  const { data: closingMessages, isLoading } = useQuery({
+    queryKey: ["closing-messages"],
+    queryFn: async () => (await api.get<ClosingMessageDTO[]>("/closing-messages")).data,
   });
 
   const createMutation = useMutation({
-    mutationFn: (values: QuickReplyFormValues) => api.post("/quick-replies", values),
+    mutationFn: (values: EncerramentoFormValues) => api.post("/closing-messages", values),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["quick-replies"] });
-      toast.success("Resposta rápida criada.");
+      queryClient.invalidateQueries({ queryKey: ["closing-messages"] });
+      toast.success("Encerramento criado.");
     },
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, values }: { id: string; values: QuickReplyFormValues }) => api.patch(`/quick-replies/${id}`, values),
+    mutationFn: ({ id, values }: { id: string; values: EncerramentoFormValues }) => api.patch(`/closing-messages/${id}`, values),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["quick-replies"] });
-      toast.success("Resposta rápida atualizada.");
+      queryClient.invalidateQueries({ queryKey: ["closing-messages"] });
+      toast.success("Encerramento atualizado.");
     },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => api.delete(`/quick-replies/${id}`),
+    mutationFn: (id: string) => api.delete(`/closing-messages/${id}`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["quick-replies"] });
-      toast.success("Resposta rápida excluída.");
+      queryClient.invalidateQueries({ queryKey: ["closing-messages"] });
+      toast.success("Encerramento excluído.");
       setDeleteTarget(null);
     },
     onError: (err) => toast.error(getApiErrorMessage(err)),
   });
 
-  async function handleSubmit(values: QuickReplyFormValues) {
+  async function handleSubmit(values: EncerramentoFormValues) {
     try {
-      if (modalQuickReply && modalQuickReply !== "new") {
-        await updateMutation.mutateAsync({ id: modalQuickReply.id, values });
+      if (modalTarget && modalTarget !== "new") {
+        await updateMutation.mutateAsync({ id: modalTarget.id, values });
       } else {
         await createMutation.mutateAsync(values);
       }
@@ -55,16 +56,16 @@ export default function RespostasRapidasPage() {
   }
 
   return (
-    <div className="flex h-full flex-col overflow-hidden p-3 sm:p-6">
+    <div className="flex h-full flex-col overflow-hidden">
       <div className="mb-4 flex items-center justify-between">
         <p className="text-sm text-muted">
-          Textos prontos que o atendente insere na conversa digitando "/" seguido do atalho. Cada resposta só aparece para quem atende pela conexão selecionada.
+          Mensagem enviada automaticamente ao cliente quando um dos usuários selecionados clica em Encerrar. Um usuário só pode estar em um encerramento por vez.
         </p>
         <button
-          onClick={() => setModalQuickReply("new")}
+          onClick={() => setModalTarget("new")}
           className="focus-ring flex shrink-0 items-center gap-1.5 rounded-card bg-primary px-4 py-2 text-sm font-semibold text-primary-fg hover:opacity-90"
         >
-          <Plus className="h-4 w-4" /> Nova resposta rápida
+          <Plus className="h-4 w-4" /> Novo encerramento
         </button>
       </div>
 
@@ -73,9 +74,9 @@ export default function RespostasRapidasPage() {
           <thead className="sticky top-0 bg-surface-alt text-left text-xs uppercase tracking-wide text-muted">
             <tr>
               <th className="px-4 py-3">Nome</th>
-              <th className="px-4 py-3">Atalho</th>
-              <th className="px-4 py-3">Conexão</th>
               <th className="px-4 py-3">Texto</th>
+              <th className="px-4 py-3">Usuários</th>
+              <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3 text-right">Ações</th>
             </tr>
           </thead>
@@ -87,30 +88,36 @@ export default function RespostasRapidasPage() {
                 </td>
               </tr>
             )}
-            {!isLoading && quickReplies?.length === 0 && (
+            {!isLoading && closingMessages?.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-4 py-8 text-center text-muted">
-                  Nenhuma resposta rápida cadastrada ainda.
+                  Nenhum encerramento cadastrado ainda.
                 </td>
               </tr>
             )}
-            {quickReplies?.map((qr) => (
-              <tr key={qr.id} className="border-t border-border hover:bg-surface-alt">
-                <td className="px-4 py-3 font-medium">{qr.name}</td>
-                <td className="px-4 py-3">
-                  <code className="rounded bg-surface-alt px-1.5 py-0.5 text-xs">/{qr.shortcut}</code>
+            {closingMessages?.map((cm) => (
+              <tr key={cm.id} className="border-t border-border hover:bg-surface-alt">
+                <td className="px-4 py-3 font-medium">{cm.name}</td>
+                <td className="max-w-xs truncate px-4 py-3 text-muted" title={cm.text}>
+                  {cm.text}
                 </td>
-                <td className="px-4 py-3 text-muted">{qr.whatsappConnectionName}</td>
-                <td className="max-w-xs truncate px-4 py-3 text-muted" title={qr.text}>
-                  {qr.text}
+                <td className="px-4 py-3 text-muted">
+                  {cm.assignedUsers.length === 0 ? "-" : cm.assignedUsers.map((u) => u.displayName).join(", ")}
+                </td>
+                <td className="px-4 py-3">
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-xs font-medium ${cm.active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}`}
+                  >
+                    {cm.active ? "Ativo" : "Inativo"}
+                  </span>
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex justify-end gap-1">
-                    <button onClick={() => setModalQuickReply(qr)} className="focus-ring rounded-card p-1.5 text-muted hover:bg-surface-alt" aria-label="Editar" title="Editar">
+                    <button onClick={() => setModalTarget(cm)} className="focus-ring rounded-card p-1.5 text-muted hover:bg-surface-alt" aria-label="Editar" title="Editar">
                       <Pencil className="h-4 w-4" />
                     </button>
                     <button
-                      onClick={() => setDeleteTarget(qr)}
+                      onClick={() => setDeleteTarget(cm)}
                       className="focus-ring rounded-card p-1.5 text-muted hover:bg-red-50 hover:text-red-600"
                       aria-label="Excluir"
                       title="Excluir"
@@ -125,10 +132,11 @@ export default function RespostasRapidasPage() {
         </table>
       </div>
 
-      {modalQuickReply && (
-        <QuickReplyFormModal
-          quickReply={modalQuickReply === "new" ? null : modalQuickReply}
-          onClose={() => setModalQuickReply(null)}
+      {modalTarget && (
+        <EncerramentoFormModal
+          closingMessage={modalTarget === "new" ? null : modalTarget}
+          allClosingMessages={closingMessages ?? []}
+          onClose={() => setModalTarget(null)}
           onSubmit={handleSubmit}
         />
       )}
@@ -136,10 +144,8 @@ export default function RespostasRapidasPage() {
       {deleteTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
           <div className="w-full max-w-sm rounded-card border border-border bg-surface p-5 shadow-elevated">
-            <h2 className="text-base font-semibold">Excluir resposta rápida?</h2>
-            <p className="mt-2 text-sm text-muted">
-              "{deleteTarget.name}" (/{deleteTarget.shortcut}) será removida permanentemente.
-            </p>
+            <h2 className="text-base font-semibold">Excluir encerramento?</h2>
+            <p className="mt-2 text-sm text-muted">"{deleteTarget.name}" será removido permanentemente. Os usuários vinculados ficam sem encerramento automático.</p>
             <div className="mt-5 flex gap-2">
               <button onClick={() => setDeleteTarget(null)} className="focus-ring flex-1 rounded-card border border-border py-2 text-sm">
                 Cancelar

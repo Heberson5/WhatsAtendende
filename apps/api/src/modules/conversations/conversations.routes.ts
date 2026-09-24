@@ -15,7 +15,9 @@ import { resolveAllowedConnectionIds, canManagerAccessConnection } from "../../l
 import { toConversationListItemDTO } from "./conversations.mapper";
 import * as service from "./conversations.service";
 import { realtimeEvents } from "../../realtime/realtime";
-import { syncReadReceiptToDevice, requestOlderHistory } from "../whatsapp/whatsapp.service";
+import { syncReadReceiptToDevice, requestOlderHistory, sendOutboundText } from "../whatsapp/whatsapp.service";
+import { createOutboundMessage } from "../messages/messages.service";
+import { getActiveClosingMessageForAgent } from "../closing-messages/closing-messages.service";
 
 export const conversationsRouter = Router();
 conversationsRouter.use(requireAuth);
@@ -334,6 +336,27 @@ conversationsRouter.post(
   asyncHandler(async (req, res) => {
     const existing = await service.getConversationOrThrow(req.params.id);
     service.assertAgentCanAccessConversation(existing, req.auth!);
+
+    // Auto-send this agent's assigned closing message, if any, BEFORE
+    // actually closing — createOutboundMessage only accepts an
+    // IN_PROGRESS/TRANSFERRED conversation, and sending it here means it
+    // lands in history as the real last message of the thread, through
+    // the exact same pipeline (own Message row, real WhatsApp delivery,
+    // sender-name prefix) as anything an agent types. See PROMPT: "Lista
+    // de quais usuários a mensagem será disparada automaticamente ao
+    // clicar em encerrar."
+    const closingMessage = await getActiveClosingMessageForAgent(req.auth!.userId);
+    if (closingMessage) {
+      const outboundMessage = await createOutboundMessage({
+        conversationId: existing.id,
+        agentId: req.auth!.userId,
+        type: "TEXT",
+        body: closingMessage.text,
+      });
+      await sendOutboundText(existing.whatsappConnectionId, outboundMessage.id, existing.contact.phone, closingMessage.text, req.auth!.displayName);
+      realtimeEvents.newMessage(existing.id, req.auth!.userId);
+    }
+
     const conversation = await service.closeConversation(req.params.id, req.auth!.userId);
     await writeAudit({ userId: req.auth!.userId, action: "CONVERSATION_CLOSED", entity: "Conversation", entityId: conversation.id, ipAddress: req.ip ?? null });
     realtimeEvents.conversationClosed(conversation.id, req.auth!.userId);

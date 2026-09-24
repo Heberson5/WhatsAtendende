@@ -149,6 +149,17 @@ export interface QuickReplyDTO {
   updatedAt: string;
 }
 
+export interface ClosingMessageDTO {
+  id: string;
+  name: string;
+  text: string;
+  active: boolean;
+  /** Users who get this message auto-sent when they click Encerrar — a user appears in at most one ClosingMessage's list at a time. */
+  assignedUsers: { id: string; displayName: string }[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface WhatsAppConnectionSummaryDTO {
   id: string;
   name: string;
@@ -430,10 +441,16 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     defaultAllowed: { AGENT: false, MANAGER: false },
   },
   {
+    // Key left unchanged (still "respostas_rapidas.gerenciar") even though
+    // it now also gates Encerramento — renaming it would orphan any
+    // per-manager override already stored under the old string. See
+    // PROMPT: "O menu de Respostas, deverá estar habilitado nas
+    // permissões para o administrador e gestor."
     key: PERMISSION.RESPOSTAS_RAPIDAS_GERENCIAR,
-    group: "Respostas Rápidas",
-    label: "Gerenciar respostas rápidas",
-    description: "Cadastrar, editar e excluir as respostas rápidas acionadas no atendimento digitando \"/\".",
+    group: "Respostas",
+    label: "Gerenciar respostas",
+    description:
+      "Cadastrar, editar e excluir as respostas rápidas acionadas no atendimento digitando \"/\", e as mensagens de encerramento automático.",
     editableRoles: ["AGENT", "MANAGER"],
     defaultAllowed: { AGENT: false, MANAGER: true },
   },

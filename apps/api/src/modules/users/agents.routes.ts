@@ -17,8 +17,19 @@ agentsRouter.get(
     // administrador também ... poderão ... receber transferências". The
     // connection name is included so the modal can flag when a transfer
     // crosses connections.
+    //
+    // excludeSelf=false reuses this same "who can attend conversations"
+    // pool for the closing-message user picker (Respostas > Encerramento),
+    // where a MANAGER/ADMIN configuring the screen may well want to assign
+    // a message to themselves too — unlike a transfer target, which can
+    // never legitimately be the transferring agent themselves.
+    const excludeSelf = req.query.excludeSelf !== "false";
     const agents = await prisma.user.findMany({
-      where: { role: { in: ["AGENT", "MANAGER", "ADMIN"] }, status: "ACTIVE", id: { not: req.auth!.userId } },
+      where: {
+        role: { in: ["AGENT", "MANAGER", "ADMIN"] },
+        status: "ACTIVE",
+        ...(excludeSelf ? { id: { not: req.auth!.userId } } : {}),
+      },
       select: { id: true, displayName: true, presence: true, photoUrl: true, whatsappConnection: { select: { name: true } } },
       orderBy: { displayName: "asc" },
     });
