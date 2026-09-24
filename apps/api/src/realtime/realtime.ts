@@ -1,4 +1,5 @@
 import type { Server as SocketIOServer } from "socket.io";
+import type { NotificationDTO } from "@whatsatendende/types";
 
 let ioInstance: SocketIOServer | null = null;
 
@@ -62,6 +63,10 @@ export const realtimeEvents = {
   /** A new inbound message landed in a conversation the agent already owns — used for the toast, separate from the generic refresh-only newMessage. */
   inboundMessageNotification: (conversationId: string, agentId: string, contactName: string, preview: string) => {
     getIO()?.to(ROOMS.user(agentId)).emit("message:inbound-notification", { conversationId, contactName, preview });
+  },
+  /** A Notification row was persisted for this user — lets the bell prepend it live instead of waiting for the next open/poll. See PROMPT: "marcando as notificações perdidas". */
+  notificationCreated: (userId: string, notification: NotificationDTO) => {
+    getIO()?.to(ROOMS.user(userId)).emit("notification:new", notification);
   },
   // Also broadcast to the owning agent's own room — unlike the queue/user/
   // oversight rooms (rejoined automatically server-side on every socket

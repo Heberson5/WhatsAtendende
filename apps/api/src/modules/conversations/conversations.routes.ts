@@ -19,6 +19,8 @@ import { syncReadReceiptToDevice, requestOlderHistory, sendOutboundText } from "
 import { createOutboundMessage, createSystemOutboundMessage } from "../messages/messages.service";
 import { getActiveClosingMessageForAgent } from "../closing-messages/closing-messages.service";
 import { getActiveTemplateFor, renderAutoMessageTemplate } from "../auto-message-templates/auto-message-templates.service";
+import { createNotification } from "../notifications/notifications.service";
+import { toNotificationDTO } from "../notifications/notifications.mapper";
 
 export const conversationsRouter = Router();
 conversationsRouter.use(requireAuth);
@@ -226,6 +228,15 @@ conversationsRouter.post(
     const conversation = await service.transferConversation(req.params.id, req.auth!.userId, toAgentId, req.auth!.userId, note);
     await writeAudit({ userId: req.auth!.userId, action: "CONVERSATION_TRANSFERRED", entity: "Conversation", entityId: conversation.id, ipAddress: req.ip ?? null, metadata: { toAgentId, note, offlineAtTransfer: conversation.pendingTransferDeadline !== null } });
     realtimeEvents.conversationTransferred(conversation.id, req.auth!.userId, toAgentId);
+    const transferNotification = await createNotification({
+      userId: toAgentId,
+      type: "TRANSFER",
+      title: "Conversa transferida para você",
+      body: conversation.contact.name ?? conversation.contact.phone,
+      entityType: "Conversation",
+      entityId: conversation.id,
+    });
+    realtimeEvents.notificationCreated(toAgentId, toNotificationDTO(transferNotification));
     await sendAutoMessage("TRANSFER", conversation, conversation.assignedAgent?.displayName ?? "");
     res.json(toConversationListItemDTO(conversation, true));
   })

@@ -20,6 +20,8 @@ import * as conversationsService from "../conversations/conversations.service";
 import * as messagesService from "../messages/messages.service";
 import { toMessageDTO } from "../messages/messages.mapper";
 import { getManagerConnectionIds } from "../../lib/connection-access";
+import { createNotification } from "../notifications/notifications.service";
+import { toNotificationDTO } from "../notifications/notifications.mapper";
 
 fs.mkdirSync(env.UPLOAD_DIR, { recursive: true });
 
@@ -340,6 +342,15 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
         if (conversation.assignedAgentId) {
           const preview = event.body ?? (event.type === "LOCATION" ? "Localizacao" : event.type === "CONTACT" ? "Contato" : "Anexo recebido");
           realtimeEvents.inboundMessageNotification(conversation.id, conversation.assignedAgentId, contactLabel, preview);
+          const notification = await createNotification({
+            userId: conversation.assignedAgentId,
+            type: "MESSAGE",
+            title: contactLabel,
+            body: preview,
+            entityType: "Conversation",
+            entityId: conversation.id,
+          });
+          realtimeEvents.notificationCreated(conversation.assignedAgentId, toNotificationDTO(notification));
         }
       }
     } catch (err) {

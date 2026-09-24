@@ -1,10 +1,11 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import type { AgentPresence, WhatsAppConnectionStatus } from "@whatsatendende/types";
+import type { AgentPresence, NotificationDTO, WhatsAppConnectionStatus } from "@whatsatendende/types";
 import { getSocket } from "../lib/socket";
 import { notifyDesktop } from "./useDesktopNotifications";
 import { useAuthStore } from "../store/auth-store";
+import type { NotificationsResponse } from "../components/layout/NotificationBell";
 
 /** Subscribes to server-pushed realtime events and invalidates the affected React Query caches — no polling. */
 export function useSocketEvents(activeConversationId: string | null) {
@@ -82,6 +83,16 @@ export function useSocketEvents(activeConversationId: string | null) {
     const onPresenceSelf = (payload: { presence: AgentPresence }) => {
       useAuthStore.getState().updateOwnPresence(payload.presence);
     };
+    // Writes straight into NotificationBell's own query-cache key — see its
+    // comment for why the listener lives here instead of in that (more
+    // deeply nested) component.
+    const onNotificationNew = (notification: NotificationDTO) => {
+      queryClient.setQueryData<NotificationsResponse | undefined>(["notifications"], (prev) =>
+        prev
+          ? { items: [notification, ...prev.items].slice(0, 30), unreadCount: prev.unreadCount + 1 }
+          : { items: [notification], unreadCount: 1 }
+      );
+    };
 
     socket.on("queue:updated", onQueueUpdated);
     socket.on("queue:new-conversation", onNewQueueConversation);
@@ -95,6 +106,7 @@ export function useSocketEvents(activeConversationId: string | null) {
     socket.on("oversight:updated", onOversightUpdated);
     socket.on("whatsapp:status", onWhatsappStatus);
     socket.on("presence:self", onPresenceSelf);
+    socket.on("notification:new", onNotificationNew);
 
     return () => {
       socket.off("queue:updated", onQueueUpdated);
@@ -109,6 +121,7 @@ export function useSocketEvents(activeConversationId: string | null) {
       socket.off("oversight:updated", onOversightUpdated);
       socket.off("whatsapp:status", onWhatsappStatus);
       socket.off("presence:self", onPresenceSelf);
+      socket.off("notification:new", onNotificationNew);
     };
   }, [queryClient, activeConversationId, accessToken]);
 

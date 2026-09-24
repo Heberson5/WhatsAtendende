@@ -160,6 +160,18 @@ export interface ClosingMessageDTO {
   updatedAt: string;
 }
 
+/** A missed-you-live event surfaced in the Topbar bell — see NotificationBell. entityType/entityId (e.g. "Conversation"/id) drive where clicking it navigates. */
+export interface NotificationDTO {
+  id: string;
+  type: string;
+  title: string;
+  body: string | null;
+  entityType: string | null;
+  entityId: string | null;
+  readAt: string | null;
+  createdAt: string;
+}
+
 export type AutoMessageTrigger = "TRANSFER" | "ACCEPT";
 
 /** Customer-facing notice auto-sent by the system (not an agent) on TRANSFER/ACCEPT — supports {{atendente}}/{{cliente}} tags. See Respostas > Transferência/Aceite. */
