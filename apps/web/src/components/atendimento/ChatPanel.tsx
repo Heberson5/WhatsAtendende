@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { ArrowLeft, ArrowRightLeft, CheckCircle2, ChevronDown, ChevronUp, Paperclip, Phone, Search, X as CloseIcon } from "lucide-react";
 import { PERMISSION, type ConversationListItemDTO, type MessageDTO, type PaginatedResult, type QuickReplyDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
+import { contactDisplayName } from "../../lib/contact-display";
 import { getSocket } from "../../lib/socket";
 import { useAuthStore } from "../../store/auth-store";
 import { MessageBubble } from "./MessageBubble";
@@ -378,7 +379,7 @@ export function ChatPanel({
     onError: (err) => toast.error(getApiErrorMessage(err)),
   });
 
-  const displayName = conversation.contact.name || conversation.contact.phone;
+  const displayName = contactDisplayName(conversation.contact);
   const messageById = new Map(messages.map((m) => [m.id, m]));
 
   // A dragged file (or several) can be dropped anywhere over the
@@ -452,9 +453,11 @@ export function ChatPanel({
           </div>
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold">{displayName}</p>
-            <p className="flex items-center gap-1 text-xs text-muted">
-              <Phone className="h-3 w-3" /> {conversation.contact.phone}
-            </p>
+            {conversation.contact.phone && (
+              <p className="flex items-center gap-1 text-xs text-muted">
+                <Phone className="h-3 w-3" /> {conversation.contact.phone}
+              </p>
+            )}
           </div>
           {conversation.transfer && (
             <span className="rounded-full bg-secondary/40 px-2 py-0.5 text-[11px] font-medium text-secondary-fg">

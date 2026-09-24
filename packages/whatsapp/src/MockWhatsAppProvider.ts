@@ -213,8 +213,8 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
   }
 
   /** Test helper: force a chat-identity-resolved event without a real @lid chat behind it. */
-  simulateChatIdentityResolved(chatId: string, phone: string): void {
-    this.emitter.emit("chatIdentityResolved", { chatId, phone } satisfies ChatIdentityResolvedEvent);
+  simulateChatIdentityResolved(chatId: string, phone: string, name: string | null = null): void {
+    this.emitter.emit("chatIdentityResolved", { chatId, phone, name } satisfies ChatIdentityResolvedEvent);
   }
 
   /** Test/demo helper: force an inbound message without waiting for the timer. */

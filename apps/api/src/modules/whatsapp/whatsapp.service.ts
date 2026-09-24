@@ -569,17 +569,25 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
     }
   });
 
-  // The only source that can ever correct a contact created from a message
-  // with no phone-resolvable field at all to begin with — a message sent
-  // directly from the linked phone in a brand-new 1:1 chat, whose remoteJid
-  // comes back as the opaque @lid id with no senderPn/participantPn
-  // attached (those are only ever populated for group chats). See
-  // ChatIdentityResolvedEvent and findOrCreateContact's self-heal.
+  // Two things heal here, both passively (createIfMissing: false — this
+  // fires for every address-book contact, most of whom never actually
+  // message this connection, and must never spawn a Contact/queue entry for
+  // those): (1) a contact created from a message with no phone-resolvable
+  // field at all to begin with — a message sent directly from the linked
+  // phone in a brand-new 1:1 chat, whose remoteJid comes back as the opaque
+  // @lid id with no senderPn/participantPn attached (those are only ever
+  // populated for group chats); (2) the contact's name, from the phone's
+  // own saved address-book entry, taking priority over whatever pushName
+  // the customer set for themselves — see PROMPT: "sincronizar com os
+  // contatos já salvo no celular". See ChatIdentityResolvedEvent.
   provider.onChatIdentityResolved(async (event) => {
     try {
-      await conversationsService.findOrCreateContact(connectionId, event.phone, null, event.chatId);
+      await conversationsService.findOrCreateContact(connectionId, event.phone, event.name ?? null, event.chatId, {
+        preferIncomingName: true,
+        createIfMissing: false,
+      });
     } catch (err) {
-      logger.error({ err, connectionId }, "failed to heal a contact's phone number from a resolved chat identity");
+      logger.error({ err, connectionId }, "failed to heal a contact's identity from a resolved chat identity");
     }
   });
 
