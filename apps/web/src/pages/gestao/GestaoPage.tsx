@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { ArrowRightLeft, Eye, GitMerge, Inbox } from "lucide-react";
+import { ArrowRightLeft, CheckCircle2, Eye, GitMerge, Inbox } from "lucide-react";
 import { PERMISSION, type ConversationListItemDTO, type ConversationStatus } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { contactDisplayName } from "../../lib/contact-display";
@@ -54,6 +54,7 @@ export default function GestaoPage() {
   const [selected, setSelected] = useState<ConversationListItemDTO | null>(null);
   const [merging, setMerging] = useState<ConversationListItemDTO | null>(null);
   const [transferring, setTransferring] = useState<ConversationListItemDTO | null>(null);
+  const [closing, setClosing] = useState<ConversationListItemDTO | null>(null);
   const isAdmin = useAuthStore((s) => s.user?.role === "ADMIN");
   // Transferir/Enviar p/ fila hit /conversations/:id/gestao-transfer and
   // /gestao-return-to-queue, both gated backend-side by GESTAO_GERENCIAR on
@@ -73,6 +74,17 @@ export default function GestaoPage() {
     onSuccess: () => {
       toast.success("Conversa enviada para a fila.");
       queryClient.invalidateQueries({ queryKey: ["oversight"] });
+    },
+    onError: (err) => toast.error(getApiErrorMessage(err)),
+  });
+
+  const closeMutation = useMutation({
+    mutationFn: ({ conversationId, sendClosingMessage }: { conversationId: string; sendClosingMessage: boolean }) =>
+      api.post(`/conversations/${conversationId}/gestao-close`, { sendClosingMessage }),
+    onSuccess: () => {
+      toast.success("Atendimento encerrado.");
+      queryClient.invalidateQueries({ queryKey: ["oversight"] });
+      setClosing(null);
     },
     onError: (err) => toast.error(getApiErrorMessage(err)),
   });
@@ -200,6 +212,15 @@ export default function GestaoPage() {
                         <Inbox className="h-3.5 w-3.5" /> Enviar p/ fila
                       </button>
                     )}
+                    {canManage && ROUTABLE_STATUSES.has(c.status) && (
+                      <button
+                        onClick={() => setClosing(c)}
+                        className="focus-ring inline-flex items-center gap-1 text-xs font-medium text-muted hover:text-primary hover:underline"
+                        title="Encerrar este atendimento"
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5" /> Encerrar
+                      </button>
+                    )}
                     {isAdmin && (
                       <button
                         onClick={() => setMerging(c)}
@@ -236,6 +257,41 @@ export default function GestaoPage() {
           onClose={() => setTransferring(null)}
           onTransferred={() => setTransferring(null)}
         />
+      )}
+
+      {closing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-sm rounded-card border border-border bg-surface p-5 shadow-elevated">
+            <h2 className="text-base font-semibold">Encerrar atendimento?</h2>
+            <p className="mt-2 text-sm text-muted">
+              Encerrar a conversa com {contactDisplayName(closing.contact)}. Deseja enviar a mensagem de encerramento
+              configurada para o cliente?
+            </p>
+            <div className="mt-4 flex flex-col gap-2">
+              <button
+                onClick={() => closeMutation.mutate({ conversationId: closing.id, sendClosingMessage: true })}
+                disabled={closeMutation.isPending}
+                className="focus-ring rounded-card bg-primary py-2 text-sm font-semibold text-primary-fg disabled:opacity-60"
+              >
+                {closeMutation.isPending ? "Encerrando..." : "Encerrar e enviar mensagem"}
+              </button>
+              <button
+                onClick={() => closeMutation.mutate({ conversationId: closing.id, sendClosingMessage: false })}
+                disabled={closeMutation.isPending}
+                className="focus-ring rounded-card border border-border py-2 text-sm font-medium disabled:opacity-60"
+              >
+                Encerrar sem enviar mensagem
+              </button>
+              <button
+                onClick={() => setClosing(null)}
+                disabled={closeMutation.isPending}
+                className="focus-ring py-2 text-sm text-muted disabled:opacity-60"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

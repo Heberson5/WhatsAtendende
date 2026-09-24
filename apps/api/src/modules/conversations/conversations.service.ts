@@ -1235,6 +1235,31 @@ export async function closeConversation(conversationId: string, agentId: string)
 }
 
 /**
+ * Gestão's own close — same GESTAO_TRANSFERABLE_STATUSES scope as
+ * transfer/return-to-queue above, unlike closeConversation (agent-only,
+ * requires ownership). See PROMPT: "Acrescente em gestão o botão de
+ * encerrar".
+ */
+export async function closeConversationFromGestao(conversationId: string, initiatedById: string) {
+  const existing = await getConversationOrThrow(conversationId);
+  if (!GESTAO_TRANSFERABLE_STATUSES.includes(existing.status)) {
+    throw Errors.badRequest("Esta conversa nao pode ser encerrada neste status");
+  }
+  const previousAgentId = existing.assignedAgentId;
+
+  await prisma.conversation.update({
+    where: { id: conversationId },
+    data: { status: "CLOSED", closedAt: new Date(), closedByUserId: initiatedById, pendingTransferDeadline: null },
+  });
+
+  await prisma.conversationEvent.create({
+    data: { conversationId, type: "CLOSED", payload: { agentId: initiatedById, previousAgentId } },
+  });
+
+  return { conversation: await getConversationOrThrow(conversationId), previousAgentId };
+}
+
+/**
  * Logging in proves the agent is back — cancels the 2h countdown on any
  * conversation transferred to them while they were offline, so
  * revertExpiredTransfers leaves those alone from now on.

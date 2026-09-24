@@ -338,6 +338,48 @@ conversationsRouter.post(
   })
 );
 
+const gestaoCloseSchema = z.object({ sendClosingMessage: z.boolean() });
+conversationsRouter.post(
+  "/:id/gestao-close",
+  requirePermission(PERMISSION.GESTAO_ACESSAR),
+  requirePermission(PERMISSION.GESTAO_GERENCIAR),
+  asyncHandler(async (req, res) => {
+    await assertManagerCanManageConversationConnection(req);
+    const { sendClosingMessage } = gestaoCloseSchema.parse(req.body);
+    const existing = await service.getConversationOrThrow(req.params.id);
+
+    // Uses createSystemOutboundMessage (no ownership check, unlike the
+    // agent's own /:id/close route) since the manager closing this from
+    // Gestão is very often not its assigned agent — sender prefix on the
+    // wire is still the manager's own name (their configured closing
+    // message), only the stored Message row carries no agent badge, same
+    // as any other system-sent message. Only attempted for a conversation
+    // that can actually receive one (IN_PROGRESS/TRANSFERRED) — silently
+    // skipped for a still-unclaimed or HANDLED_EXTERNALLY one, same as
+    // sendAutoMessage's own no-op precedent.
+    if (sendClosingMessage && ["IN_PROGRESS", "TRANSFERRED"].includes(existing.status)) {
+      const closingMessage = await getActiveClosingMessageForAgent(req.auth!.userId);
+      if (closingMessage) {
+        const outboundMessage = await createSystemOutboundMessage({ conversationId: existing.id, type: "TEXT", body: closingMessage.text });
+        await sendOutboundText(existing.whatsappConnectionId, outboundMessage.id, existing.contact.phone, closingMessage.text, req.auth!.displayName);
+        realtimeEvents.newMessage(existing.id, existing.assignedAgentId);
+      }
+    }
+
+    const { conversation, previousAgentId } = await service.closeConversationFromGestao(req.params.id, req.auth!.userId);
+    await writeAudit({
+      userId: req.auth!.userId,
+      action: "CONVERSATION_CLOSED_BY_MANAGER",
+      entity: "Conversation",
+      entityId: conversation.id,
+      ipAddress: req.ip ?? null,
+      metadata: { previousAgentId, sentClosingMessage: sendClosingMessage },
+    });
+    realtimeEvents.conversationClosed(conversation.id, previousAgentId ?? req.auth!.userId);
+    res.json(toConversationListItemDTO(conversation, true));
+  })
+);
+
 const mergeSchema = z.object({ intoConversationId: z.string().uuid() });
 conversationsRouter.post(
   "/:id/merge",
