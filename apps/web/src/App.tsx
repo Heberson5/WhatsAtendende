@@ -11,7 +11,7 @@ import GestaoPage from "./pages/gestao/GestaoPage";
 import DashboardPage from "./pages/dashboard/DashboardPage";
 import RelatoriosPage from "./pages/relatorios/RelatoriosPage";
 import UsuariosPage from "./pages/usuarios/UsuariosPage";
-import RespostasRapidasPage from "./pages/respostas-rapidas/RespostasRapidasPage";
+import RespostasPage from "./pages/respostas/RespostasPage";
 import ConfiguracoesPage from "./pages/configuracoes/ConfiguracoesPage";
 import AuditoriaPage from "./pages/auditoria/AuditoriaPage";
 import MeuPerfilPage from "./pages/perfil/MeuPerfilPage";
@@ -26,7 +26,7 @@ const HOME_PRIORITY: { permission: (typeof PERMISSION)[keyof typeof PERMISSION];
   { permission: PERMISSION.GESTAO_ACESSAR, to: "/gestao" },
   { permission: PERMISSION.RELATORIOS_ACESSAR, to: "/relatorios" },
   { permission: PERMISSION.USUARIOS_GERENCIAR, to: "/usuarios" },
-  { permission: PERMISSION.RESPOSTAS_RAPIDAS_GERENCIAR, to: "/respostas-rapidas" },
+  { permission: PERMISSION.RESPOSTAS_RAPIDAS_GERENCIAR, to: "/respostas" },
   { permission: PERMISSION.CONFIGURACOES_GERENCIAR, to: "/configuracoes" },
   { permission: PERMISSION.AUDITORIA_ACESSAR, to: "/auditoria" },
 ];
@@ -75,8 +75,9 @@ export default function App() {
             <Route path="/usuarios" element={<UsuariosPage />} />
           </Route>
           <Route element={<PermissionRoute permission={PERMISSION.RESPOSTAS_RAPIDAS_GERENCIAR} />}>
-            <Route path="/respostas-rapidas" element={<RespostasRapidasPage />} />
+            <Route path="/respostas" element={<RespostasPage />} />
           </Route>
+          <Route path="/respostas-rapidas" element={<Navigate to="/respostas" replace />} />
           <Route element={<PermissionRoute permission={PERMISSION.CONFIGURACOES_GERENCIAR} />}>
             <Route path="/configuracoes" element={<ConfiguracoesPage />} />
           </Route>

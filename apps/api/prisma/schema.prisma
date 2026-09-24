@@ -89,9 +89,22 @@ model User {
   // — see ManagerConnectionAccess.
   connectionGrants        ManagerConnectionAccess[]
 
+  // The closing message auto-sent to the customer when THIS user clicks
+  // Encerrar — at most one at a time (a straight FK, not a join table),
+  // which is what makes "enabling a user in a closing message removes them
+  // from whichever one they were in before" automatic instead of a rule
+  // some code has to enforce: reassigning is just overwriting this field.
+  // onDelete SetNull so removing a ClosingMessage un-assigns its users
+  // instead of blocking the delete. See PROMPT: "Um usuário não poderá
+  // estar em mais de um, portanto, se habilitar o usuário no recente, irá
+  // sair do anterior."
+  closingMessage          ClosingMessage?          @relation(fields: [closingMessageId], references: [id], onDelete: SetNull)
+  closingMessageId        String?
+
   @@index([role])
   @@index([status])
   @@index([whatsappConnectionId])
+  @@index([closingMessageId])
 }
 
 model PasswordResetToken {
@@ -215,6 +228,24 @@ model QuickReply {
   updatedAt             DateTime           @updatedAt
 
   @@unique([whatsappConnectionId, shortcut])
+}
+
+// Auto-sent to the customer when one of its assigned users clicks Encerrar
+// — see PROMPT: "cadastro deverá ser similar com a resposta rápida, mas
+// com alguns diferenciais". Global (not scoped to one WhatsApp connection
+// like QuickReply): who gets closed out with which message is a property
+// of the AGENT, not of which connection they happen to be on. See
+// conversations.routes.ts's close route for where this actually fires.
+model ClosingMessage {
+  id            String   @id @default(uuid())
+  name          String
+  text          String
+  // Inactive = kept on file but never auto-sent, without losing its user
+  // assignments (toggling it back on picks up exactly where it left off).
+  active        Boolean  @default(true)
+  assignedUsers User[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
 // ---------------------------------------------------------------------------
