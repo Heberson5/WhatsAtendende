@@ -107,6 +107,35 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
   // lifetime (it shows a countdown and swaps to a new code once it lapses).
   private static readonly PAIRING_CODE_TTL_MS = 60_000;
 
+  // Recently-sent messages, keyed by their own provider message id — backs
+  // getMessage() below. WhatsApp's multi-device protocol has every
+  // recipient device request a decryption retry whenever it can't decrypt a
+  // message the first time (routine — happens on a device's first message
+  // from this session, or after any session/key desync), and Baileys can
+  // only honor that retry (re-encrypt and resend) if it can look the
+  // original content back up; left unconfigured, getMessage defaults to
+  // "always undefined", so EVERY retry silently goes nowhere and the
+  // recipient's client is left stuck forever on "Aguardando mensagem" for
+  // that message. This is a known Baileys requirement (its own
+  // messages-recv.js has a "todo: implement a cache... copy whatsmeow"
+  // comment on exactly this) — not something specific to any one message
+  // or send path in this app; see PROMPT: "Isso não pode acontecer em
+  // nenhum momento e para nenhuma mensagem enviada para o cliente". Bounded
+  // and in-memory only: a retry only ever targets a message from the
+  // current/recent session, never something from before a restart.
+  private sentMessageCache = new Map<string, proto.IMessage>();
+  private static readonly SENT_MESSAGE_CACHE_SIZE = 256;
+
+  private cacheSentMessage(sent: WAMessage | undefined): void {
+    const id = sent?.key.id;
+    if (!id || !sent.message) return;
+    if (this.sentMessageCache.size >= BaileysWhatsAppProvider.SENT_MESSAGE_CACHE_SIZE) {
+      const oldestKey = this.sentMessageCache.keys().next().value;
+      if (oldestKey !== undefined) this.sentMessageCache.delete(oldestKey);
+    }
+    this.sentMessageCache.set(id, sent.message);
+  }
+
   constructor(private options: BaileysProviderOptions) {
     this.contactsCachePath = path.join(options.authStateDir, "contacts-cache.json");
     this.loadContactsCache();
@@ -215,6 +244,10 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
         // Baileys session: suppress the QR event entirely when a phone number
         // was given, since we're about to request a code instead.
         printQRInTerminal: false,
+        // See sentMessageCache's own comment above — without this, a
+        // recipient device's decryption-retry request can never be
+        // fulfilled and that message is stuck on their end forever.
+        getMessage: async (key) => (key.id ? this.sentMessageCache.get(key.id) : undefined),
       });
       this.socket = socket;
 
@@ -603,6 +636,7 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
     // builds before a link leaves the composer. A fetch failure/timeout is
     // swallowed internally there; the text still sends, just without a card.
     const sent = await socket.sendMessage(chatId, { text }, { quoted: quoted as any });
+    this.cacheSentMessage(sent);
     const sentExt = sent?.message?.extendedTextMessage;
     return {
       providerMessageId: sent?.key.id ?? "",
@@ -644,6 +678,7 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
           ? { audio: buffer, mimetype: mimeType, ptt: false }
           : { document: buffer, fileName, mimetype: mimeType, caption };
     const sent = await socket.sendMessage(chatId, payload as any);
+    this.cacheSentMessage(sent);
     return { providerMessageId: sent?.key.id ?? "", timestamp: new Date() };
   }
 
@@ -667,12 +702,14 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
       mimetype: mimeType,
       ptt: true,
     });
+    this.cacheSentMessage(sent);
     return { providerMessageId: sent?.key.id ?? "", timestamp: new Date() };
   }
 
   async sendLocation(chatId: string, latitude: number, longitude: number): Promise<SendResult> {
     const socket = this.requireSocket();
     const sent = await socket.sendMessage(chatId, { location: { degreesLatitude: latitude, degreesLongitude: longitude } });
+    this.cacheSentMessage(sent);
     return { providerMessageId: sent?.key.id ?? "", timestamp: new Date() };
   }
 
@@ -681,14 +718,16 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
     const sent = await socket.sendMessage(chatId, {
       contacts: { displayName, contacts: [{ vcard }] },
     });
+    this.cacheSentMessage(sent);
     return { providerMessageId: sent?.key.id ?? "", timestamp: new Date() };
   }
 
   async sendReaction(chatId: string, providerMessageId: string, emoji: string | null): Promise<void> {
     const socket = this.requireSocket();
-    await socket.sendMessage(chatId, {
+    const sent = await socket.sendMessage(chatId, {
       react: { text: emoji ?? "", key: { id: providerMessageId, remoteJid: chatId, fromMe: false } },
     });
+    this.cacheSentMessage(sent);
   }
 
   async markRead(chatId: string, providerMessageIds: string[]): Promise<void> {
