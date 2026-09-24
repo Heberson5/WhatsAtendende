@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { ArrowRightLeft, Eye, GitMerge, Inbox } from "lucide-react";
-import type { ConversationListItemDTO, ConversationStatus } from "@whatsatendende/types";
+import { PERMISSION, type ConversationListItemDTO, type ConversationStatus } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { contactDisplayName } from "../../lib/contact-display";
 import { useAuthStore } from "../../store/auth-store";
@@ -55,6 +55,12 @@ export default function GestaoPage() {
   const [merging, setMerging] = useState<ConversationListItemDTO | null>(null);
   const [transferring, setTransferring] = useState<ConversationListItemDTO | null>(null);
   const isAdmin = useAuthStore((s) => s.user?.role === "ADMIN");
+  // Transferir/Enviar p/ fila hit /conversations/:id/gestao-transfer and
+  // /gestao-return-to-queue, both gated backend-side by GESTAO_GERENCIAR on
+  // top of the GESTAO_ACESSAR umbrella already required to reach this page
+  // — see PROMPT: "Mapeie todos os menus e o que tem dentro dos menus e
+  // inclua nas permissões".
+  const canManage = useAuthStore((s) => s.permissions?.[PERMISSION.GESTAO_GERENCIAR]);
   const queryClient = useQueryClient();
 
   const { data: agents } = useQuery({
@@ -175,7 +181,7 @@ export default function GestaoPage() {
                 <td className="px-4 py-3 text-muted">{c.acceptedAt ? formatDistanceToNow(new Date(c.acceptedAt), { locale: ptBR, addSuffix: true }) : "-"}</td>
                 <td className="px-4 py-3 text-right">
                   <div className="flex items-center justify-end gap-3">
-                    {ROUTABLE_STATUSES.has(c.status) && (
+                    {canManage && ROUTABLE_STATUSES.has(c.status) && (
                       <button
                         onClick={() => setTransferring(c)}
                         className="focus-ring inline-flex items-center gap-1 text-xs font-medium text-muted hover:text-primary hover:underline"
@@ -184,7 +190,7 @@ export default function GestaoPage() {
                         <ArrowRightLeft className="h-3.5 w-3.5" /> Transferir
                       </button>
                     )}
-                    {ROUTABLE_STATUSES.has(c.status) && !ALREADY_QUEUED_STATUSES.has(c.status) && (
+                    {canManage && ROUTABLE_STATUSES.has(c.status) && !ALREADY_QUEUED_STATUSES.has(c.status) && (
                       <button
                         onClick={() => returnToQueueMutation.mutate(c.id)}
                         disabled={returnToQueueMutation.isPending}

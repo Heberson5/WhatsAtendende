@@ -32,6 +32,7 @@ const bodySchema = z.object({
 
 closingMessagesRouter.post(
   "/",
+  requirePermission(PERMISSION.RESPOSTAS_ENCERRAMENTO_GERENCIAR),
   asyncHandler(async (req, res) => {
     const input = bodySchema.parse(req.body);
     const row = await service.createClosingMessage(input);
@@ -51,6 +52,7 @@ const updateSchema = bodySchema.partial();
 
 closingMessagesRouter.patch(
   "/:id",
+  requirePermission(PERMISSION.RESPOSTAS_ENCERRAMENTO_GERENCIAR),
   asyncHandler(async (req, res) => {
     const input = updateSchema.parse(req.body);
     const row = await service.updateClosingMessage(req.params.id, input);
@@ -68,6 +70,7 @@ closingMessagesRouter.patch(
 
 closingMessagesRouter.delete(
   "/:id",
+  requirePermission(PERMISSION.RESPOSTAS_ENCERRAMENTO_GERENCIAR),
   asyncHandler(async (req, res) => {
     await service.deleteClosingMessage(req.params.id);
     await writeAudit({ userId: req.auth!.userId, action: "CLOSING_MESSAGE_DELETED", entity: "ClosingMessage", entityId: req.params.id, ipAddress: req.ip ?? null });

@@ -374,12 +374,29 @@ export const PERMISSION = {
   ATENDIMENTO_TRANSFERIR: "atendimento.transferir",
   ATENDIMENTO_ENCERRAR: "atendimento.encerrar",
   GESTAO_ACESSAR: "gestao.acessar",
+  // Layered ON TOP of GESTAO_ACESSAR (need both) — see that key's own doc
+  // comment.
+  GESTAO_GERENCIAR: "gestao.gerenciar",
   DASHBOARD_ACESSAR: "dashboard.acessar",
   RELATORIOS_ACESSAR: "relatorios.acessar",
   USUARIOS_GERENCIAR: "usuarios.gerenciar",
   CONFIGURACOES_GERENCIAR: "configuracoes.gerenciar",
+  // Each layered ON TOP of CONFIGURACOES_GERENCIAR (need both) — see that
+  // key's own doc comment.
+  CONFIGURACOES_WHATSAPP_GERENCIAR: "configuracoes.whatsapp.gerenciar",
+  CONFIGURACOES_IDENTIDADE_GERENCIAR: "configuracoes.identidade.gerenciar",
+  CONFIGURACOES_EMAIL_GERENCIAR: "configuracoes.email.gerenciar",
+  CONFIGURACOES_EMAIL_MODELOS_GERENCIAR: "configuracoes.email_modelos.gerenciar",
+  CONFIGURACOES_FERIADOS_GERENCIAR: "configuracoes.feriados.gerenciar",
   AUDITORIA_ACESSAR: "auditoria.acessar",
   RESPOSTAS_RAPIDAS_GERENCIAR: "respostas_rapidas.gerenciar",
+  // Each layered ON TOP of RESPOSTAS_RAPIDAS_GERENCIAR (need both) — see
+  // that key's own doc comment. No separate key for the Respostas rápidas
+  // tab itself — RESPOSTAS_RAPIDAS_GERENCIAR already covers exactly that
+  // one, same as it always has.
+  RESPOSTAS_ENCERRAMENTO_GERENCIAR: "respostas_encerramento.gerenciar",
+  RESPOSTAS_TRANSFERENCIA_GERENCIAR: "respostas_transferencia.gerenciar",
+  RESPOSTAS_ACEITE_GERENCIAR: "respostas_aceite.gerenciar",
 } as const;
 export type Permission = (typeof PERMISSION)[keyof typeof PERMISSION];
 
@@ -421,9 +438,17 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     key: PERMISSION.GESTAO_ACESSAR,
     group: "Gestão",
     label: "Acessar Gestão",
-    description: "Visualizar, em modo leitura, as conversas de todos os atendentes.",
+    description: "Visualizar, em modo leitura, as conversas de todos os atendentes. Necessária para qualquer outra permissão de Gestão.",
     editableRoles: ["AGENT", "MANAGER"],
     defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.GESTAO_GERENCIAR,
+    group: "Gestão",
+    label: "Transferir e enviar para a fila pela Gestão",
+    description: "Além de visualizar, poder transferir uma conversa para outro atendente ou devolvê-la para a fila diretamente pela Gestão.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: true, MANAGER: true },
   },
   {
     key: PERMISSION.DASHBOARD_ACESSAR,
@@ -452,10 +477,51 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
   {
     key: PERMISSION.CONFIGURACOES_GERENCIAR,
     group: "Configurações",
-    label: "Gerenciar configurações",
-    description: "Gerenciar conexões de WhatsApp, identidade visual e e-mail/SMTP.",
+    label: "Acessar Configurações",
+    description:
+      "Acesso geral à tela de Configurações. Necessária para qualquer uma das áreas abaixo — por padrão libera todas; restrinja áreas específicas desmarcando-as individualmente.",
     editableRoles: ["AGENT", "MANAGER"],
     defaultAllowed: { AGENT: false, MANAGER: false },
+  },
+  {
+    key: PERMISSION.CONFIGURACOES_WHATSAPP_GERENCIAR,
+    group: "Configurações",
+    label: "Configurações — Conexões de WhatsApp",
+    description: "Criar, editar, excluir, conectar e desconectar conexões de WhatsApp.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: true, MANAGER: true },
+  },
+  {
+    key: PERMISSION.CONFIGURACOES_IDENTIDADE_GERENCIAR,
+    group: "Configurações",
+    label: "Configurações — Identidade visual",
+    description: "Alterar nome da empresa, cores, logo, ícone do app e favicon.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: true, MANAGER: true },
+  },
+  {
+    key: PERMISSION.CONFIGURACOES_EMAIL_GERENCIAR,
+    group: "Configurações",
+    label: "Configurações — E-mail (SMTP)",
+    description: "Ver e alterar as credenciais de SMTP e enviar e-mail de teste.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: true, MANAGER: true },
+  },
+  {
+    key: PERMISSION.CONFIGURACOES_EMAIL_MODELOS_GERENCIAR,
+    group: "Configurações",
+    label: "Configurações — Modelos de e-mail",
+    description: "Editar os modelos dos e-mails automáticos do sistema (redefinição de senha, boas-vindas, etc).",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: true, MANAGER: true },
+  },
+  {
+    key: PERMISSION.CONFIGURACOES_FERIADOS_GERENCIAR,
+    group: "Configurações",
+    label: "Configurações — Feriados",
+    description: "Cadastrar, editar e excluir feriados que bloqueiam o acesso de usuários.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: true, MANAGER: true },
   },
   {
     key: PERMISSION.AUDITORIA_ACESSAR,
@@ -473,11 +539,35 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     // permissões para o administrador e gestor."
     key: PERMISSION.RESPOSTAS_RAPIDAS_GERENCIAR,
     group: "Respostas",
-    label: "Gerenciar respostas",
+    label: "Acessar Respostas / Respostas rápidas",
     description:
-      "Cadastrar, editar e excluir as respostas rápidas acionadas no atendimento digitando \"/\", e as mensagens de encerramento automático.",
+      "Acesso geral ao menu Respostas, e gerenciar as respostas rápidas acionadas no atendimento digitando \"/\". Necessária para qualquer uma das abas abaixo — por padrão libera todas; restrinja abas específicas desmarcando-as individualmente.",
     editableRoles: ["AGENT", "MANAGER"],
     defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.RESPOSTAS_ENCERRAMENTO_GERENCIAR,
+    group: "Respostas",
+    label: "Respostas — Encerramento",
+    description: "Cadastrar, editar e excluir as mensagens de encerramento automático (aba Encerramento).",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: true, MANAGER: true },
+  },
+  {
+    key: PERMISSION.RESPOSTAS_TRANSFERENCIA_GERENCIAR,
+    group: "Respostas",
+    label: "Respostas — Transferência",
+    description: "Cadastrar, editar e excluir a mensagem automática enviada ao cliente quando a conversa é transferida (aba Transferência).",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: true, MANAGER: true },
+  },
+  {
+    key: PERMISSION.RESPOSTAS_ACEITE_GERENCIAR,
+    group: "Respostas",
+    label: "Respostas — Aceite",
+    description: "Cadastrar, editar e excluir a mensagem automática enviada ao cliente quando o atendente aceita a conversa (aba Aceite).",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: true, MANAGER: true },
   },
 ];
 
