@@ -1,13 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { X, Phone, StickyNote } from "lucide-react";
-import { format } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import { X, Phone } from "lucide-react";
 import type { ConversationListItemDTO, MessageDTO, PaginatedResult } from "@whatsatendende/types";
 import { api } from "../../lib/api";
 import { contactDisplayName } from "../../lib/contact-display";
 import { getSocket } from "../../lib/socket";
 import { MessageBubble } from "../atendimento/MessageBubble";
+import { TransferNoteCard } from "../atendimento/TransferNoteCard";
 
 async function fetchMessages(conversationId: string, cursor?: string) {
   const res = await api.get<PaginatedResult<MessageDTO>>(`/messages/conversations/${conversationId}`, {
@@ -179,34 +178,34 @@ export function ReadOnlyConversationDrawer({
           </button>
         </div>
 
-        {/* Same internal annotation ChatPanel shows the receiving agent —
-            app-only data, never sent to WhatsApp. See its own comment for
-            the full rationale. */}
-        {conversation.transfer?.note && (
-          <div className="mx-4 mt-3 flex items-start gap-2 rounded-card border border-secondary/50 bg-secondary/20 px-3 py-2">
-            <StickyNote className="mt-0.5 h-4 w-4 shrink-0 text-secondary-fg" />
-            <div className="min-w-0">
-              <p className="text-xs font-semibold text-secondary-fg">
-                Observação de {conversation.transfer.fromAgentName} · {format(new Date(conversation.transfer.at), "dd/MM 'às' HH:mm", { locale: ptBR })}
-              </p>
-              <p className="mt-0.5 whitespace-pre-wrap text-sm text-secondary-fg">{conversation.transfer.note}</p>
-            </div>
-          </div>
-        )}
-
         <div ref={scrollContainerRef} className="flex-1 overflow-y-auto bg-[var(--color-bg)] px-4 py-4">
           {(isLoading || cursor) && <p className="text-center text-sm text-muted">Carregando histórico...</p>}
           <div ref={contentRef} className="space-y-3">
-            {messages.map((m) => (
-              <MessageBubble
-                key={m.id}
-                message={m}
-                readOnly
-                onReply={() => undefined}
-                onReact={() => undefined}
-                repliedMessage={m.replyToMessageId ? messageById.get(m.replyToMessageId) : undefined}
-              />
-            ))}
+            {(() => {
+              // Same inline placement as ChatPanel — the transfer note sits
+              // between the last message before it and the first one after,
+              // not as a static banner above the whole thread.
+              const transferAt = conversation.transfer?.note ? new Date(conversation.transfer.at).getTime() : null;
+              let noteInserted = false;
+              const rendered = messages.map((m) => {
+                const insertNoteHere = transferAt !== null && !noteInserted && new Date(m.createdAt).getTime() >= transferAt;
+                if (insertNoteHere) noteInserted = true;
+                return (
+                  <Fragment key={m.id}>
+                    {insertNoteHere && <TransferNoteCard transfer={conversation.transfer!} />}
+                    <MessageBubble
+                      message={m}
+                      readOnly
+                      onReply={() => undefined}
+                      onReact={() => undefined}
+                      repliedMessage={m.replyToMessageId ? messageById.get(m.replyToMessageId) : undefined}
+                    />
+                  </Fragment>
+                );
+              });
+              if (transferAt !== null && !noteInserted) rendered.push(<TransferNoteCard key="transfer-note" transfer={conversation.transfer!} />);
+              return rendered;
+            })()}
           </div>
         </div>
 
