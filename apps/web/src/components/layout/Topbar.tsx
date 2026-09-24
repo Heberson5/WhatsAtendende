@@ -1,9 +1,11 @@
 import { useState } from "react";
-import { LogOut, Moon, Sun, Monitor, UserCircle, Menu } from "lucide-react";
+import { Bell, BellOff, LogOut, Moon, Sun, Monitor, UserCircle, Menu } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import { api } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
 import { useTheme } from "../../hooks/useTheme";
+import { useNotificationPermission } from "../../hooks/useDesktopNotifications";
 import { disconnectSocket } from "../../lib/socket";
 import { InstallAppButton } from "./InstallAppButton";
 
@@ -14,7 +16,21 @@ export function Topbar({ title, onMenuClick }: { title: string; onMenuClick?: ()
   const clearSession = useAuthStore((s) => s.clearSession);
   const navigate = useNavigate();
   const { preference, setTheme } = useTheme();
+  const { permission: notificationPermission, requestPermission: requestNotificationPermission } = useNotificationPermission();
   const [menuOpen, setMenuOpen] = useState(false);
+
+  // Only ever called from this button's own onClick — a real user gesture,
+  // not a background effect — see useNotificationPermission's own comment
+  // for why that distinction is what actually gets the browser to show the
+  // real permission prompt instead of silently suppressing it.
+  async function handleRequestNotificationPermission() {
+    if (notificationPermission !== "default") return;
+    const result = await requestNotificationPermission();
+    if (result === "granted") toast.success("Notificações do Windows ativadas.");
+    else if (result === "denied") {
+      toast.error("Notificações bloqueadas. Para ativar, permita notificações para este site nas configurações do navegador.");
+    }
+  }
 
   async function handleLogout() {
     await api.post("/auth/logout").catch(() => undefined);
@@ -37,6 +53,32 @@ export function Topbar({ title, onMenuClick }: { title: string; onMenuClick?: ()
         <h1 className="truncate text-lg font-semibold">{title}</h1>
       </div>
       <div className="flex shrink-0 items-center gap-2 sm:gap-4">
+        {notificationPermission !== "unsupported" && (
+          <button
+            type="button"
+            onClick={handleRequestNotificationPermission}
+            disabled={notificationPermission !== "default"}
+            className={`focus-ring rounded-full p-1.5 ${
+              notificationPermission === "denied" ? "text-red-500" : notificationPermission === "granted" ? "text-primary" : "text-muted hover:bg-surface-alt"
+            } disabled:cursor-default`}
+            aria-label={
+              notificationPermission === "granted"
+                ? "Notificações do Windows ativadas"
+                : notificationPermission === "denied"
+                  ? "Notificações bloqueadas — permita nas configurações do navegador"
+                  : "Ativar notificações do Windows"
+            }
+            title={
+              notificationPermission === "granted"
+                ? "Notificações do Windows ativadas"
+                : notificationPermission === "denied"
+                  ? "Notificações bloqueadas — permita nas configurações do navegador"
+                  : "Ativar notificações do Windows"
+            }
+          >
+            {notificationPermission === "denied" ? <BellOff className="h-4 w-4" /> : <Bell className="h-4 w-4" />}
+          </button>
+        )}
         <InstallAppButton />
         <div className="flex items-center gap-0.5 rounded-full border border-border p-1 sm:gap-1">
           <button
