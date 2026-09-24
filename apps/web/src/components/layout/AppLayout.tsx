@@ -7,7 +7,6 @@ import { BottomNav } from "./BottomNav";
 import { useAuthStore } from "../../store/auth-store";
 import { useActiveConversationStore } from "../../store/active-conversation-store";
 import { connectSocket, disconnectSocket, getSocket } from "../../lib/socket";
-import { useDesktopNotificationPermission } from "../../hooks/useDesktopNotifications";
 import { useIdleLogout } from "../../hooks/useIdleLogout";
 import { useAccessWindow } from "../../hooks/useAccessWindow";
 import { useSocketEvents } from "../../hooks/useSocketEvents";
@@ -31,7 +30,6 @@ export function AppLayout() {
   const activeConversationId = useActiveConversationStore((s) => s.activeConversationId);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
-  useDesktopNotificationPermission();
   useIdleLogout();
   useAccessWindow();
 
