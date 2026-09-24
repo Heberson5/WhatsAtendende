@@ -3,7 +3,7 @@ import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
 import { writeAudit } from "../../lib/audit";
 import { realtimeEvents } from "../../realtime/realtime";
-import type { Contact, Role } from "@prisma/client";
+import type { Contact, ConversationStatus, Role } from "@prisma/client";
 
 const TRANSFER_OFFLINE_GRACE_MS = 2 * 60 * 60 * 1000; // 2h — see PROMPT: transfer to an offline agent auto-reverts if they don't log in in time.
 
@@ -450,10 +450,52 @@ export async function findMentionedAgent(body: string | null | undefined): Promi
 
 export async function findOrOpenConversationForInboundMessage(connectionId: string, contactId: string, body?: string | null) {
   const active = await findActiveConversationForContact(contactId);
-  if (active) return { conversation: active, isNewConversation: false, autoAssignedAgentId: null as string | null };
+  if (active && active.status !== "HANDLED_EXTERNALLY") {
+    return { conversation: active, isNewConversation: false, autoAssignedAgentId: null as string | null };
+  }
 
   const mentionedAgent = await findMentionedAgent(body);
   const now = new Date();
+
+  // The customer is messaging again after being handled outside this app
+  // (on the phone, or another app) — that external handling is over now,
+  // so this needs an agent's attention through here again, same as any
+  // other new message. Reuses the same conversation row (never a fresh
+  // one — this status is only "active" in the first place to keep one
+  // ongoing WhatsApp thread from fragmenting into dozens of rows, see
+  // findActiveConversationForContact) instead of silently absorbing the
+  // message into a conversation nobody can see: HANDLED_EXTERNALLY has no
+  // assigned agent and never shows in the Fila. See PROMPT: "após atender
+  // uma conversa no celular ou outro aplicativo... não está aparecendo na
+  // fila quando o cliente manda novas mensagens".
+  if (active) {
+    const conversation = await prisma.conversation.update({
+      where: { id: active.id },
+      data: mentionedAgent
+        ? { status: "IN_PROGRESS", assignedAgentId: mentionedAgent.id, enteredQueueAt: now, acceptedAt: now, lastMessageAt: now }
+        : { status: "NEW", enteredQueueAt: now, lastMessageAt: now },
+    });
+    if (mentionedAgent) {
+      await prisma.$transaction([
+        prisma.conversationAssignment.create({
+          data: { conversationId: conversation.id, toAgentId: mentionedAgent.id, reason: "MENTION" },
+        }),
+        prisma.conversationEvent.create({
+          data: {
+            conversationId: conversation.id,
+            type: "REOPENED",
+            payload: { reason: "customer messaged again after being handled externally", autoAssignedByMention: mentionedAgent.displayName },
+          },
+        }),
+      ]);
+    } else {
+      await prisma.conversationEvent.create({
+        data: { conversationId: conversation.id, type: "REOPENED", payload: { reason: "customer messaged again after being handled externally" } },
+      });
+    }
+    return { conversation, isNewConversation: true, autoAssignedAgentId: mentionedAgent?.id ?? null };
+  }
+
   const conversation = await prisma.conversation.create({
     data: mentionedAgent
       ? {
