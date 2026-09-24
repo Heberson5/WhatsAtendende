@@ -719,6 +719,14 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
     return Array.from(this.contacts.values());
   }
 
+  async lookupNumber(phone: string): Promise<{ phone: string } | null> {
+    const socket = this.requireSocket();
+    const results = await socket.onWhatsApp(`${phone}@s.whatsapp.net`);
+    const match = results?.[0];
+    if (!match || !match.exists) return null;
+    return { phone: phoneFromJid(match.jid) };
+  }
+
   /**
    * On-demand backfill for ONE chat, bounded by `count` — deliberately not
    * the same thing as syncFullHistory above. That flag makes WhatsApp push

@@ -169,3 +169,21 @@ whatsappRouter.get(
     res.json(await service.listContacts(req.params.id));
   })
 );
+
+const lookupNumberSchema = z.object({ phone: z.string().min(8) });
+
+// One-off "does this number exist on WhatsApp" check for the "Novo número"
+// tab in Nova conversa — same access scope as /contacts above, but a
+// single bounded server query instead of the linked phone's address book.
+whatsappRouter.get(
+  "/connections/:id/lookup-number",
+  asyncHandler(async (req, res) => {
+    if (req.auth!.role === "AGENT") {
+      const agent = await prisma.user.findUnique({ where: { id: req.auth!.userId }, select: { whatsappConnectionId: true } });
+      if (agent?.whatsappConnectionId !== req.params.id) throw Errors.forbidden("Voce so pode usar a sua propria conexao");
+    }
+    const { phone } = lookupNumberSchema.parse(req.query);
+    const result = await service.lookupNumber(req.params.id, phone.replace(/\D/g, ""));
+    res.json({ exists: result !== null, phone: result?.phone ?? null });
+  })
+);
