@@ -24,6 +24,7 @@ const listQuerySchema = z.object({
 holidaysRouter.get(
   "/",
   requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
+  requirePermission(PERMISSION.CONFIGURACOES_FERIADOS_GERENCIAR),
   asyncHandler(async (req, res) => {
     const filter = listQuerySchema.parse(req.query);
     const holidays = await service.listHolidays(filter);
@@ -42,6 +43,7 @@ const createSchema = z.object({
 holidaysRouter.post(
   "/",
   requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
+  requirePermission(PERMISSION.CONFIGURACOES_FERIADOS_GERENCIAR),
   asyncHandler(async (req, res) => {
     const input = createSchema.parse(req.body);
     const holiday = await service.createManualHoliday(input);
@@ -55,6 +57,7 @@ const updateSchema = createSchema.partial();
 holidaysRouter.patch(
   "/:id",
   requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
+  requirePermission(PERMISSION.CONFIGURACOES_FERIADOS_GERENCIAR),
   asyncHandler(async (req, res) => {
     const input = updateSchema.parse(req.body);
     const holiday = await service.updateManualHoliday(req.params.id, input);
@@ -66,6 +69,7 @@ holidaysRouter.patch(
 holidaysRouter.delete(
   "/:id",
   requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
+  requirePermission(PERMISSION.CONFIGURACOES_FERIADOS_GERENCIAR),
   asyncHandler(async (req, res) => {
     await service.deleteHoliday(req.params.id);
     await writeAudit({ userId: req.auth!.userId, action: "HOLIDAY_DELETED", entity: "Holiday", entityId: req.params.id, ipAddress: req.ip ?? null });
@@ -81,6 +85,7 @@ holidaysRouter.delete(
 holidaysRouter.post(
   "/sync",
   requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
+  requirePermission(PERMISSION.CONFIGURACOES_FERIADOS_GERENCIAR),
   asyncHandler(async (req, res) => {
     const year = new Date().getUTCFullYear();
     const result = await service.runHolidaySync(year);

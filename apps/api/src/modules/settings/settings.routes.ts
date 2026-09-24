@@ -157,6 +157,7 @@ const brandingSchema = z.object({
 settingsRouter.patch(
   "/branding",
   requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
+  requirePermission(PERMISSION.CONFIGURACOES_IDENTIDADE_GERENCIAR),
   asyncHandler(async (req, res) => {
     const patch = brandingSchema.parse(req.body);
     const branding = await service.updateBranding(patch);
@@ -168,6 +169,7 @@ settingsRouter.patch(
 settingsRouter.post(
   "/branding/logo",
   requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
+  requirePermission(PERMISSION.CONFIGURACOES_IDENTIDADE_GERENCIAR),
   upload.single("file"),
   asyncHandler(async (req, res) => {
     if (!req.file) return res.status(400).json({ error: "BAD_REQUEST", message: "Nenhum arquivo enviado" });
@@ -184,6 +186,7 @@ settingsRouter.post(
 settingsRouter.post(
   "/branding/app-icon",
   requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
+  requirePermission(PERMISSION.CONFIGURACOES_IDENTIDADE_GERENCIAR),
   upload.single("file"),
   asyncHandler(async (req, res) => {
     if (!req.file) return res.status(400).json({ error: "BAD_REQUEST", message: "Nenhum arquivo enviado" });
@@ -198,6 +201,7 @@ settingsRouter.post(
 settingsRouter.post(
   "/branding/favicon",
   requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
+  requirePermission(PERMISSION.CONFIGURACOES_IDENTIDADE_GERENCIAR),
   upload.single("file"),
   asyncHandler(async (req, res) => {
     if (!req.file) return res.status(400).json({ error: "BAD_REQUEST", message: "Nenhum arquivo enviado" });
@@ -270,6 +274,7 @@ const emailTestLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, standard
 settingsRouter.get(
   "/email",
   requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
+  requirePermission(PERMISSION.CONFIGURACOES_EMAIL_GERENCIAR),
   asyncHandler(async (_req, res) => {
     res.json(await service.getEmailSettingsMasked());
   })
@@ -288,6 +293,7 @@ const emailSchema = z.object({
 settingsRouter.patch(
   "/email",
   requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
+  requirePermission(PERMISSION.CONFIGURACOES_EMAIL_GERENCIAR),
   asyncHandler(async (req, res) => {
     const patch = emailSchema.parse(req.body ?? {});
     const settings = await service.updateEmailSettings(patch);
@@ -302,6 +308,7 @@ const emailTestSchema = z.object({ to: z.string().email() });
 settingsRouter.post(
   "/email/test",
   requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
+  requirePermission(PERMISSION.CONFIGURACOES_EMAIL_GERENCIAR),
   emailTestLimiter,
   asyncHandler(async (req, res) => {
     const { to } = emailTestSchema.parse(req.body);
@@ -338,6 +345,7 @@ const PREVIEW_SAMPLE_VARS: Record<string, Record<string, string>> = {
 settingsRouter.get(
   "/email-templates",
   requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
+  requirePermission(PERMISSION.CONFIGURACOES_EMAIL_MODELOS_GERENCIAR),
   asyncHandler(async (_req, res) => {
     res.json({
       templates: await service.getEmailTemplates(),
@@ -362,6 +370,7 @@ const emailTemplatePatchSchema = z
 settingsRouter.patch(
   "/email-templates/:type",
   requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
+  requirePermission(PERMISSION.CONFIGURACOES_EMAIL_MODELOS_GERENCIAR),
   asyncHandler(async (req, res) => {
     const type = emailTemplateTypeSchema.parse(req.params.type);
     const patch = emailTemplatePatchSchema.parse(req.body ?? {});
@@ -388,6 +397,7 @@ const emailTemplatePreviewSchema = z.object({
 settingsRouter.post(
   "/email-templates/:type/preview",
   requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
+  requirePermission(PERMISSION.CONFIGURACOES_EMAIL_MODELOS_GERENCIAR),
   asyncHandler(async (req, res) => {
     const type = emailTemplateTypeSchema.parse(req.params.type);
     const draft = emailTemplatePreviewSchema.parse(req.body ?? {});
@@ -399,6 +409,7 @@ const emailTemplateTestSchema = z.object({ to: z.string().email() });
 settingsRouter.post(
   "/email-templates/:type/test",
   requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
+  requirePermission(PERMISSION.CONFIGURACOES_EMAIL_MODELOS_GERENCIAR),
   emailTestLimiter,
   asyncHandler(async (req, res) => {
     const type = emailTemplateTypeSchema.parse(req.params.type);

@@ -295,6 +295,7 @@ const gestaoTransferSchema = z.object({ toAgentId: z.string().uuid() });
 conversationsRouter.post(
   "/:id/gestao-transfer",
   requirePermission(PERMISSION.GESTAO_ACESSAR),
+  requirePermission(PERMISSION.GESTAO_GERENCIAR),
   asyncHandler(async (req, res) => {
     await assertManagerCanManageConversationConnection(req);
     const { toAgentId } = gestaoTransferSchema.parse(req.body);
@@ -319,6 +320,7 @@ conversationsRouter.post(
 conversationsRouter.post(
   "/:id/gestao-return-to-queue",
   requirePermission(PERMISSION.GESTAO_ACESSAR),
+  requirePermission(PERMISSION.GESTAO_GERENCIAR),
   asyncHandler(async (req, res) => {
     await assertManagerCanManageConversationConnection(req);
     const { conversation, previousAgentId } = await service.returnConversationToQueue(req.params.id, req.auth!.userId);

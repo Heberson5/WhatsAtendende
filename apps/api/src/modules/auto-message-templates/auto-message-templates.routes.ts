@@ -1,9 +1,11 @@
-import { Router } from "express";
+import { Router, type Request } from "express";
 import { z } from "zod";
-import { PERMISSION } from "@whatsatendende/types";
+import type { AutoMessageTrigger } from "@prisma/client";
+import { PERMISSION, type Permission } from "@whatsatendende/types";
 import { asyncHandler } from "../../lib/async-handler";
 import { requireAuth } from "../../middleware/auth";
-import { requirePermission } from "../../lib/permissions";
+import { isPermissionAllowed, requirePermission } from "../../lib/permissions";
+import { Errors } from "../../lib/http-error";
 import { writeAudit } from "../../lib/audit";
 import { toAutoMessageTemplateDTO } from "./auto-message-templates.mapper";
 import * as service from "./auto-message-templates.service";
@@ -13,15 +15,30 @@ export const autoMessageTemplatesRouter = Router();
 autoMessageTemplatesRouter.use(requireAuth);
 // Same audience as respostas rápidas/encerramento — see PROMPT: "O menu de
 // Respostas, deverá estar habilitado nas permissões para o administrador e
-// gestor."
+// gestor." Still just the umbrella: which specific trigger (Transferência
+// vs Aceite) a role can actually edit is checked per-route below, against
+// the trigger the row itself belongs to — see PROMPT: "Mapeie todos os
+// menus e o que tem dentro dos menus e inclua nas permissões".
 autoMessageTemplatesRouter.use(requirePermission(PERMISSION.RESPOSTAS_RAPIDAS_GERENCIAR));
 
-const triggerQuerySchema = z.object({ trigger: z.enum(["TRANSFER", "ACCEPT"]).optional() });
+const TRIGGER_PERMISSION: Record<AutoMessageTrigger, Permission> = {
+  TRANSFER: PERMISSION.RESPOSTAS_TRANSFERENCIA_GERENCIAR,
+  ACCEPT: PERMISSION.RESPOSTAS_ACEITE_GERENCIAR,
+};
+
+async function requireTriggerPermission(req: Request, trigger: AutoMessageTrigger): Promise<void> {
+  if (!(await isPermissionAllowed(req.auth!.role, TRIGGER_PERMISSION[trigger]))) {
+    throw Errors.forbidden();
+  }
+}
+
+const triggerQuerySchema = z.object({ trigger: z.enum(["TRANSFER", "ACCEPT"]) });
 
 autoMessageTemplatesRouter.get(
   "/",
   asyncHandler(async (req, res) => {
     const { trigger } = triggerQuerySchema.parse(req.query);
+    await requireTriggerPermission(req, trigger);
     const rows = await service.listAutoMessageTemplates(trigger);
     res.json(rows.map(toAutoMessageTemplateDTO));
   })
@@ -38,6 +55,7 @@ autoMessageTemplatesRouter.post(
   "/",
   asyncHandler(async (req, res) => {
     const input = bodySchema.parse(req.body);
+    await requireTriggerPermission(req, input.trigger);
     const row = await service.createAutoMessageTemplate(input);
     await writeAudit({
       userId: req.auth!.userId,
@@ -56,6 +74,8 @@ const updateSchema = bodySchema.partial();
 autoMessageTemplatesRouter.patch(
   "/:id",
   asyncHandler(async (req, res) => {
+    const existing = await service.getAutoMessageTemplate(req.params.id);
+    await requireTriggerPermission(req, existing.trigger);
     const input = updateSchema.parse(req.body);
     const row = await service.updateAutoMessageTemplate(req.params.id, input);
     await writeAudit({
@@ -73,6 +93,8 @@ autoMessageTemplatesRouter.patch(
 autoMessageTemplatesRouter.delete(
   "/:id",
   asyncHandler(async (req, res) => {
+    const existing = await service.getAutoMessageTemplate(req.params.id);
+    await requireTriggerPermission(req, existing.trigger);
     await service.deleteAutoMessageTemplate(req.params.id);
     await writeAudit({
       userId: req.auth!.userId,
