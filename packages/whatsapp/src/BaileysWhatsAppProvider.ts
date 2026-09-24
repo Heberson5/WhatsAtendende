@@ -792,9 +792,15 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
       // real phone-number JID as `jid` whenever it knows it.
       const phone = (c.jid ?? c.id).split("@")[0];
       const existing = this.contacts.get(phone);
+      // `c.name` is specifically "the name you have saved on your WA" (the
+      // linked phone's own address book) — distinct from `c.notify`, which
+      // is whatever the customer set as their own WhatsApp display name.
+      // The saved name is the one an agent actually recognizes, so it's
+      // preferred here for the address-book cache too.
+      const savedName = c.name ?? null;
       this.contacts.set(phone, {
         phone,
-        name: c.name ?? c.notify ?? existing?.name ?? null,
+        name: savedName ?? c.notify ?? existing?.name ?? null,
         photoUrl: (c.imgUrl && c.imgUrl !== "changed" ? c.imgUrl : existing?.photoUrl) ?? null,
       });
       // The phone's address-book sync (contacts.upsert/contacts.update) is a
@@ -808,8 +814,17 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
       // creates under the resolved phone-number id — which is what used to
       // show up as the same customer listed twice, once by phone number and
       // once by the opaque WhatsApp id.
-      if (c.id.endsWith("@lid") && c.jid && phone !== c.id.split("@")[0]) {
-        this.emitter.emit("chatIdentityResolved", { chatId: c.id, phone } satisfies ChatIdentityResolvedEvent);
+      //
+      // Also fired (with no lid involved) whenever this contact has a saved
+      // name, so Atendimento/Gestão can show the name actually saved in the
+      // linked phone instead of whatever pushName the customer picked for
+      // themselves — see PROMPT: "sincronizar com os contatos já salvo no
+      // celular". `createIfMissing: false` on the consumer side keeps this
+      // from ever creating a Contact row for someone who never actually
+      // messaged this connection, just because they're in the address book.
+      const identityResolved = c.id.endsWith("@lid") && c.jid && phone !== c.id.split("@")[0];
+      if (identityResolved || savedName) {
+        this.emitter.emit("chatIdentityResolved", { chatId: c.id, phone, name: savedName } satisfies ChatIdentityResolvedEvent);
       }
     }
     this.persistContactsCache();

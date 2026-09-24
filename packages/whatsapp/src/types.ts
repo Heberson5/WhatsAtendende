@@ -181,6 +181,8 @@ export interface ChatReadEvent {
 export interface ChatIdentityResolvedEvent {
   chatId: string;
   phone: string;
+  /** The contact's name as saved in the linked phone's own address book, when known — see BaileysWhatsAppProvider's upsertContacts. */
+  name?: string | null;
 }
 
 /**
