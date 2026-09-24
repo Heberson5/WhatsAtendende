@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Request } from "express";
 import { z } from "zod";
 import rateLimit from "express-rate-limit";
 import { PERMISSION } from "@whatsatendende/types";
@@ -211,6 +211,66 @@ conversationsRouter.post(
     await requestOlderHistory(req.params.id);
     await writeAudit({ userId: req.auth!.userId, action: "WHATSAPP_HISTORY_BACKFILL_REQUESTED", entity: "Conversation", entityId: req.params.id, ipAddress: req.ip ?? null });
     res.status(202).end();
+  })
+);
+
+// Gestão (MANAGER/ADMIN) directly routing a conversation, rather than just
+// watching it — see PROMPT: "No menu gestão, precisa ter a opção de
+// transferir para algum atendente ou enviar para fila". A MANAGER is scoped
+// to connections they can manage, same boundary as /merge and /oversight;
+// ADMIN is unrestricted. Works from any still-active status (including
+// unclaimed NEW/WAITING or a customer parked in HANDLED_EXTERNALLY), unlike
+// the agent-only /:id/transfer above.
+async function assertManagerCanManageConversationConnection(req: Request): Promise<void> {
+  const target = await prisma.conversation.findUnique({ where: { id: req.params.id }, select: { whatsappConnectionId: true } });
+  if (!target) throw Errors.notFound("Conversa nao encontrada");
+  if (req.auth!.role === "MANAGER" && !(await canManagerAccessConnection(req.auth!.userId, target.whatsappConnectionId, "manage"))) {
+    throw Errors.forbidden("Voce nao tem permissao para gerenciar conversas desta conexao");
+  }
+}
+
+const gestaoTransferSchema = z.object({ toAgentId: z.string().uuid() });
+conversationsRouter.post(
+  "/:id/gestao-transfer",
+  requirePermission(PERMISSION.GESTAO_ACESSAR),
+  asyncHandler(async (req, res) => {
+    await assertManagerCanManageConversationConnection(req);
+    const { toAgentId } = gestaoTransferSchema.parse(req.body);
+    const { conversation, previousAgentId } = await service.assignConversationFromGestao(req.params.id, toAgentId, req.auth!.userId);
+    await writeAudit({
+      userId: req.auth!.userId,
+      action: "CONVERSATION_ASSIGNED_BY_MANAGER",
+      entity: "Conversation",
+      entityId: conversation.id,
+      ipAddress: req.ip ?? null,
+      metadata: { toAgentId, previousAgentId },
+    });
+    if (previousAgentId) {
+      realtimeEvents.conversationTransferred(conversation.id, previousAgentId, toAgentId);
+    } else {
+      realtimeEvents.conversationAccepted(conversation.id, conversation.whatsappConnectionId, toAgentId);
+    }
+    res.json(toConversationListItemDTO(conversation, true));
+  })
+);
+
+conversationsRouter.post(
+  "/:id/gestao-return-to-queue",
+  requirePermission(PERMISSION.GESTAO_ACESSAR),
+  asyncHandler(async (req, res) => {
+    await assertManagerCanManageConversationConnection(req);
+    const { conversation, previousAgentId } = await service.returnConversationToQueue(req.params.id, req.auth!.userId);
+    await writeAudit({
+      userId: req.auth!.userId,
+      action: "CONVERSATION_RETURNED_TO_QUEUE",
+      entity: "Conversation",
+      entityId: conversation.id,
+      ipAddress: req.ip ?? null,
+      metadata: { previousAgentId },
+    });
+    const contactLabel = conversation.contact.name ?? conversation.contact.phone;
+    realtimeEvents.conversationReturnedToQueue(conversation.id, conversation.whatsappConnectionId, contactLabel, previousAgentId);
+    res.json(toConversationListItemDTO(conversation, true));
   })
 );
 

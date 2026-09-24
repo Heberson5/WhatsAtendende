@@ -330,7 +330,7 @@ model ConversationAssignment {
   fromAgentId     String?
   toAgent         User     @relation("AssignmentToAgent", fields: [toAgentId], references: [id])
   toAgentId       String
-  reason          String   // ACCEPT | TRANSFER | REOPEN | MENTION
+  reason          String   // ACCEPT | TRANSFER | REOPEN | MENTION | MANAGER_ASSIGNED
   createdAt       DateTime @default(now())
 
   @@index([conversationId])
@@ -356,7 +356,7 @@ model ConversationEvent {
   id              String   @id @default(uuid())
   conversation    Conversation @relation(fields: [conversationId], references: [id])
   conversationId  String
-  type            String   // CREATED | ACCEPTED | TRANSFERRED | CLOSED | REOPENED | ACCEPT_CONFLICT | HANDLED_EXTERNALLY
+  type            String   // CREATED | ACCEPTED | TRANSFERRED | CLOSED | REOPENED | ACCEPT_CONFLICT | HANDLED_EXTERNALLY | MANAGER_ASSIGNED | RETURNED_TO_QUEUE
   payload         Json?
   createdAt       DateTime @default(now())
 

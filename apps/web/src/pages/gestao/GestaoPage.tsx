@@ -1,16 +1,24 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Eye, GitMerge } from "lucide-react";
-import type { ConversationListItemDTO } from "@whatsatendende/types";
-import { api } from "../../lib/api";
+import { ArrowRightLeft, Eye, GitMerge, Inbox } from "lucide-react";
+import type { ConversationListItemDTO, ConversationStatus } from "@whatsatendende/types";
+import { api, getApiErrorMessage } from "../../lib/api";
 import { contactDisplayName } from "../../lib/contact-display";
 import { useAuthStore } from "../../store/auth-store";
 import { PeriodFilter, type PeriodValue } from "../../components/common/PeriodFilter";
 import { ConnectionFilter } from "../../components/common/ConnectionFilter";
 import { ReadOnlyConversationDrawer } from "../../components/gestao/ReadOnlyConversationDrawer";
 import { MergeConversationModal } from "../../components/gestao/MergeConversationModal";
+import { GestaoTransferModal } from "../../components/gestao/GestaoTransferModal";
+
+// Same "still active" scope the backend enforces (see
+// assignConversationFromGestao/returnConversationToQueue) — CLOSED/ABANDONED
+// are terminal, nothing to route there anymore.
+const ROUTABLE_STATUSES = new Set<ConversationStatus>(["NEW", "WAITING", "IN_PROGRESS", "TRANSFERRED", "HANDLED_EXTERNALLY"]);
+const ALREADY_QUEUED_STATUSES = new Set<ConversationStatus>(["NEW", "WAITING"]);
 
 const STATUS_LABEL: Record<string, string> = {
   NEW: "Nova",
@@ -45,11 +53,22 @@ export default function GestaoPage() {
   const [connectionIds, setConnectionIds] = useState<string[]>([]);
   const [selected, setSelected] = useState<ConversationListItemDTO | null>(null);
   const [merging, setMerging] = useState<ConversationListItemDTO | null>(null);
+  const [transferring, setTransferring] = useState<ConversationListItemDTO | null>(null);
   const isAdmin = useAuthStore((s) => s.user?.role === "ADMIN");
+  const queryClient = useQueryClient();
 
   const { data: agents } = useQuery({
     queryKey: ["agents"],
     queryFn: async () => (await api.get<AgentOption[]>("/agents")).data,
+  });
+
+  const returnToQueueMutation = useMutation({
+    mutationFn: (conversationId: string) => api.post(`/conversations/${conversationId}/gestao-return-to-queue`),
+    onSuccess: () => {
+      toast.success("Conversa enviada para a fila.");
+      queryClient.invalidateQueries({ queryKey: ["oversight"] });
+    },
+    onError: (err) => toast.error(getApiErrorMessage(err)),
   });
 
   const { data: conversations, isLoading } = useQuery({
@@ -156,6 +175,25 @@ export default function GestaoPage() {
                 <td className="px-4 py-3 text-muted">{c.acceptedAt ? formatDistanceToNow(new Date(c.acceptedAt), { locale: ptBR, addSuffix: true }) : "-"}</td>
                 <td className="px-4 py-3 text-right">
                   <div className="flex items-center justify-end gap-3">
+                    {ROUTABLE_STATUSES.has(c.status) && (
+                      <button
+                        onClick={() => setTransferring(c)}
+                        className="focus-ring inline-flex items-center gap-1 text-xs font-medium text-muted hover:text-primary hover:underline"
+                        title="Transferir para outro atendente"
+                      >
+                        <ArrowRightLeft className="h-3.5 w-3.5" /> Transferir
+                      </button>
+                    )}
+                    {ROUTABLE_STATUSES.has(c.status) && !ALREADY_QUEUED_STATUSES.has(c.status) && (
+                      <button
+                        onClick={() => returnToQueueMutation.mutate(c.id)}
+                        disabled={returnToQueueMutation.isPending}
+                        className="focus-ring inline-flex items-center gap-1 text-xs font-medium text-muted hover:text-primary hover:underline disabled:opacity-50"
+                        title="Enviar de volta para a fila, sem atendente"
+                      >
+                        <Inbox className="h-3.5 w-3.5" /> Enviar p/ fila
+                      </button>
+                    )}
                     {isAdmin && (
                       <button
                         onClick={() => setMerging(c)}
@@ -183,6 +221,14 @@ export default function GestaoPage() {
           conversation={merging}
           onClose={() => setMerging(null)}
           onMerged={() => setMerging(null)}
+        />
+      )}
+
+      {transferring && (
+        <GestaoTransferModal
+          conversation={transferring}
+          onClose={() => setTransferring(null)}
+          onTransferred={() => setTransferring(null)}
         />
       )}
     </div>
