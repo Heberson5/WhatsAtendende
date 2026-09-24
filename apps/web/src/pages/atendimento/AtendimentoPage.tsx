@@ -18,12 +18,17 @@ export default function AtendimentoPage() {
   const [tab, setTab] = useState<"queue" | "mine" | "transferred">("mine");
   const [connectionIds, setConnectionIds] = useState<string[]>([]);
   const [novaConversaOpen, setNovaConversaOpen] = useState(false);
-  // A transferred-out conversation opens read-only in its own overlay (see
-  // ReadOnlyConversationDrawer) rather than replacing the main ChatPanel —
-  // it's no longer this agent's to act on, only to watch. Separate from
-  // selectedId on purpose, so watching one doesn't disturb whatever's
-  // already open in "Ativos". See PROMPT: "possa abrir a conversa para
-  // acompanhar em tempo real sem poder interferir".
+  // A transferred-out conversation opens read-only (ReadOnlyConversationDrawer,
+  // variant="inline") in the SAME right-column slot ChatPanel normally
+  // fills — not a floating overlay like Gestão's own use of that
+  // component — it's no longer this agent's to act on, only to watch. Kept
+  // as a separate piece of state from selectedId (the two are mutually
+  // exclusive, cleared of each other wherever either is set) rather than
+  // reusing it, since a transferred-out row isn't in mineQuery's data at
+  // all. See PROMPT: "possa abrir a conversa para acompanhar em tempo real
+  // sem poder interferir" and "a tela de visualizar as conversas em Transf,
+  // deve abrir normalmente... sem as funções de interagir, transferência e
+  // encerramento".
   const [watchingConversation, setWatchingConversation] = useState<ConversationListItemDTO | null>(null);
   const queryClient = useQueryClient();
   const user = useAuthStore((s) => s.user);
@@ -91,7 +96,7 @@ export default function AtendimentoPage() {
       <div
         className={clsx(
           "flex-col overflow-hidden border-r border-border bg-surface md:flex",
-          selectedConversation ? "hidden" : "flex"
+          selectedConversation || watchingConversation ? "hidden" : "flex"
         )}
       >
         {hasFixedConnection && user?.whatsappConnectionStatus !== "CONNECTED" && (
@@ -146,7 +151,10 @@ export default function AtendimentoPage() {
                   key={c.id}
                   conversation={c}
                   selected={c.id === selectedId}
-                  onSelect={() => setSelectedId((current) => (current === c.id ? null : c.id))}
+                  onSelect={() => {
+                    setWatchingConversation(null);
+                    setSelectedId((current) => (current === c.id ? null : c.id));
+                  }}
                 />
               ))
             ) : (
@@ -170,7 +178,16 @@ export default function AtendimentoPage() {
           {tab === "transferred" &&
             (transferredOutQuery.data?.length ? (
               transferredOutQuery.data.map((c) => (
-                <ConversationCard key={c.id} conversation={c} transferredOutView onSelect={() => setWatchingConversation(c)} />
+                <ConversationCard
+                  key={c.id}
+                  conversation={c}
+                  transferredOutView
+                  selected={c.id === watchingConversation?.id}
+                  onSelect={() => {
+                    setSelectedId(null);
+                    setWatchingConversation(c);
+                  }}
+                />
               ))
             ) : (
               <EmptyState message="Você ainda não transferiu nenhuma conversa." />
@@ -178,7 +195,7 @@ export default function AtendimentoPage() {
         </div>
       </div>
 
-      <div className={clsx("overflow-hidden bg-[var(--color-bg)]", selectedConversation ? "block" : "hidden md:block")}>
+      <div className={clsx("overflow-hidden bg-[var(--color-bg)]", selectedConversation || watchingConversation ? "block" : "hidden md:block")}>
         {selectedConversation ? (
           <ChatPanel
             conversation={selectedConversation}
@@ -190,6 +207,8 @@ export default function AtendimentoPage() {
               setTab("mine");
             }}
           />
+        ) : watchingConversation ? (
+          <ReadOnlyConversationDrawer variant="inline" conversation={watchingConversation} onClose={() => setWatchingConversation(null)} />
         ) : (
           <div className="flex h-full items-center justify-center text-sm text-muted">
             Selecione um atendimento para visualizar a conversa
@@ -210,9 +229,6 @@ export default function AtendimentoPage() {
         />
       )}
 
-      {watchingConversation && (
-        <ReadOnlyConversationDrawer conversation={watchingConversation} onClose={() => setWatchingConversation(null)} />
-      )}
     </div>
   );
 }

@@ -19,9 +19,18 @@ async function fetchMessages(conversationId: string, cursor?: string) {
 export function ReadOnlyConversationDrawer({
   conversation,
   onClose,
+  // "drawer" (default): Gestão's own right-side overlay over the whole
+  // screen. "inline": fills its parent's slot in-flow instead — used by
+  // Atendimento's Transferidas tab, which reuses the main conversation
+  // column's layout (like ChatPanel) rather than a floating panel. See
+  // PROMPT: "a tela de visualizar as conversas em Transf, deve abrir
+  // normalmente... atualmente está abrindo igual a gestão, em uma [gaveta]
+  // lateral direita."
+  variant = "drawer",
 }: {
   conversation: ConversationListItemDTO;
   onClose: () => void;
+  variant?: "drawer" | "inline";
 }) {
   const [messages, setMessages] = useState<MessageDTO[]>([]);
   const [cursor, setCursor] = useState<string | undefined>(undefined);
@@ -142,12 +151,8 @@ export function ReadOnlyConversationDrawer({
   const displayName = contactDisplayName(conversation.contact);
   const messageById = new Map(messages.map((m) => [m.id, m]));
 
-  return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/30">
-      {/* Mirrors ChatPanel's own header/message-list styling so oversight
-          shows a conversation exactly as it looks in Atendimento — just
-          without the composer, since gestores only watch. */}
-      <div className="flex h-full w-full max-w-lg flex-col bg-surface shadow-elevated">
+  const content = (
+    <div className={variant === "drawer" ? "flex h-full w-full max-w-lg flex-col bg-surface shadow-elevated" : "flex h-full w-full flex-col bg-surface"}>
         <div className="flex items-center justify-between gap-2 border-b border-border bg-surface px-4 py-3">
           <div className="flex min-w-0 items-center gap-3">
             <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full bg-surface-alt text-sm font-semibold text-muted">
@@ -208,7 +213,16 @@ export function ReadOnlyConversationDrawer({
         <div className="border-t border-border px-5 py-3 text-center text-xs text-muted">
           Modo de visualização — não é possível interagir nesta conversa.
         </div>
-      </div>
+    </div>
+  );
+
+  if (variant === "inline") return content;
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/30">
+      {/* Mirrors ChatPanel's own header/message-list styling so oversight
+          shows a conversation exactly as it looks in Atendimento — just
+          without the composer, since gestores only watch. */}
+      {content}
     </div>
   );
 }

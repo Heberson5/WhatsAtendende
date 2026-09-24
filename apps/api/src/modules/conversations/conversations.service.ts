@@ -736,10 +736,18 @@ export async function listMyConversations(agentId: string) {
  * that's still the answer to "who did I send it to". A conversation that
  * came back to this same agent since (a revert, or a later transfer back)
  * belongs in Ativos instead, not here.
+ *
+ * Kept for 7 days from the transfer date, then drops off this list on its
+ * own — see PROMPT: "deve manter o histórico de conversas por 7 dias
+ * contados pela data da transferência". The conversation itself, and its
+ * messages, are never deleted — only this specific "who did I send it to"
+ * view ages out.
  */
+const TRANSFERRED_OUT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+
 export async function listTransferredOutByAgent(agentId: string) {
   const transfers = await prisma.conversationTransfer.findMany({
-    where: { fromAgentId: agentId },
+    where: { fromAgentId: agentId, createdAt: { gte: new Date(Date.now() - TRANSFERRED_OUT_RETENTION_MS) } },
     orderBy: { createdAt: "desc" },
     include: { toAgent: true },
   });
