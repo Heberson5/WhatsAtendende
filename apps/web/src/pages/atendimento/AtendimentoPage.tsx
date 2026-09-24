@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import clsx from "clsx";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -67,6 +68,28 @@ export default function AtendimentoPage() {
     queryFn: async () => (await api.get<ConversationListItemDTO[]>("/conversations/mine")).data,
     refetchInterval: 20_000,
   });
+
+  // Deep link from the notification bell (?open=<conversationId>) — both
+  // notification types (new message, transfer received) only ever point at
+  // a conversation this agent already owns, so "Ativos" is always the
+  // right place to select it. See PROMPT: "ao clicar em cima de alguma,
+  // será direcionado para o local".
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const openId = searchParams.get("open");
+    if (!openId || !mineQuery.data) return;
+    if (mineQuery.data.some((c) => c.id === openId)) {
+      setWatchingConversation(null);
+      setSelectedId(openId);
+      setTab("mine");
+    }
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete("open");
+      return next;
+    }, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, mineQuery.data]);
 
   const transferredOutQuery = useQuery({
     queryKey: ["transferred-out"],
