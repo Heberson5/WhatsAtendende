@@ -78,25 +78,22 @@ describe("reading a conversation from the linked phone (markConversationReadFrom
     expect(result.conversation.assignedAgentReadAt).not.toBeNull();
   });
 
-  it("a further message from the same contact after HANDLED_EXTERNALLY reuses the SAME conversation, unlike CLOSED, and re-enters the queue", async () => {
-    // Unlike CLOSED, HANDLED_EXTERNALLY isn't a deliberate "attendance
-    // finished" action by an agent — it just means the customer's thread is
-    // being handled directly on the linked phone. Treating it as terminal
-    // used to spawn a brand-new Conversation row on every single message
-    // exchanged from then on (inbound or another device reply), turning one
-    // ongoing WhatsApp thread into dozens of near-empty rows in Gestão — see
-    // PROMPT: "em Gestão ... está trazendo mais de uma linha para a mesma
-    // conversa, isso significa que a cada mensagem recebida ou enviada, está
-    // acrescentando uma nova linha".
+  it("a further message from the same contact after HANDLED_EXTERNALLY opens a NEW conversation, unlike an ongoing NEW/WAITING/IN_PROGRESS one, and leaves the old row untouched", async () => {
+    // HANDLED_EXTERNALLY isn't a deliberate "attendance finished" action by
+    // an agent, so leaving it parked forever (no assigned agent, invisible
+    // in Fila) used to silently swallow every message the customer sent
+    // from then on. See PROMPT: "após atender uma conversa no celular ou
+    // outro aplicativo... não está aparecendo na fila quando o cliente
+    // manda novas mensagens".
     //
-    // But reusing the row isn't enough on its own: a message from the
-    // CUSTOMER (unlike a reply from the linked phone) means the external
-    // handling is over and an agent needs to see this again — leaving it
-    // parked in HANDLED_EXTERNALLY (no assigned agent, invisible in Fila)
-    // silently swallowed every message the customer sent from then on. See
-    // PROMPT: "após atender uma conversa no celular ou outro aplicativo...
-    // não está aparecendo na fila quando o cliente manda novas mensagens".
+    // But updating that same row in place is also wrong: it overwrote
+    // Entrada na fila/Aceite, erasing the earlier interaction from Gestão's
+    // history. Each time the customer comes back after being handled
+    // externally, it must be its OWN new row — see PROMPT: "cada vez que o
+    // cliente iniciar uma nova conversa, deverá ter uma nova linha... não é
+    // para sobrescrever o anterior".
     const { contact, conversation } = await createWaitingConversation("5511990009999", connectionId);
+    const originalEnteredQueueAt = conversation.enteredQueueAt;
     await conversationsService.markConversationReadFromDevice(conversation.id);
 
     const { conversation: reopened, isNewConversation } = await conversationsService.findOrOpenConversationForInboundMessage(
@@ -104,21 +101,28 @@ describe("reading a conversation from the linked phone (markConversationReadFrom
       contact.id
     );
     expect(isNewConversation).toBe(true);
-    expect(reopened.id).toBe(conversation.id); // same row — not a new one
+    expect(reopened.id).not.toBe(conversation.id); // a brand new row, not the old one
     expect(reopened.status).toBe("NEW");
     expect(reopened.assignedAgentId).toBeNull();
 
+    // The old row is untouched — still HANDLED_EXTERNALLY, own original timestamp.
+    const old = await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } });
+    expect(old.status).toBe("HANDLED_EXTERNALLY");
+    expect(old.enteredQueueAt).toEqual(originalEnteredQueueAt);
+
     const queue = await conversationsService.listQueue([connectionId]);
-    expect(queue.find((c) => c.id === conversation.id)).toBeDefined();
+    expect(queue.find((c) => c.id === reopened.id)).toBeDefined();
+    expect(queue.find((c) => c.id === conversation.id)).toBeUndefined();
 
     const event = await prisma.conversationEvent.findFirst({
-      where: { conversationId: conversation.id, type: "REOPENED" },
+      where: { conversationId: reopened.id, type: "CREATED" },
       orderBy: { createdAt: "desc" },
     });
     expect(event).not.toBeNull();
+    expect((event?.payload as { previousConversationId?: string } | null)?.previousConversationId).toBe(conversation.id);
   });
 
-  it("a further @-mentioned message from the same contact after HANDLED_EXTERNALLY reuses the SAME conversation and routes straight to that agent", async () => {
+  it("a further @-mentioned message from the same contact after HANDLED_EXTERNALLY opens a NEW conversation and routes straight to that agent", async () => {
     const { contact, conversation } = await createWaitingConversation("5511990004444", connectionId);
     const agent = await createTestUser({ email: "agente-reopen-mention@test.dev", displayName: "Fernanda", role: "AGENT", whatsappConnectionId: connectionId });
     await conversationsService.markConversationReadFromDevice(conversation.id);
@@ -129,12 +133,15 @@ describe("reading a conversation from the linked phone (markConversationReadFrom
       "Oi, pode ser a @Fernanda de novo?"
     );
     expect(isNewConversation).toBe(true);
-    expect(reopened.id).toBe(conversation.id);
+    expect(reopened.id).not.toBe(conversation.id);
     expect(reopened.status).toBe("IN_PROGRESS");
     expect(reopened.assignedAgentId).toBe(agent.id);
     expect(autoAssignedAgentId).toBe(agent.id);
 
+    const old = await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } });
+    expect(old.status).toBe("HANDLED_EXTERNALLY");
+
     const mine = await conversationsService.listMyConversations(agent.id);
-    expect(mine.find((c) => c.id === conversation.id)).toBeDefined();
+    expect(mine.find((c) => c.id === reopened.id)).toBeDefined();
   });
 });

@@ -457,44 +457,17 @@ export async function findOrOpenConversationForInboundMessage(connectionId: stri
   const mentionedAgent = await findMentionedAgent(body);
   const now = new Date();
 
-  // The customer is messaging again after being handled outside this app
-  // (on the phone, or another app) — that external handling is over now,
-  // so this needs an agent's attention through here again, same as any
-  // other new message. Reuses the same conversation row (never a fresh
-  // one — this status is only "active" in the first place to keep one
-  // ongoing WhatsApp thread from fragmenting into dozens of rows, see
-  // findActiveConversationForContact) instead of silently absorbing the
-  // message into a conversation nobody can see: HANDLED_EXTERNALLY has no
-  // assigned agent and never shows in the Fila. See PROMPT: "após atender
-  // uma conversa no celular ou outro aplicativo... não está aparecendo na
-  // fila quando o cliente manda novas mensagens".
-  if (active) {
-    const conversation = await prisma.conversation.update({
-      where: { id: active.id },
-      data: mentionedAgent
-        ? { status: "IN_PROGRESS", assignedAgentId: mentionedAgent.id, enteredQueueAt: now, acceptedAt: now, lastMessageAt: now }
-        : { status: "NEW", enteredQueueAt: now, lastMessageAt: now },
-    });
-    if (mentionedAgent) {
-      await prisma.$transaction([
-        prisma.conversationAssignment.create({
-          data: { conversationId: conversation.id, toAgentId: mentionedAgent.id, reason: "MENTION" },
-        }),
-        prisma.conversationEvent.create({
-          data: {
-            conversationId: conversation.id,
-            type: "REOPENED",
-            payload: { reason: "customer messaged again after being handled externally", autoAssignedByMention: mentionedAgent.displayName },
-          },
-        }),
-      ]);
-    } else {
-      await prisma.conversationEvent.create({
-        data: { conversationId: conversation.id, type: "REOPENED", payload: { reason: "customer messaged again after being handled externally" } },
-      });
-    }
-    return { conversation, isNewConversation: true, autoAssignedAgentId: mentionedAgent?.id ?? null };
-  }
+  // The customer messaging again after being handled outside this app (on
+  // the phone, or another app) starts a genuinely NEW conversation here —
+  // its own row, with its own Entrada na fila/Aceite — instead of updating
+  // the HANDLED_EXTERNALLY row in place, which used to overwrite that
+  // row's timestamps and erase the earlier interaction from Gestão's
+  // history. See PROMPT: "Na tela de gestão, está unificando quando o
+  // cliente volta a conversar... cada vez que o cliente iniciar uma nova
+  // conversa, deverá ter uma nova linha... não é para sobrescrever o
+  // anterior." The old HANDLED_EXTERNALLY row is left untouched; only its
+  // id is kept for the audit trail below.
+  const previousConversationId = active?.id ?? null;
 
   const conversation = await prisma.conversation.create({
     data: mentionedAgent
@@ -510,18 +483,22 @@ export async function findOrOpenConversationForInboundMessage(connectionId: stri
       : { contactId, whatsappConnectionId: connectionId, status: "NEW", enteredQueueAt: now, lastMessageAt: now },
   });
 
+  const createdPayload = previousConversationId
+    ? { previousConversationId, reason: "customer messaged again after being handled externally" }
+    : undefined;
+
   if (mentionedAgent) {
     await prisma.$transaction([
       prisma.conversationAssignment.create({
         data: { conversationId: conversation.id, toAgentId: mentionedAgent.id, reason: "MENTION" },
       }),
       prisma.conversationEvent.create({
-        data: { conversationId: conversation.id, type: "CREATED", payload: { autoAssignedByMention: mentionedAgent.displayName } },
+        data: { conversationId: conversation.id, type: "CREATED", payload: { ...createdPayload, autoAssignedByMention: mentionedAgent.displayName } },
       }),
     ]);
   } else {
     await prisma.conversationEvent.create({
-      data: { conversationId: conversation.id, type: "CREATED" },
+      data: { conversationId: conversation.id, type: "CREATED", payload: createdPayload },
     });
   }
 
