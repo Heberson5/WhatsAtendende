@@ -139,7 +139,7 @@ export default function AtendimentoPage() {
             onClick={() => setTab("transferred")}
             className={`flex flex-1 items-center justify-center gap-1.5 py-3 text-sm font-medium ${tab === "transferred" ? "border-b-2 border-primary text-primary" : "text-muted"}`}
           >
-            <ArrowRightLeft className="h-4 w-4" /> Transferidas ({transferredOutQuery.data?.length ?? 0})
+            <ArrowRightLeft className="h-4 w-4" /> Transf. ({transferredOutQuery.data?.length ?? 0})
           </button>
         </div>
 
