@@ -160,6 +160,19 @@ export interface ClosingMessageDTO {
   updatedAt: string;
 }
 
+export type AutoMessageTrigger = "TRANSFER" | "ACCEPT";
+
+/** Customer-facing notice auto-sent by the system (not an agent) on TRANSFER/ACCEPT — supports {{atendente}}/{{cliente}} tags. See Respostas > Transferência/Aceite. */
+export interface AutoMessageTemplateDTO {
+  id: string;
+  trigger: AutoMessageTrigger;
+  name: string;
+  text: string;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface WhatsAppConnectionSummaryDTO {
   id: string;
   name: string;

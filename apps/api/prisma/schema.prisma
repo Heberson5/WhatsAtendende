@@ -230,6 +230,35 @@ model QuickReply {
   @@unique([whatsappConnectionId, shortcut])
 }
 
+enum AutoMessageTrigger {
+  // Sent to the customer the moment an agent hands the conversation to
+  // someone else.
+  TRANSFER
+  // Sent to the customer the moment an agent picks up a queued conversation.
+  ACCEPT
+}
+
+// A customer-facing notice auto-sent by the SYSTEM (not any one agent) at
+// a trigger event — "*Sistema:*" instead of an agent's name in the actual
+// WhatsApp text, and no sender-name badge in-app (see
+// createSystemOutboundMessage). Supports {{atendente}}/{{cliente}} tags,
+// resolved at send time — see renderAutoMessageTemplate. See PROMPT:
+// "enviar uma mensagem para o cliente no momento da transferência...
+// inclua em uma aba do menu Respostas, para poder editar quando
+// necessário e tenha disponível as tags" and "mensagem automática para
+// quando o atendente aceita a conversa".
+model AutoMessageTemplate {
+  id        String             @id @default(uuid())
+  trigger   AutoMessageTrigger
+  name      String
+  text      String
+  active    Boolean            @default(true)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  @@index([trigger])
+}
+
 // Auto-sent to the customer when one of its assigned users clicks Encerrar
 // — see PROMPT: "cadastro deverá ser similar com a resposta rápida, mas
 // com alguns diferenciais". Global (not scoped to one WhatsApp connection
