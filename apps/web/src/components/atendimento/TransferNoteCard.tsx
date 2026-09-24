@@ -17,13 +17,15 @@ import type { ConversationListItemDTO } from "@whatsatendende/types";
 export function TransferNoteCard({ transfer }: { transfer: NonNullable<ConversationListItemDTO["transfer"]> }) {
   if (!transfer.note) return null;
   return (
-    <div className="mx-3 flex items-start gap-2 rounded-card border border-secondary/50 bg-secondary/20 px-3 py-2 sm:mx-4">
-      <StickyNote className="mt-0.5 h-4 w-4 shrink-0 text-secondary-fg" />
-      <div className="min-w-0">
-        <p className="text-xs font-semibold text-secondary-fg">
-          Observação de {transfer.fromAgentName} · {format(new Date(transfer.at), "dd/MM 'às' HH:mm", { locale: ptBR })}
-        </p>
-        <p className="mt-0.5 whitespace-pre-wrap text-sm text-secondary-fg">{transfer.note}</p>
+    <div className="flex justify-center">
+      <div className="flex max-w-md items-start gap-2 rounded-card border border-secondary/50 bg-secondary/20 px-3 py-2 text-center sm:text-left">
+        <StickyNote className="mt-0.5 hidden h-4 w-4 shrink-0 text-secondary-fg sm:block" />
+        <div className="min-w-0">
+          <p className="text-xs font-semibold text-secondary-fg">
+            Observação de {transfer.fromAgentName} · {format(new Date(transfer.at), "dd/MM 'às' HH:mm", { locale: ptBR })}
+          </p>
+          <p className="mt-0.5 whitespace-pre-wrap text-sm text-secondary-fg">{transfer.note}</p>
+        </div>
       </div>
     </div>
   );
