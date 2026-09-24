@@ -1,7 +1,13 @@
 import path from "node:path";
 import fs from "node:fs";
 import { randomUUID } from "node:crypto";
-import { createWhatsAppProvider, type InboundMessageEvent, type WhatsAppProvider, type WhatsAppStatusSnapshot } from "@whatsatendende/whatsapp";
+import {
+  createWhatsAppProvider,
+  type InboundMessageEvent,
+  type SendResult,
+  type WhatsAppProvider,
+  type WhatsAppStatusSnapshot,
+} from "@whatsatendende/whatsapp";
 import { env } from "../../config/env";
 import { prisma } from "../../lib/prisma";
 import { logger } from "../../lib/logger";
@@ -743,6 +749,71 @@ export async function listContacts(connectionId: string) {
   return getProvider(connectionId).listContacts();
 }
 
+// Comfortably under Baileys' own ~60s internal query timeout for
+// sendMessage, so this guard is always the one that fires first and the UI
+// always gets a definitive outcome instead of the clock icon forever. See
+// PROMPT: "uma conexão atrapalha a outra? ... a mensagem enviada não
+// aparecia para o cliente e nem no meu celular, só aparecia na
+// plataforma... ícone de um relógio". Pairing/reconnecting a second
+// connection does real (if now lighter, see BaileysWhatsAppProvider's
+// syncFullHistory) work on the same Node process/event loop as every other
+// connection, so a send elsewhere can end up waiting a long time for its
+// turn — this doesn't stop that from happening, but it stops "waiting a
+// long time" from ever looking identical to "silently lost forever" in the
+// UI, which is what actually made the earlier incident feel broken.
+const OUTBOUND_SEND_TIMEOUT_MS = 45_000;
+
+/**
+ * Every outbound send (text/file/audio/location) goes through here: races
+ * the real provider call against OUTBOUND_SEND_TIMEOUT_MS and marks the
+ * message FAILED the moment either one loses, instead of leaving it PENDING
+ * indefinitely when the provider call itself never settles.
+ *
+ * A timed-out send isn't necessarily a dead one — the underlying promise is
+ * still running and may yet resolve. If it does, this reconciles the
+ * message to what actually happened (SENT, not a stale FAILED) and pushes a
+ * realtime update, rather than leaving the agent looking at the wrong
+ * status for something that, it turns out, did go through.
+ */
+async function sendWithTimeoutGuard(messageId: string, logLabel: string, sendFn: () => Promise<SendResult>) {
+  // A thunk, not an already-started promise: getProvider() throws
+  // synchronously for a connection that's missing from the in-memory
+  // registry (e.g. right after a restart, before initWhatsAppConnections
+  // finishes) — calling it in here keeps that on the same "mark FAILED,
+  // don't propagate a raw 500" path as every other failure instead of
+  // escaping past this guard uncaught.
+  const settled = Promise.resolve()
+    .then(sendFn)
+    .then(
+      (result) => ({ ok: true as const, result }),
+      (err) => ({ ok: false as const, err })
+    );
+  const timedOut = new Promise<{ ok: "timeout" }>((resolve) => setTimeout(() => resolve({ ok: "timeout" }), OUTBOUND_SEND_TIMEOUT_MS));
+
+  const outcome = await Promise.race([settled, timedOut]);
+
+  if (outcome.ok === "timeout") {
+    logger.error({ messageId, logLabel, timeoutMs: OUTBOUND_SEND_TIMEOUT_MS }, `outbound whatsapp ${logLabel} did not settle in time — marking failed instead of leaving it pending forever`);
+    const failedMessage = await messagesService.markMessageFailed(messageId);
+    settled.then(async (late) => {
+      if (!late.ok) return; // it really did fail — already reflected above
+      const sentMessage = await messagesService.markMessageSent(messageId, late.result.providerMessageId, late.result.linkPreview);
+      const conversation = await prisma.conversation.findUnique({ where: { id: sentMessage.conversationId }, select: { assignedAgentId: true } });
+      realtimeEvents.messageStatusChanged(sentMessage.conversationId, conversation?.assignedAgentId);
+    });
+    return toMessageDTO(failedMessage);
+  }
+
+  if (!outcome.ok) {
+    logger.error({ err: outcome.err, messageId }, `failed to send outbound whatsapp ${logLabel}`);
+    const message = await messagesService.markMessageFailed(messageId);
+    return toMessageDTO(message);
+  }
+
+  const message = await messagesService.markMessageSent(messageId, outcome.result.providerMessageId, outcome.result.linkPreview);
+  return toMessageDTO(message);
+}
+
 /** Sends a text/reply through the provider and reflects the result on the stored Message row. */
 export async function sendOutboundText(
   connectionId: string,
@@ -753,18 +824,12 @@ export async function sendOutboundText(
   replyToProviderMessageId?: string,
   replyToText?: string | null
 ) {
-  try {
-    const result = await getProvider(connectionId).sendText(toChatId(contactPhone), withSenderPrefix(senderDisplayName, text), {
+  return sendWithTimeoutGuard(messageId, "text", () =>
+    getProvider(connectionId).sendText(toChatId(contactPhone), withSenderPrefix(senderDisplayName, text), {
       replyToProviderMessageId,
       replyToText,
-    });
-    const message = await messagesService.markMessageSent(messageId, result.providerMessageId, result.linkPreview);
-    return toMessageDTO(message);
-  } catch (err) {
-    logger.error({ err, messageId }, "failed to send outbound whatsapp text");
-    const message = await messagesService.markMessageFailed(messageId);
-    return toMessageDTO(message);
-  }
+    })
+  );
 }
 
 export async function sendOutboundFile(
@@ -777,46 +842,24 @@ export async function sendOutboundFile(
   senderDisplayName: string,
   caption?: string
 ) {
-  try {
-    const result = await getProvider(connectionId).sendFile(
+  return sendWithTimeoutGuard(messageId, "file", () =>
+    getProvider(connectionId).sendFile(
       toChatId(contactPhone),
       buffer,
       fileName,
       mimeType,
       caption ? withSenderPrefix(senderDisplayName, caption) : undefined
-    );
-    const message = await messagesService.markMessageSent(messageId, result.providerMessageId);
-    return toMessageDTO(message);
-  } catch (err) {
-    logger.error({ err, messageId }, "failed to send outbound whatsapp file");
-    const message = await messagesService.markMessageFailed(messageId);
-    return toMessageDTO(message);
-  }
+    )
+  );
 }
 
 /** A recorded voice note (WhatsApp's PTT bubble) — distinct from sendOutboundFile, which sends ptt: false for an attached audio file. `buffer` must already be OGG/Opus-encoded by this point; see apps/api/src/lib/audio-transcode.ts. */
 export async function sendOutboundAudio(connectionId: string, messageId: string, contactPhone: string, buffer: Buffer, mimeType: string) {
-  try {
-    const result = await getProvider(connectionId).sendAudio(toChatId(contactPhone), buffer, mimeType);
-    const message = await messagesService.markMessageSent(messageId, result.providerMessageId);
-    return toMessageDTO(message);
-  } catch (err) {
-    logger.error({ err, messageId }, "failed to send outbound whatsapp audio");
-    const message = await messagesService.markMessageFailed(messageId);
-    return toMessageDTO(message);
-  }
+  return sendWithTimeoutGuard(messageId, "audio", () => getProvider(connectionId).sendAudio(toChatId(contactPhone), buffer, mimeType));
 }
 
 export async function sendOutboundLocation(connectionId: string, messageId: string, contactPhone: string, lat: number, lng: number) {
-  try {
-    const result = await getProvider(connectionId).sendLocation(toChatId(contactPhone), lat, lng);
-    const message = await messagesService.markMessageSent(messageId, result.providerMessageId);
-    return toMessageDTO(message);
-  } catch (err) {
-    logger.error({ err, messageId }, "failed to send outbound whatsapp location");
-    const message = await messagesService.markMessageFailed(messageId);
-    return toMessageDTO(message);
-  }
+  return sendWithTimeoutGuard(messageId, "location", () => getProvider(connectionId).sendLocation(toChatId(contactPhone), lat, lng));
 }
 
 export async function sendReaction(connectionId: string, contactPhone: string, providerMessageId: string, emoji: string | null) {
