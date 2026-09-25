@@ -17,6 +17,7 @@ export default {
         "surface-alt": "var(--color-surface-alt)",
         border: "var(--color-border)",
         muted: "var(--color-muted)",
+        text: "var(--color-text)",
       },
       borderRadius: {
         card: "12px",

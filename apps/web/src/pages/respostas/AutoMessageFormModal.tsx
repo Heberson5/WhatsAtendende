@@ -99,7 +99,7 @@ export function AutoMessageFormModal({
                     type="button"
                     onClick={() => insertTag(t.tag)}
                     title={`Inserir ${t.label}`}
-                    className="focus-ring rounded-full bg-secondary/30 px-2 py-0.5 text-[11px] font-medium text-secondary-fg hover:bg-secondary/50"
+                    className="focus-ring rounded-full bg-secondary/30 px-2 py-0.5 text-[11px] font-medium text-text hover:bg-secondary/50"
                   >
                     {t.tag}
                   </button>

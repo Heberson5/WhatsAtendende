@@ -31,8 +31,8 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 const STATUS_COLOR: Record<string, string> = {
-  NEW: "bg-secondary/50 text-secondary-fg",
-  WAITING: "bg-secondary/50 text-secondary-fg",
+  NEW: "bg-secondary/50 text-text",
+  WAITING: "bg-secondary/50 text-text",
   IN_PROGRESS: "bg-primary/15 text-primary",
   TRANSFERRED: "bg-purple-100 text-purple-700",
   CLOSED: "bg-gray-100 text-gray-600",

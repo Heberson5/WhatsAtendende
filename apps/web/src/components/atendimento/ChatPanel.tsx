@@ -461,7 +461,7 @@ export function ChatPanel({
             )}
           </div>
           {conversation.transfer && (
-            <span className="rounded-full bg-secondary/40 px-2 py-0.5 text-[11px] font-medium text-secondary-fg">
+            <span className="rounded-full bg-secondary/40 px-2 py-0.5 text-[11px] font-medium text-text">
               TRANSFERIDO por {conversation.transfer.fromAgentName}
             </span>
           )}

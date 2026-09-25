@@ -146,7 +146,7 @@ export function TransferModal({
         />
 
         {confirmingOffline && selectedAgent && (
-          <div className="mt-3 flex items-start gap-2 rounded-card bg-secondary/30 px-3 py-2 text-sm text-secondary-fg">
+          <div className="mt-3 flex items-start gap-2 rounded-card bg-secondary/30 px-3 py-2 text-sm text-text">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             <span>
               <strong>{selectedAgent.displayName}</strong> está offline agora. Se não fizer login em até 2 horas, o

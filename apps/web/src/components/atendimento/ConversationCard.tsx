@@ -97,7 +97,7 @@ export function ConversationCard({
             {conversation.whatsappConnectionName}
           </span>
           {conversation.transfer && (
-            <span className="inline-flex items-center rounded-full bg-secondary/40 px-2 py-0.5 text-[11px] font-medium text-secondary-fg">
+            <span className="inline-flex items-center rounded-full bg-secondary/40 px-2 py-0.5 text-[11px] font-medium text-text">
               {transferredOutView ? `Transferido para ${conversation.transfer.toAgentName}` : `Transferido de ${conversation.transfer.fromAgentName}`}
             </span>
           )}
