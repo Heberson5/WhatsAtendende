@@ -177,27 +177,36 @@ conversationsRouter.get(
   })
 );
 
-// The atendente's own name prefixes the actual WhatsApp text (same
-// withSenderPrefix used for a normal reply) and tags the stored Message
-// row's senderAgentId, so the in-app bubble shows that agent's own name
-// badge too, same as any reply they typed themselves. No-op when no
-// ACTIVE template is configured for that trigger (see Respostas >
-// Transferência/Aceite) — an admin who never touches those tabs sees no
-// behavior change at all.
+// Two separate names, on purpose: `templateAgentName` only fills the
+// "{atendente}" placeholder in the message body (who the customer will be
+// helped by — the agent that ACCEPTED, or the one a TRANSFER is landing
+// on), while `sender` is whose identity the message is actually sent AS —
+// the WhatsApp prefix (withSenderPrefix, same as a normal reply) and the
+// stored Message row's senderAgentId (so the in-app bubble shows the same
+// badge). For ACCEPT these are the same person, so no distinction shows.
+// For TRANSFER they differ: the body still says who's picking up the
+// conversation, but the message is sent as whoever clicked "Transferir" —
+// see PROMPT: "o nome de quem está transferindo a conversa apareça no
+// topo, atualmente esta aparecendo de quem vai receber". `sender.name` is
+// the User's registered `fullName`, not `displayName`, per that same
+// PROMPT ("a mensagem precisa trazer o nome que está cadastrado lá no
+// usuário, não o nome de exibição"). No-op when no ACTIVE template is
+// configured for that trigger (see Respostas > Transferência/Aceite) — an
+// admin who never touches those tabs sees no behavior change at all.
 async function sendAutoMessage(
   trigger: "TRANSFER" | "ACCEPT",
   conversation: { id: string; whatsappConnectionId: string; assignedAgentId: string | null; contact: { phone: string; name: string | null } },
-  atendenteId: string,
-  atendenteDisplayName: string
+  templateAgentName: string,
+  sender: { id: string; name: string }
 ): Promise<void> {
   const template = await getActiveTemplateFor(trigger);
   if (!template) return;
   const text = renderAutoMessageTemplate(template.text, {
-    atendente: atendenteDisplayName,
+    atendente: templateAgentName,
     cliente: conversation.contact.name ?? conversation.contact.phone,
   });
-  const message = await createSystemOutboundMessage({ conversationId: conversation.id, type: "TEXT", body: text, agentId: atendenteId });
-  await sendOutboundText(conversation.whatsappConnectionId, message.id, conversation.contact.phone, text, atendenteDisplayName);
+  const message = await createSystemOutboundMessage({ conversationId: conversation.id, type: "TEXT", body: text, agentId: sender.id });
+  await sendOutboundText(conversation.whatsappConnectionId, message.id, conversation.contact.phone, text, sender.name);
   realtimeEvents.newMessage(conversation.id, conversation.assignedAgentId);
 }
 
@@ -214,7 +223,7 @@ conversationsRouter.post(
     const conversation = await service.acceptConversation(req.params.id, req.auth!.userId);
     await writeAudit({ userId: req.auth!.userId, action: "CONVERSATION_ACCEPTED", entity: "Conversation", entityId: conversation.id, ipAddress: req.ip ?? null });
     realtimeEvents.conversationAccepted(conversation.id, conversation.whatsappConnectionId, req.auth!.userId);
-    await sendAutoMessage("ACCEPT", conversation, req.auth!.userId, req.auth!.displayName);
+    await sendAutoMessage("ACCEPT", conversation, req.auth!.displayName, { id: req.auth!.userId, name: req.auth!.displayName });
     res.json(toConversationListItemDTO(conversation, true));
   })
 );
@@ -240,7 +249,15 @@ conversationsRouter.post(
       entityId: conversation.id,
     });
     realtimeEvents.notificationCreated(toAgentId, toNotificationDTO(transferNotification));
-    await sendAutoMessage("TRANSFER", conversation, toAgentId, conversation.assignedAgent?.displayName ?? "");
+    // The message body still names whoever is RECEIVING the conversation
+    // (conversation.assignedAgent, already toAgentId at this point), but
+    // the message is sent as whoever just clicked "Transferir" —
+    // req.auth!.userId — using their registered fullName, not displayName.
+    const fromAgent = await prisma.user.findUnique({ where: { id: req.auth!.userId }, select: { fullName: true } });
+    await sendAutoMessage("TRANSFER", conversation, conversation.assignedAgent?.displayName ?? "", {
+      id: req.auth!.userId,
+      name: fromAgent?.fullName ?? req.auth!.displayName,
+    });
     res.json(toConversationListItemDTO(conversation, true));
   })
 );
