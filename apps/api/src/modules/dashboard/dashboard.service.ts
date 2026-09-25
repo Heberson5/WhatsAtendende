@@ -26,7 +26,7 @@ export async function getDashboard({ from, to, agentId, connectionIds }: Dashboa
     ...(connectionFilter ? { whatsappConnectionId: connectionFilter } : {}),
   };
 
-  const [conversationsInPeriod, messages, waitingCount] = await Promise.all([
+  const [conversationsInPeriod, messages] = await Promise.all([
     prisma.conversation.findMany({
       where: whereBase,
       select: {
@@ -50,19 +50,6 @@ export async function getDashboard({ from, to, agentId, connectionIds }: Dashboa
         },
       },
       _count: true,
-    }),
-    // Unlike every other figure here, "waiting" isn't scoped by the
-    // reporting period — a conversation sitting unclaimed in the queue is
-    // waiting right now regardless of which day it first entered it (the
-    // same reasoning as getUsersSummary's "online" count below), and it's
-    // always unassigned by definition, so agentId doesn't apply either.
-    // Mirrors listQueue's own filter shape exactly, in
-    // conversations.service.ts, which is what "Fila" itself shows.
-    prisma.conversation.count({
-      where: {
-        status: { in: ["NEW", "WAITING"] },
-        ...(connectionFilter ? { whatsappConnectionId: connectionFilter } : {}),
-      },
     }),
   ]);
 
@@ -97,7 +84,7 @@ export async function getDashboard({ from, to, agentId, connectionIds }: Dashboa
       unique: uniqueContacts,
       inProgress: (statusCounts.IN_PROGRESS ?? 0) + (statusCounts.TRANSFERRED ?? 0),
       closed: statusCounts.CLOSED ?? 0,
-      waiting: waitingCount,
+      waiting: (statusCounts.NEW ?? 0) + (statusCounts.WAITING ?? 0),
     },
     messages: { received, sent, total: received + sent },
     timings: {
