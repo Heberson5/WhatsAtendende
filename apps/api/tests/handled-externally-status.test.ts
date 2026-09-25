@@ -124,7 +124,13 @@ describe("reading a conversation from the linked phone (markConversationReadFrom
 
   it("a further @-mentioned message from the same contact after HANDLED_EXTERNALLY opens a NEW conversation and routes straight to that agent", async () => {
     const { contact, conversation } = await createWaitingConversation("5511990004444", connectionId);
-    const agent = await createTestUser({ email: "agente-reopen-mention@test.dev", displayName: "Fernanda", role: "AGENT", whatsappConnectionId: connectionId });
+    const agent = await createTestUser({
+      email: "agente-reopen-mention@test.dev",
+      displayName: "Fernanda",
+      role: "AGENT",
+      whatsappConnectionId: connectionId,
+      presence: "ONLINE",
+    });
     await conversationsService.markConversationReadFromDevice(conversation.id);
 
     const { conversation: reopened, isNewConversation, autoAssignedAgentId } = await conversationsService.findOrOpenConversationForInboundMessage(

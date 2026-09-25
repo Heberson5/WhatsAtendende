@@ -3,7 +3,7 @@ import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
 import { writeAudit } from "../../lib/audit";
 import { realtimeEvents } from "../../realtime/realtime";
-import type { Contact, ConversationStatus, Role } from "@prisma/client";
+import type { AgentPresence, Contact, ConversationStatus, Role } from "@prisma/client";
 
 const TRANSFER_OFFLINE_GRACE_MS = 2 * 60 * 60 * 1000; // 2h — see PROMPT: transfer to an offline agent auto-reverts if they don't log in in time.
 
@@ -416,18 +416,26 @@ function stripDiacritics(text: string): string {
  * findMentionedAgentByTypo below rather than returning null outright — see
  * PROMPT: "o cliente digita @gleici, mas no sistema o nome do atendente
  * está Gleicy... existe estes erros dos clientes que devem estar mapeados".
+ *
+ * Returns whoever was named regardless of presence — findOrOpenConversationForInboundMessage
+ * is the one that decides whether that's enough to actually skip the queue
+ * (see PROMPT: "só irá para a fila se o atendente estiver offline" — a
+ * mention pointing at someone who isn't online right now to see it must not
+ * silently strand the conversation assigned to them with nobody watching).
  */
-export async function findMentionedAgent(body: string | null | undefined): Promise<{ id: string; displayName: string } | null> {
+export async function findMentionedAgent(
+  body: string | null | undefined
+): Promise<{ id: string; displayName: string; presence: AgentPresence } | null> {
   if (!body || !body.includes("@")) return null;
 
   const agents = await prisma.user.findMany({
     where: { role: "AGENT", status: "ACTIVE" },
-    select: { id: true, displayName: true },
+    select: { id: true, displayName: true, presence: true },
   });
   if (agents.length === 0) return null;
 
   const normalizedBody = stripDiacritics(body).toLowerCase();
-  let best: { id: string; displayName: string } | null = null;
+  let best: { id: string; displayName: string; presence: AgentPresence } | null = null;
   let bestLength = -1;
   let tied = false;
 
@@ -479,12 +487,12 @@ function levenshteinDistance(a: string, b: string): number {
  */
 function findMentionedAgentByTypo(
   normalizedBody: string,
-  agents: { id: string; displayName: string }[]
-): { id: string; displayName: string } | null {
+  agents: { id: string; displayName: string; presence: AgentPresence }[]
+): { id: string; displayName: string; presence: AgentPresence } | null {
   const tokens = Array.from(normalizedBody.matchAll(/@([a-z0-9]+)/g), (m) => m[1]);
   if (tokens.length === 0) return null;
 
-  let best: { id: string; displayName: string } | null = null;
+  let best: { id: string; displayName: string; presence: AgentPresence } | null = null;
   let bestDistance = Infinity;
   let tied = false;
 
@@ -515,7 +523,15 @@ export async function findOrOpenConversationForInboundMessage(connectionId: stri
     return { conversation: active, isNewConversation: false, autoAssignedAgentId: null as string | null };
   }
 
-  const mentionedAgent = await findMentionedAgent(body);
+  // Only bypasses the queue when the mentioned agent is actually ONLINE
+  // right now (not AWAY, not OFFLINE) — same bar the dashboard's own
+  // "online agora" stat uses. Mentioning someone who isn't around to see it
+  // would otherwise strand the conversation assigned to them with nobody
+  // watching until they log back in — worse than just queuing it normally,
+  // where any available agent (or a manager) can still pick it up. See
+  // PROMPT: "só irá para a fila se o atendente estiver offline".
+  const rawMentionedAgent = await findMentionedAgent(body);
+  const mentionedAgent = rawMentionedAgent?.presence === "ONLINE" ? rawMentionedAgent : null;
   const now = new Date();
 
   // The customer messaging again after being handled outside this app (on
