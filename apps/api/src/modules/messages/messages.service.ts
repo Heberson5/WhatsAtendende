@@ -86,20 +86,21 @@ export interface CreateSystemOutboundMessageInput {
   conversationId: string;
   type: MessageType;
   body?: string | null;
+  agentId?: string | null;
 }
 
 /**
- * A message not tied to a specific agent-authored reply — senderAgentId
- * stays null, so the in-app bubble shows no sender-name badge (see
- * MessageBubble's `isOutbound && message.senderAgentDisplayName` guard);
- * the literal WhatsApp text carries the atendente's own name as prefix
- * instead (see the caller's use of withSenderPrefix/sendOutboundText with
- * senderDisplayName=atendenteDisplayName) — same as a normal reply from
- * that agent, not a "Sistema" label. Unlike createOutboundMessage above,
- * there's no "this agent owns it" check to satisfy — this can run right
- * after a transfer/accept completes, using whichever agent the operation
- * itself already resolved, rather than needing to run before it like the
- * Encerramento auto-message does.
+ * A message not tied to a specific agent-authored reply in the sense of
+ * createOutboundMessage's ownership check (the auto accept/transfer/close
+ * message can run for whichever agent the operation itself already
+ * resolved — often not "this conversation's assigned agent" at that exact
+ * moment) — but it still carries that agent's name both on the WhatsApp
+ * text prefix (see the caller's use of withSenderPrefix/sendOutboundText)
+ * and on senderAgentId, so the in-app bubble shows the same name badge as
+ * any other reply from them (see MessageBubble's `isOutbound &&
+ * message.senderAgentDisplayName`). Callers that have no specific agent to
+ * attribute it to (there are none today, but the type stays optional
+ * rather than required) leave it null and get no badge.
  */
 export async function createSystemOutboundMessage(input: CreateSystemOutboundMessageInput) {
   const conversation = await prisma.conversation.findUnique({ where: { id: input.conversationId } });
@@ -115,7 +116,7 @@ export async function createSystemOutboundMessage(input: CreateSystemOutboundMes
       type: input.type,
       status: "PENDING",
       body: input.body ?? null,
-      senderAgentId: null,
+      senderAgentId: input.agentId ?? null,
     },
     include: messageInclude,
   });
