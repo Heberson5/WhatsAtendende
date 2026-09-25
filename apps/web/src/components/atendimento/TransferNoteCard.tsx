@@ -19,12 +19,12 @@ export function TransferNoteCard({ transfer }: { transfer: NonNullable<Conversat
   return (
     <div className="flex justify-center">
       <div className="flex max-w-md items-start gap-2 rounded-card border border-secondary/50 bg-secondary/20 px-3 py-2 text-center sm:text-left">
-        <StickyNote className="mt-0.5 hidden h-4 w-4 shrink-0 text-secondary-fg sm:block" />
+        <StickyNote className="mt-0.5 hidden h-4 w-4 shrink-0 text-text sm:block" />
         <div className="min-w-0">
-          <p className="text-xs font-semibold text-secondary-fg">
+          <p className="text-xs font-semibold text-text">
             Observação de {transfer.fromAgentName} · {format(new Date(transfer.at), "dd/MM 'às' HH:mm", { locale: ptBR })}
           </p>
-          <p className="mt-0.5 whitespace-pre-wrap text-sm text-secondary-fg">{transfer.note}</p>
+          <p className="mt-0.5 whitespace-pre-wrap text-sm text-text">{transfer.note}</p>
         </div>
       </div>
     </div>

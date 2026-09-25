@@ -29,9 +29,9 @@ const STATE_LABEL: Record<string, string> = {
 
 const STATE_COLOR: Record<string, string> = {
   DISCONNECTED: "bg-gray-100 text-gray-600",
-  CONNECTING: "bg-secondary/40 text-secondary-fg",
-  QR_PENDING: "bg-secondary/40 text-secondary-fg",
-  CODE_PENDING: "bg-secondary/40 text-secondary-fg",
+  CONNECTING: "bg-secondary/40 text-text",
+  QR_PENDING: "bg-secondary/40 text-text",
+  CODE_PENDING: "bg-secondary/40 text-text",
   CONNECTED: "bg-green-100 text-green-700",
 };
 
@@ -286,7 +286,7 @@ export function WhatsAppConnectionPanel() {
             ) : (
               <div className="space-y-4">
                 {connection.linkedNumber && (
-                  <p className="rounded-card bg-secondary/30 px-3 py-2 text-xs text-secondary-fg">
+                  <p className="rounded-card bg-secondary/30 px-3 py-2 text-xs text-text">
                     Esta conexão já esteve vinculada ao número <strong>{connection.linkedNumber}</strong>. Vincule novamente com o mesmo
                     número — um número diferente é recusado automaticamente, para não misturar o histórico desta conexão com outra conta.
                   </p>

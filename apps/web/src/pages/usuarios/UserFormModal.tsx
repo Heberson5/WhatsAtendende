@@ -176,7 +176,7 @@ export function UserFormModal({
           {!user && (
             <>
               {values.role === "MANAGER" && (
-                <p className="rounded-card bg-secondary/30 px-3 py-2 text-xs text-secondary-fg">
+                <p className="rounded-card bg-secondary/30 px-3 py-2 text-xs text-text">
                   Depois de criar este gestor, edite-o novamente para escolher quais conexões (além das que ele mesmo cadastrar) ele poderá ver/editar e receber conversas.
                 </p>
               )}
@@ -379,7 +379,7 @@ function ManagerConnectionAccessEditor({ managerId }: { managerId: string }) {
               <span className="flex items-center gap-1.5 truncate">
                 <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: row.whatsappConnectionColor }} />
                 <span className="truncate">{row.whatsappConnectionName}</span>
-                {row.owned && <span className="shrink-0 rounded-full bg-secondary/40 px-1.5 py-0.5 text-[10px] text-secondary-fg">própria</span>}
+                {row.owned && <span className="shrink-0 rounded-full bg-secondary/40 px-1.5 py-0.5 text-[10px] text-text">própria</span>}
               </span>
               <span className="w-16 text-center">
                 <input

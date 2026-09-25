@@ -74,7 +74,7 @@ export function EmailSettingsPanel() {
           Usado para enviar o link de redefinição de senha aos usuários. Sem essa configuração, o link de
           redefinição não é entregue automaticamente.
         </p>
-        <div className={`mt-3 flex items-center gap-2 rounded-card px-3 py-2 text-sm ${data?.configured ? "bg-green-50 text-green-700" : "bg-secondary/30 text-secondary-fg"}`}>
+        <div className={`mt-3 flex items-center gap-2 rounded-card px-3 py-2 text-sm ${data?.configured ? "bg-green-50 text-green-700" : "bg-secondary/30 text-text"}`}>
           {data?.configured ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
           {data?.configured ? "SMTP configurado" : "SMTP ainda não configurado"}
         </div>

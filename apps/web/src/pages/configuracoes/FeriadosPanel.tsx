@@ -174,7 +174,7 @@ export function FeriadosPanel() {
                   {h.scope !== "NATIONAL" && h.state ? ` — ${h.city ? `${h.city}/` : ""}${h.state}` : ""}
                 </td>
                 <td className="px-3 py-2">
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${h.source === "AUTO" ? "bg-primary/10 text-primary" : "bg-secondary/40 text-secondary-fg"}`}>
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${h.source === "AUTO" ? "bg-primary/10 text-primary" : "bg-secondary/40 text-text"}`}>
                     {h.source === "AUTO" ? "Automático" : "Manual"}
                   </span>
                 </td>
