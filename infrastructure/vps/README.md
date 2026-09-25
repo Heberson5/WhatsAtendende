@@ -56,3 +56,21 @@ real, não o simulador usado em desenvolvimento). Depois do primeiro deploy,
 teste a conexão com calma pela tela de Configurações — o README principal
 do projeto documenta o trade-off de usar uma biblioteca não-oficial
 (Baileys) para isso.
+
+## Disponibilizar o app Android (.apk) para download
+
+A tela de login já mostra um botão "Baixar aplicativo (.apk)" para quem
+acessa pelo Android e cujo navegador não oferece o instalador nativo. O
+arquivo em si **não** vem no repositório — precisa ser gerado uma vez (ex.:
+[pwabuilder.com](https://pwabuilder.com), gratuito, sem instalar nada:
+cole a URL pública do sistema, baixe o pacote Android) e enviado para a
+VPS uma única vez:
+
+```bash
+docker cp caminho/para/whatsatendende.apk whatsatendende-web-1:/usr/share/nginx/downloads/whatsatendende.apk
+```
+
+Fica guardado num volume Docker próprio (`app_downloads`, veja
+`docker-compose.yml`), separado da imagem do `web` — sobrevive a qualquer
+`git pull` + rebuild seguinte, sem precisar reenviar o arquivo de novo.
+Só repita o `docker cp` acima se gerar uma versão nova do `.apk`.
