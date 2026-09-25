@@ -49,6 +49,20 @@ proposital, para não expor banco de dados/cache numa VPS pública (veja
 `docker-compose.yml`). Para inspecionar o banco diretamente, use
 `docker compose exec postgres psql -U whatsatendende`.
 
+## Backup e restauração completos
+
+Antes de qualquer atualização arriscada (ex.: trocar a versão do Baileys),
+use a opção **[24]** — salva na própria VPS, numa pasta com data/hora, o
+commit atual do código, o `.env`, um dump do banco (Postgres) e os
+volumes Docker (sessões do WhatsApp, uploads, apk). O sistema continua no
+ar durante o backup.
+
+A opção **[25]** lista os backups salvos (com o tamanho de cada um). Se
+precisar voltar exatamente como estava, a opção **[26]** restaura um
+backup pelo nome da pasta — pede confirmação explícita, já que substitui
+código, `.env`, banco e volumes atuais pelos do backup escolhido, e o
+sistema fica fora do ar durante a restauração.
+
 ## Sobre o Baileys (conexão real do WhatsApp)
 
 O `.env` gerado automaticamente já usa `WHATSAPP_PROVIDER=baileys` (conexão

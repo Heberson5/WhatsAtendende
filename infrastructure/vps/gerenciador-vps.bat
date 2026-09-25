@@ -58,6 +58,9 @@ echo  [20] Ver .env/commit/bundle do Treinamentos
 echo  [21] Popular usuarios iniciais do WhatsAtendende (seed)
 echo  [22] Remover Chamados do VPS (containers + pasta)
 echo  [23] Ver versao (commit) do WhatsAtendende em producao
+echo  [24] Backup Completo do WhatsAtendende (antes de atualizar)
+echo  [25] Listar Backups do WhatsAtendende
+echo  [26] Restaurar um Backup do WhatsAtendende
 echo.
 echo   [0] Sair
 echo.
@@ -86,6 +89,9 @@ if "%op%"=="20" goto CATENV
 if "%op%"=="21" goto SEED_WHATSATENDENDE
 if "%op%"=="22" goto REMOVE_CHAMADOS
 if "%op%"=="23" goto VERSAO_WHATSATENDENDE
+if "%op%"=="24" goto BACKUP_WHATSATENDENDE
+if "%op%"=="25" goto LIST_BACKUPS
+if "%op%"=="26" goto RESTORE_BACKUP
 if "%op%"=="0" exit
 
 goto MENU
@@ -414,6 +420,183 @@ echo Verificando o que esta REALMENTE rodando em producao agora...
 echo (compare o commit abaixo com o commit mais recente no GitHub)
 echo.
 ssh -i "%KEY%" %USER%@%IP% "cd %PROJETO% && echo ===BRANCH=== && git branch --show-current && echo ===COMMIT=== && git log -1 --oneline && echo ===CONTAINERS=== && docker compose ps"
+pause
+goto MENU
+
+rem =====================================================================
+rem Backup/Restauracao completos do WhatsAtendende - usar antes de
+rem qualquer atualizacao arriscada (ex.: trocar a versao do Baileys).
+rem Salva tudo que e preciso pra voltar exatamente como estava: o commit
+rem do codigo, o .env, um dump do banco (Postgres) e os volumes Docker
+rem (sessoes do WhatsApp, uploads, apk) - numa pasta com data/hora dentro
+rem de ~/backups-whatsatendende/ na propria VPS.
+rem
+rem Cada chamada SSH abre uma sessao nova (nao lembra variaveis de uma
+rem chamada pra outra), entao o nome da pasta do backup em andamento fica
+rem guardado em ~/backups-whatsatendende/.ultimo pra os passos seguintes
+rem conseguirem encontra-la de novo - mesma logica de dividir em passos
+rem com checagem de erro individual da rotina HARD_UPDATE_WHATSATENDENDE
+rem acima.
+rem
+rem Os volumes sao localizados pelo rotulo que o Docker Compose ja poe
+rem neles (com.docker.compose.volume=NOME), em vez de montar o nome
+rem completo na mao - assim continua funcionando mesmo se o nome do
+rem projeto Compose mudar.
+rem =====================================================================
+:BACKUP_WHATSATENDENDE
+cls
+echo ===================================================
+echo Backup completo do WhatsAtendende
+echo ===================================================
+echo.
+echo Salva na propria VPS, numa pasta com data/hora, o commit atual do
+echo codigo, o .env, o banco de dados e os volumes Docker - sessoes do
+echo WhatsApp, uploads e o apk. O sistema continua no ar durante o
+echo backup, nao precisa parar nada.
+echo.
+echo [1/4] Salvando commit atual e .env...
+ssh -i "%KEY%" %USER%@%IP% "set -e && cd %PROJETO% && TS=$(date +%%Y%%m%%d-%%H%%M%%S) && mkdir -p ~/backups-whatsatendende/$TS && echo $TS > ~/backups-whatsatendende/.ultimo && git rev-parse HEAD > ~/backups-whatsatendende/$TS/commit-hash.txt && git log -1 --oneline > ~/backups-whatsatendende/$TS/commit.txt && cp .env ~/backups-whatsatendende/$TS/.env.backup && echo Pasta do backup: $TS"
+if errorlevel 1 (
+    echo.
+    echo [ERRO] Falha ao iniciar o backup - nada foi alterado no sistema.
+    pause
+    goto MENU
+)
+echo.
+echo [2/4] Salvando o banco de dados...
+ssh -i "%KEY%" %USER%@%IP% "set -e && cd %PROJETO% && BKDIR=~/backups-whatsatendende/$(cat ~/backups-whatsatendende/.ultimo) && docker compose exec -T postgres pg_dump -U whatsatendende --clean --if-exists whatsatendende > $BKDIR/banco.sql && echo Banco salvo em $BKDIR/banco.sql"
+if errorlevel 1 (
+    echo.
+    echo [ERRO] Falha ao salvar o banco de dados. O commit e o .env ja
+    echo foram salvos, mas o backup esta incompleto - nao confie nele pra
+    echo restaurar depois. Confira a mensagem de erro acima.
+    pause
+    goto MENU
+)
+echo.
+echo [3/4] Salvando os volumes - sessoes do WhatsApp, uploads, apk...
+ssh -i "%KEY%" %USER%@%IP% "set -e && BKDIR=~/backups-whatsatendende/$(cat ~/backups-whatsatendende/.ultimo) && for VOL in whatsapp_sessions api_uploads app_downloads; do REALVOL=$(docker volume ls --filter label=com.docker.compose.volume=$VOL --format '{{.Name}}') && docker run --rm -v $REALVOL:/dados -v $BKDIR:/backup alpine tar czf /backup/$VOL.tar.gz -C /dados . && echo Volume $VOL salvo.; done"
+if errorlevel 1 (
+    echo.
+    echo [ERRO] Falha ao salvar um dos volumes. O backup esta incompleto -
+    echo nao confie nele pra restaurar depois. Confira a mensagem de erro
+    echo acima.
+    pause
+    goto MENU
+)
+echo.
+echo [4/4] Backup concluido.
+ssh -i "%KEY%" %USER%@%IP% "BKDIR=~/backups-whatsatendende/$(cat ~/backups-whatsatendende/.ultimo) && echo Pasta: $BKDIR && du -sh $BKDIR && ls -lh $BKDIR"
+echo.
+echo Guarde o nome da pasta acima (formato AAAAMMDD-HHMMSS) - a opcao [26]
+echo pede esse nome pra restaurar, caso precise voltar como estava. A
+echo opcao [25] tambem lista os backups salvos a qualquer momento.
+echo.
+pause
+goto MENU
+
+:LIST_BACKUPS
+cls
+echo Backups do WhatsAtendende salvos na VPS:
+echo.
+ssh -i "%KEY%" %USER%@%IP% "if [ -d ~/backups-whatsatendende ]; then du -sh ~/backups-whatsatendende/* 2>/dev/null | sort -r; else echo Nenhum backup encontrado ainda - use a opcao 24.; fi"
+pause
+goto MENU
+
+:RESTORE_BACKUP
+cls
+echo ===================================================
+echo Restaurar um backup do WhatsAtendende
+echo ===================================================
+echo.
+echo ATENCAO: isso substitui o codigo, o .env, o banco de dados e os
+echo volumes Docker atuais pelos dados de um backup salvo anteriormente.
+echo Tudo que foi feito no sistema DEPOIS desse backup sera perdido -
+echo conversas, mensagens, usuarios cadastrados, a sessao do WhatsApp
+echo conectada, etc. O sistema fica FORA DO AR durante a restauracao.
+echo.
+echo Use a opcao [25] pra ver os nomes dos backups disponiveis.
+echo.
+set BKNOME=
+set /p BKNOME=Digite o nome exato da pasta do backup a restaurar, ou deixe em branco pra cancelar:
+if "%BKNOME%"=="" goto MENU
+echo.
+echo Voce esta prestes a restaurar o backup %BKNOME% e perder tudo que foi
+echo feito depois dele.
+set /p CONFIRMA=Digite CONFIRMAR, em maiusculas, pra prosseguir:
+if not "%CONFIRMA%"=="CONFIRMAR" (
+    echo Cancelado - nada foi alterado.
+    pause
+    goto MENU
+)
+
+echo.
+echo [1/5] Conferindo se o backup existe na VPS...
+ssh -i "%KEY%" %USER%@%IP% "test -d ~/backups-whatsatendende/%BKNOME% && test -f ~/backups-whatsatendende/%BKNOME%/commit-hash.txt && test -f ~/backups-whatsatendende/%BKNOME%/banco.sql && echo Backup encontrado."
+if errorlevel 1 (
+    echo.
+    echo [ERRO] Esse backup nao foi encontrado ou esta incompleto na VPS.
+    echo Confira o nome exato com a opcao [25]. Nada foi alterado.
+    pause
+    goto MENU
+)
+
+echo.
+echo [2/5] Parando os containers...
+ssh -i "%KEY%" %USER%@%IP% "cd %PROJETO% && docker compose down"
+if errorlevel 1 (
+    echo.
+    echo [ERRO] Falha ao parar os containers. Nada foi restaurado ainda.
+    pause
+    goto MENU
+)
+
+echo.
+echo [3/5] Restaurando codigo e .env...
+ssh -i "%KEY%" %USER%@%IP% "set -e && cd %PROJETO% && BKDIR=~/backups-whatsatendende/%BKNOME% && git fetch origin && git checkout $(cat $BKDIR/commit-hash.txt) && cp $BKDIR/.env.backup .env && echo Codigo restaurado no commit: && git log -1 --oneline"
+if errorlevel 1 (
+    echo.
+    echo [ERRO] Falha ao restaurar o codigo/.env. Os containers continuam
+    echo parados - rode a opcao [12] pra voltar ao ar com o que estava no
+    echo disco antes de tentar de novo.
+    pause
+    goto MENU
+)
+
+echo.
+echo [4/5] Restaurando os volumes - sessoes do WhatsApp, uploads, apk...
+ssh -i "%KEY%" %USER%@%IP% "set -e && BKDIR=~/backups-whatsatendende/%BKNOME% && for VOL in whatsapp_sessions api_uploads app_downloads; do REALVOL=$(docker volume ls --filter label=com.docker.compose.volume=$VOL --format '{{.Name}}') && docker run --rm -v $REALVOL:/dados -v $BKDIR:/backup alpine sh -c 'rm -rf /dados/..?* /dados/.[!.]* /dados/* 2>/dev/null; tar xzf /backup/'$VOL'.tar.gz -C /dados' && echo Volume $VOL restaurado.; done"
+if errorlevel 1 (
+    echo.
+    echo [ERRO] Falha ao restaurar um dos volumes. O sistema esta FORA DO
+    echo AR e pode estar num estado misto - repita esta opcao [26] com o
+    echo mesmo backup antes de tentar subir o sistema.
+    pause
+    goto MENU
+)
+
+echo.
+echo [5/5] Restaurando o banco de dados e subindo os containers - pode demorar alguns minutos...
+ssh -i "%KEY%" %USER%@%IP% "set -e && cd %PROJETO% && BKDIR=~/backups-whatsatendende/%BKNOME% && docker compose up -d postgres && until docker compose exec -T postgres pg_isready -U whatsatendende; do sleep 1; done && docker compose exec -T postgres psql -U whatsatendende -d whatsatendende < $BKDIR/banco.sql && docker compose build && docker compose up -d --remove-orphans && docker image prune -f && echo === Containers - confira se o STATUS mostra Up ha poucos segundos === && docker compose ps"
+if errorlevel 1 (
+    echo.
+    echo [ERRO] Falha ao restaurar o banco ou subir os containers. Rode a
+    echo opcao [5] pra ver os logs do erro, e a opcao [12] pra tentar subir
+    echo de novo com o que ja foi restaurado.
+    pause
+    goto MENU
+)
+
+echo.
+echo [OK] Backup %BKNOME% restaurado com sucesso. Sistema no ar em %DOMINIO%
+echo.
+echo O codigo ficou parado exatamente nesse commit (fora da branch %BRANCH%).
+echo Se mais tarde quiser voltar a acompanhar as atualizacoes normais, use
+echo a opcao [1] ou [15] normalmente - ela move o codigo de volta pra
+echo ultima versao da branch.
+echo.
+set BKNOME=
+set CONFIRMA=
 pause
 goto MENU
 
