@@ -16,7 +16,13 @@ describe("@menção no primeiro contato do cliente direciona direto para o atend
   });
 
   it("assigns straight to the mentioned agent — IN_PROGRESS, not NEW, never touches the queue", async () => {
-    const everson = await createTestUser({ email: "everson@test.dev", role: "AGENT", displayName: "Everson", whatsappConnectionId: connectionId });
+    const everson = await createTestUser({
+      email: "everson@test.dev",
+      role: "AGENT",
+      displayName: "Everson",
+      whatsappConnectionId: connectionId,
+      presence: "ONLINE",
+    });
     const contact = await prisma.contact.create({ data: { phone: "5511900001111", whatsappConnectionId: connectionId } });
 
     const { conversation, isNewConversation, autoAssignedAgentId } = await conversationsService.findOrOpenConversationForInboundMessage(
@@ -37,7 +43,13 @@ describe("@menção no primeiro contato do cliente direciona direto para o atend
   });
 
   it("matches even when the customer skips accents/case and mentions the agent mid-sentence", async () => {
-    const agent = await createTestUser({ email: "joao@test.dev", role: "AGENT", displayName: "João", whatsappConnectionId: connectionId });
+    const agent = await createTestUser({
+      email: "joao@test.dev",
+      role: "AGENT",
+      displayName: "João",
+      whatsappConnectionId: connectionId,
+      presence: "ONLINE",
+    });
     const contact = await prisma.contact.create({ data: { phone: "5511900002222", whatsappConnectionId: connectionId } });
 
     const { autoAssignedAgentId } = await conversationsService.findOrOpenConversationForInboundMessage(
@@ -51,7 +63,13 @@ describe("@menção no primeiro contato do cliente direciona direto para o atend
 
   it("ignores WhatsApp-connection boundaries — routes to the mentioned agent even if they normally work a different connection", async () => {
     const otherConnection = await createTestConnection("Vendas");
-    const agentOnVendas = await createTestUser({ email: "maria@test.dev", role: "AGENT", displayName: "Maria", whatsappConnectionId: otherConnection.id });
+    const agentOnVendas = await createTestUser({
+      email: "maria@test.dev",
+      role: "AGENT",
+      displayName: "Maria",
+      whatsappConnectionId: otherConnection.id,
+      presence: "ONLINE",
+    });
     // The message arrives on "Suporte", but Maria only ever works "Vendas".
     const contact = await prisma.contact.create({ data: { phone: "5511900003333", whatsappConnectionId: connectionId } });
 
@@ -104,8 +122,8 @@ describe("@menção no primeiro contato do cliente direciona direto para o atend
   });
 
   it("falls through to the queue on an ambiguous mention — two active agents share the exact same display name", async () => {
-    await createTestUser({ email: "ana1@test.dev", role: "AGENT", displayName: "Ana", whatsappConnectionId: connectionId });
-    await createTestUser({ email: "ana2@test.dev", role: "AGENT", displayName: "Ana", whatsappConnectionId: connectionId });
+    await createTestUser({ email: "ana1@test.dev", role: "AGENT", displayName: "Ana", whatsappConnectionId: connectionId, presence: "ONLINE" });
+    await createTestUser({ email: "ana2@test.dev", role: "AGENT", displayName: "Ana", whatsappConnectionId: connectionId, presence: "ONLINE" });
     const contact = await prisma.contact.create({ data: { phone: "5511900007777", whatsappConnectionId: connectionId } });
 
     const { autoAssignedAgentId, conversation } = await conversationsService.findOrOpenConversationForInboundMessage(
@@ -119,8 +137,20 @@ describe("@menção no primeiro contato do cliente direciona direto para o atend
   });
 
   it("prefers the longer name when one active agent's name is a prefix of another's", async () => {
-    const joao = await createTestUser({ email: "joao2@test.dev", role: "AGENT", displayName: "Joao", whatsappConnectionId: connectionId });
-    const joaoPereira = await createTestUser({ email: "joaopereira@test.dev", role: "AGENT", displayName: "Joao Pereira", whatsappConnectionId: connectionId });
+    const joao = await createTestUser({
+      email: "joao2@test.dev",
+      role: "AGENT",
+      displayName: "Joao",
+      whatsappConnectionId: connectionId,
+      presence: "ONLINE",
+    });
+    const joaoPereira = await createTestUser({
+      email: "joaopereira@test.dev",
+      role: "AGENT",
+      displayName: "Joao Pereira",
+      whatsappConnectionId: connectionId,
+      presence: "ONLINE",
+    });
 
     const contactA = await prisma.contact.create({ data: { phone: "5511900008888", whatsappConnectionId: connectionId } });
     const { autoAssignedAgentId: longMatch } = await conversationsService.findOrOpenConversationForInboundMessage(
@@ -137,6 +167,53 @@ describe("@menção no primeiro contato do cliente direciona direto para o atend
       "quero falar com @Joao, por favor"
     );
     expect(shortMatch).toBe(joao.id);
+  });
+
+  it("falls through to the queue when the mentioned agent is not online — never strands the conversation with someone who isn't around to see it", async () => {
+    const offlineAgent = await createTestUser({
+      email: "offline@test.dev",
+      role: "AGENT",
+      displayName: "Renata",
+      whatsappConnectionId: connectionId,
+      presence: "OFFLINE",
+    });
+    await createTestUser({
+      email: "away@test.dev",
+      role: "AGENT",
+      displayName: "Bianca",
+      whatsappConnectionId: connectionId,
+      presence: "AWAY",
+    });
+
+    const contactA = await prisma.contact.create({ data: { phone: "5511900011111", whatsappConnectionId: connectionId } });
+    const { conversation: convA, autoAssignedAgentId: offlineResult } = await conversationsService.findOrOpenConversationForInboundMessage(
+      connectionId,
+      contactA.id,
+      "oi, quero falar com @Renata"
+    );
+    expect(offlineResult).toBeNull();
+    expect(convA.status).toBe("NEW");
+    expect(convA.assignedAgentId).toBeNull();
+
+    const contactB = await prisma.contact.create({ data: { phone: "5511900012121", whatsappConnectionId: connectionId } });
+    const { conversation: convB, autoAssignedAgentId: awayResult } = await conversationsService.findOrOpenConversationForInboundMessage(
+      connectionId,
+      contactB.id,
+      "oi, quero falar com @Bianca"
+    );
+    expect(awayResult).toBeNull();
+    expect(convB.status).toBe("NEW");
+    expect(convB.assignedAgentId).toBeNull();
+
+    // Sanity check: the SAME mention text succeeds once that agent comes online.
+    await prisma.user.update({ where: { id: offlineAgent.id }, data: { presence: "ONLINE" } });
+    const contactC = await prisma.contact.create({ data: { phone: "5511900013131", whatsappConnectionId: connectionId } });
+    const { autoAssignedAgentId: onlineResult } = await conversationsService.findOrOpenConversationForInboundMessage(
+      connectionId,
+      contactC.id,
+      "oi, quero falar com @Renata"
+    );
+    expect(onlineResult).toBe(offlineAgent.id);
   });
 
   it("does not apply once the contact already has an active conversation — a later message never auto-transfers it", async () => {
