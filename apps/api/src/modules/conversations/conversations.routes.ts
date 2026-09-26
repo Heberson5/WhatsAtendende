@@ -1,6 +1,7 @@
 import { Router, type Request } from "express";
 import { z } from "zod";
 import rateLimit from "express-rate-limit";
+import type { Role } from "@prisma/client";
 import { PERMISSION } from "@whatsatendende/types";
 import { asyncHandler } from "../../lib/async-handler";
 import { requireAuth, requireRole } from "../../middleware/auth";
@@ -18,7 +19,7 @@ import { realtimeEvents } from "../../realtime/realtime";
 import { syncReadReceiptToDevice, requestOlderHistory, sendOutboundText } from "../whatsapp/whatsapp.service";
 import { createOutboundMessage, createSystemOutboundMessage } from "../messages/messages.service";
 import { getActiveClosingMessageForAgent } from "../closing-messages/closing-messages.service";
-import { getActiveTemplateFor, renderAutoMessageTemplate } from "../auto-message-templates/auto-message-templates.service";
+import { getActiveTemplateFor, renderAutoMessageTemplate, ROLE_LABEL } from "../auto-message-templates/auto-message-templates.service";
 import { createNotification } from "../notifications/notifications.service";
 import { toNotificationDTO } from "../notifications/notifications.mapper";
 
@@ -177,14 +178,15 @@ conversationsRouter.get(
   })
 );
 
-// Two separate names, on purpose: `templateAgentName` only fills the
-// "{atendente}" placeholder in the message body (who the customer will be
-// helped by — the agent that ACCEPTED, or the one a TRANSFER is landing
-// on), while `sender` is whose identity the message is actually sent AS —
-// the WhatsApp prefix (withSenderPrefix, same as a normal reply) and the
-// stored Message row's senderAgentId (so the in-app bubble shows the same
-// badge). For ACCEPT these are the same person, so no distinction shows.
-// For TRANSFER they differ: the body still says who's picking up the
+// The "{{atendente}}"/"{{atendente_nome}}"/"{{atendente_cargo}}" tags in the
+// template body always describe conversation.assignedAgent — the agent that
+// ACCEPTED, or the one a TRANSFER is landing on — since that's already
+// exactly who's assigned by the time either trigger fires. `sender` is a
+// separate, independent concept: whose identity the message is actually
+// sent AS — the WhatsApp prefix (withSenderPrefix, same as a normal reply)
+// and the stored Message row's senderAgentId (so the in-app bubble shows
+// the same badge). For ACCEPT these are the same person, so no distinction
+// shows. For TRANSFER they differ: the body still says who's picking up the
 // conversation, but the message is sent as whoever clicked "Transferir" —
 // see PROMPT: "o nome de quem está transferindo a conversa apareça no
 // topo, atualmente esta aparecendo de quem vai receber". `sender.name` is
@@ -195,14 +197,22 @@ conversationsRouter.get(
 // admin who never touches those tabs sees no behavior change at all.
 async function sendAutoMessage(
   trigger: "TRANSFER" | "ACCEPT",
-  conversation: { id: string; whatsappConnectionId: string; assignedAgentId: string | null; contact: { phone: string; name: string | null } },
-  templateAgentName: string,
+  conversation: {
+    id: string;
+    whatsappConnectionId: string;
+    assignedAgentId: string | null;
+    assignedAgent: { displayName: string; fullName: string; role: Role } | null;
+    contact: { phone: string; name: string | null };
+  },
   sender: { id: string; name: string }
 ): Promise<void> {
   const template = await getActiveTemplateFor(trigger);
   if (!template) return;
+  const templateAgent = conversation.assignedAgent;
   const text = renderAutoMessageTemplate(template.text, {
-    atendente: templateAgentName,
+    atendente: templateAgent?.displayName ?? "",
+    atendenteNome: templateAgent?.fullName ?? "",
+    atendenteCargo: templateAgent ? ROLE_LABEL[templateAgent.role] : "",
     cliente: conversation.contact.name ?? conversation.contact.phone,
   });
   const message = await createSystemOutboundMessage({ conversationId: conversation.id, type: "TEXT", body: text, agentId: sender.id });
@@ -223,7 +233,7 @@ conversationsRouter.post(
     const conversation = await service.acceptConversation(req.params.id, req.auth!.userId);
     await writeAudit({ userId: req.auth!.userId, action: "CONVERSATION_ACCEPTED", entity: "Conversation", entityId: conversation.id, ipAddress: req.ip ?? null });
     realtimeEvents.conversationAccepted(conversation.id, conversation.whatsappConnectionId, req.auth!.userId);
-    await sendAutoMessage("ACCEPT", conversation, req.auth!.displayName, { id: req.auth!.userId, name: req.auth!.displayName });
+    await sendAutoMessage("ACCEPT", conversation, { id: req.auth!.userId, name: req.auth!.displayName });
     res.json(toConversationListItemDTO(conversation, true));
   })
 );
@@ -254,7 +264,7 @@ conversationsRouter.post(
     // the message is sent as whoever just clicked "Transferir" —
     // req.auth!.userId — using their registered fullName, not displayName.
     const fromAgent = await prisma.user.findUnique({ where: { id: req.auth!.userId }, select: { fullName: true } });
-    await sendAutoMessage("TRANSFER", conversation, conversation.assignedAgent?.displayName ?? "", {
+    await sendAutoMessage("TRANSFER", conversation, {
       id: req.auth!.userId,
       name: fromAgent?.fullName ?? req.auth!.displayName,
     });
@@ -380,8 +390,15 @@ conversationsRouter.post(
     if (sendClosingMessage && ["IN_PROGRESS", "TRANSFERRED"].includes(existing.status)) {
       const closingMessage = await getActiveClosingMessageForAgent(req.auth!.userId);
       if (closingMessage) {
-        const outboundMessage = await createSystemOutboundMessage({ conversationId: existing.id, type: "TEXT", body: closingMessage.text, agentId: req.auth!.userId });
-        await sendOutboundText(existing.whatsappConnectionId, outboundMessage.id, existing.contact.phone, closingMessage.text, req.auth!.displayName);
+        const closingAgent = await prisma.user.findUnique({ where: { id: req.auth!.userId }, select: { fullName: true } });
+        const text = renderAutoMessageTemplate(closingMessage.text, {
+          atendente: req.auth!.displayName,
+          atendenteNome: closingAgent?.fullName ?? req.auth!.displayName,
+          atendenteCargo: ROLE_LABEL[req.auth!.role],
+          cliente: existing.contact.name ?? existing.contact.phone,
+        });
+        const outboundMessage = await createSystemOutboundMessage({ conversationId: existing.id, type: "TEXT", body: text, agentId: req.auth!.userId });
+        await sendOutboundText(existing.whatsappConnectionId, outboundMessage.id, existing.contact.phone, text, req.auth!.displayName);
         realtimeEvents.newMessage(existing.id, existing.assignedAgentId);
       }
     }
@@ -446,13 +463,20 @@ conversationsRouter.post(
     // clicar em encerrar."
     const closingMessage = await getActiveClosingMessageForAgent(req.auth!.userId);
     if (closingMessage) {
+      const closingAgent = await prisma.user.findUnique({ where: { id: req.auth!.userId }, select: { fullName: true } });
+      const text = renderAutoMessageTemplate(closingMessage.text, {
+        atendente: req.auth!.displayName,
+        atendenteNome: closingAgent?.fullName ?? req.auth!.displayName,
+        atendenteCargo: ROLE_LABEL[req.auth!.role],
+        cliente: existing.contact.name ?? existing.contact.phone,
+      });
       const outboundMessage = await createOutboundMessage({
         conversationId: existing.id,
         agentId: req.auth!.userId,
         type: "TEXT",
-        body: closingMessage.text,
+        body: text,
       });
-      await sendOutboundText(existing.whatsappConnectionId, outboundMessage.id, existing.contact.phone, closingMessage.text, req.auth!.displayName);
+      await sendOutboundText(existing.whatsappConnectionId, outboundMessage.id, existing.contact.phone, text, req.auth!.displayName);
       realtimeEvents.newMessage(existing.id, req.auth!.userId);
     }
 
