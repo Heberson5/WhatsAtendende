@@ -119,19 +119,19 @@ export function BrandingPanel() {
         </div>
       </div>
 
-      <div className="flex gap-4">
-        <label className="flex-1">
+      <div className="flex flex-col gap-4 sm:flex-row">
+        <label className="min-w-0 flex-1">
           <span className="mb-1 block text-sm font-medium">Cor principal</span>
           <div className="flex items-center gap-2">
-            <input type="color" value={primaryColor} onChange={(e) => setPrimaryColor(e.target.value)} className="h-9 w-9 rounded border border-border" />
-            <input value={primaryColor} onChange={(e) => setPrimaryColor(e.target.value)} className="focus-ring flex-1 rounded-card border border-border bg-transparent px-3 py-2 text-sm" />
+            <input type="color" value={primaryColor} onChange={(e) => setPrimaryColor(e.target.value)} className="h-9 w-9 shrink-0 rounded border border-border" />
+            <input value={primaryColor} onChange={(e) => setPrimaryColor(e.target.value)} className="focus-ring min-w-0 flex-1 rounded-card border border-border bg-transparent px-3 py-2 text-sm" />
           </div>
         </label>
-        <label className="flex-1">
+        <label className="min-w-0 flex-1">
           <span className="mb-1 block text-sm font-medium">Cor secundária</span>
           <div className="flex items-center gap-2">
-            <input type="color" value={secondaryColor} onChange={(e) => setSecondaryColor(e.target.value)} className="h-9 w-9 rounded border border-border" />
-            <input value={secondaryColor} onChange={(e) => setSecondaryColor(e.target.value)} className="focus-ring flex-1 rounded-card border border-border bg-transparent px-3 py-2 text-sm" />
+            <input type="color" value={secondaryColor} onChange={(e) => setSecondaryColor(e.target.value)} className="h-9 w-9 shrink-0 rounded border border-border" />
+            <input value={secondaryColor} onChange={(e) => setSecondaryColor(e.target.value)} className="focus-ring min-w-0 flex-1 rounded-card border border-border bg-transparent px-3 py-2 text-sm" />
           </div>
         </label>
       </div>
