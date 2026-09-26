@@ -1,6 +1,14 @@
 import { useState, type FormEvent } from "react";
 import { X } from "lucide-react";
 import type { AutoMessageTemplateDTO, AutoMessageTrigger } from "@whatsatendende/types";
+import { AutoMessagePreview } from "./AutoMessagePreview";
+import {
+  fillAutoMessageTags,
+  AGENT_EXAMPLE,
+  TRANSFER_TO_EXAMPLE,
+  TRANSFER_FROM_EXAMPLE_FULLNAME,
+  CLIENT_EXAMPLE_NAME,
+} from "../../lib/auto-message-tags";
 
 export interface AutoMessageFormValues {
   trigger: AutoMessageTrigger;
@@ -9,8 +17,12 @@ export interface AutoMessageFormValues {
   active: boolean;
 }
 
+// {{atendente}} kept for templates saved before the other two existed —
+// see PROMPT: "quero que tenha as tags do cadastro do usuário".
 const TAGS: { tag: string; label: string }[] = [
-  { tag: "{{atendente}}", label: "Nome do atendente" },
+  { tag: "{{atendente}}", label: "Nome de exibição do atendente" },
+  { tag: "{{atendente_nome}}", label: "Nome completo do atendente" },
+  { tag: "{{atendente_cargo}}", label: "Cargo do atendente" },
   { tag: "{{cliente}}", label: "Nome do cliente" },
 ];
 
@@ -52,6 +64,20 @@ export function AutoMessageFormModal({
       textareaEl.setSelectionRange(start + tag.length, start + tag.length);
     });
   }
+
+  // TRANSFER illustrates the two agents it actually involves with different
+  // example people — {{atendente}}/_nome/_cargo describe who the customer
+  // is landing on, while the sender (bold name atop the preview) is who
+  // clicked "Transferir" — same distinction fixed for the real send. ACCEPT
+  // has only one agent, so both are the same example person there.
+  const templateAgentExample = trigger === "TRANSFER" ? TRANSFER_TO_EXAMPLE : AGENT_EXAMPLE;
+  const senderExampleName = trigger === "TRANSFER" ? TRANSFER_FROM_EXAMPLE_FULLNAME : AGENT_EXAMPLE.fullName;
+  const previewText = fillAutoMessageTags(text || "...", {
+    atendente: templateAgentExample.displayName,
+    atendenteNome: templateAgentExample.fullName,
+    atendenteCargo: templateAgentExample.cargo,
+    cliente: CLIENT_EXAMPLE_NAME,
+  });
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -116,9 +142,13 @@ export function AutoMessageFormModal({
               className="focus-ring w-full resize-none rounded-card border border-border bg-transparent px-3 py-2 text-sm"
             />
             <p className="mt-1 text-xs text-muted">
-              Use as tags acima pra inserir o nome do atendente ou do cliente automaticamente. Enviada como "Sistema" — nunca com o nome de um atendente.
+              {trigger === "TRANSFER"
+                ? 'Use *asterisco* pra negrito. As tags de atendente aqui descrevem quem vai RECEBER a conversa — a mensagem é enviada em nome de quem clicou em "Transferir".'
+                : 'Use *asterisco* pra negrito. As tags de atendente descrevem quem aceitou a conversa — a mensagem é enviada em nome dessa mesma pessoa.'}
             </p>
           </div>
+
+          <AutoMessagePreview senderName={senderExampleName} text={previewText} />
 
           <label className="flex items-center justify-between rounded-card border border-border px-3 py-2">
             <span className="text-sm font-medium">Ativo</span>

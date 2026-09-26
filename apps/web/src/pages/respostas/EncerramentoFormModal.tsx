@@ -3,6 +3,17 @@ import { useQuery } from "@tanstack/react-query";
 import { X, AlertTriangle } from "lucide-react";
 import type { ClosingMessageDTO } from "@whatsatendende/types";
 import { api } from "../../lib/api";
+import { AutoMessagePreview } from "./AutoMessagePreview";
+import { fillAutoMessageTags, AGENT_EXAMPLE, CLIENT_EXAMPLE_NAME } from "../../lib/auto-message-tags";
+
+// {{atendente}} kept for parity with Transferência/Aceite — see PROMPT:
+// "quero que tenha as tags do cadastro do usuário".
+const TAGS: { tag: string; label: string }[] = [
+  { tag: "{{atendente}}", label: "Nome de exibição do atendente" },
+  { tag: "{{atendente_nome}}", label: "Nome completo do atendente" },
+  { tag: "{{atendente_cargo}}", label: "Cargo do atendente" },
+  { tag: "{{cliente}}", label: "Nome do cliente" },
+];
 
 export interface EncerramentoFormValues {
   name: string;
@@ -45,6 +56,32 @@ export function EncerramentoFormModal({
   });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [textareaEl, setTextareaEl] = useState<HTMLTextAreaElement | null>(null);
+
+  function insertTag(tag: string) {
+    if (!textareaEl) {
+      setValues((v) => ({ ...v, text: v.text + tag }));
+      return;
+    }
+    const start = textareaEl.selectionStart ?? values.text.length;
+    const end = textareaEl.selectionEnd ?? values.text.length;
+    const next = values.text.slice(0, start) + tag + values.text.slice(end);
+    setValues((v) => ({ ...v, text: next }));
+    requestAnimationFrame(() => {
+      textareaEl.focus();
+      textareaEl.setSelectionRange(start + tag.length, start + tag.length);
+    });
+  }
+
+  // Only one agent involved (whoever is closing), so the sender and the
+  // {{atendente}} tags always describe the same example person — unlike
+  // Transferência, which involves two.
+  const previewText = fillAutoMessageTags(values.text || "...", {
+    atendente: AGENT_EXAMPLE.displayName,
+    atendenteNome: AGENT_EXAMPLE.fullName,
+    atendenteCargo: AGENT_EXAMPLE.cargo,
+    cliente: CLIENT_EXAMPLE_NAME,
+  });
 
   // Which OTHER cadastro (not this one) each user currently belongs to —
   // so checking them here can show exactly what they'll be moved out of,
@@ -97,8 +134,25 @@ export function EncerramentoFormModal({
             />
           </Field>
 
-          <Field label="Texto">
+          <div>
+            <div className="mb-1 flex items-center justify-between">
+              <span className="text-sm font-medium">Texto</span>
+              <div className="flex flex-wrap justify-end gap-1">
+                {TAGS.map((t) => (
+                  <button
+                    key={t.tag}
+                    type="button"
+                    onClick={() => insertTag(t.tag)}
+                    title={`Inserir ${t.label}`}
+                    className="focus-ring rounded-full bg-secondary/30 px-2 py-0.5 text-[11px] font-medium text-text hover:bg-secondary/50"
+                  >
+                    {t.tag}
+                  </button>
+                ))}
+              </div>
+            </div>
             <textarea
+              ref={setTextareaEl}
               required
               rows={4}
               value={values.text}
@@ -106,7 +160,10 @@ export function EncerramentoFormModal({
               placeholder="Mensagem enviada ao cliente ao encerrar a conversa..."
               className="focus-ring w-full resize-none rounded-card border border-border bg-transparent px-3 py-2 text-sm"
             />
-          </Field>
+            <p className="mt-1 text-xs text-muted">Use *asterisco* pra negrito. A mensagem é enviada em nome de quem clicar em Encerrar.</p>
+          </div>
+
+          <AutoMessagePreview senderName={AGENT_EXAMPLE.fullName} text={previewText} />
 
           <label className="flex items-center justify-between rounded-card border border-border px-3 py-2">
             <span className="text-sm font-medium">Ativo</span>
