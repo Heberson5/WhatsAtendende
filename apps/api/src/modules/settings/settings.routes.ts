@@ -4,6 +4,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { imageSize } from "image-size";
 import rateLimit from "express-rate-limit";
 import { asyncHandler } from "../../lib/async-handler";
 import { requireAuth, requireRole } from "../../middleware/auth";
@@ -183,6 +184,16 @@ settingsRouter.post(
   })
 );
 
+// Minimum this app's own manifest.webmanifest ever declares for this icon
+// (see the 512x512 "any"/"maskable" entries below) — Chrome's install
+// criteria fetches the icon and checks its REAL pixel size against that
+// declared size, so an upload smaller than this would make the manifest
+// fail installability entirely (no working "Instalar" on Android) even
+// though the icon still displays fine everywhere else it's just shown
+// smaller. See PROMPT: "no celular não está aparecendo para baixar e
+// instalar o app".
+const APP_ICON_MIN_SIZE = 512;
+
 settingsRouter.post(
   "/branding/app-icon",
   requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
@@ -190,6 +201,21 @@ settingsRouter.post(
   upload.single("file"),
   asyncHandler(async (req, res) => {
     if (!req.file) return res.status(400).json({ error: "BAD_REQUEST", message: "Nenhum arquivo enviado" });
+
+    let width: number | undefined;
+    let height: number | undefined;
+    try {
+      ({ width, height } = imageSize(req.file.buffer));
+    } catch {
+      return res.status(400).json({ error: "BAD_REQUEST", message: "Não foi possível ler as dimensões dessa imagem" });
+    }
+    if (!width || !height || width < APP_ICON_MIN_SIZE || height < APP_ICON_MIN_SIZE || width !== height) {
+      return res.status(400).json({
+        error: "BAD_REQUEST",
+        message: `O ícone precisa ser uma imagem quadrada de pelo menos ${APP_ICON_MIN_SIZE}x${APP_ICON_MIN_SIZE} pixels (enviada: ${width ?? "?"}x${height ?? "?"}) — abaixo disso o Android recusa a instalação do aplicativo.`,
+      });
+    }
+
     const fileName = `app-icon-${randomUUID()}${ALLOWED_BRANDING_MIME_TO_EXT[req.file.mimetype]}`;
     fs.writeFileSync(path.join(brandingAssetDir, fileName), req.file.buffer);
     const branding = await service.updateBranding({ appIconUrl: `/uploads/branding/${fileName}` });
