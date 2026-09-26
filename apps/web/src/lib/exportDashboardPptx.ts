@@ -49,6 +49,15 @@ async function toDataUri(url: string): Promise<string | null> {
   }
 }
 
+function loadImageSize(dataUri: string): Promise<{ width: number; height: number } | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    img.onerror = () => resolve(null);
+    img.src = dataUri;
+  });
+}
+
 /**
  * Exports the Dashboard as a formatted, editable PowerPoint deck: a cover
  * slide, a consolidated KPI table, and the three charts as native PPT
@@ -75,6 +84,17 @@ export async function exportDashboardPptx({
   const primaryDark = darken(primary, 0.25);
   const companyName = branding?.companyName ?? "WhatsAtendende";
   const logoDataUri = branding?.logoUrl ? await toDataUri(branding.logoUrl) : null;
+  const logoNaturalSize = logoDataUri ? await loadImageSize(logoDataUri) : null;
+  // Fit within a 1in-tall, 2.2in-wide box, preserving the logo's own aspect
+  // ratio — avoids pptxgenjs's `sizing: "contain"` letterbox trick (a
+  // negative-crop + stretch combo some viewers, notably Google Slides,
+  // render as an actual stretch instead of a letterbox). See PROMPT: "a
+  // logo está desconfigurada".
+  const LOGO_MAX_W = 2.2;
+  const LOGO_MAX_H = 1;
+  const logoScale = logoNaturalSize ? Math.min(LOGO_MAX_W / logoNaturalSize.width, LOGO_MAX_H / logoNaturalSize.height) : 1;
+  const logoW = logoNaturalSize ? logoNaturalSize.width * logoScale : LOGO_MAX_H;
+  const logoH = logoNaturalSize ? logoNaturalSize.height * logoScale : LOGO_MAX_H;
 
   // pptxgenjs pulls in jszip and adds ~400KB to the bundle — loaded on
   // demand here so every visitor doesn't pay for it just to view charts.
@@ -98,10 +118,10 @@ export async function exportDashboardPptx({
   cover.background = { color: "FFFFFF" };
   cover.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: SLIDE_W, h: 2.1, fill: { color: hex(primary) } });
   if (logoDataUri) {
-    cover.addImage({ data: logoDataUri, x: 0.6, y: 0.55, w: 1, h: 1, sizing: { type: "contain", w: 1, h: 1 } });
+    cover.addImage({ data: logoDataUri, x: 0.6, y: 0.55 + (LOGO_MAX_H - logoH) / 2, w: logoW, h: logoH });
   }
   cover.addText(companyName, {
-    x: logoDataUri ? 1.8 : 0.6,
+    x: logoDataUri ? 0.6 + logoW + 0.3 : 0.6,
     y: 0.85,
     w: 8,
     h: 0.5,
