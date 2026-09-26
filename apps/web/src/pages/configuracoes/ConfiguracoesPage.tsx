@@ -3,6 +3,7 @@ import { PERMISSION, type Permission } from "@whatsatendende/types";
 import { WhatsAppConnectionPanel } from "./WhatsAppConnectionPanel";
 import { BrandingPanel } from "./BrandingPanel";
 import { AppInstallPanel } from "./AppInstallPanel";
+import { ExportacoesPanel } from "./ExportacoesPanel";
 import { FeriadosPanel } from "./FeriadosPanel";
 import { EmailSettingsPanel } from "./EmailSettingsPanel";
 import { EmailTemplatesPanel } from "./EmailTemplatesPanel";
@@ -10,11 +11,12 @@ import { PermissionsPanel } from "./PermissionsPanel";
 import { SecuritySettingsPanel } from "./SecuritySettingsPanel";
 import { useAuthStore } from "../../store/auth-store";
 
-type Tab = "whatsapp" | "branding" | "email" | "email-templates" | "feriados" | "seguranca" | "permissoes";
+type Tab = "whatsapp" | "branding" | "exportacoes" | "email" | "email-templates" | "feriados" | "seguranca" | "permissoes";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "whatsapp", label: "WhatsApp" },
   { key: "branding", label: "Identidade visual" },
+  { key: "exportacoes", label: "Exportações" },
   { key: "email", label: "E-mail" },
   { key: "email-templates", label: "Modelos de e-mail" },
   { key: "feriados", label: "Feriados" },
@@ -30,6 +32,10 @@ const TABS: { key: Tab; label: string }[] = [
 const TAB_PERMISSION: Partial<Record<Tab, Permission>> = {
   whatsapp: PERMISSION.CONFIGURACOES_WHATSAPP_GERENCIAR,
   branding: PERMISSION.CONFIGURACOES_IDENTIDADE_GERENCIAR,
+  // Exportações only previews/links to Identidade visual's own controls
+  // (logo/cor/nome) — no separate settings of its own — so it sits behind
+  // the same permission rather than introducing a new one.
+  exportacoes: PERMISSION.CONFIGURACOES_IDENTIDADE_GERENCIAR,
   email: PERMISSION.CONFIGURACOES_EMAIL_GERENCIAR,
   "email-templates": PERMISSION.CONFIGURACOES_EMAIL_MODELOS_GERENCIAR,
   feriados: PERMISSION.CONFIGURACOES_FERIADOS_GERENCIAR,
@@ -78,6 +84,7 @@ export default function ConfiguracoesPage() {
           <AppInstallPanel />
         </div>
       )}
+      {activeTab === "exportacoes" && <ExportacoesPanel onEditIdentity={() => setTab("branding")} />}
       {activeTab === "email" && <EmailSettingsPanel />}
       {activeTab === "email-templates" && <EmailTemplatesPanel />}
       {activeTab === "feriados" && <FeriadosPanel />}

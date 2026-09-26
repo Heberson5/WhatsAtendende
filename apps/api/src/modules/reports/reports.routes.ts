@@ -1,3 +1,4 @@
+import path from "node:path";
 import { Router } from "express";
 import { z } from "zod";
 import { PERMISSION } from "@whatsatendende/types";
@@ -7,7 +8,20 @@ import { requirePermission } from "../../lib/permissions";
 import { resolvePeriod, optionalDateQueryParam } from "../../lib/period";
 import { parseListParam } from "../../lib/parse-list-param";
 import { resolveAllowedConnectionIds } from "../../lib/connection-access";
+import { env } from "../../config/env";
+import { getBranding } from "../settings/settings.service";
 import * as service from "./reports.service";
+
+/** Same branding used everywhere else (PowerPoint export, app UI) — see
+ * PROMPT: "o layout de exportação dos relatórios", "ajustar o logo, cores". */
+async function getReportBranding(): Promise<service.ReportBranding> {
+  const branding = await getBranding();
+  return {
+    companyName: branding.companyName,
+    primaryColor: branding.primaryColor,
+    logoPath: branding.logoUrl ? path.join(env.UPLOAD_DIR, "branding", path.basename(branding.logoUrl)) : null,
+  };
+}
 
 export const reportsRouter = Router();
 reportsRouter.use(requireAuth, requirePermission(PERMISSION.RELATORIOS_ACESSAR));
@@ -58,14 +72,14 @@ async function respond(
     return;
   }
   if (format === "xlsx") {
-    const buffer = await service.toXlsx(rows, title);
+    const buffer = await service.toXlsx(rows, title, await getReportBranding());
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", `attachment; filename="${baseFilename}.xlsx"`);
     res.send(buffer);
     return;
   }
   if (format === "pdf") {
-    const buffer = await service.toPdf(rows, title, tzOffsetMinutes);
+    const buffer = await service.toPdf(rows, title, tzOffsetMinutes, await getReportBranding());
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="${baseFilename}.pdf"`);
     res.send(buffer);

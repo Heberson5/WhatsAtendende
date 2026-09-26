@@ -1,6 +1,15 @@
+import fs from "node:fs";
 import ExcelJS from "exceljs";
 import PDFDocument from "pdfkit";
+import { imageSize } from "image-size";
 import { prisma } from "../../lib/prisma";
+
+/** Same identity used across the app's other exports (PowerPoint) — see PROMPT: "o layout de exportação dos relatórios". */
+export interface ReportBranding {
+  companyName: string;
+  primaryColor: string;
+  logoPath: string | null;
+}
 
 export interface ReportParams {
   from: Date;
@@ -157,11 +166,12 @@ export function toCsv(rows: Record<string, unknown>[]): string {
 }
 
 /** Spreadsheet export — see PROMPT: "Relatórios poder extrair em ... xlsx." */
-export async function toXlsx(rows: Record<string, unknown>[], sheetName: string): Promise<Buffer> {
+export async function toXlsx(rows: Record<string, unknown>[], sheetName: string, branding?: ReportBranding): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = "WhatsAtendende";
+  workbook.creator = branding?.companyName ?? "WhatsAtendende";
   workbook.created = new Date();
   const sheet = workbook.addWorksheet(sheetName.slice(0, 31)); // Excel's own sheet-name length limit
+  const headerFill = `FF${(branding?.primaryColor ?? "#0097B4").replace("#", "").toUpperCase()}`;
 
   if (rows.length > 0) {
     const headers = Object.keys(rows[0]);
@@ -178,7 +188,7 @@ export async function toXlsx(rows: Record<string, unknown>[], sheetName: string)
     });
     const headerRow = sheet.getRow(1);
     headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
-    headerRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0097B4" } };
+    headerRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: headerFill } };
     rows.forEach((row) => sheet.addRow(row));
     sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: headers.length } };
   }
@@ -188,7 +198,7 @@ export async function toXlsx(rows: Record<string, unknown>[], sheetName: string)
 }
 
 /** PDF export — see PROMPT: "Relatórios poder extrair em PDF". A plain, readable tabular layout — no external headless-browser dependency. */
-export function toPdf(rows: Record<string, unknown>[], title: string, tzOffsetMinutes = 0): Promise<Buffer> {
+export function toPdf(rows: Record<string, unknown>[], title: string, tzOffsetMinutes = 0, branding?: ReportBranding): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ margin: 36, size: "A4", layout: "landscape" });
     const chunks: Buffer[] = [];
@@ -196,8 +206,29 @@ export function toPdf(rows: Record<string, unknown>[], title: string, tzOffsetMi
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
 
+    const headerColor = branding?.primaryColor ?? "#0097B4";
+
+    // Logo in the top-right corner, sized to a fixed height but kept at its
+    // own aspect ratio (imageSize reads the real dimensions) — same fix as
+    // the PowerPoint export's cover slide, so a wide/non-square logo never
+    // comes out stretched here either.
+    if (branding?.logoPath && fs.existsSync(branding.logoPath)) {
+      try {
+        const buffer = fs.readFileSync(branding.logoPath);
+        const { width, height } = imageSize(buffer);
+        if (width && height) {
+          const logoH = 28;
+          const logoW = width * (logoH / height);
+          const pageRight = doc.page.width - doc.page.margins.right;
+          doc.image(buffer, pageRight - logoW, 30, { width: logoW, height: logoH });
+        }
+      } catch {
+        // A corrupt/unreadable logo shouldn't block the report itself.
+      }
+    }
+
     doc.fontSize(16).fillColor("#14202b").text(title);
-    doc.fontSize(9).fillColor("#64748b").text(`Gerado em ${formatDateTime(new Date(), tzOffsetMinutes)}`);
+    doc.fontSize(9).fillColor("#64748b").text(`Gerado em ${formatDateTime(new Date(), tzOffsetMinutes)}${branding?.companyName ? ` · ${branding.companyName}` : ""}`);
     doc.moveDown();
 
     if (rows.length === 0) {
@@ -243,7 +274,7 @@ export function toPdf(rows: Record<string, unknown>[], title: string, tzOffsetMi
     const drawRow = (values: string[], opts: { header?: boolean; shaded?: boolean }) => {
       const height = rowHeightFor(values, Boolean(opts.header));
       if (opts.header) {
-        doc.rect(doc.page.margins.left, y, pageWidth, height).fill("#0097B4");
+        doc.rect(doc.page.margins.left, y, pageWidth, height).fill(headerColor);
       } else if (opts.shaded) {
         doc.rect(doc.page.margins.left, y, pageWidth, height).fill("#f4f7f9");
       }
