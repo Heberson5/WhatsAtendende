@@ -59,12 +59,12 @@ export default function ConfiguracoesPage() {
 
   return (
     <div className="h-full overflow-auto p-3 sm:p-6">
-      <div className="shadow-soft mb-6 flex w-fit gap-1 rounded-card border border-border bg-surface p-1">
+      <div className="shadow-soft mb-6 flex max-w-full gap-1 overflow-x-auto rounded-card border border-border bg-surface p-1">
         {visibleTabs.map((t) => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`rounded-card px-4 py-2 text-sm font-medium ${activeTab === t.key ? "bg-primary text-primary-fg" : "text-muted hover:bg-surface-alt"}`}
+            className={`shrink-0 rounded-card px-4 py-2 text-sm font-medium ${activeTab === t.key ? "bg-primary text-primary-fg" : "text-muted hover:bg-surface-alt"}`}
           >
             {t.label}
           </button>
