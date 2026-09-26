@@ -224,6 +224,50 @@ settingsRouter.post(
   })
 );
 
+// Own logo/cor/nome for the PowerPoint cover and PDF/Excel reports —
+// independent from Identidade visual above (a company might want its
+// in-app theme to differ from what goes out in an exported deck/report).
+// See PROMPT: "Na guia Exportações... Não é para ter vínculo com a
+// Identidade Visual".
+const exportBrandingSchema = z.object({
+  companyName: z.string().min(1).optional(),
+  primaryColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+});
+
+settingsRouter.get(
+  "/export-branding",
+  asyncHandler(async (_req, res) => {
+    res.json(await service.getExportBranding());
+  })
+);
+
+settingsRouter.patch(
+  "/export-branding",
+  requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
+  requirePermission(PERMISSION.CONFIGURACOES_IDENTIDADE_GERENCIAR),
+  asyncHandler(async (req, res) => {
+    const patch = exportBrandingSchema.parse(req.body);
+    const branding = await service.updateExportBranding(patch);
+    await writeAudit({ userId: req.auth!.userId, action: "SETTINGS_EXPORT_BRANDING_UPDATED", entity: "SystemSetting", entityId: "exportBranding", ipAddress: req.ip ?? null, metadata: patch });
+    res.json(branding);
+  })
+);
+
+settingsRouter.post(
+  "/export-branding/logo",
+  requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
+  requirePermission(PERMISSION.CONFIGURACOES_IDENTIDADE_GERENCIAR),
+  upload.single("file"),
+  asyncHandler(async (req, res) => {
+    if (!req.file) return res.status(400).json({ error: "BAD_REQUEST", message: "Nenhum arquivo enviado" });
+    const fileName = `export-logo-${randomUUID()}${ALLOWED_BRANDING_MIME_TO_EXT[req.file.mimetype]}`;
+    fs.writeFileSync(path.join(brandingAssetDir, fileName), req.file.buffer);
+    const branding = await service.updateExportBranding({ logoUrl: `/uploads/branding/${fileName}` });
+    await writeAudit({ userId: req.auth!.userId, action: "SETTINGS_EXPORT_LOGO_UPLOADED", entity: "SystemSetting", entityId: "exportBranding", ipAddress: req.ip ?? null });
+    res.json(branding);
+  })
+);
+
 settingsRouter.post(
   "/branding/favicon",
   requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),

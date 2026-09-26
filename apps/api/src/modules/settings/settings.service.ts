@@ -47,6 +47,41 @@ export async function updateBranding(patch: Partial<BrandingSettings>): Promise<
 }
 
 // ---------------------------------------------------------------------------
+// Export branding (PowerPoint cover + PDF/Excel reports) — deliberately its
+// own logo/cor/nome, independent from the app's own Identidade visual above.
+// See PROMPT: "Na guia Exportações... Não é para ter vínculo com a
+// Identidade Visual".
+export const EXPORT_BRANDING_KEY = "exportBranding";
+
+export interface ExportBrandingSettings {
+  companyName: string;
+  primaryColor: string;
+  logoUrl: string | null;
+}
+
+const DEFAULT_EXPORT_BRANDING: ExportBrandingSettings = {
+  companyName: "WhatsAtendende",
+  primaryColor: "#0097B4",
+  logoUrl: null,
+};
+
+export async function getExportBranding(): Promise<ExportBrandingSettings> {
+  const record = await prisma.systemSetting.findUnique({ where: { key: EXPORT_BRANDING_KEY } });
+  return record ? { ...DEFAULT_EXPORT_BRANDING, ...(record.value as object) } : DEFAULT_EXPORT_BRANDING;
+}
+
+export async function updateExportBranding(patch: Partial<ExportBrandingSettings>): Promise<ExportBrandingSettings> {
+  const current = await getExportBranding();
+  const next = { ...current, ...patch };
+  await prisma.systemSetting.upsert({
+    where: { key: EXPORT_BRANDING_KEY },
+    update: { value: next as unknown as Prisma.InputJsonValue },
+    create: { key: EXPORT_BRANDING_KEY, value: next as unknown as Prisma.InputJsonValue },
+  });
+  return next;
+}
+
+// ---------------------------------------------------------------------------
 // Maintenance mode — see PROMPT: "botão em configurações para colocar o
 // site em manutenção... somente o administrador" pode acessar durante.
 // Read is public (the login screen needs it before anyone authenticates,
