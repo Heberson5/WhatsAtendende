@@ -8,6 +8,7 @@ import { StatCard, formatMinutes } from "../../components/common/StatCard";
 import { DistributionChartCard } from "../../components/dashboard/DistributionChartCard";
 import { SeriesChartCard } from "../../components/dashboard/SeriesChartCard";
 import { useBranding } from "../../hooks/useBranding";
+import { useExportBranding } from "../../hooks/useExportBranding";
 import { NEUTRAL_SERIES_COLOR } from "../../lib/chart-theme";
 import { exportDashboardPptx } from "../../lib/exportDashboardPptx";
 
@@ -36,6 +37,7 @@ export default function DashboardPage() {
   const [connectionIds, setConnectionIds] = useState<string[]>([]);
   const [exportingPptx, setExportingPptx] = useState(false);
   const { data: branding } = useBranding();
+  const { data: exportBranding } = useExportBranding();
   const primaryColor = branding?.primaryColor ?? "#0097B4";
   const secondaryColor = branding?.secondaryColor ?? "#FFE450";
   const statusColors = [WAITING_COLOR, primaryColor, NEUTRAL_SERIES_COLOR];
@@ -73,7 +75,7 @@ export default function DashboardPage() {
       await exportDashboardPptx({
         data,
         period,
-        branding: branding ?? null,
+        branding: exportBranding ?? null,
         statusColors,
         messageColors,
         agentSeriesColors,

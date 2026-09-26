@@ -1,5 +1,5 @@
 import type PptxGenJS from "pptxgenjs";
-import type { Branding } from "../hooks/useBranding";
+import type { ExportBranding } from "../hooks/useExportBranding";
 import type { PeriodValue } from "../components/common/PeriodFilter";
 import { formatMinutes } from "../components/common/StatCard";
 import { darken } from "./chart-theme";
@@ -75,7 +75,7 @@ export async function exportDashboardPptx({
 }: {
   data: DashboardData;
   period: PeriodValue;
-  branding: Branding | null;
+  branding: ExportBranding | null;
   statusColors: string[];
   messageColors: string[];
   agentSeriesColors: string[];

@@ -9,13 +9,15 @@ import { resolvePeriod, optionalDateQueryParam } from "../../lib/period";
 import { parseListParam } from "../../lib/parse-list-param";
 import { resolveAllowedConnectionIds } from "../../lib/connection-access";
 import { env } from "../../config/env";
-import { getBranding } from "../settings/settings.service";
+import { getExportBranding } from "../settings/settings.service";
 import * as service from "./reports.service";
 
-/** Same branding used everywhere else (PowerPoint export, app UI) — see
- * PROMPT: "o layout de exportação dos relatórios", "ajustar o logo, cores". */
+/** The exports' own logo/cor/nome — configured in Configurações >
+ * Exportações, independent from the app's Identidade visual. See PROMPT:
+ * "o layout de exportação dos relatórios", "Não é para ter vínculo com a
+ * Identidade Visual". */
 async function getReportBranding(): Promise<service.ReportBranding> {
-  const branding = await getBranding();
+  const branding = await getExportBranding();
   return {
     companyName: branding.companyName,
     primaryColor: branding.primaryColor,

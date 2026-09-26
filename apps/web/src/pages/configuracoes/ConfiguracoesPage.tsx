@@ -32,9 +32,8 @@ const TABS: { key: Tab; label: string }[] = [
 const TAB_PERMISSION: Partial<Record<Tab, Permission>> = {
   whatsapp: PERMISSION.CONFIGURACOES_WHATSAPP_GERENCIAR,
   branding: PERMISSION.CONFIGURACOES_IDENTIDADE_GERENCIAR,
-  // Exportações only previews/links to Identidade visual's own controls
-  // (logo/cor/nome) — no separate settings of its own — so it sits behind
-  // the same permission rather than introducing a new one.
+  // Its own logo/cor/nome (independent from Identidade visual) — sits
+  // behind the same identity-flavored permission rather than a new one.
   exportacoes: PERMISSION.CONFIGURACOES_IDENTIDADE_GERENCIAR,
   email: PERMISSION.CONFIGURACOES_EMAIL_GERENCIAR,
   "email-templates": PERMISSION.CONFIGURACOES_EMAIL_MODELOS_GERENCIAR,
@@ -84,7 +83,7 @@ export default function ConfiguracoesPage() {
           <AppInstallPanel />
         </div>
       )}
-      {activeTab === "exportacoes" && <ExportacoesPanel onEditIdentity={() => setTab("branding")} />}
+      {activeTab === "exportacoes" && <ExportacoesPanel />}
       {activeTab === "email" && <EmailSettingsPanel />}
       {activeTab === "email-templates" && <EmailTemplatesPanel />}
       {activeTab === "feriados" && <FeriadosPanel />}

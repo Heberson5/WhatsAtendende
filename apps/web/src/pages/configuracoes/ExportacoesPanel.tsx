@@ -1,5 +1,9 @@
-import { Pencil, Presentation, FileSpreadsheet } from "lucide-react";
-import { useBranding } from "../../hooks/useBranding";
+import { useRef, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { Presentation, FileSpreadsheet } from "lucide-react";
+import { api, getApiErrorMessage } from "../../lib/api";
+import { useExportBranding } from "../../hooks/useExportBranding";
 import { darken } from "../../lib/chart-theme";
 
 const SAMPLE_ROWS = [
@@ -8,32 +12,107 @@ const SAMPLE_ROWS = [
 ];
 
 /**
- * Live preview of the branding actually baked into the exported files —
- * mirrors exportDashboardPptx.ts's cover slide and reports.service.ts's
- * PDF/XLSX header, using the SAME logo/cor principal/nome da empresa from
- * Identidade visual (not a separate set of controls) — see PROMPT: "nova
- * aba com espaço para este layout... tendo também uma pré visualização".
+ * Own logo/nome/cor for the PowerPoint cover and PDF/Excel reports, with a
+ * live preview — deliberately independent from Identidade visual (that one
+ * drives the in-app theme; this one only drives exported files). See
+ * PROMPT: "Na guia Exportações, eu quero poder editar, trocando logo, cor
+ * etc. Não é para ter vínculo com a Identidade Visual."
  */
-export function ExportacoesPanel({ onEditIdentity }: { onEditIdentity: () => void }) {
-  const { data: branding } = useBranding();
-  const primary = branding?.primaryColor ?? "#0097B4";
-  const primaryDark = darken(primary, 0.25);
-  const companyName = branding?.companyName ?? "WhatsAtendende";
-  const logoUrl = branding?.logoUrl ?? null;
+export function ExportacoesPanel() {
+  const { data: exportBranding } = useExportBranding();
+  const queryClient = useQueryClient();
+  const [companyName, setCompanyName] = useState(exportBranding?.companyName ?? "");
+  const [primaryColor, setPrimaryColor] = useState(exportBranding?.primaryColor ?? "#0097B4");
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  const initialized = useRef(false);
+
+  if (exportBranding && !initialized.current) {
+    initialized.current = true;
+    setCompanyName(exportBranding.companyName);
+    setPrimaryColor(exportBranding.primaryColor);
+  }
+
+  const primaryDark = darken(primaryColor, 0.25);
+  const logoUrl = exportBranding?.logoUrl ?? null;
+
+  const saveMutation = useMutation({
+    mutationFn: () => api.patch("/settings/export-branding", { companyName, primaryColor }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["export-branding"] });
+      toast.success("Identidade de exportação atualizada.");
+    },
+    onError: (err) => toast.error(getApiErrorMessage(err)),
+  });
+
+  const logoMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const form = new FormData();
+      form.append("file", file);
+      return api.post("/settings/export-branding/logo", form, { headers: { "Content-Type": "multipart/form-data" } });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["export-branding"] });
+      toast.success("Logo de exportação atualizada.");
+    },
+    onError: (err) => toast.error(getApiErrorMessage(err)),
+  });
 
   return (
     <div className="max-w-4xl space-y-6">
-      <div className="shadow-soft flex flex-wrap items-center justify-between gap-3 rounded-card border border-border bg-surface p-4">
-        <p className="text-sm text-muted">
-          A logo, o nome e a cor principal usados no PowerPoint e nos relatórios são os mesmos definidos em{" "}
-          <span className="font-medium text-text">Identidade visual</span>. Ajuste lá e a prévia abaixo atualiza na hora.
+      <div className="shadow-soft rounded-card border border-border bg-surface p-5">
+        <h2 className="mb-1 text-base font-semibold">Identidade de exportação</h2>
+        <p className="mb-4 text-xs text-muted">
+          Logo, nome e cor usados apenas no PowerPoint e nos relatórios exportados — independente da Identidade visual do aplicativo.
         </p>
-        <button
-          onClick={onEditIdentity}
-          className="focus-ring flex shrink-0 items-center gap-1.5 rounded-card border border-border px-3 py-1.5 text-xs font-medium hover:bg-surface-alt"
-        >
-          <Pencil className="h-3.5 w-3.5" /> Editar identidade visual
-        </button>
+
+        <div className="flex flex-wrap items-end gap-6">
+          <div>
+            <p className="mb-2 text-sm font-medium">Logo</p>
+            {logoUrl && <img src={logoUrl} alt="Logo atual" className="mb-2 h-14 max-w-[10rem] object-contain" />}
+            <input
+              ref={logoInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              hidden
+              onChange={(e) => e.target.files?.[0] && logoMutation.mutate(e.target.files[0])}
+            />
+            <button
+              onClick={() => logoInputRef.current?.click()}
+              className="focus-ring rounded-card border border-border px-3 py-1.5 text-xs font-medium hover:bg-surface-alt"
+            >
+              Enviar logo
+            </button>
+          </div>
+
+          <label className="min-w-[14rem] flex-1">
+            <span className="mb-1 block text-sm font-medium">Nome da empresa</span>
+            <input
+              value={companyName}
+              onChange={(e) => setCompanyName(e.target.value)}
+              className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm"
+            />
+          </label>
+
+          <label>
+            <span className="mb-1 block text-sm font-medium">Cor principal</span>
+            <div className="flex items-center gap-2">
+              <input type="color" value={primaryColor} onChange={(e) => setPrimaryColor(e.target.value)} className="h-9 w-9 shrink-0 rounded border border-border" />
+              <input
+                value={primaryColor}
+                onChange={(e) => setPrimaryColor(e.target.value)}
+                className="focus-ring w-28 rounded-card border border-border bg-transparent px-3 py-2 text-sm"
+              />
+            </div>
+          </label>
+
+          <button
+            onClick={() => saveMutation.mutate()}
+            disabled={saveMutation.isPending}
+            className="focus-ring rounded-card bg-primary px-4 py-2 text-sm font-semibold text-primary-fg disabled:opacity-60"
+          >
+            {saveMutation.isPending ? "Salvando..." : "Salvar"}
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -46,9 +125,9 @@ export function ExportacoesPanel({ onEditIdentity }: { onEditIdentity: () => voi
           <p className="mb-4 text-xs text-muted">Capa do Dashboard exportado em "Exportar PPT".</p>
 
           <div className="aspect-video w-full overflow-hidden rounded-lg border border-border bg-white shadow-inner">
-            <div className="flex h-[28%] items-center gap-3 px-4" style={{ backgroundColor: primary }}>
+            <div className="flex h-[28%] items-center gap-3 px-4" style={{ backgroundColor: primaryColor }}>
               {logoUrl && <img src={logoUrl} alt="" className="h-8 max-w-[35%] object-contain" />}
-              <span className="truncate text-sm font-bold text-white">{companyName}</span>
+              <span className="truncate text-sm font-bold text-white">{companyName || "WhatsAtendende"}</span>
             </div>
             <div className="flex h-[72%] flex-col justify-center gap-1.5 px-4">
               <p className="text-lg font-bold text-slate-800">Dashboard de Atendimento</p>
@@ -70,12 +149,12 @@ export function ExportacoesPanel({ onEditIdentity }: { onEditIdentity: () => voi
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <p className="truncate text-sm font-bold text-slate-800">Relatório de Atendimentos</p>
-                <p className="truncate text-[10px] text-slate-500">Gerado em 26/09/2026, 10:00 · {companyName}</p>
+                <p className="truncate text-[10px] text-slate-500">Gerado em 26/09/2026, 10:00 · {companyName || "WhatsAtendende"}</p>
               </div>
               {logoUrl && <img src={logoUrl} alt="" className="h-6 max-w-[35%] shrink-0 object-contain" />}
             </div>
             <div className="mt-3 overflow-hidden rounded">
-              <div className="grid grid-cols-4 text-[10px] font-semibold text-white" style={{ backgroundColor: primary }}>
+              <div className="grid grid-cols-4 text-[10px] font-semibold text-white" style={{ backgroundColor: primaryColor }}>
                 {["Data", "Cliente", "Atendente", "Status"].map((h) => (
                   <div key={h} className="truncate px-2 py-1">
                     {h}
