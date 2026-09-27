@@ -380,7 +380,7 @@ export function ChatPanel({
     onError: (err) => toast.error(getApiErrorMessage(err)),
   });
 
-  const displayName = contactDisplayName(conversation.contact);
+  const displayName = contactDisplayName(conversation.contact, conversation.channel);
   const messageById = new Map(messages.map((m) => [m.id, m]));
 
   // A dragged file (or several) can be dropped anywhere over the

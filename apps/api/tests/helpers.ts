@@ -20,6 +20,7 @@ export async function resetDatabase() {
   await prisma.systemSetting.deleteMany();
   await prisma.quickReply.deleteMany();
   await prisma.whatsAppConnection.deleteMany();
+  await prisma.metaConnection.deleteMany();
   await prisma.rolePermission.deleteMany();
   await prisma.holiday.deleteMany();
   await prisma.holidaySyncCursor.deleteMany();

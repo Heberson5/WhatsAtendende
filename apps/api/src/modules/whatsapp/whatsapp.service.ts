@@ -119,10 +119,13 @@ export async function syncReadReceiptToDevice(conversationId: string): Promise<v
       where: { id: conversationId },
       include: { contact: true },
     });
-    if (!conversation) return;
+    // Read-receipt sync is a WhatsApp-only concept — no-op for an
+    // Instagram/Messenger conversation, same "best-effort" precedent as
+    // every other early return in this function.
+    if (!conversation || conversation.channel !== "WHATSAPP" || !conversation.contact.whatsappConnectionId) return;
     const provider = providers.get(conversation.contact.whatsappConnectionId);
     if (!provider) return;
-    await provider.markRead(toChatId(conversation.contact.phone), providerMessageIds);
+    await provider.markRead(toChatId(conversation.contact.phone!), providerMessageIds);
   } catch (err) {
     logger.error({ err, conversationId }, "failed to sync a WhatsApp read receipt to the linked phone");
   }
@@ -145,15 +148,23 @@ const HISTORY_BACKFILL_BATCH_SIZE = 50;
  */
 export async function requestOlderHistory(conversationId: string): Promise<void> {
   const conversation = await conversationsService.getConversationOrThrow(conversationId);
-  if (conversation.whatsappConnection.status !== "CONNECTED") {
+  // Bulk history backfill rides WhatsApp-Web's own sync protocol — Graph
+  // API (Messenger/Instagram) has no equivalent to fetch older history
+  // from, so this is thrown rather than silently no-op'd: the agent
+  // explicitly asked for this action, same reasoning as this function's
+  // own doc comment already gives for throwing on a disconnected connection.
+  if (conversation.channel !== "WHATSAPP") {
+    throw Errors.badRequest("Busca de historico anterior so esta disponivel para conexoes de WhatsApp");
+  }
+  if (conversation.whatsappConnection!.status !== "CONNECTED") {
     throw Errors.badRequest("A conexao de WhatsApp esta desconectada — nao e possivel buscar historico anterior");
   }
   const anchor = await conversationsService.getOldestMessageAnchor(conversation.contactId);
   if (!anchor) {
     throw Errors.badRequest("Esta conversa ainda nao tem nenhuma mensagem para ancorar a busca de historico anterior");
   }
-  const provider = getProvider(conversation.whatsappConnectionId);
-  const chatId = conversation.contact.providerChatId ?? toChatId(conversation.contact.phone);
+  const provider = getProvider(conversation.whatsappConnectionId!);
+  const chatId = conversation.contact.providerChatId ?? toChatId(conversation.contact.phone!);
   await provider.fetchOlderHistory(chatId, anchor, HISTORY_BACKFILL_BATCH_SIZE);
 }
 
@@ -327,7 +338,9 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
 
       await addAttachmentsFromEvent(message.id, event);
 
-      const contactLabel = contact.name ?? contact.phone;
+      // This whole handler only ever runs for a WhatsApp event (see
+      // provider.onMessage above) — contact.phone is always set here.
+      const contactLabel = contact.name ?? contact.phone!;
       if (isNewConversation) {
         if (autoAssignedAgentId) {
           // "@<nome do atendente>" in the customer's first message — skips
@@ -523,7 +536,7 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
             include: { contact: true },
           });
           for (const conversation of newConversations) {
-            realtimeEvents.newQueueConversation(connectionId, conversation.id, conversation.contact.name ?? conversation.contact.phone);
+            realtimeEvents.newQueueConversation(connectionId, conversation.id, conversation.contact.name ?? conversation.contact.phone!);
             await writeAudit({
               userId: null,
               action: "WHATSAPP_UNREAD_HISTORY_QUEUED",

@@ -18,6 +18,7 @@ import { transcodeToOggOpus } from "../../lib/audio-transcode";
 import * as service from "./messages.service";
 import { toMessageDTO } from "./messages.mapper";
 import * as whatsappService from "../whatsapp/whatsapp.service";
+import * as metaService from "../meta/meta.service";
 import { realtimeEvents } from "../../realtime/realtime";
 import { assertAgentCanAccessConversation, assertAgentCanReadConversation, getConversationOrThrow } from "../conversations/conversations.service";
 
@@ -129,12 +130,27 @@ async function loadConversationForAgent(conversationId: string, agentId: string)
   const conversation = await getConversationOrThrow(conversationId);
   assertAgentCanAccessConversation(conversation, { userId: agentId, role: "AGENT" });
   // Shared by every outbound send route (text/file/audio/location) — a
-  // disconnected WhatsApp connection can't actually deliver anything, so
-  // block it here once instead of duplicating the check in each route.
-  if (conversation.whatsappConnection.status !== "CONNECTED") {
-    throw Errors.badRequest("A conexao de WhatsApp esta desconectada — nao e possivel enviar mensagens");
+  // disconnected connection can't actually deliver anything, so block it
+  // here once instead of duplicating the check in each route. Exactly one
+  // of whatsappConnection/metaConnection is populated (see Channel's doc
+  // comment in schema.prisma).
+  const connectionStatus = conversation.channel === "WHATSAPP" ? conversation.whatsappConnection?.status : conversation.metaConnection?.status;
+  if (connectionStatus !== "CONNECTED") {
+    throw Errors.badRequest("A conexao esta desconectada — nao e possivel enviar mensagens");
   }
   return conversation;
+}
+
+// Arquivo/áudio/localização/reação ainda só existem para WhatsApp — ver
+// PROMPT: "prepare tudo para integrar com Instagram e Facebook" (esse
+// pedido cobriu texto; anexos ficam para depois, já que a API da Meta
+// entrega mídia como uma URL de CDN a baixar, não como bytes prontos como
+// o Baileys entrega). Checado antes de qualquer escrita no banco, não
+// depois — evita criar uma mensagem PENDING que nunca seria enviada.
+function assertWhatsAppChannel(conversation: { channel: string }, feature: string): void {
+  if (conversation.channel !== "WHATSAPP") {
+    throw Errors.badRequest(`${feature} ainda não é suportado para Instagram/Messenger`);
+  }
 }
 
 const querySchema = z.object({ cursor: z.string().uuid().optional(), limit: z.coerce.number().min(1).max(100).default(30) });
@@ -174,15 +190,20 @@ messagesRouter.post(
       replyToText = original?.body;
     }
 
-    const dto = await whatsappService.sendOutboundText(
-      conversation.whatsappConnectionId,
-      message.id,
-      conversation.contact.phone,
-      body,
-      req.auth!.displayName,
-      replyToProviderMessageId,
-      replyToText
-    );
+    const dto =
+      conversation.channel === "WHATSAPP"
+        ? await whatsappService.sendOutboundText(
+            conversation.whatsappConnectionId!,
+            message.id,
+            conversation.contact.phone!,
+            body,
+            req.auth!.displayName,
+            replyToProviderMessageId,
+            replyToText
+          )
+        : // Instagram/Messenger have no reply-to-quote or sender-name-prefix
+          // concept on the Send API — just the bare text.
+          await metaService.sendMetaMessage(conversation.channel, message.id, conversation.contact.externalUserId!, body);
     await writeAudit({
       userId: req.auth!.userId,
       action: "MESSAGE_SENT",
@@ -202,6 +223,7 @@ messagesRouter.post(
   upload.single("file"),
   asyncHandler(async (req, res) => {
     const conversation = await loadConversationForAgent(req.params.conversationId, req.auth!.userId);
+    assertWhatsAppChannel(conversation, "Envio de arquivos");
     if (!req.file) throw Errors.badRequest("Nenhum arquivo enviado");
 
     const type = mimeToMessageType(req.file.mimetype);
@@ -223,9 +245,9 @@ messagesRouter.post(
     });
 
     const dto = await whatsappService.sendOutboundFile(
-      conversation.whatsappConnectionId,
+      conversation.whatsappConnectionId!,
       message.id,
-      conversation.contact.phone,
+      conversation.contact.phone!,
       req.file.buffer,
       req.file.originalname,
       req.file.mimetype,
@@ -262,6 +284,7 @@ messagesRouter.post(
   upload.single("file"),
   asyncHandler(async (req, res) => {
     const conversation = await loadConversationForAgent(req.params.conversationId, req.auth!.userId);
+    assertWhatsAppChannel(conversation, "Envio de áudio");
     if (!req.file) throw Errors.badRequest("Nenhum audio enviado");
 
     let oggBuffer: Buffer;
@@ -288,9 +311,9 @@ messagesRouter.post(
     });
 
     const dto = await whatsappService.sendOutboundAudio(
-      conversation.whatsappConnectionId,
+      conversation.whatsappConnectionId!,
       message.id,
-      conversation.contact.phone,
+      conversation.contact.phone!,
       oggBuffer,
       "audio/ogg; codecs=opus"
     );
@@ -313,6 +336,7 @@ messagesRouter.post(
   requireAttendanceAccess,
   asyncHandler(async (req, res) => {
     const conversation = await loadConversationForAgent(req.params.conversationId, req.auth!.userId);
+    assertWhatsAppChannel(conversation, "Envio de localização");
     const { latitude, longitude } = locationSchema.parse(req.body);
     const message = await service.createOutboundMessage({
       conversationId: conversation.id,
@@ -328,7 +352,7 @@ messagesRouter.post(
       latitude,
       longitude,
     });
-    const dto = await whatsappService.sendOutboundLocation(conversation.whatsappConnectionId, message.id, conversation.contact.phone, latitude, longitude);
+    const dto = await whatsappService.sendOutboundLocation(conversation.whatsappConnectionId!, message.id, conversation.contact.phone!, latitude, longitude);
     await writeAudit({
       userId: req.auth!.userId,
       action: "MESSAGE_SENT",
@@ -351,8 +375,12 @@ messagesRouter.post(
     const message = await service.getMessageWithConversation(req.params.messageId);
     const conversation = await loadConversationForAgent(message.conversationId, req.auth!.userId);
     const updated = await service.toggleReaction(req.params.messageId, req.auth!.userId, emoji);
-    if (message.providerMessageId) {
-      await whatsappService.sendReaction(conversation.whatsappConnectionId, conversation.contact.phone, message.providerMessageId, emoji).catch(() => undefined);
+    // Reactions only sync to the remote provider for WhatsApp today — the
+    // local toggle above still applies either way, it just won't be
+    // mirrored back to Instagram/Messenger yet (see assertWhatsAppChannel's
+    // doc comment).
+    if (message.providerMessageId && conversation.channel === "WHATSAPP") {
+      await whatsappService.sendReaction(conversation.whatsappConnectionId!, conversation.contact.phone!, message.providerMessageId, emoji).catch(() => undefined);
     }
     realtimeEvents.messageStatusChanged(conversation.id, conversation.assignedAgentId);
     res.json(toMessageDTO(updated));

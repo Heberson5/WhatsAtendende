@@ -147,7 +147,7 @@ export function ReadOnlyConversationDrawer({
   }, [cursor, conversation.id]);
 
   const isLoading = messagesQuery.isLoading;
-  const displayName = contactDisplayName(conversation.contact);
+  const displayName = contactDisplayName(conversation.contact, conversation.channel);
   const messageById = new Map(messages.map((m) => [m.id, m]));
 
   const content = (

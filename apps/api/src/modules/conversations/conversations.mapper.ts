@@ -1,10 +1,13 @@
-import type { Conversation, Contact, ConversationTransfer, User, WhatsAppConnection } from "@prisma/client";
+import type { Conversation, Contact, ConversationTransfer, User, WhatsAppConnection, MetaConnection } from "@prisma/client";
 import type { ConversationListItemDTO } from "@whatsatendende/types";
 
 type ConversationWithRelations = Conversation & {
   contact: Contact;
   assignedAgent: User | null;
-  whatsappConnection: WhatsAppConnection;
+  // Exactly one of these two is non-null, depending on `channel` — see
+  // the Channel enum's doc comment in schema.prisma.
+  whatsappConnection: WhatsAppConnection | null;
+  metaConnection: MetaConnection | null;
   transfers: (ConversationTransfer & { fromAgent: User; toAgent: User })[];
   _lastMessageBody?: string | null;
   _unreadCount?: number;
@@ -30,6 +33,11 @@ export function toConversationListItemDTO(
   revealPreview: boolean
 ): ConversationListItemDTO {
   const latestTransfer = conversation.transfers[0];
+  // Exactly one of these is populated (see Channel's doc comment) — reading
+  // through whichever one it is lets every existing consumer of
+  // whatsappConnection* keep working unchanged for an Instagram/Messenger
+  // conversation too, instead of blowing up on a null WhatsAppConnection.
+  const connection = conversation.whatsappConnection ?? conversation.metaConnection!;
   return {
     id: conversation.id,
     contact: {
@@ -43,10 +51,11 @@ export function toConversationListItemDTO(
     status: conversation.status,
     assignedAgentId: conversation.assignedAgentId,
     assignedAgentName: conversation.assignedAgent?.displayName ?? null,
-    whatsappConnectionId: conversation.whatsappConnectionId,
-    whatsappConnectionName: conversation.whatsappConnection.name,
-    whatsappConnectionColor: conversation.whatsappConnection.color,
-    whatsappConnectionStatus: conversation.whatsappConnection.status,
+    channel: conversation.channel,
+    whatsappConnectionId: connection.id,
+    whatsappConnectionName: connection.name,
+    whatsappConnectionColor: connection.color,
+    whatsappConnectionStatus: connection.status,
     enteredQueueAt: conversation.enteredQueueAt.toISOString(),
     acceptedAt: conversation.acceptedAt ? conversation.acceptedAt.toISOString() : null,
     lastMessageAt: conversation.lastMessageAt.toISOString(),

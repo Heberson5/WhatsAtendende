@@ -1,8 +1,16 @@
 import clsx from "clsx";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import type { ConversationListItemDTO } from "@whatsatendende/types";
+import { Facebook, Instagram, type LucideIcon } from "lucide-react";
+import type { Channel, ConversationListItemDTO } from "@whatsatendende/types";
 import { contactDisplayName } from "../../lib/contact-display";
+
+// null = no icon, just the colored dot (WhatsApp's original look, unchanged).
+const CHANNEL_ICON: Record<Channel, LucideIcon | null> = {
+  WHATSAPP: null,
+  INSTAGRAM: Instagram,
+  MESSENGER: Facebook,
+};
 
 function initials(name: string) {
   return name
@@ -33,7 +41,8 @@ export function ConversationCard({
   // atendente saiba para quem transferiu e horário".
   transferredOutView?: boolean;
 }) {
-  const displayName = contactDisplayName(conversation.contact);
+  const displayName = contactDisplayName(conversation.contact, conversation.channel);
+  const ChannelIcon = CHANNEL_ICON[conversation.channel];
   // When there's a saved name, displayName hides the phone entirely — show
   // it as a subtitle too, since the phone number is what an agent actually
   // needs to confirm/dial/search by, not just a name that could be wrong
@@ -93,7 +102,7 @@ export function ConversationCard({
             className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium"
             style={{ backgroundColor: `${conversation.whatsappConnectionColor}1A`, color: conversation.whatsappConnectionColor }}
           >
-            <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: conversation.whatsappConnectionColor }} />
+            {ChannelIcon ? <ChannelIcon className="h-3 w-3" /> : <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: conversation.whatsappConnectionColor }} />}
             {conversation.whatsappConnectionName}
           </span>
           {conversation.transfer && (

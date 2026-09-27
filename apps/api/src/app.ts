@@ -1,4 +1,4 @@
-import express from "express";
+import express, { type Request } from "express";
 import cors from "cors";
 import helmet from "helmet";
 import compression from "compression";
@@ -26,6 +26,7 @@ import { closingMessagesRouter } from "./modules/closing-messages/closing-messag
 import { autoMessageTemplatesRouter } from "./modules/auto-message-templates/auto-message-templates.routes";
 import { notificationsRouter } from "./modules/notifications/notifications.routes";
 import { holidaysRouter } from "./modules/holidays/holidays.routes";
+import { metaRouter } from "./modules/meta/meta.routes";
 
 export function createApp() {
   const app = express();
@@ -64,7 +65,21 @@ export function createApp() {
     })
   );
   app.use(compression());
-  app.use(express.json({ limit: "2mb" }));
+  app.use(
+    express.json({
+      limit: "2mb",
+      // Captures the exact bytes received, alongside the normal parsed
+      // body — the Meta webhook needs this to verify X-Hub-Signature-256
+      // (see modules/meta/meta.routes.ts). Every other route ignores it.
+      // body-parser's verify callback types `req` as the bare Node
+      // http.IncomingMessage (it's framework-agnostic), not Express's own
+      // augmented Request — cast to reach the rawBody field declared in
+      // middleware/auth.ts's Express.Request augmentation.
+      verify: (req, _res, buf) => {
+        (req as Request).rawBody = buf;
+      },
+    })
+  );
   app.use(cookieParser());
   app.use(
     pinoHttp({
@@ -113,6 +128,7 @@ export function createApp() {
   app.use("/api/auto-message-templates", autoMessageTemplatesRouter);
   app.use("/api/notifications", notificationsRouter);
   app.use("/api/holidays", holidaysRouter);
+  app.use("/api/meta", metaRouter);
 
   app.use((req, res) => {
     res.status(404).json({ error: "NOT_FOUND", message: `Rota nao encontrada: ${req.method} ${req.path}` });

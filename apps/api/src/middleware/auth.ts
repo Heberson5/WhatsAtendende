@@ -9,6 +9,12 @@ declare global {
   namespace Express {
     interface Request {
       auth?: { userId: string; role: Role; displayName: string };
+      // Raw request body bytes, captured by express.json()'s `verify`
+      // callback in app.ts — needed to check the Meta webhook's
+      // X-Hub-Signature-256 (an HMAC over the exact bytes received, which
+      // the already-parsed/re-serialized JSON object can't reproduce
+      // reliably). Undefined for any route whose content-type isn't JSON.
+      rawBody?: Buffer;
     }
   }
 }
