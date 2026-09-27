@@ -9,6 +9,7 @@ import { useMaintenanceStatus } from "../../hooks/useMaintenanceStatus";
 import { useTheme } from "../../hooks/useTheme";
 import { MaintenanceScreen } from "./MaintenanceScreen";
 import { InstallPromptModal } from "./InstallPromptModal";
+import { InstallAppLink } from "./InstallAppLink";
 
 // Glow blobs behind the card — tinted from the active brand colors via
 // color-mix (same technique the global body background already uses in
@@ -216,6 +217,8 @@ export default function LoginPage() {
               </button>
             </form>
           )}
+
+          <InstallAppLink />
         </div>
       </div>
     </div>
