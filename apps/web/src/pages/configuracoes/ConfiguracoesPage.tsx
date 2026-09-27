@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { PERMISSION, type Permission } from "@whatsatendende/types";
-import { WhatsAppConnectionPanel } from "./WhatsAppConnectionPanel";
 import { BrandingPanel } from "./BrandingPanel";
 import { AppInstallPanel } from "./AppInstallPanel";
 import { ExportacoesPanel } from "./ExportacoesPanel";
@@ -11,10 +10,9 @@ import { PermissionsPanel } from "./PermissionsPanel";
 import { SecuritySettingsPanel } from "./SecuritySettingsPanel";
 import { useAuthStore } from "../../store/auth-store";
 
-type Tab = "whatsapp" | "branding" | "exportacoes" | "email" | "email-templates" | "feriados" | "seguranca" | "permissoes";
+type Tab = "branding" | "exportacoes" | "email" | "email-templates" | "feriados" | "seguranca" | "permissoes";
 
 const TABS: { key: Tab; label: string }[] = [
-  { key: "whatsapp", label: "WhatsApp" },
   { key: "branding", label: "Identidade visual" },
   { key: "exportacoes", label: "Exportações" },
   { key: "email", label: "E-mail" },
@@ -30,7 +28,6 @@ const TABS: { key: Tab; label: string }[] = [
 // menus e inclua nas permissões". seguranca/permissoes have no entry — they
 // stay ADMIN-only, checked separately below, same as before this feature.
 const TAB_PERMISSION: Partial<Record<Tab, Permission>> = {
-  whatsapp: PERMISSION.CONFIGURACOES_WHATSAPP_GERENCIAR,
   branding: PERMISSION.CONFIGURACOES_IDENTIDADE_GERENCIAR,
   // Its own logo/cor/nome (independent from Identidade visual) — sits
   // behind the same identity-flavored permission rather than a new one.
@@ -41,7 +38,7 @@ const TAB_PERMISSION: Partial<Record<Tab, Permission>> = {
 };
 
 export default function ConfiguracoesPage() {
-  const [tab, setTab] = useState<Tab>("whatsapp");
+  const [tab, setTab] = useState<Tab>("branding");
   const role = useAuthStore((s) => s.user?.role);
   const permissions = useAuthStore((s) => s.permissions);
   // Configurações itself can be reached by a MANAGER granted the
@@ -58,8 +55,8 @@ export default function ConfiguracoesPage() {
     return !permission || permissions?.[permission];
   });
   // The default/last-selected tab can be one a role no longer sees (e.g. an
-  // admin restricted "whatsapp" for this manager specifically) — fall back
-  // to the first tab that's actually visible instead of rendering nothing.
+  // admin restricted a tab for this manager specifically) — fall back to the
+  // first tab that's actually visible instead of rendering nothing.
   const activeTab = visibleTabs.some((t) => t.key === tab) ? tab : visibleTabs[0]?.key;
 
   return (
@@ -76,7 +73,6 @@ export default function ConfiguracoesPage() {
         ))}
       </div>
 
-      {activeTab === "whatsapp" && <WhatsAppConnectionPanel />}
       {activeTab === "branding" && (
         <div className="space-y-6">
           <BrandingPanel />

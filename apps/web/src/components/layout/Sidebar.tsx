@@ -14,6 +14,7 @@ import {
   X,
   Slash,
   MonitorSmartphone,
+  Plug,
 } from "lucide-react";
 import { PERMISSION, type Permission } from "@whatsatendende/types";
 import { useAuthStore } from "../../store/auth-store";
@@ -40,6 +41,7 @@ export const MENU_ITEMS: MenuItem[] = [
   { to: "/relatorios", label: "Relatórios", icon: FileBarChart, permission: PERMISSION.RELATORIOS_ACESSAR },
   { to: "/usuarios", label: "Usuários", icon: Users, permission: PERMISSION.USUARIOS_GERENCIAR },
   { to: "/respostas", label: "Respostas", icon: Slash, permission: PERMISSION.RESPOSTAS_RAPIDAS_GERENCIAR },
+  { to: "/conexoes", label: "Conexões", icon: Plug, permission: PERMISSION.CONEXOES_GERENCIAR },
   { to: "/configuracoes", label: "Configurações", icon: Settings, permission: PERMISSION.CONFIGURACOES_GERENCIAR },
   { to: "/landing-page", label: "Landing Page", icon: MonitorSmartphone, permission: PERMISSION.LANDING_PAGE_GERENCIAR },
   { to: "/auditoria", label: "Auditoria", icon: ScrollText, permission: PERMISSION.AUDITORIA_ACESSAR },
