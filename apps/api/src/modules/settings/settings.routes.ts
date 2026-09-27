@@ -5,6 +5,7 @@ import fs from "node:fs";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { imageSize } from "image-size";
+import { Jimp } from "jimp";
 import rateLimit from "express-rate-limit";
 import { asyncHandler } from "../../lib/async-handler";
 import { requireAuth, requireRole } from "../../middleware/auth";
@@ -77,6 +78,13 @@ settingsRouter.get(
     const name = branding.appName ?? branding.companyName;
     const iconUrl = branding.appIconUrl;
     const iconType = iconUrl ? mimeTypeForBrandingAsset(iconUrl) : "image/png";
+    // The raw uploaded icon (often transparent) only ever goes in the "any"
+    // entries — Android's own adaptive-icon renderer paints transparent
+    // pixels black for "maskable", so that purpose always points at the
+    // generated opaque/safe-zone variant instead (falls back to the raw
+    // icon for a branding saved before this variant existed).
+    const maskableIconUrl = branding.appIconMaskableUrl ?? iconUrl;
+    const maskableIconType = branding.appIconMaskableUrl ? "image/png" : iconType;
     res.type("application/manifest+json").json({
       name,
       // Android truncates a long label on the home screen grid — keep it tight.
@@ -92,7 +100,7 @@ settingsRouter.get(
         ? [
             { src: iconUrl, sizes: "192x192", type: iconType, purpose: "any" },
             { src: iconUrl, sizes: "512x512", type: iconType, purpose: "any" },
-            { src: iconUrl, sizes: "512x512", type: iconType, purpose: "maskable" },
+            { src: maskableIconUrl, sizes: "512x512", type: maskableIconType, purpose: "maskable" },
           ]
         : [
             { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
@@ -194,6 +202,22 @@ settingsRouter.post(
 // instalar o app".
 const APP_ICON_MIN_SIZE = 512;
 
+// The logo confined to this fraction of the canvas (centered), comfortably
+// inside Android's maskable safe zone (spec minimum: an 80%-diameter
+// circle) — approved size from the before/after mockups shown to the user.
+const MASKABLE_SAFE_ZONE_FRAC = 0.6;
+
+/** Composites the uploaded (often transparent) icon onto an opaque white
+ * canvas, logo confined to the safe zone — see BrandingSettings.appIconMaskableUrl. */
+async function generateMaskableIcon(sourceBuffer: Buffer): Promise<Buffer> {
+  const source = await Jimp.fromBuffer(sourceBuffer);
+  const scale = (MASKABLE_SAFE_ZONE_FRAC * APP_ICON_MIN_SIZE) / Math.max(source.width, source.height);
+  const resized = source.clone().resize({ w: Math.round(source.width * scale), h: Math.round(source.height * scale) });
+  const canvas = new Jimp({ width: APP_ICON_MIN_SIZE, height: APP_ICON_MIN_SIZE, color: 0xffffffff });
+  canvas.composite(resized, Math.round((APP_ICON_MIN_SIZE - resized.width) / 2), Math.round((APP_ICON_MIN_SIZE - resized.height) / 2));
+  return canvas.getBuffer("image/png");
+}
+
 settingsRouter.post(
   "/branding/app-icon",
   requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
@@ -218,7 +242,15 @@ settingsRouter.post(
 
     const fileName = `app-icon-${randomUUID()}${ALLOWED_BRANDING_MIME_TO_EXT[req.file.mimetype]}`;
     fs.writeFileSync(path.join(brandingAssetDir, fileName), req.file.buffer);
-    const branding = await service.updateBranding({ appIconUrl: `/uploads/branding/${fileName}` });
+
+    const maskableFileName = `app-icon-maskable-${randomUUID()}.png`;
+    const maskableBuffer = await generateMaskableIcon(req.file.buffer);
+    fs.writeFileSync(path.join(brandingAssetDir, maskableFileName), maskableBuffer);
+
+    const branding = await service.updateBranding({
+      appIconUrl: `/uploads/branding/${fileName}`,
+      appIconMaskableUrl: `/uploads/branding/${maskableFileName}`,
+    });
     await writeAudit({ userId: req.auth!.userId, action: "SETTINGS_APP_ICON_UPLOADED", entity: "SystemSetting", entityId: "branding", ipAddress: req.ip ?? null });
     res.json(branding);
   })
