@@ -29,27 +29,27 @@ enum AgentPresence {
 }
 
 model User {
-  id            String        @id @default(uuid())
-  fullName      String
-  displayName   String
-  email         String        @unique
-  passwordHash  String
-  role          Role          @default(AGENT)
-  status        UserStatus    @default(ACTIVE)
-  presence      AgentPresence @default(OFFLINE)
-  photoUrl      String?
-  themePreference String      @default("AUTO") // LIGHT | DARK | AUTO
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-  lastAccessAt  DateTime?
+  id              String        @id @default(uuid())
+  fullName        String
+  displayName     String
+  email           String        @unique
+  passwordHash    String
+  role            Role          @default(AGENT)
+  status          UserStatus    @default(ACTIVE)
+  presence        AgentPresence @default(OFFLINE)
+  photoUrl        String?
+  themePreference String        @default("AUTO") // LIGHT | DARK | AUTO
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  lastAccessAt    DateTime?
 
   // Where this user works — drives which STATE/MUNICIPAL holidays block
   // their access automatically (a NATIONAL holiday always applies
   // regardless of these). Both null = no city on file, so only NATIONAL
   // holidays (if any apply) affect this user. See PROMPT: "no cadastro do
   // usuário, indicar qual cidade trabalha".
-  workState     String?       // UF, e.g. "MT" — IBGE 2-letter code
-  workCity      String?       // município name, as returned by the IBGE API for workState
+  workState String? // UF, e.g. "MT" — IBGE 2-letter code
+  workCity  String? // município name, as returned by the IBGE API for workState
 
   // Per-weekday allowed access window — see PROMPT: "horário que é
   // permitido acessar... pode variar, portanto precisa ser por cada dia da
@@ -65,29 +65,29 @@ model User {
   // see every connection through oversight). A transferred conversation
   // can still land on an agent regardless of this value — see
   // conversations.service.ts `transferConversation`.
-  whatsappConnection      WhatsAppConnection?      @relation(fields: [whatsappConnectionId], references: [id])
-  whatsappConnectionId    String?
+  whatsappConnection   WhatsAppConnection? @relation(fields: [whatsappConnectionId], references: [id])
+  whatsappConnectionId String?
 
-  passwordResetTokens     PasswordResetToken[]
-  refreshTokens           RefreshToken[]
-  assignedConversations   Conversation[]           @relation("AssignedAgent")
-  assignmentsFrom         ConversationAssignment[]  @relation("AssignmentFromAgent")
-  assignmentsTo           ConversationAssignment[]  @relation("AssignmentToAgent")
-  transfersInitiated      ConversationTransfer[]    @relation("TransferInitiatedBy")
-  transfersFrom           ConversationTransfer[]    @relation("TransferFromAgent")
-  transfersTo             ConversationTransfer[]    @relation("TransferToAgent")
-  messages                Message[]                 @relation("SentByAgent")
-  messageReactions        MessageReaction[]
-  auditLogs               AuditLog[]
-  notifications           Notification[]
+  passwordResetTokens   PasswordResetToken[]
+  refreshTokens         RefreshToken[]
+  assignedConversations Conversation[]            @relation("AssignedAgent")
+  assignmentsFrom       ConversationAssignment[]  @relation("AssignmentFromAgent")
+  assignmentsTo         ConversationAssignment[]  @relation("AssignmentToAgent")
+  transfersInitiated    ConversationTransfer[]    @relation("TransferInitiatedBy")
+  transfersFrom         ConversationTransfer[]    @relation("TransferFromAgent")
+  transfersTo           ConversationTransfer[]    @relation("TransferToAgent")
+  messages              Message[]                 @relation("SentByAgent")
+  messageReactions      MessageReaction[]
+  auditLogs             AuditLog[]
+  notifications         Notification[]
   // Connections this user (a MANAGER, in practice) personally created —
   // owning a connection grants full view/edit/receive access to it with no
   // separate grant row needed. See PROMPT: "conexões que foram cadastradas
   // pelos gestores".
-  createdConnections      WhatsAppConnection[]     @relation("ConnectionCreatedBy")
+  createdConnections    WhatsAppConnection[]      @relation("ConnectionCreatedBy")
   // Explicit ADMIN-granted access to a connection this user did NOT create
   // — see ManagerConnectionAccess.
-  connectionGrants        ManagerConnectionAccess[]
+  connectionGrants      ManagerConnectionAccess[]
 
   // The closing message auto-sent to the customer when THIS user clicks
   // Encerrar — at most one at a time (a straight FK, not a join table),
@@ -98,8 +98,8 @@ model User {
   // instead of blocking the delete. See PROMPT: "Um usuário não poderá
   // estar em mais de um, portanto, se habilitar o usuário no recente, irá
   // sair do anterior."
-  closingMessage          ClosingMessage?          @relation(fields: [closingMessageId], references: [id], onDelete: SetNull)
-  closingMessageId        String?
+  closingMessage   ClosingMessage? @relation(fields: [closingMessageId], references: [id], onDelete: SetNull)
+  closingMessageId String?
 
   @@index([role])
   @@index([status])
@@ -108,25 +108,25 @@ model User {
 }
 
 model PasswordResetToken {
-  id        String   @id @default(uuid())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String    @id @default(uuid())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId    String
-  tokenHash String   @unique
+  tokenHash String    @unique
   expiresAt DateTime
   usedAt    DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 
   @@index([userId])
 }
 
 model RefreshToken {
-  id         String    @id @default(uuid())
-  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId     String
-  tokenHash  String    @unique
-  expiresAt  DateTime
-  revokedAt  DateTime?
-  createdAt  DateTime  @default(now())
+  id        String    @id @default(uuid())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
 
   @@index([userId])
 }
@@ -216,16 +216,16 @@ model ManagerConnectionAccess {
 // connection (not global) so, e.g., "Vendas" and "Suporte" can each curate
 // their own set without stepping on each other's shortcuts.
 model QuickReply {
-  id                    String             @id @default(uuid())
-  name                  String
+  id                   String             @id @default(uuid())
+  name                 String
   // Stored without the leading "/" (e.g. "boasvindas", not "/boasvindas") —
   // the slash is purely a UI trigger, added back only when displayed.
-  shortcut              String
-  text                  String
-  whatsappConnection    WhatsAppConnection @relation(fields: [whatsappConnectionId], references: [id], onDelete: Cascade)
-  whatsappConnectionId  String
-  createdAt             DateTime           @default(now())
-  updatedAt             DateTime           @updatedAt
+  shortcut             String
+  text                 String
+  whatsappConnection   WhatsAppConnection @relation(fields: [whatsappConnectionId], references: [id], onDelete: Cascade)
+  whatsappConnectionId String
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
 
   @@unique([whatsappConnectionId, shortcut])
 }
@@ -278,17 +278,82 @@ model ClosingMessage {
 }
 
 // ---------------------------------------------------------------------------
+// Meta (Instagram / Messenger) connection
+// ---------------------------------------------------------------------------
+
+// Which messaging channel a Contact/Conversation/Connection belongs to. See
+// PROMPT: "prepare tudo para integrar com Instagram e Facebook". Defaults to
+// WHATSAPP so every existing row (and every place that doesn't set it
+// explicitly) keeps behaving exactly as before this enum existed.
+enum Channel {
+  WHATSAPP
+  INSTAGRAM
+  MESSENGER
+}
+
+enum MetaConnectionStatus {
+  DISCONNECTED
+  CONNECTED
+}
+
+// One row per linked Instagram Business account or Facebook Page. Both
+// channels ride the same Meta Graph API/webhook infrastructure, so they
+// share this one model (distinguished by `channel`) instead of two
+// near-identical tables — see apps/api/src/modules/meta. Deliberately NOT
+// merged into WhatsAppConnection: that table (and its FK name) is already
+// threaded through Contact/Conversation/User/QuickReply/
+// ManagerConnectionAccess, and widening it would risk the whole WhatsApp
+// path for no benefit — additive instead.
+model MetaConnection {
+  id             String               @id @default(uuid())
+  channel        Channel
+  name           String
+  color          String               @default("#0097B4")
+  status         MetaConnectionStatus @default(DISCONNECTED)
+  // Facebook Page id (MESSENGER) or Instagram Business Account id
+  // (INSTAGRAM) — whichever `channel` this row is.
+  externalPageId String?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  contacts      Contact[]
+  conversations Conversation[]
+
+  @@unique([channel, externalPageId])
+}
+
+// ---------------------------------------------------------------------------
 // Contacts / Conversations
 // ---------------------------------------------------------------------------
 
 model Contact {
-  id                   String   @id @default(uuid())
+  id                   String              @id @default(uuid())
+  // Defaults to WHATSAPP for every row created before this field existed.
+  // Determines which of whatsappConnection*/metaConnection* below is set —
+  // exactly one of the two connection FKs is populated, never both.
+  channel              Channel             @default(WHATSAPP)
   // Scoped per connection, not globally: the same phone number talking to
   // two different connected WhatsApp numbers is two separate customer
   // relationships (different business/department), so it's two Contact rows.
-  whatsappConnection   WhatsAppConnection @relation(fields: [whatsappConnectionId], references: [id])
-  whatsappConnectionId String
-  phone                String
+  // Optional (rather than required) so an Instagram/Messenger contact — no
+  // WhatsApp connection at all — can leave this null; enforced at the
+  // service layer, not the DB, same precedent as other channel-specific FKs.
+  // onDelete: Restrict on both connection FKs (Prisma's default for an
+  // optional relation is SetNull, which would silently orphan history) —
+  // deleteConnection already checks contactCount before deleting for
+  // exactly this reason: "o historico é preservado para sempre".
+  whatsappConnection   WhatsAppConnection? @relation(fields: [whatsappConnectionId], references: [id], onDelete: Restrict)
+  whatsappConnectionId String?
+  metaConnection       MetaConnection?     @relation(fields: [metaConnectionId], references: [id], onDelete: Restrict)
+  metaConnectionId     String?
+  // Required for WHATSAPP, always null for INSTAGRAM/MESSENGER (those
+  // channels never expose a phone number, only an opaque scoped user id —
+  // see externalUserId below).
+  phone                String?
+  // Instagram-scoped ID (IGSID) or Messenger page-scoped ID (PSID) — the
+  // Meta-channel equivalent of `phone`/`providerChatId` below, which stay
+  // WhatsApp-only.
+  externalUserId       String?
   name                 String?
   photoUrl             String?
   // WhatsApp's raw chat id (e.g. "<n>@lid" or "<n>@s.whatsapp.net") as first
@@ -301,13 +366,14 @@ model Contact {
   // event whose own chatId came back unresolved (@lid) with no phone
   // number attached at all — see findOrCreateContact.
   providerChatId       String?
-  firstConversationAt  DateTime @default(now())
-  lastInteractionAt    DateTime @default(now())
+  firstConversationAt  DateTime            @default(now())
+  lastInteractionAt    DateTime            @default(now())
 
   conversations Conversation[]
 
   @@unique([phone, whatsappConnectionId])
   @@unique([providerChatId, whatsappConnectionId])
+  @@unique([externalUserId, metaConnectionId])
   @@index([phone])
 }
 
@@ -329,24 +395,33 @@ enum ConversationStatus {
 }
 
 model Conversation {
-  id               String              @id @default(uuid())
+  id                   String              @id @default(uuid())
+  // Denormalized from contact.channel at creation time, same reasoning as
+  // whatsappConnectionId below.
+  channel              Channel             @default(WHATSAPP)
   // Denormalized from contact.whatsappConnectionId at creation time — kept
   // directly on the conversation (rather than only reachable via a join)
   // so the queue, oversight, dashboard, and report filters can filter by
-  // connection with a plain WHERE instead of joining through Contact every time.
-  whatsappConnection   WhatsAppConnection @relation(fields: [whatsappConnectionId], references: [id])
-  whatsappConnectionId String
-  contact          Contact             @relation(fields: [contactId], references: [id])
-  contactId        String
-  status           ConversationStatus  @default(WAITING)
-  assignedAgent    User?               @relation("AssignedAgent", fields: [assignedAgentId], references: [id])
-  assignedAgentId  String?
+  // connection with a plain WHERE instead of joining through Contact every
+  // time. Optional for the same reason as Contact.whatsappConnectionId —
+  // null for an INSTAGRAM/MESSENGER conversation, which sets
+  // metaConnectionId instead.
+  // onDelete: Restrict on both — same reasoning as Contact's connection FKs.
+  whatsappConnection   WhatsAppConnection? @relation(fields: [whatsappConnectionId], references: [id], onDelete: Restrict)
+  whatsappConnectionId String?
+  metaConnection       MetaConnection?     @relation(fields: [metaConnectionId], references: [id], onDelete: Restrict)
+  metaConnectionId     String?
+  contact              Contact             @relation(fields: [contactId], references: [id])
+  contactId            String
+  status               ConversationStatus  @default(WAITING)
+  assignedAgent        User?               @relation("AssignedAgent", fields: [assignedAgentId], references: [id])
+  assignedAgentId      String?
 
-  enteredQueueAt   DateTime            @default(now())
-  acceptedAt       DateTime?
-  firstResponseAt  DateTime?
-  closedAt         DateTime?
-  closedByUserId   String?
+  enteredQueueAt  DateTime  @default(now())
+  acceptedAt      DateTime?
+  firstResponseAt DateTime?
+  closedAt        DateTime?
+  closedByUserId  String?
 
   // Reset to null on accept/transfer; set to now() when the assigned agent
   // opens the conversation. Unread badge = inbound messages newer than this.
@@ -359,66 +434,67 @@ model Conversation {
   // transferred it if this passes with no login in between.
   pendingTransferDeadline DateTime?
 
-  lastMessageAt    DateTime            @default(now())
+  lastMessageAt        DateTime @default(now())
   lastMessageDirection String?
 
   // optimistic-lock version, used together with a conditional UPDATE to
   // guarantee only one agent can accept a conversation (see conversations
   // service `acceptConversation`).
-  version          Int                 @default(0)
+  version Int @default(0)
 
-  messages         Message[]
-  assignments      ConversationAssignment[]
-  transfers        ConversationTransfer[]
-  events           ConversationEvent[]
+  messages    Message[]
+  assignments ConversationAssignment[]
+  transfers   ConversationTransfer[]
+  events      ConversationEvent[]
 
-  createdAt        DateTime            @default(now())
+  createdAt DateTime @default(now())
 
   @@index([status])
   @@index([assignedAgentId])
   @@index([contactId])
   @@index([enteredQueueAt])
   @@index([whatsappConnectionId])
+  @@index([metaConnectionId])
   @@index([pendingTransferDeadline])
 }
 
 model ConversationAssignment {
-  id              String   @id @default(uuid())
-  conversation    Conversation @relation(fields: [conversationId], references: [id])
-  conversationId  String
-  fromAgent       User?    @relation("AssignmentFromAgent", fields: [fromAgentId], references: [id])
-  fromAgentId     String?
-  toAgent         User     @relation("AssignmentToAgent", fields: [toAgentId], references: [id])
-  toAgentId       String
-  reason          String   // ACCEPT | TRANSFER | REOPEN | MENTION | MANAGER_ASSIGNED
-  createdAt       DateTime @default(now())
+  id             String       @id @default(uuid())
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  conversationId String
+  fromAgent      User?        @relation("AssignmentFromAgent", fields: [fromAgentId], references: [id])
+  fromAgentId    String?
+  toAgent        User         @relation("AssignmentToAgent", fields: [toAgentId], references: [id])
+  toAgentId      String
+  reason         String // ACCEPT | TRANSFER | REOPEN | MENTION | MANAGER_ASSIGNED
+  createdAt      DateTime     @default(now())
 
   @@index([conversationId])
 }
 
 model ConversationTransfer {
-  id              String   @id @default(uuid())
-  conversation    Conversation @relation(fields: [conversationId], references: [id])
-  conversationId  String
-  fromAgent       User     @relation("TransferFromAgent", fields: [fromAgentId], references: [id])
-  fromAgentId     String
-  toAgent         User     @relation("TransferToAgent", fields: [toAgentId], references: [id])
-  toAgentId       String
-  initiatedBy     User     @relation("TransferInitiatedBy", fields: [initiatedById], references: [id])
-  initiatedById   String
-  note            String?
-  createdAt       DateTime @default(now())
+  id             String       @id @default(uuid())
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  conversationId String
+  fromAgent      User         @relation("TransferFromAgent", fields: [fromAgentId], references: [id])
+  fromAgentId    String
+  toAgent        User         @relation("TransferToAgent", fields: [toAgentId], references: [id])
+  toAgentId      String
+  initiatedBy    User         @relation("TransferInitiatedBy", fields: [initiatedById], references: [id])
+  initiatedById  String
+  note           String?
+  createdAt      DateTime     @default(now())
 
   @@index([conversationId])
 }
 
 model ConversationEvent {
-  id              String   @id @default(uuid())
-  conversation    Conversation @relation(fields: [conversationId], references: [id])
-  conversationId  String
-  type            String   // CREATED | ACCEPTED | TRANSFERRED | CLOSED | REOPENED | ACCEPT_CONFLICT | HANDLED_EXTERNALLY | MANAGER_ASSIGNED | RETURNED_TO_QUEUE
-  payload         Json?
-  createdAt       DateTime @default(now())
+  id             String       @id @default(uuid())
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  conversationId String
+  type           String // CREATED | ACCEPTED | TRANSFERRED | CLOSED | REOPENED | ACCEPT_CONFLICT | HANDLED_EXTERNALLY | MANAGER_ASSIGNED | RETURNED_TO_QUEUE
+  payload        Json?
+  createdAt      DateTime     @default(now())
 
   @@index([conversationId])
 }
@@ -460,19 +536,19 @@ enum MessageStatus {
 }
 
 model Message {
-  id                    String            @id @default(uuid())
-  conversation          Conversation      @relation(fields: [conversationId], references: [id])
-  conversationId        String
-  direction             MessageDirection
-  type                  MessageType
-  status                MessageStatus     @default(PENDING)
-  body                  String?
-  providerMessageId     String?           @unique
-  senderAgent           User?             @relation("SentByAgent", fields: [senderAgentId], references: [id])
-  senderAgentId         String?
-  replyToMessage        Message?          @relation("MessageReplies", fields: [replyToMessageId], references: [id])
-  replyToMessageId      String?
-  replies               Message[]         @relation("MessageReplies")
+  id                String           @id @default(uuid())
+  conversation      Conversation     @relation(fields: [conversationId], references: [id])
+  conversationId    String
+  direction         MessageDirection
+  type              MessageType
+  status            MessageStatus    @default(PENDING)
+  body              String?
+  providerMessageId String?          @unique
+  senderAgent       User?            @relation("SentByAgent", fields: [senderAgentId], references: [id])
+  senderAgentId     String?
+  replyToMessage    Message?         @relation("MessageReplies", fields: [replyToMessageId], references: [id])
+  replyToMessageId  String?
+  replies           Message[]        @relation("MessageReplies")
 
   // A reply to a WhatsApp Status/Story ("respondendo a um story") instead of
   // to another message in this conversation — the story itself is never
@@ -481,9 +557,9 @@ model Message {
   // small preview WhatsApp embeds directly inside the reply: its text, or a
   // low-res thumbnail for a media story. See extractQuotedStory in
   // BaileysWhatsAppProvider.ts.
-  isStoryReply          Boolean           @default(false)
-  storyReplyText        String?
-  storyReplyThumbnail   String? // base64 JPEG — WhatsApp's own embedded low-res preview, not a fetched/stored file
+  isStoryReply        Boolean @default(false)
+  storyReplyText      String?
+  storyReplyThumbnail String? // base64 JPEG — WhatsApp's own embedded low-res preview, not a fetched/stored file
 
   // Link-preview card (WhatsApp Web parity) — populated when this TEXT
   // message's body contains a URL and a preview was generated, either by
@@ -495,9 +571,9 @@ model Message {
   linkPreviewUrl         String?
   linkPreviewThumbnail   String? // base64 JPEG
 
-  createdAt             DateTime          @default(now())
-  deliveredAt           DateTime?
-  readAt                DateTime?
+  createdAt   DateTime  @default(now())
+  deliveredAt DateTime?
+  readAt      DateTime?
 
   // ADMIN-only "excluir mensagem" — soft delete local to this app only:
   // deleted messages are simply excluded from listMessages, but the row
@@ -505,8 +581,8 @@ model Message {
   // WhatsApp — there is no revoke/delete call to Baileys anywhere in this
   // flow, so the customer's own WhatsApp app and any other linked device
   // (phone, WhatsApp Web/Desktop) keep the message exactly as it was.
-  deletedAt             DateTime?
-  deletedByUserId       String?
+  deletedAt       DateTime?
+  deletedByUserId String?
 
   attachments MessageAttachment[]
   reactions   MessageReaction[]
@@ -516,20 +592,20 @@ model Message {
 }
 
 model MessageAttachment {
-  id         String      @id @default(uuid())
-  message    Message     @relation(fields: [messageId], references: [id])
-  messageId  String
-  fileName   String
-  mimeType   String
-  sizeBytes  Int
-  storageKey String
-  kind       MessageType
-  latitude   Float?
-  longitude  Float?
-  vcard      String?
+  id               String      @id @default(uuid())
+  message          Message     @relation(fields: [messageId], references: [id])
+  messageId        String
+  fileName         String
+  mimeType         String
+  sizeBytes        Int
+  storageKey       String
+  kind             MessageType
+  latitude         Float?
+  longitude        Float?
+  vcard            String?
   // POLL only.
-  pollQuestion String?
-  pollOptions  Json?
+  pollQuestion     String?
+  pollOptions      Json?
   // EVENT only — location reuses latitude/longitude above (WhatsApp's
   // EventMessage carries an optional plain LocationMessage the same shape
   // as a standalone one).
@@ -537,20 +613,20 @@ model MessageAttachment {
   eventDescription String?
   eventStartAt     DateTime?
   eventJoinLink    String?
-  createdAt  DateTime    @default(now())
+  createdAt        DateTime    @default(now())
 
   @@index([messageId])
 }
 
 model MessageReaction {
-  id         String   @id @default(uuid())
-  message    Message  @relation(fields: [messageId], references: [id])
-  messageId  String
-  user       User?    @relation(fields: [userId], references: [id])
-  userId     String?
-  fromCustomer Boolean @default(false)
-  emoji      String
-  createdAt  DateTime @default(now())
+  id           String   @id @default(uuid())
+  message      Message  @relation(fields: [messageId], references: [id])
+  messageId    String
+  user         User?    @relation(fields: [userId], references: [id])
+  userId       String?
+  fromCustomer Boolean  @default(false)
+  emoji        String
+  createdAt    DateTime @default(now())
 
   @@unique([messageId, userId, fromCustomer])
   @@index([messageId])
@@ -561,15 +637,15 @@ model MessageReaction {
 // ---------------------------------------------------------------------------
 
 model AuditLog {
-  id         String   @id @default(uuid())
-  user       User?    @relation(fields: [userId], references: [id])
-  userId     String?
-  action     String
-  entity     String
-  entityId   String?
-  ipAddress  String?
-  metadata   Json?
-  createdAt  DateTime @default(now())
+  id        String   @id @default(uuid())
+  user      User?    @relation(fields: [userId], references: [id])
+  userId    String?
+  action    String
+  entity    String
+  entityId  String?
+  ipAddress String?
+  metadata  Json?
+  createdAt DateTime @default(now())
 
   @@index([userId])
   @@index([entity, entityId])
@@ -583,8 +659,8 @@ model SystemSetting {
 }
 
 model Notification {
-  id         String   @id @default(uuid())
-  user       User     @relation(fields: [userId], references: [id])
+  id         String    @id @default(uuid())
+  user       User      @relation(fields: [userId], references: [id])
   userId     String
   type       String
   title      String
@@ -592,7 +668,7 @@ model Notification {
   entityType String?
   entityId   String?
   readAt     DateTime?
-  createdAt  DateTime @default(now())
+  createdAt  DateTime  @default(now())
 
   @@index([userId, readAt])
 }
@@ -643,21 +719,21 @@ enum HolidaySource {
 // (MUNICIPAL AND state=? AND city=?)) with no join, and the per-city AUTO
 // sync naturally writes one row per city it fetched anyway.
 model Holiday {
-  id         String        @id @default(uuid())
-  date       DateTime      @db.Date
-  name       String
-  scope      HolidayScope
+  id        String        @id @default(uuid())
+  date      DateTime      @db.Date
+  name      String
+  scope     HolidayScope
   // Required for STATE and MUNICIPAL, null for NATIONAL.
-  state      String?
+  state     String?
   // Required for MUNICIPAL only.
-  city       String?
-  source     HolidaySource
+  city      String?
+  source    HolidaySource
   // The calendar year `date` falls in — movable holidays (Sexta-feira
   // Santa etc.) get a new row every year, and this is what
   // HolidaySyncCursor and the once-per-city-per-year sync cap key off.
-  year       Int
-  createdAt  DateTime      @default(now())
-  updatedAt  DateTime      @updatedAt
+  year      Int
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
 
   // Lets an AUTO sync re-run safely (upsert instead of insert) without ever
   // duplicating a row it already wrote, while a MANUAL entry for the exact
@@ -677,12 +753,12 @@ model Holiday {
 // zero holidays this year still counts as "synced" and isn't re-queried
 // every month.
 model HolidaySyncCursor {
-  id        String       @id @default(uuid())
-  scope     HolidayScope
-  state     String?
-  city      String?
-  year      Int
-  syncedAt  DateTime     @default(now())
+  id       String       @id @default(uuid())
+  scope    HolidayScope
+  state    String?
+  city     String?
+  year     Int
+  syncedAt DateTime     @default(now())
 
   @@unique([scope, state, city, year])
 }

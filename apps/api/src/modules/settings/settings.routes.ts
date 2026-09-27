@@ -560,3 +560,45 @@ settingsRouter.post(
     res.json({ message: "E-mail de teste enviado com sucesso." });
   })
 );
+
+// ---------------------------------------------------------------------------
+// Meta (Instagram / Messenger) app credentials — shared by both Conexões
+// tabs (same Meta App/Page), so gated by the CONEXOES_GERENCIAR umbrella
+// alone rather than a per-channel permission.
+// ---------------------------------------------------------------------------
+
+settingsRouter.get(
+  "/meta",
+  requirePermission(PERMISSION.CONEXOES_GERENCIAR),
+  asyncHandler(async (_req, res) => {
+    res.json(await service.getMetaSettingsMasked());
+  })
+);
+
+const metaSchema = z.object({
+  appId: z.string().max(60).optional(),
+  appSecret: z.string().optional(),
+  pageAccessToken: z.string().optional(),
+  igAccessToken: z.string().optional(),
+  webhookVerifyToken: z.string().max(120).nullable().optional(),
+});
+
+settingsRouter.patch(
+  "/meta",
+  requirePermission(PERMISSION.CONEXOES_GERENCIAR),
+  asyncHandler(async (req, res) => {
+    const patch = metaSchema.parse(req.body ?? {});
+    const settings = await service.updateMetaSettings(patch);
+    // Never audit-log the secrets themselves.
+    const { appSecret, pageAccessToken, igAccessToken, ...safeMetadata } = patch;
+    await writeAudit({
+      userId: req.auth!.userId,
+      action: "SETTINGS_META_UPDATED",
+      entity: "SystemSetting",
+      entityId: "meta",
+      ipAddress: req.ip ?? null,
+      metadata: { ...safeMetadata, appSecretChanged: Boolean(appSecret), pageAccessTokenChanged: Boolean(pageAccessToken), igAccessTokenChanged: Boolean(igAccessToken) },
+    });
+    res.json(settings);
+  })
+);

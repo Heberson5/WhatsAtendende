@@ -47,7 +47,7 @@ export function MergeConversationModal({
     onError: (err) => toast.error(getApiErrorMessage(err)),
   });
 
-  const displayName = contactDisplayName(conversation.contact);
+  const displayName = contactDisplayName(conversation.contact, conversation.channel);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">

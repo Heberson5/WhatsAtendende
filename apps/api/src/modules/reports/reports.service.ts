@@ -63,6 +63,7 @@ export async function getAttendanceReport({ from, to, agentId, connectionIds, tz
       contact: true,
       assignedAgent: true,
       whatsappConnection: true,
+      metaConnection: true,
       messages: { select: { direction: true } },
       transfers: true,
     },
@@ -78,9 +79,9 @@ export async function getAttendanceReport({ from, to, agentId, connectionIds, tz
 
     return {
       Data: formatDateTime(c.createdAt, tzOffsetMinutes),
-      Conexão: c.whatsappConnection.name,
-      Cliente: c.contact.name ?? c.contact.phone,
-      Telefone: c.contact.phone,
+      Conexão: c.whatsappConnection?.name ?? c.metaConnection?.name ?? "-",
+      Cliente: c.contact.name ?? c.contact.phone ?? c.contact.externalUserId ?? "-",
+      Telefone: c.contact.phone ?? "-",
       Atendente: c.assignedAgent?.displayName ?? "-",
       "Entrada na fila": formatDateTime(c.enteredQueueAt, tzOffsetMinutes),
       Aceite: formatDateTime(c.acceptedAt, tzOffsetMinutes),

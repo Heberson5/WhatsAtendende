@@ -74,6 +74,15 @@ export const WHATSAPP_CONNECTION_STATUS = {
 export type WhatsAppConnectionStatus =
   (typeof WHATSAPP_CONNECTION_STATUS)[keyof typeof WHATSAPP_CONNECTION_STATUS];
 
+// Which messaging channel a conversation/contact belongs to — see PROMPT:
+// "prepare tudo para integrar com Instagram e Facebook".
+export const CHANNEL = {
+  WHATSAPP: "WHATSAPP",
+  INSTAGRAM: "INSTAGRAM",
+  MESSENGER: "MESSENGER",
+} as const;
+export type Channel = (typeof CHANNEL)[keyof typeof CHANNEL];
+
 export interface UserDTO {
   id: string;
   fullName: string;
@@ -251,6 +260,12 @@ export interface ConversationListItemDTO {
   status: ConversationStatus;
   assignedAgentId: string | null;
   assignedAgentName: string | null;
+  // Which channel this conversation is on — drives which icon/label
+  // ConversationCard shows. WhatsAppConnection*/below stays populated
+  // (with the owning MetaConnection's data, not just WhatsApp's) for every
+  // channel so existing consumers keep working unchanged; new code should
+  // prefer `channel` to decide how to label/icon it.
+  channel: Channel;
   whatsappConnectionId: string;
   whatsappConnectionName: string;
   whatsappConnectionColor: string;

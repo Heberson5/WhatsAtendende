@@ -468,3 +468,95 @@ export async function updateEmailTemplate(type: EmailTemplateType, patch: Partia
   });
   return next;
 }
+
+// ---------------------------------------------------------------------------
+// Meta (Instagram / Messenger) app credentials — see PROMPT: "prepare tudo
+// para integrar com Instagram e Facebook". Same shape/pattern as
+// EmailSettings above: one SystemSetting row, secrets encrypted at rest,
+// never echoed back to an HTTP response.
+// ---------------------------------------------------------------------------
+
+export const META_KEY = "meta";
+
+export interface MetaSettings {
+  appId: string;
+  appSecret: string | null;
+  pageAccessToken: string | null;
+  igAccessToken: string | null;
+  // Arbitrary string chosen by the admin and entered on both sides (here
+  // and in the Meta App Dashboard's webhook config) so Meta's verification
+  // handshake (GET /webhook?hub.verify_token=...) can be checked against
+  // it — not a credential issued by Meta, so it isn't encrypted like the
+  // tokens above.
+  webhookVerifyToken: string | null;
+}
+
+export type MetaSettingsMasked = Omit<MetaSettings, "appSecret" | "pageAccessToken" | "igAccessToken"> & {
+  hasAppSecret: boolean;
+  hasPageAccessToken: boolean;
+  hasIgAccessToken: boolean;
+};
+
+const DEFAULT_META_SETTINGS: MetaSettings = {
+  appId: "",
+  appSecret: null,
+  pageAccessToken: null,
+  igAccessToken: null,
+  webhookVerifyToken: null,
+};
+
+/** Internal — includes the secrets. Never expose this to an HTTP response; use getMetaSettingsMasked instead. */
+export async function getMetaSettings(): Promise<MetaSettings> {
+  const record = await prisma.systemSetting.findUnique({ where: { key: META_KEY } });
+  const settings = { ...DEFAULT_META_SETTINGS, ...((record?.value as Partial<MetaSettings>) ?? {}) };
+  return {
+    ...settings,
+    appSecret: settings.appSecret ? decryptSecret(settings.appSecret) : null,
+    pageAccessToken: settings.pageAccessToken ? decryptSecret(settings.pageAccessToken) : null,
+    igAccessToken: settings.igAccessToken ? decryptSecret(settings.igAccessToken) : null,
+  };
+}
+
+/** Safe to return to the client: secrets are never echoed back, only whether one is set. */
+export async function getMetaSettingsMasked(): Promise<MetaSettingsMasked> {
+  const settings = await getMetaSettings();
+  const { appSecret, pageAccessToken, igAccessToken, ...rest } = settings;
+  return {
+    ...rest,
+    hasAppSecret: Boolean(appSecret),
+    hasPageAccessToken: Boolean(pageAccessToken),
+    hasIgAccessToken: Boolean(igAccessToken),
+  };
+}
+
+export async function updateMetaSettings(patch: Partial<MetaSettings>): Promise<MetaSettingsMasked> {
+  const current = await getMetaSettings();
+  const next: MetaSettings = {
+    appId: patch.appId ?? current.appId,
+    // Only overwrite a secret when a new non-empty one is sent, same
+    // reasoning as updateEmailSettings — the API never sends it back, so
+    // there's nothing to "leave unchanged" from a form value.
+    appSecret: patch.appSecret ? patch.appSecret : current.appSecret,
+    pageAccessToken: patch.pageAccessToken ? patch.pageAccessToken : current.pageAccessToken,
+    igAccessToken: patch.igAccessToken ? patch.igAccessToken : current.igAccessToken,
+    webhookVerifyToken: patch.webhookVerifyToken !== undefined ? patch.webhookVerifyToken : current.webhookVerifyToken,
+  };
+  const stored = {
+    ...next,
+    appSecret: next.appSecret ? encryptSecret(next.appSecret) : null,
+    pageAccessToken: next.pageAccessToken ? encryptSecret(next.pageAccessToken) : null,
+    igAccessToken: next.igAccessToken ? encryptSecret(next.igAccessToken) : null,
+  };
+  await prisma.systemSetting.upsert({
+    where: { key: META_KEY },
+    update: { value: stored as unknown as Prisma.InputJsonValue },
+    create: { key: META_KEY, value: stored as unknown as Prisma.InputJsonValue },
+  });
+  // Keep every MetaConnection row's status in sync with whether this
+  // channel actually has an access token configured — same shallow
+  // "configured" semantics getEmailSettingsMasked already uses (a token
+  // being present, not a live-verified handshake).
+  await prisma.metaConnection.updateMany({ where: { channel: "MESSENGER" }, data: { status: next.pageAccessToken ? "CONNECTED" : "DISCONNECTED" } });
+  await prisma.metaConnection.updateMany({ where: { channel: "INSTAGRAM" }, data: { status: next.igAccessToken ? "CONNECTED" : "DISCONNECTED" } });
+  return getMetaSettingsMasked();
+}

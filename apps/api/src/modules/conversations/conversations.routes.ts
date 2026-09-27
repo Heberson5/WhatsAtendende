@@ -1,7 +1,7 @@
 import { Router, type Request } from "express";
 import { z } from "zod";
 import rateLimit from "express-rate-limit";
-import type { Role } from "@prisma/client";
+import type { Channel, Role } from "@prisma/client";
 import { PERMISSION } from "@whatsatendende/types";
 import { asyncHandler } from "../../lib/async-handler";
 import { requireAuth, requireRole } from "../../middleware/auth";
@@ -17,6 +17,7 @@ import { toConversationListItemDTO } from "./conversations.mapper";
 import * as service from "./conversations.service";
 import { realtimeEvents } from "../../realtime/realtime";
 import { syncReadReceiptToDevice, requestOlderHistory, sendOutboundText } from "../whatsapp/whatsapp.service";
+import { sendMetaMessage } from "../meta/meta.service";
 import { createOutboundMessage, createSystemOutboundMessage } from "../messages/messages.service";
 import { getActiveClosingMessageForAgent } from "../closing-messages/closing-messages.service";
 import { getActiveTemplateFor, renderAutoMessageTemplate, ROLE_LABEL } from "../auto-message-templates/auto-message-templates.service";
@@ -52,8 +53,17 @@ conversationsRouter.get(
   requireAttendanceAccess,
   asyncHandler(async (req, res) => {
     const agent = await prisma.user.findUnique({ where: { id: req.auth!.userId }, select: { whatsappConnectionId: true } });
-    let connectionIds = agent?.whatsappConnectionId ? [agent.whatsappConnectionId] : parseListParam(req.query.connectionId as string | string[] | undefined);
-    if (req.auth!.role === "AGENT" && !agent?.whatsappConnectionId) return res.json([]); // agent not assigned to a connection yet — nothing to queue from
+    // An AGENT with no assigned WhatsApp connection used to get an empty
+    // queue outright — now falls through to connectionIds = [] (no
+    // WhatsApp query param sent for an AGENT, who has no connection
+    // filter UI), which still matches every Instagram/Messenger
+    // conversation via listQueue's OR clause below.
+    let connectionIds =
+      req.auth!.role === "AGENT"
+        ? agent?.whatsappConnectionId
+          ? [agent.whatsappConnectionId]
+          : []
+        : parseListParam(req.query.connectionId as string | string[] | undefined);
     // A MANAGER only ever receives conversations from a connection they
     // created themselves or were explicitly granted — see PROMPT: "também
     // poderão receber novas conversas de quais conexões" (canReceiveConversations).
@@ -126,7 +136,12 @@ conversationsRouter.post(
     }
     const conversation = await service.startConversation(targetConnectionId, phone, name ?? null, req.auth!.userId);
     await writeAudit({ userId: req.auth!.userId, action: "CONVERSATION_STARTED", entity: "Conversation", entityId: conversation.id, ipAddress: req.ip ?? null, metadata: { connectionId: targetConnectionId, phone } });
-    realtimeEvents.conversationAccepted(conversation.id, conversation.whatsappConnectionId, req.auth!.userId);
+    // startConversation only ever targets a WhatsApp connection (Nova
+    // Conversa has no Instagram/Messenger equivalent — those channels are
+    // inbound-only in this phase, and Meta's own policies restrict
+    // businesses from opening a fresh DM to a customer who hasn't messaged
+    // first).
+    realtimeEvents.conversationAccepted(conversation.id, conversation.whatsappConnectionId!, req.auth!.userId);
     res.status(201).json(toConversationListItemDTO(conversation, true));
   })
 );
@@ -195,14 +210,41 @@ conversationsRouter.get(
 // usuário, não o nome de exibição"). No-op when no ACTIVE template is
 // configured for that trigger (see Respostas > Transferência/Aceite) — an
 // admin who never touches those tabs sees no behavior change at all.
+// Exactly one of these two is populated depending on `channel` — see
+// Channel's doc comment in schema.prisma. Used anywhere a realtime event
+// just needs "the room key for this conversation's connection", regardless
+// of which table it's actually from.
+function connectionIdOf(conversation: { whatsappConnectionId: string | null; metaConnectionId: string | null }): string {
+  return conversation.whatsappConnectionId ?? conversation.metaConnectionId!;
+}
+
+// Shared by sendAutoMessage below and the closing-message sends in
+// /gestao-close and /close — a conversation's connection is exactly one of
+// whatsappConnectionId/metaConnectionId depending on `channel` (see
+// Channel's doc comment in schema.prisma); Instagram/Messenger support
+// plain text via the same Send API metaService.sendMetaMessage already
+// uses for agent-typed replies (see messages.routes.ts's /text route).
+async function sendOutboundTextViaChannel(
+  conversation: { channel: Channel; whatsappConnectionId: string | null; contact: { phone: string | null; externalUserId: string | null } },
+  messageId: string,
+  text: string,
+  senderDisplayName: string
+) {
+  if (conversation.channel === "WHATSAPP") {
+    return sendOutboundText(conversation.whatsappConnectionId!, messageId, conversation.contact.phone!, text, senderDisplayName);
+  }
+  return sendMetaMessage(conversation.channel, messageId, conversation.contact.externalUserId!, text);
+}
+
 async function sendAutoMessage(
   trigger: "TRANSFER" | "ACCEPT",
   conversation: {
     id: string;
-    whatsappConnectionId: string;
+    channel: Channel;
+    whatsappConnectionId: string | null;
     assignedAgentId: string | null;
     assignedAgent: { displayName: string; fullName: string; role: Role } | null;
-    contact: { phone: string; name: string | null };
+    contact: { phone: string | null; externalUserId: string | null; name: string | null };
   },
   sender: { id: string; name: string }
 ): Promise<void> {
@@ -213,10 +255,10 @@ async function sendAutoMessage(
     atendente: templateAgent?.displayName ?? "",
     atendenteNome: templateAgent?.fullName ?? "",
     atendenteCargo: templateAgent ? ROLE_LABEL[templateAgent.role] : "",
-    cliente: conversation.contact.name ?? conversation.contact.phone,
+    cliente: conversation.contact.name ?? conversation.contact.phone ?? "",
   });
   const message = await createSystemOutboundMessage({ conversationId: conversation.id, type: "TEXT", body: text, agentId: sender.id });
-  await sendOutboundText(conversation.whatsappConnectionId, message.id, conversation.contact.phone, text, sender.name);
+  await sendOutboundTextViaChannel(conversation, message.id, text, sender.name);
   realtimeEvents.newMessage(conversation.id, conversation.assignedAgentId);
 }
 
@@ -226,13 +268,17 @@ conversationsRouter.post(
   asyncHandler(async (req, res) => {
     if (req.auth!.role === "MANAGER") {
       const target = await prisma.conversation.findUnique({ where: { id: req.params.id }, select: { whatsappConnectionId: true } });
-      if (target && !(await canManagerAccessConnection(req.auth!.userId, target.whatsappConnectionId, "receive"))) {
+      // ManagerConnectionAccess has no Instagram/Messenger equivalent yet
+      // (see PROMPT: "prepare tudo para integrar com Instagram e
+      // Facebook") — a Meta conversation has no whatsappConnectionId to
+      // check, so every MANAGER can receive it, same as any AGENT can.
+      if (target?.whatsappConnectionId && !(await canManagerAccessConnection(req.auth!.userId, target.whatsappConnectionId, "receive"))) {
         throw Errors.forbidden("Voce nao tem permissao para receber conversas desta conexao");
       }
     }
     const conversation = await service.acceptConversation(req.params.id, req.auth!.userId);
     await writeAudit({ userId: req.auth!.userId, action: "CONVERSATION_ACCEPTED", entity: "Conversation", entityId: conversation.id, ipAddress: req.ip ?? null });
-    realtimeEvents.conversationAccepted(conversation.id, conversation.whatsappConnectionId, req.auth!.userId);
+    realtimeEvents.conversationAccepted(conversation.id, connectionIdOf(conversation), req.auth!.userId);
     await sendAutoMessage("ACCEPT", conversation, { id: req.auth!.userId, name: req.auth!.displayName });
     res.json(toConversationListItemDTO(conversation, true));
   })
@@ -254,7 +300,7 @@ conversationsRouter.post(
       userId: toAgentId,
       type: "TRANSFER",
       title: "Conversa transferida para você",
-      body: conversation.contact.name ?? conversation.contact.phone,
+      body: conversation.contact.name ?? conversation.contact.phone ?? "Contato",
       entityType: "Conversation",
       entityId: conversation.id,
     });
@@ -316,7 +362,9 @@ conversationsRouter.post(
 async function assertManagerCanManageConversationConnection(req: Request): Promise<void> {
   const target = await prisma.conversation.findUnique({ where: { id: req.params.id }, select: { whatsappConnectionId: true } });
   if (!target) throw Errors.notFound("Conversa nao encontrada");
-  if (req.auth!.role === "MANAGER" && !(await canManagerAccessConnection(req.auth!.userId, target.whatsappConnectionId, "manage"))) {
+  // Same reasoning as the /:id/accept route above — no
+  // ManagerConnectionAccess equivalent for Meta channels yet.
+  if (target.whatsappConnectionId && req.auth!.role === "MANAGER" && !(await canManagerAccessConnection(req.auth!.userId, target.whatsappConnectionId, "manage"))) {
     throw Errors.forbidden("Voce nao tem permissao para gerenciar conversas desta conexao");
   }
 }
@@ -341,7 +389,7 @@ conversationsRouter.post(
     if (previousAgentId) {
       realtimeEvents.conversationTransferred(conversation.id, previousAgentId, toAgentId);
     } else {
-      realtimeEvents.conversationAccepted(conversation.id, conversation.whatsappConnectionId, toAgentId);
+      realtimeEvents.conversationAccepted(conversation.id, connectionIdOf(conversation), toAgentId);
     }
     res.json(toConversationListItemDTO(conversation, true));
   })
@@ -362,8 +410,8 @@ conversationsRouter.post(
       ipAddress: req.ip ?? null,
       metadata: { previousAgentId },
     });
-    const contactLabel = conversation.contact.name ?? conversation.contact.phone;
-    realtimeEvents.conversationReturnedToQueue(conversation.id, conversation.whatsappConnectionId, contactLabel, previousAgentId);
+    const contactLabel = conversation.contact.name ?? conversation.contact.phone ?? "Contato";
+    realtimeEvents.conversationReturnedToQueue(conversation.id, connectionIdOf(conversation), contactLabel, previousAgentId);
     res.json(toConversationListItemDTO(conversation, true));
   })
 );
@@ -395,10 +443,10 @@ conversationsRouter.post(
           atendente: req.auth!.displayName,
           atendenteNome: closingAgent?.fullName ?? req.auth!.displayName,
           atendenteCargo: ROLE_LABEL[req.auth!.role],
-          cliente: existing.contact.name ?? existing.contact.phone,
+          cliente: existing.contact.name ?? existing.contact.phone ?? "",
         });
         const outboundMessage = await createSystemOutboundMessage({ conversationId: existing.id, type: "TEXT", body: text, agentId: req.auth!.userId });
-        await sendOutboundText(existing.whatsappConnectionId, outboundMessage.id, existing.contact.phone, text, req.auth!.displayName);
+        await sendOutboundTextViaChannel(existing, outboundMessage.id, text, req.auth!.displayName);
         realtimeEvents.newMessage(existing.id, existing.assignedAgentId);
       }
     }
@@ -436,7 +484,7 @@ conversationsRouter.post(
       ipAddress: req.ip ?? null,
       metadata: { mergedConversationId: req.params.id },
     });
-    realtimeEvents.conversationsMerged(merged.whatsappConnectionId);
+    realtimeEvents.conversationsMerged(connectionIdOf(merged));
     // The surviving conversation just gained the duplicate's messages —
     // reuses newMessage's existing wiring to refresh its owner's "mine"
     // list and this conversation's own view if it's open right now.
@@ -468,7 +516,7 @@ conversationsRouter.post(
         atendente: req.auth!.displayName,
         atendenteNome: closingAgent?.fullName ?? req.auth!.displayName,
         atendenteCargo: ROLE_LABEL[req.auth!.role],
-        cliente: existing.contact.name ?? existing.contact.phone,
+        cliente: existing.contact.name ?? existing.contact.phone ?? "",
       });
       const outboundMessage = await createOutboundMessage({
         conversationId: existing.id,
@@ -476,7 +524,7 @@ conversationsRouter.post(
         type: "TEXT",
         body: text,
       });
-      await sendOutboundText(existing.whatsappConnectionId, outboundMessage.id, existing.contact.phone, text, req.auth!.displayName);
+      await sendOutboundTextViaChannel(existing, outboundMessage.id, text, req.auth!.displayName);
       realtimeEvents.newMessage(existing.id, req.auth!.userId);
     }
 

@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { Facebook, Globe, Instagram } from "lucide-react";
+import { Globe } from "lucide-react";
 import { PERMISSION, type Permission } from "@whatsatendende/types";
 import { WhatsAppConnectionPanel } from "./WhatsAppConnectionPanel";
+import { MetaConnectionPanel } from "./MetaConnectionPanel";
 import { ChannelComingSoonPanel } from "./ChannelComingSoonPanel";
 import { useAuthStore } from "../../store/auth-store";
 
@@ -49,20 +50,8 @@ export default function ConexoesPage() {
       </div>
 
       {activeTab === "whatsapp" && <WhatsAppConnectionPanel />}
-      {activeTab === "instagram" && (
-        <ChannelComingSoonPanel
-          icon={Instagram}
-          title="Instagram ainda não conectado"
-          description="A integração com mensagens diretas do Instagram está planejada, mas ainda não foi implementada."
-        />
-      )}
-      {activeTab === "facebook" && (
-        <ChannelComingSoonPanel
-          icon={Facebook}
-          title="Facebook ainda não conectado"
-          description="A integração com o Facebook Messenger está planejada, mas ainda não foi implementada."
-        />
-      )}
+      {activeTab === "instagram" && <MetaConnectionPanel channel="INSTAGRAM" />}
+      {activeTab === "facebook" && <MetaConnectionPanel channel="MESSENGER" />}
       {activeTab === "site" && (
         <ChannelComingSoonPanel
           icon={Globe}

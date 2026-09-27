@@ -3,7 +3,7 @@ import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
 import { writeAudit } from "../../lib/audit";
 import { realtimeEvents } from "../../realtime/realtime";
-import type { AgentPresence, Contact, ConversationStatus, Role } from "@prisma/client";
+import type { AgentPresence, Channel, Contact, ConversationStatus, Role } from "@prisma/client";
 
 const TRANSFER_OFFLINE_GRACE_MS = 2 * 60 * 60 * 1000; // 2h — see PROMPT: transfer to an offline agent auto-reverts if they don't log in in time.
 
@@ -11,6 +11,7 @@ const conversationInclude = {
   contact: true,
   assignedAgent: true,
   whatsappConnection: true,
+  metaConnection: true,
   transfers: { orderBy: { createdAt: "desc" as const }, take: 1, include: { fromAgent: true, toAgent: true } },
 };
 
@@ -517,7 +518,16 @@ function findMentionedAgentByTypo(
   return tied ? null : best;
 }
 
-export async function findOrOpenConversationForInboundMessage(connectionId: string, contactId: string, body?: string | null) {
+export async function findOrOpenConversationForInboundMessage(
+  connectionId: string,
+  contactId: string,
+  body?: string | null,
+  // Defaults to WHATSAPP so the one existing caller (whatsapp.service.ts)
+  // needs no change — meta.service.ts passes INSTAGRAM/MESSENGER and a
+  // MetaConnection id instead.
+  channel: Channel = "WHATSAPP"
+) {
+  const connectionField = channel === "WHATSAPP" ? { whatsappConnectionId: connectionId } : { metaConnectionId: connectionId };
   const active = await findActiveConversationForContact(contactId);
   if (active && active.status !== "HANDLED_EXTERNALLY") {
     return { conversation: active, isNewConversation: false, autoAssignedAgentId: null as string | null };
@@ -550,14 +560,15 @@ export async function findOrOpenConversationForInboundMessage(connectionId: stri
     data: mentionedAgent
       ? {
           contactId,
-          whatsappConnectionId: connectionId,
+          channel,
+          ...connectionField,
           status: "IN_PROGRESS",
           assignedAgentId: mentionedAgent.id,
           enteredQueueAt: now,
           acceptedAt: now,
           lastMessageAt: now,
         }
-      : { contactId, whatsappConnectionId: connectionId, status: "NEW", enteredQueueAt: now, lastMessageAt: now },
+      : { contactId, channel, ...connectionField, status: "NEW", enteredQueueAt: now, lastMessageAt: now },
   });
 
   const createdPayload = previousConversationId
@@ -651,15 +662,23 @@ export async function findOrOpenConversationForDeviceSentMessage(connectionId: s
  * connection's queue combined (each conversation carries its own connection
  * name/color so they stay distinguishable even mixed together).
  */
-export async function listQueue(connectionIds?: string[]) {
+export async function listQueue(whatsappConnectionIds?: string[]) {
   const conversations = await prisma.conversation.findMany({
     where: {
-      // undefined = no filter (see all); [] must mean "allowed to see
-      // none" and match nothing — NOT the same as no filter at all. A
-      // MANAGER scoped down to zero connections (see connection-access.ts)
-      // must get an empty queue, not everyone's.
-      whatsappConnectionId: connectionIds === undefined ? undefined : { in: connectionIds },
       status: { in: ["NEW", "WAITING"] },
+      OR: [
+        // undefined = no filter (see all); [] must mean "allowed to see
+        // none" and match nothing — NOT the same as no filter at all. A
+        // MANAGER scoped down to zero connections (see connection-access.ts)
+        // must get an empty WhatsApp queue, not everyone's.
+        { channel: "WHATSAPP", whatsappConnectionId: whatsappConnectionIds === undefined ? undefined : { in: whatsappConnectionIds } },
+        // Instagram/Messenger have no ManagerConnectionAccess equivalent
+        // yet (see PROMPT: "prepare tudo para integrar com Instagram e
+        // Facebook") — every agent/manager with attendance access sees
+        // every Meta conversation, regardless of the WhatsApp-connection
+        // filter above.
+        { channel: { not: "WHATSAPP" } },
+      ],
     },
     include: conversationInclude,
     // Most recently messaged first — matches WhatsApp's own chat-list
@@ -873,8 +892,12 @@ export async function listAllConversations(filters: OversightFilters) {
       createdAt: filters.from || filters.to ? { gte: filters.from, lte: filters.to } : undefined,
       assignedAgentId: filters.agentId,
       status: filters.status ? (filters.status as any) : undefined,
-      // Same undefined-vs-empty-array distinction as listQueue above.
-      whatsappConnectionId: filters.connectionIds === undefined ? undefined : { in: filters.connectionIds },
+      // Same WhatsApp-only-filter + "every Meta conversation regardless"
+      // OR shape as listQueue above (see its own comment for why).
+      OR: [
+        { channel: "WHATSAPP", whatsappConnectionId: filters.connectionIds === undefined ? undefined : { in: filters.connectionIds } },
+        { channel: { not: "WHATSAPP" } },
+      ],
       contact: filters.contactSearch
         ? {
             OR: [
@@ -1043,11 +1066,12 @@ export async function assertAgentCanReadConversation(
 export async function acceptConversation(conversationId: string, agentId: string) {
   const target = await prisma.conversation.findUnique({
     where: { id: conversationId },
-    select: { whatsappConnection: { select: { status: true } } },
+    select: { whatsappConnection: { select: { status: true } }, metaConnection: { select: { status: true } } },
   });
   if (!target) throw Errors.notFound("Conversa nao encontrada");
-  if (target.whatsappConnection.status !== "CONNECTED") {
-    throw Errors.badRequest("A conexao de WhatsApp esta desconectada — nao e possivel aceitar conversas");
+  const connectionStatus = target.whatsappConnection?.status ?? target.metaConnection?.status;
+  if (connectionStatus !== "CONNECTED") {
+    throw Errors.badRequest("A conexao esta desconectada — nao e possivel aceitar conversas");
   }
 
   const now = new Date();

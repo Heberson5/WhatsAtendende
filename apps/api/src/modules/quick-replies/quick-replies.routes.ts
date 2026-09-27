@@ -24,6 +24,11 @@ quickRepliesRouter.get(
   asyncHandler(async (req, res) => {
     const conversation = await getConversationOrThrow(req.params.conversationId);
     if (req.auth!.role === "AGENT") assertAgentCanAccessConversation(conversation, req.auth!);
+    // Quick replies are scoped to a WhatsApp connection only (see
+    // QuickReply's doc comment in schema.prisma) — no Instagram/Messenger
+    // equivalent yet, so an agent on one of those just sees an empty list
+    // instead of the route crashing on a null connection id.
+    if (!conversation.whatsappConnectionId) return res.json([]);
     const rows = await service.listQuickRepliesForConnection(conversation.whatsappConnectionId);
     res.json(rows.map(toQuickReplyDTO));
   })

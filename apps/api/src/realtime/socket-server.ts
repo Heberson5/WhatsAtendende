@@ -65,6 +65,12 @@ export function createSocketServer(httpServer: HttpServer): SocketIOServer {
       // effect on their next reconnect without requiring a new login.
       const user = await prisma.user.findUnique({ where: { id: auth.userId }, select: { whatsappConnectionId: true } });
       if (user?.whatsappConnectionId) socket.join(ROOMS.queue(user.whatsappConnectionId));
+      // Instagram/Messenger conversations have no "fixed agent" concept yet
+      // (see PROMPT: "prepare tudo para integrar com Instagram e
+      // Facebook") — every AGENT joins every Meta connection's queue room,
+      // same as MANAGER/ADMIN already see everything via ROOMS.oversight().
+      const metaConnections = await prisma.metaConnection.findMany({ select: { id: true } });
+      for (const conn of metaConnections) socket.join(ROOMS.queue(conn.id));
     }
     if (auth.role === "MANAGER" || auth.role === "ADMIN") socket.join(ROOMS.oversight());
 
