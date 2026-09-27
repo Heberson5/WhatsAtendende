@@ -15,6 +15,7 @@ export function AppInstallPanel() {
   const { data: branding } = useBranding();
   const queryClient = useQueryClient();
   const [appName, setAppName] = useState(branding?.appName ?? branding?.companyName ?? "");
+  const [appVersion, setAppVersion] = useState(branding?.appVersion ?? "");
   const iconInputRef = useRef<HTMLInputElement>(null);
 
   const nameMutation = useMutation({
@@ -22,6 +23,15 @@ export function AppInstallPanel() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["branding"] });
       toast.success("Nome do aplicativo atualizado.");
+    },
+    onError: (err) => toast.error(getApiErrorMessage(err)),
+  });
+
+  const versionMutation = useMutation({
+    mutationFn: (version: string) => api.patch("/settings/branding", { appVersion: version.trim() || null }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["branding"] });
+      toast.success("Versão do aplicativo atualizada.");
     },
     onError: (err) => toast.error(getApiErrorMessage(err)),
   });
@@ -99,6 +109,30 @@ export function AppInstallPanel() {
         Quem já instalou o aplicativo antes de uma mudança precisa desinstalar e instalar novamente para ver o novo
         ícone/nome — isso é uma limitação normal desse tipo de instalação, não um erro.
       </p>
+
+      <div className="border-t border-border pt-6">
+        <label className="block">
+          <span className="mb-1 block text-sm font-medium">Versão do aplicativo</span>
+          <input
+            value={appVersion}
+            onChange={(e) => setAppVersion(e.target.value)}
+            maxLength={30}
+            placeholder="Ex: 1.3.0"
+            className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm"
+          />
+          <span className="mt-1 block text-xs text-muted">
+            Mude aqui sempre que trocar o ícone/nome acima. Quem já tem o aplicativo instalado vê um aviso dentro do
+            sistema pedindo pra reinstalar — quem já reinstalou pode ignorar o aviso. Aparece também no menu lateral.
+          </span>
+        </label>
+        <button
+          onClick={() => versionMutation.mutate(appVersion)}
+          disabled={versionMutation.isPending}
+          className="focus-ring mt-3 rounded-card bg-primary px-4 py-2 text-sm font-semibold text-primary-fg disabled:opacity-60"
+        >
+          Salvar versão
+        </button>
+      </div>
     </div>
   );
 }
