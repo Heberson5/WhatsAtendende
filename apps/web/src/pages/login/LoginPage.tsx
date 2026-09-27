@@ -129,9 +129,9 @@ export default function LoginPage() {
         >
           <div className="mb-8 flex flex-col items-center gap-3 text-center">
             {branding?.logoUrl ? (
-              <img src={branding.logoUrl} alt={branding.companyName} className="h-14 w-14 object-contain" />
+              <img src={branding.logoUrl} alt={branding.companyName} className="h-20 w-20 object-contain" />
             ) : (
-              <div className="shadow-soft flex h-14 w-14 items-center justify-center rounded-2xl bg-primary text-xl font-bold text-primary-fg">
+              <div className="shadow-soft flex h-20 w-20 items-center justify-center rounded-2xl bg-primary text-2xl font-bold text-primary-fg">
                 {(branding?.companyName ?? "WA").slice(0, 2).toUpperCase()}
               </div>
             )}
