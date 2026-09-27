@@ -11,8 +11,11 @@ import { connectSocket, disconnectSocket, getSocket } from "../../lib/socket";
 import { useIdleLogout } from "../../hooks/useIdleLogout";
 import { useAccessWindow } from "../../hooks/useAccessWindow";
 import { useSocketEvents } from "../../hooks/useSocketEvents";
+import { useLandingPageSettings } from "../../hooks/useLandingPageSettings";
 
-const TITLES: Record<string, string> = {
+// Exported so LandingPagePage.tsx can list every overridable page title
+// without duplicating (and risking drifting from) this map.
+export const TITLES: Record<string, string> = {
   "/atendimento": "Atendimento",
   "/gestao": "Gestão",
   "/dashboard": "Dashboard",
@@ -21,6 +24,7 @@ const TITLES: Record<string, string> = {
   "/configuracoes": "Configurações",
   "/auditoria": "Auditoria",
   "/perfil": "Meu Perfil",
+  "/landing-page": "Landing Page",
 };
 
 export function AppLayout() {
@@ -91,7 +95,8 @@ export function AppLayout() {
     setMobileNavOpen(false);
   }, [location.pathname]);
 
-  const title = TITLES[location.pathname] ?? "WhatsAtendende";
+  const { data: landingPage } = useLandingPageSettings();
+  const title = landingPage?.pageTitles[location.pathname] || TITLES[location.pathname] || "WhatsAtendende";
 
   return (
     <div className="flex h-screen gap-2 overflow-hidden bg-[var(--color-bg)] p-2 sm:gap-3 sm:p-3">

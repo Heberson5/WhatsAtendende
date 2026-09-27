@@ -397,6 +397,9 @@ export const PERMISSION = {
   RESPOSTAS_ENCERRAMENTO_GERENCIAR: "respostas_encerramento.gerenciar",
   RESPOSTAS_TRANSFERENCIA_GERENCIAR: "respostas_transferencia.gerenciar",
   RESPOSTAS_ACEITE_GERENCIAR: "respostas_aceite.gerenciar",
+  // Standalone top-level menu (not nested under CONFIGURACOES_GERENCIAR) —
+  // see PROMPT: "planeje um novo menu chamado landing page".
+  LANDING_PAGE_GERENCIAR: "landing_page.gerenciar",
 } as const;
 export type Permission = (typeof PERMISSION)[keyof typeof PERMISSION];
 
@@ -568,6 +571,14 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     description: "Cadastrar, editar e excluir a mensagem automática enviada ao cliente quando o atendente aceita a conversa (aba Aceite).",
     editableRoles: ["AGENT", "MANAGER"],
     defaultAllowed: { AGENT: true, MANAGER: true },
+  },
+  {
+    key: PERMISSION.LANDING_PAGE_GERENCIAR,
+    group: "Landing Page",
+    label: "Acessar Landing Page",
+    description: "Editar a tela de login (logo, alinhamento, subtítulo), reordenar/renomear os itens do menu principal e os títulos das páginas.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: false },
   },
 ];
 

@@ -13,10 +13,13 @@ import {
   ChevronRight,
   X,
   Slash,
+  MonitorSmartphone,
 } from "lucide-react";
 import { PERMISSION, type Permission } from "@whatsatendende/types";
 import { useAuthStore } from "../../store/auth-store";
 import { useBranding } from "../../hooks/useBranding";
+import { useLandingPageSettings } from "../../hooks/useLandingPageSettings";
+import { ICON_LIBRARY } from "../../lib/icon-library";
 
 export interface MenuItem {
   to: string;
@@ -38,14 +41,37 @@ export const MENU_ITEMS: MenuItem[] = [
   { to: "/usuarios", label: "Usuários", icon: Users, permission: PERMISSION.USUARIOS_GERENCIAR },
   { to: "/respostas", label: "Respostas", icon: Slash, permission: PERMISSION.RESPOSTAS_RAPIDAS_GERENCIAR },
   { to: "/configuracoes", label: "Configurações", icon: Settings, permission: PERMISSION.CONFIGURACOES_GERENCIAR },
+  { to: "/landing-page", label: "Landing Page", icon: MonitorSmartphone, permission: PERMISSION.LANDING_PAGE_GERENCIAR },
   { to: "/auditoria", label: "Auditoria", icon: ScrollText, permission: PERMISSION.AUDITORIA_ACESSAR },
 ];
 
-/** Same permission filter Sidebar and BottomNav both need, kept in one place so they can never drift apart. */
+/**
+ * Same permission filter (and now label/icon/order customization) Sidebar
+ * and BottomNav both need, kept in one place so they can never drift apart.
+ * Order/label/icon come from the Landing Page settings — see
+ * LandingPagePage.tsx's "Menu principal" section.
+ */
 export function useVisibleMenuItems(): MenuItem[] {
   const user = useAuthStore((s) => s.user);
   const permissions = useAuthStore((s) => s.permissions);
-  return MENU_ITEMS.filter((item) => user && permissions?.[item.permission]);
+  const { data: landingPage } = useLandingPageSettings();
+
+  const visible = MENU_ITEMS.filter((item) => user && permissions?.[item.permission]).map((item) => {
+    const override = landingPage?.menuItems[item.to];
+    const icon = (override?.icon && ICON_LIBRARY[override.icon]) || item.icon;
+    return { ...item, label: override?.label || item.label, icon };
+  });
+
+  const order = landingPage?.menuOrder;
+  if (!order || order.length === 0) return visible;
+
+  // Stable sort: items not in `order` keep MAX_SAFE_INTEGER, so they stay in
+  // their natural relative order, appended after the ones explicitly ordered.
+  const indexOf = (to: string) => {
+    const i = order.indexOf(to);
+    return i === -1 ? Number.MAX_SAFE_INTEGER : i;
+  };
+  return [...visible].sort((a, b) => indexOf(a.to) - indexOf(b.to));
 }
 
 export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: boolean; onMobileClose?: () => void }) {

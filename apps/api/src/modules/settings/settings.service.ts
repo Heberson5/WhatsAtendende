@@ -97,6 +97,51 @@ export async function updateExportBranding(patch: Partial<ExportBrandingSettings
 }
 
 // ---------------------------------------------------------------------------
+// Landing Page — customizes the login screen (logo size/alignment/subtitle),
+// the main menu (order, label, icon of each item — shared by Sidebar and
+// BottomNav) and each page's header title. Its own top-level menu/permission,
+// not nested under Configurações — see PROMPT: "planeje um novo menu chamado
+// landing page".
+export const LANDING_PAGE_KEY = "landingPage";
+
+export interface LandingPageSettings {
+  loginLogoSizePx: number;
+  loginLogoAlign: "center" | "left";
+  loginSubtitle: string | null;
+  /** `to` paths (Sidebar's MENU_ITEMS) in the desired order; [] = default order. */
+  menuOrder: string[];
+  /** `to` path -> only the fields actually customized. */
+  menuItems: Record<string, { label?: string; icon?: string }>;
+  /** route path -> custom page title (AppLayout's TITLES map). */
+  pageTitles: Record<string, string>;
+}
+
+const DEFAULT_LANDING_PAGE: LandingPageSettings = {
+  loginLogoSizePx: 80,
+  loginLogoAlign: "center",
+  loginSubtitle: null,
+  menuOrder: [],
+  menuItems: {},
+  pageTitles: {},
+};
+
+export async function getLandingPageSettings(): Promise<LandingPageSettings> {
+  const record = await prisma.systemSetting.findUnique({ where: { key: LANDING_PAGE_KEY } });
+  return record ? { ...DEFAULT_LANDING_PAGE, ...(record.value as object) } : DEFAULT_LANDING_PAGE;
+}
+
+export async function updateLandingPageSettings(patch: Partial<LandingPageSettings>): Promise<LandingPageSettings> {
+  const current = await getLandingPageSettings();
+  const next = { ...current, ...patch };
+  await prisma.systemSetting.upsert({
+    where: { key: LANDING_PAGE_KEY },
+    update: { value: next as unknown as Prisma.InputJsonValue },
+    create: { key: LANDING_PAGE_KEY, value: next as unknown as Prisma.InputJsonValue },
+  });
+  return next;
+}
+
+// ---------------------------------------------------------------------------
 // Maintenance mode — see PROMPT: "botão em configurações para colocar o
 // site em manutenção... somente o administrador" pode acessar durante.
 // Read is public (the login screen needs it before anyone authenticates,
