@@ -383,7 +383,6 @@ export const PERMISSION = {
   CONFIGURACOES_GERENCIAR: "configuracoes.gerenciar",
   // Each layered ON TOP of CONFIGURACOES_GERENCIAR (need both) — see that
   // key's own doc comment.
-  CONFIGURACOES_WHATSAPP_GERENCIAR: "configuracoes.whatsapp.gerenciar",
   CONFIGURACOES_IDENTIDADE_GERENCIAR: "configuracoes.identidade.gerenciar",
   CONFIGURACOES_EMAIL_GERENCIAR: "configuracoes.email.gerenciar",
   CONFIGURACOES_EMAIL_MODELOS_GERENCIAR: "configuracoes.email_modelos.gerenciar",
@@ -400,6 +399,17 @@ export const PERMISSION = {
   // Standalone top-level menu (not nested under CONFIGURACOES_GERENCIAR) —
   // see PROMPT: "planeje um novo menu chamado landing page".
   LANDING_PAGE_GERENCIAR: "landing_page.gerenciar",
+  // Standalone top-level menu (not nested under CONFIGURACOES_GERENCIAR) —
+  // one tab per channel. See PROMPT: "crie um novo menu chamado Conexões,
+  // onde terá a aba WhatsApp, Instagram, Facebook e Site". WHATSAPP
+  // replaces the old CONFIGURACOES_WHATSAPP_GERENCIAR (moved out of
+  // Configurações); INSTAGRAM/FACEBOOK/SITE gate tabs that only show a
+  // "not connected yet" placeholder until those integrations exist.
+  CONEXOES_GERENCIAR: "conexoes.gerenciar",
+  CONEXOES_WHATSAPP_GERENCIAR: "conexoes.whatsapp.gerenciar",
+  CONEXOES_INSTAGRAM_GERENCIAR: "conexoes.instagram.gerenciar",
+  CONEXOES_FACEBOOK_GERENCIAR: "conexoes.facebook.gerenciar",
+  CONEXOES_SITE_GERENCIAR: "conexoes.site.gerenciar",
 } as const;
 export type Permission = (typeof PERMISSION)[keyof typeof PERMISSION];
 
@@ -487,14 +497,6 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     defaultAllowed: { AGENT: false, MANAGER: false },
   },
   {
-    key: PERMISSION.CONFIGURACOES_WHATSAPP_GERENCIAR,
-    group: "Configurações",
-    label: "Configurações — Conexões de WhatsApp",
-    description: "Criar, editar, excluir, conectar e desconectar conexões de WhatsApp.",
-    editableRoles: ["AGENT", "MANAGER"],
-    defaultAllowed: { AGENT: true, MANAGER: true },
-  },
-  {
     key: PERMISSION.CONFIGURACOES_IDENTIDADE_GERENCIAR,
     group: "Configurações",
     label: "Configurações — Identidade visual",
@@ -579,6 +581,47 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     description: "Editar a tela de login (logo, alinhamento, subtítulo), reordenar/renomear os itens do menu principal e os títulos das páginas.",
     editableRoles: ["AGENT", "MANAGER"],
     defaultAllowed: { AGENT: false, MANAGER: false },
+  },
+  {
+    key: PERMISSION.CONEXOES_GERENCIAR,
+    group: "Conexões",
+    label: "Acessar Conexões",
+    description:
+      "Acesso geral à tela de Conexões. Necessária para qualquer um dos canais abaixo — por padrão libera todos; restrinja canais específicos desmarcando-os individualmente.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: false },
+  },
+  {
+    key: PERMISSION.CONEXOES_WHATSAPP_GERENCIAR,
+    group: "Conexões",
+    label: "Conexões — WhatsApp",
+    description: "Criar, editar, excluir, conectar e desconectar conexões de WhatsApp.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: true, MANAGER: true },
+  },
+  {
+    key: PERMISSION.CONEXOES_INSTAGRAM_GERENCIAR,
+    group: "Conexões",
+    label: "Conexões — Instagram",
+    description: "Gerenciar a conexão de Instagram (integração ainda não disponível).",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: true, MANAGER: true },
+  },
+  {
+    key: PERMISSION.CONEXOES_FACEBOOK_GERENCIAR,
+    group: "Conexões",
+    label: "Conexões — Facebook",
+    description: "Gerenciar a conexão de Facebook Messenger (integração ainda não disponível).",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: true, MANAGER: true },
+  },
+  {
+    key: PERMISSION.CONEXOES_SITE_GERENCIAR,
+    group: "Conexões",
+    label: "Conexões — Site",
+    description: "Gerenciar o widget de chat do site (integração ainda não disponível).",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: true, MANAGER: true },
   },
 ];
 

@@ -21,6 +21,7 @@ export const TITLES: Record<string, string> = {
   "/dashboard": "Dashboard",
   "/relatorios": "Relatórios",
   "/usuarios": "Usuários",
+  "/conexoes": "Conexões",
   "/configuracoes": "Configurações",
   "/auditoria": "Auditoria",
   "/perfil": "Meu Perfil",

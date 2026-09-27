@@ -41,8 +41,8 @@ async function requireManagerCanManageConnection(req: Request): Promise<void> {
 
 whatsappRouter.post(
   "/connections",
-  requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
-  requirePermission(PERMISSION.CONFIGURACOES_WHATSAPP_GERENCIAR),
+  requirePermission(PERMISSION.CONEXOES_GERENCIAR),
+  requirePermission(PERMISSION.CONEXOES_WHATSAPP_GERENCIAR),
   asyncHandler(async (req, res) => {
     const { name, color } = createSchema.parse(req.body);
     const connection = await service.createConnection(name, color, req.auth!.userId);
@@ -53,8 +53,8 @@ whatsappRouter.post(
 
 whatsappRouter.patch(
   "/connections/:id",
-  requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
-  requirePermission(PERMISSION.CONFIGURACOES_WHATSAPP_GERENCIAR),
+  requirePermission(PERMISSION.CONEXOES_GERENCIAR),
+  requirePermission(PERMISSION.CONEXOES_WHATSAPP_GERENCIAR),
   asyncHandler(async (req, res) => {
     await requireManagerCanManageConnection(req);
     const patch = updateSchema.parse(req.body);
@@ -66,8 +66,8 @@ whatsappRouter.patch(
 
 whatsappRouter.delete(
   "/connections/:id",
-  requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
-  requirePermission(PERMISSION.CONFIGURACOES_WHATSAPP_GERENCIAR),
+  requirePermission(PERMISSION.CONEXOES_GERENCIAR),
+  requirePermission(PERMISSION.CONEXOES_WHATSAPP_GERENCIAR),
   asyncHandler(async (req, res) => {
     await requireManagerCanManageConnection(req);
     await service.deleteConnection(req.params.id);
@@ -80,8 +80,8 @@ const connectSchema = z.object({ phoneNumber: z.string().trim().regex(/^\d{8,15}
 
 whatsappRouter.post(
   "/connections/:id/connect",
-  requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
-  requirePermission(PERMISSION.CONFIGURACOES_WHATSAPP_GERENCIAR),
+  requirePermission(PERMISSION.CONEXOES_GERENCIAR),
+  requirePermission(PERMISSION.CONEXOES_WHATSAPP_GERENCIAR),
   asyncHandler(async (req, res) => {
     await requireManagerCanManageConnection(req);
     // Connecting (QR/pairing-code generation, then the real handshake) takes
@@ -99,8 +99,8 @@ whatsappRouter.post(
 
 whatsappRouter.post(
   "/connections/:id/disconnect",
-  requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
-  requirePermission(PERMISSION.CONFIGURACOES_WHATSAPP_GERENCIAR),
+  requirePermission(PERMISSION.CONEXOES_GERENCIAR),
+  requirePermission(PERMISSION.CONEXOES_WHATSAPP_GERENCIAR),
   asyncHandler(async (req, res) => {
     await requireManagerCanManageConnection(req);
     await service.disconnect(req.params.id);
@@ -111,8 +111,8 @@ whatsappRouter.post(
 
 whatsappRouter.post(
   "/connections/:id/reconnect",
-  requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
-  requirePermission(PERMISSION.CONFIGURACOES_WHATSAPP_GERENCIAR),
+  requirePermission(PERMISSION.CONEXOES_GERENCIAR),
+  requirePermission(PERMISSION.CONEXOES_WHATSAPP_GERENCIAR),
   asyncHandler(async (req, res) => {
     await requireManagerCanManageConnection(req);
     await service.disconnect(req.params.id);
