@@ -121,6 +121,15 @@ settingsRouter.get(
   })
 );
 
+// Public, same reasoning as /branding above: the login screen itself needs
+// the logo size/alignment/subtitle before anyone authenticates.
+settingsRouter.get(
+  "/landing-page",
+  asyncHandler(async (_req, res) => {
+    res.json(await service.getLandingPageSettings());
+  })
+);
+
 settingsRouter.use(requireAuth);
 
 const maintenanceSchema = z
@@ -301,6 +310,29 @@ settingsRouter.post(
     const branding = await service.updateExportBranding({ logoUrl: `/uploads/branding/${fileName}` });
     await writeAudit({ userId: req.auth!.userId, action: "SETTINGS_EXPORT_LOGO_UPLOADED", entity: "SystemSetting", entityId: "exportBranding", ipAddress: req.ip ?? null });
     res.json(branding);
+  })
+);
+
+// Standalone (not layered under CONFIGURACOES_GERENCIAR) — Landing Page is
+// its own top-level menu, not a Configurações tab. See PROMPT: "planeje um
+// novo menu chamado landing page".
+const landingPageSchema = z.object({
+  loginLogoSizePx: z.number().int().min(32).max(200).optional(),
+  loginLogoAlign: z.enum(["center", "left"]).optional(),
+  loginSubtitle: z.string().trim().max(120).nullable().optional(),
+  menuOrder: z.array(z.string()).optional(),
+  menuItems: z.record(z.string(), z.object({ label: z.string().trim().max(30).optional(), icon: z.string().optional() })).optional(),
+  pageTitles: z.record(z.string(), z.string().trim().max(40)).optional(),
+});
+
+settingsRouter.patch(
+  "/landing-page",
+  requirePermission(PERMISSION.LANDING_PAGE_GERENCIAR),
+  asyncHandler(async (req, res) => {
+    const patch = landingPageSchema.parse(req.body);
+    const settings = await service.updateLandingPageSettings(patch);
+    await writeAudit({ userId: req.auth!.userId, action: "SETTINGS_LANDING_PAGE_UPDATED", entity: "SystemSetting", entityId: "landingPage", ipAddress: req.ip ?? null, metadata: patch });
+    res.json(settings);
   })
 );
 

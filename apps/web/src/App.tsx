@@ -15,6 +15,7 @@ import RespostasPage from "./pages/respostas/RespostasPage";
 import ConfiguracoesPage from "./pages/configuracoes/ConfiguracoesPage";
 import AuditoriaPage from "./pages/auditoria/AuditoriaPage";
 import MeuPerfilPage from "./pages/perfil/MeuPerfilPage";
+import LandingPagePage from "./pages/landing-page/LandingPagePage";
 
 // Where "/" lands depends on what this user's role can actually reach —
 // picks the first permitted destination in this priority order rather than
@@ -80,6 +81,9 @@ export default function App() {
           <Route path="/respostas-rapidas" element={<Navigate to="/respostas" replace />} />
           <Route element={<PermissionRoute permission={PERMISSION.CONFIGURACOES_GERENCIAR} />}>
             <Route path="/configuracoes" element={<ConfiguracoesPage />} />
+          </Route>
+          <Route element={<PermissionRoute permission={PERMISSION.LANDING_PAGE_GERENCIAR} />}>
+            <Route path="/landing-page" element={<LandingPagePage />} />
           </Route>
           <Route element={<PermissionRoute permission={PERMISSION.AUDITORIA_ACESSAR} />}>
             <Route path="/auditoria" element={<AuditoriaPage />} />

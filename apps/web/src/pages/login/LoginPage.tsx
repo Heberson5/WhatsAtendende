@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
 import { useBranding } from "../../hooks/useBranding";
+import { useLandingPageSettings } from "../../hooks/useLandingPageSettings";
 import { useMaintenanceStatus } from "../../hooks/useMaintenanceStatus";
 import { useTheme } from "../../hooks/useTheme";
 import { MaintenanceScreen } from "./MaintenanceScreen";
@@ -30,6 +31,7 @@ const GLOW_SPOTS: { className: string; color: "primary" | "secondary"; strength:
 export default function LoginPage() {
   const { user, setSession } = useAuthStore();
   const { data: branding } = useBranding();
+  const { data: landingPage } = useLandingPageSettings();
   const { data: maintenance, isLoading: maintenanceLoading } = useMaintenanceStatus();
   // The login screen renders before AppLayout (and its Topbar, the only
   // other place this hook was called) ever mounts, so without this the
@@ -127,17 +129,29 @@ export default function LoginPage() {
           className="shadow-elevated relative rounded-[20px] border border-border p-8 backdrop-blur-xl sm:p-10"
           style={{ background: "color-mix(in srgb, var(--color-surface) 80%, transparent)" }}
         >
-          <div className="mb-8 flex flex-col items-center gap-3 text-center">
+          <div
+            className={`mb-8 flex flex-col gap-3 ${
+              landingPage?.loginLogoAlign === "left" ? "items-start text-left" : "items-center text-center"
+            }`}
+          >
             {branding?.logoUrl ? (
-              <img src={branding.logoUrl} alt={branding.companyName} className="h-20 w-20 object-contain" />
+              <img
+                src={branding.logoUrl}
+                alt={branding.companyName}
+                className="object-contain"
+                style={{ width: landingPage?.loginLogoSizePx ?? 80, height: landingPage?.loginLogoSizePx ?? 80 }}
+              />
             ) : (
-              <div className="shadow-soft flex h-20 w-20 items-center justify-center rounded-2xl bg-primary text-2xl font-bold text-primary-fg">
+              <div
+                className="shadow-soft flex items-center justify-center rounded-2xl bg-primary text-2xl font-bold text-primary-fg"
+                style={{ width: landingPage?.loginLogoSizePx ?? 80, height: landingPage?.loginLogoSizePx ?? 80 }}
+              >
                 {(branding?.companyName ?? "WA").slice(0, 2).toUpperCase()}
               </div>
             )}
             <div>
               <h1 className="text-xl font-semibold">{branding?.companyName ?? "WhatsAtendende"}</h1>
-              <p className="text-sm text-muted">Plataforma de atendimento via WhatsApp</p>
+              <p className="text-sm text-muted">{landingPage?.loginSubtitle || "Plataforma de atendimento via WhatsApp"}</p>
             </div>
           </div>
 
