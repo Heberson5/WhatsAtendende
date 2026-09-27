@@ -54,16 +54,15 @@ export function useNotificationPermission() {
 }
 
 /**
- * Fires a native OS notification for a new message. Deliberately skipped
- * when the user is already looking at this tab — the in-app toast (see
- * useSocketEvents) already covers that case, and a native popup on top of
- * it would just be a redundant second alert for the exact same event.
- * `tag` collapses repeated notifications for the same conversation into one
- * (each new one replaces the last) instead of stacking a pile of them.
+ * Fires a native OS notification for a new message. Always fires alongside
+ * the in-app toast (see useSocketEvents), even while the browser window is
+ * open and focused — see PROMPT: "faça com que as notificações do Windows
+ * apareça mesmo com a janela do navegador aberta". `tag` collapses repeated
+ * notifications for the same conversation into one (each new one replaces
+ * the last) instead of stacking a pile of them.
  */
 export function notifyDesktop(title: string, body: string, tag?: string): void {
   if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
-  if (document.visibilityState === "visible" && document.hasFocus()) return;
 
   const notification = new Notification(title, { body, icon: "/favicon.svg", tag });
   notification.onclick = () => {
