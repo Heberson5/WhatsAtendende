@@ -18,6 +18,14 @@ export interface BrandingSettings {
   // falls back to companyName / the bundled default icon.
   appName: string | null;
   appIconUrl: string | null;
+  // Auto-generated from appIconUrl on every upload (opaque white background,
+  // logo confined to Android's safe zone) — used only for the manifest's
+  // "maskable" purpose icon. A transparent PNG there (the raw appIconUrl)
+  // gets its transparent pixels painted black by Android's own adaptive-icon
+  // renderer, and content outside the safe zone gets clipped by the
+  // circle/squircle crop. See PROMPT: "a logo... está aparecendo com fundo
+  // preto... quero que fique com mais espaço nos cantos".
+  appIconMaskableUrl: string | null;
 }
 
 const DEFAULT_BRANDING: BrandingSettings = {
@@ -28,6 +36,7 @@ const DEFAULT_BRANDING: BrandingSettings = {
   faviconUrl: null,
   appName: null,
   appIconUrl: null,
+  appIconMaskableUrl: null,
 };
 
 export async function getBranding(): Promise<BrandingSettings> {
