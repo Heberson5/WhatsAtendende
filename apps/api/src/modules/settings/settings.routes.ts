@@ -161,6 +161,10 @@ const brandingSchema = z.object({
   // long "short_name" on the launcher grid; null clears it back to falling
   // through to companyName.
   appName: z.string().trim().min(1).max(30).nullable().optional(),
+  // Free-form version marker (e.g. "1.3.0") — bump it whenever the app
+  // icon/name changes to trigger AppUpdateBanner for already-installed
+  // users; null/empty clears the notice.
+  appVersion: z.string().trim().max(30).nullable().optional(),
 });
 
 settingsRouter.patch(

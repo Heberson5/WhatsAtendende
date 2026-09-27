@@ -12,6 +12,9 @@ export interface Branding {
   // label) — separate from companyName/logoUrl, see settings.service.ts.
   appName: string | null;
   appIconUrl: string | null;
+  // Bumped by an admin whenever the icon/name above changes — see
+  // AppUpdateBanner.tsx.
+  appVersion: string | null;
 }
 
 export function useBranding() {

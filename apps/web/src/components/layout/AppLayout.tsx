@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 import { BottomNav } from "./BottomNav";
+import { AppUpdateBanner } from "./AppUpdateBanner";
 import { useAuthStore } from "../../store/auth-store";
 import { useActiveConversationStore } from "../../store/active-conversation-store";
 import { connectSocket, disconnectSocket, getSocket } from "../../lib/socket";
@@ -96,6 +97,7 @@ export function AppLayout() {
     <div className="flex h-screen gap-2 overflow-hidden bg-[var(--color-bg)] p-2 sm:gap-3 sm:p-3">
       <Sidebar mobileOpen={mobileNavOpen} onMobileClose={() => setMobileNavOpen(false)} />
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-card border border-border bg-surface shadow-soft">
+        <AppUpdateBanner />
         <Topbar title={title} onMenuClick={() => setMobileNavOpen(true)} />
         <main className="flex-1 overflow-hidden">
           <Outlet />

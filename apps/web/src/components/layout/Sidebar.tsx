@@ -119,6 +119,10 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
           </NavLink>
         ))}
       </nav>
+
+      {!collapsed && branding?.appVersion && (
+        <p className="shrink-0 border-t border-border px-4 py-2 text-xs text-muted">Versão {branding.appVersion}</p>
+      )}
       </aside>
     </>
   );
