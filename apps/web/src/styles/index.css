@@ -17,6 +17,12 @@
   --color-primary-fg: #ffffff;
   --color-secondary: #ffe450;
   --color-secondary-fg: #3a2f00;
+  /* Read-receipt tick color — falls back to the secondary color until
+     useBranding.ts overrides it (readReceiptColor set in Identidade
+     Visual). This fallback alone is what makes the default (no admin
+     configuration at all) already follow the theme instead of a hardcoded
+     blue. */
+  --color-read-receipt: var(--color-secondary);
 
   --color-surface: #ffffff;
   --color-surface-alt: #f4f7f9;

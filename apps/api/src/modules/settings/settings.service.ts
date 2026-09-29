@@ -31,6 +31,13 @@ export interface BrandingSettings {
   // time and never auto-updates) can be told to reinstall — see
   // AppUpdateBanner.tsx. null/empty means no reinstall notice is shown.
   appVersion: string | null;
+  // Overrides the double-check "lida" (read) tick color, which otherwise
+  // follows secondaryColor automatically — null means "no override, use
+  // secondaryColor". Exists because the secondary color is sometimes too
+  // pastel/light against a given primary to read as a clear status change
+  // (see PROMPT: "o risquinho que indica que a mensagem foi lida, seja
+  // compatível com a paleta de cores").
+  readReceiptColor: string | null;
 }
 
 const DEFAULT_BRANDING: BrandingSettings = {
@@ -43,6 +50,7 @@ const DEFAULT_BRANDING: BrandingSettings = {
   appIconUrl: null,
   appIconMaskableUrl: null,
   appVersion: null,
+  readReceiptColor: null,
 };
 
 export async function getBranding(): Promise<BrandingSettings> {

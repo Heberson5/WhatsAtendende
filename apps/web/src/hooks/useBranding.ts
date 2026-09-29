@@ -15,6 +15,10 @@ export interface Branding {
   // Bumped by an admin whenever the icon/name above changes — see
   // AppUpdateBanner.tsx.
   appVersion: string | null;
+  // Overrides the "lida" (read) tick color — null means it follows
+  // secondaryColor automatically, see styles/index.css's
+  // --color-read-receipt fallback.
+  readReceiptColor: string | null;
 }
 
 export function useBranding() {
@@ -28,6 +32,12 @@ export function useBranding() {
     if (!query.data) return;
     document.documentElement.style.setProperty("--color-primary", query.data.primaryColor);
     document.documentElement.style.setProperty("--color-secondary", query.data.secondaryColor);
+    if (query.data.readReceiptColor) {
+      document.documentElement.style.setProperty("--color-read-receipt", query.data.readReceiptColor);
+    } else {
+      // No override — falls back to --color-secondary via the CSS rule in styles/index.css.
+      document.documentElement.style.removeProperty("--color-read-receipt");
+    }
     document.title = query.data.companyName;
     if (query.data.faviconUrl) {
       const link = document.getElementById("app-favicon") as HTMLLinkElement | null;

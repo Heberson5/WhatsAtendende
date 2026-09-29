@@ -174,6 +174,7 @@ const brandingSchema = z.object({
   // icon/name changes to trigger AppUpdateBanner for already-installed
   // users; null/empty clears the notice.
   appVersion: z.string().trim().max(30).nullable().optional(),
+  readReceiptColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).nullable().optional(),
 });
 
 settingsRouter.patch(

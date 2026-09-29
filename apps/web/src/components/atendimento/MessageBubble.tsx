@@ -14,7 +14,10 @@ function StatusIcon({ status }: { status: MessageDTO["status"] }) {
   if (status === "PENDING") return <Clock className="h-3.5 w-3.5" />;
   if (status === "SENT") return <Check className="h-3.5 w-3.5" />;
   if (status === "DELIVERED") return <CheckCheck className="h-3.5 w-3.5" />;
-  if (status === "READ") return <CheckCheck className="h-3.5 w-3.5 text-blue-400" />;
+  // Uses the theme's read-receipt color (secondary by default, or an
+  // admin override — see Identidade Visual) instead of a hardcoded blue,
+  // so it stays visible against whatever primary color is configured.
+  if (status === "READ") return <CheckCheck className="h-3.5 w-3.5" style={{ color: "var(--color-read-receipt)" }} />;
   return <span className="text-red-400">!</span>;
 }
 
