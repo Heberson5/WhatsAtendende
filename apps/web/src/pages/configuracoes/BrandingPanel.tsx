@@ -25,12 +25,23 @@ export function BrandingPanel() {
   const [companyName, setCompanyName] = useState(branding?.companyName ?? "");
   const [primaryColor, setPrimaryColor] = useState(branding?.primaryColor ?? "#0097B4");
   const [secondaryColor, setSecondaryColor] = useState(branding?.secondaryColor ?? "#FFE450");
+  // Off by default — the read-receipt tick already follows secondaryColor
+  // automatically (see styles/index.css's --color-read-receipt fallback);
+  // this only lets an admin override it when the secondary color is too
+  // pastel/light to read clearly against a given primary.
+  const [customReadReceipt, setCustomReadReceipt] = useState(Boolean(branding?.readReceiptColor));
+  const [readReceiptColor, setReadReceiptColor] = useState(branding?.readReceiptColor ?? branding?.secondaryColor ?? "#FFE450");
   const logoInputRef = useRef<HTMLInputElement>(null);
   const faviconInputRef = useRef<HTMLInputElement>(null);
 
   const saveMutation = useMutation({
     mutationFn: (colors?: { primaryColor: string; secondaryColor: string }) =>
-      api.patch("/settings/branding", { companyName, primaryColor: colors?.primaryColor ?? primaryColor, secondaryColor: colors?.secondaryColor ?? secondaryColor }),
+      api.patch("/settings/branding", {
+        companyName,
+        primaryColor: colors?.primaryColor ?? primaryColor,
+        secondaryColor: colors?.secondaryColor ?? secondaryColor,
+        readReceiptColor: customReadReceipt ? readReceiptColor : null,
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["branding"] });
       toast.success("Identidade visual atualizada.");
@@ -134,6 +145,25 @@ export function BrandingPanel() {
             <input value={secondaryColor} onChange={(e) => setSecondaryColor(e.target.value)} className="focus-ring min-w-0 flex-1 rounded-card border border-border bg-transparent px-3 py-2 text-sm" />
           </div>
         </label>
+      </div>
+
+      <div>
+        <label className="flex items-center gap-2 text-sm font-medium">
+          <input
+            type="checkbox"
+            checked={customReadReceipt}
+            onChange={(e) => setCustomReadReceipt(e.target.checked)}
+            className="focus-ring h-4 w-4 rounded border-border"
+          />
+          Personalizar cor do traço de mensagem lida
+        </label>
+        <p className="mb-2 mt-1 text-xs text-muted">Por padrão, o traço duplo de "lida" usa a cor secundária. Ative para escolher outra cor.</p>
+        {customReadReceipt && (
+          <div className="flex items-center gap-2">
+            <input type="color" value={readReceiptColor} onChange={(e) => setReadReceiptColor(e.target.value)} className="h-9 w-9 shrink-0 rounded border border-border" />
+            <input value={readReceiptColor} onChange={(e) => setReadReceiptColor(e.target.value)} className="focus-ring min-w-0 flex-1 rounded-card border border-border bg-transparent px-3 py-2 text-sm" />
+          </div>
+        )}
       </div>
 
       <button
