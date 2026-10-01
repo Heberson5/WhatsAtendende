@@ -109,6 +109,12 @@ export interface UserDTO {
   // unrestricted (24h) for that weekday. null as a whole = every day
   // unrestricted (the common case: no access-hours restriction at all).
   accessSchedule: AccessSchedule | null;
+  // Set together — both null unless presence is AWAY from a self-initiated
+  // pause (see profile.service.ts's pauseOwnAttendance). Lets any screen
+  // that shows "Ausente" show the reason instead.
+  pauseReasonId: string | null;
+  pauseReasonName: string | null;
+  pausedAt: string | null;
 }
 
 // HH:mm, 24h, e.g. "08:00" / "18:30".
@@ -144,6 +150,12 @@ export interface HolidayDTO {
   city: string | null;
   source: HolidaySource;
   year: number;
+}
+
+export interface PauseReasonDTO {
+  id: string;
+  name: string;
+  active: boolean;
 }
 
 export interface QuickReplyDTO {
@@ -411,6 +423,17 @@ export const PERMISSION = {
   RESPOSTAS_ENCERRAMENTO_GERENCIAR: "respostas_encerramento.gerenciar",
   RESPOSTAS_TRANSFERENCIA_GERENCIAR: "respostas_transferencia.gerenciar",
   RESPOSTAS_ACEITE_GERENCIAR: "respostas_aceite.gerenciar",
+  // Motivo de Pausa — unlike the other Respostas tabs above (one combined
+  // "gerenciar" permission each), this one ships with visualizar/
+  // adicionar/editar/excluir broken out from the start. See PROMPT: "nas
+  // permissões precisa estar discriminado sobre poder editar, excluir,
+  // visualizar e adicionar". VISUALIZAR is this tab's own umbrella (same
+  // role RESPOSTAS_RAPIDAS_GERENCIAR plays for its tab) — still layered on
+  // top of RESPOSTAS_RAPIDAS_GERENCIAR for the Respostas menu itself.
+  RESPOSTAS_MOTIVO_PAUSA_VISUALIZAR: "respostas_motivo_pausa.visualizar",
+  RESPOSTAS_MOTIVO_PAUSA_ADICIONAR: "respostas_motivo_pausa.adicionar",
+  RESPOSTAS_MOTIVO_PAUSA_EDITAR: "respostas_motivo_pausa.editar",
+  RESPOSTAS_MOTIVO_PAUSA_EXCLUIR: "respostas_motivo_pausa.excluir",
   // Standalone top-level menu (not nested under CONFIGURACOES_GERENCIAR) —
   // see PROMPT: "planeje um novo menu chamado landing page".
   LANDING_PAGE_GERENCIAR: "landing_page.gerenciar",
@@ -588,6 +611,43 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     description: "Cadastrar, editar e excluir a mensagem automática enviada ao cliente quando o atendente aceita a conversa (aba Aceite).",
     editableRoles: ["AGENT", "MANAGER"],
     defaultAllowed: { AGENT: true, MANAGER: true },
+  },
+  // Motivo de Pausa — granular from the start (not a single "gerenciar"),
+  // and restricted to ADMIN+MANAGER by default, unlike its Respostas
+  // siblings above which default-allow AGENT too. See PROMPT: "as
+  // permissões novas, devem estar habilitadas apenas para o administrador
+  // e gestor".
+  {
+    key: PERMISSION.RESPOSTAS_MOTIVO_PAUSA_VISUALIZAR,
+    group: "Respostas",
+    label: "Respostas — Motivo de Pausa (visualizar)",
+    description: "Ver a lista de motivos de pausa cadastrados (aba Motivo de Pausa).",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.RESPOSTAS_MOTIVO_PAUSA_ADICIONAR,
+    group: "Respostas",
+    label: "Respostas — Motivo de Pausa (adicionar)",
+    description: "Cadastrar novos motivos de pausa.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.RESPOSTAS_MOTIVO_PAUSA_EDITAR,
+    group: "Respostas",
+    label: "Respostas — Motivo de Pausa (editar)",
+    description: "Editar o nome de um motivo de pausa existente.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.RESPOSTAS_MOTIVO_PAUSA_EXCLUIR,
+    group: "Respostas",
+    label: "Respostas — Motivo de Pausa (excluir)",
+    description: "Excluir (desativar) um motivo de pausa.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
   },
   {
     key: PERMISSION.LANDING_PAGE_GERENCIAR,

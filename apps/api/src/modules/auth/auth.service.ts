@@ -68,7 +68,7 @@ async function assertWithinAccessWindow(
 }
 
 export async function login(email: string, password: string, ip: string | null, tzOffsetMinutes = 0) {
-  const user = await prisma.user.findUnique({ where: { email: email.toLowerCase() }, include: { whatsappConnection: true } });
+  const user = await prisma.user.findUnique({ where: { email: email.toLowerCase() }, include: { whatsappConnection: true, pauseReason: true } });
   if (!user) {
     // Do the same bcrypt work a real lookup would, so a non-existent e-mail
     // doesn't respond measurably faster than a wrong password for a real
@@ -162,7 +162,7 @@ export async function refresh(refreshToken: string, tzOffsetMinutes = 0, ip: str
     throw Errors.unauthorized("Sessao expirada, faca login novamente");
   }
 
-  const user = await prisma.user.findUnique({ where: { id: payload.sub }, include: { whatsappConnection: true } });
+  const user = await prisma.user.findUnique({ where: { id: payload.sub }, include: { whatsappConnection: true, pauseReason: true } });
   if (!user || user.status === "INACTIVE") throw Errors.unauthorized("Sessao invalida");
 
   // Same reasoning as login()'s own check — a session must not outlive the

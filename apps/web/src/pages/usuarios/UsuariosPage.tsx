@@ -141,7 +141,7 @@ export default function UsuariosPage() {
                     <span
                       className={`h-2 w-2 rounded-full ${u.presence === "ONLINE" ? "bg-green-500" : u.presence === "AWAY" ? "bg-yellow-500" : "bg-gray-300"}`}
                     />
-                    {PRESENCE_LABEL[u.presence]}
+                    {u.presence === "AWAY" && u.pauseReasonName ? `Pausado — ${u.pauseReasonName}` : PRESENCE_LABEL[u.presence]}
                   </span>
                 </td>
                 <td className="px-4 py-3">

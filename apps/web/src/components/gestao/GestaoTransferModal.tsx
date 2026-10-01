@@ -12,10 +12,17 @@ interface AgentOption {
   presence: "ONLINE" | "AWAY" | "OFFLINE";
   status: "ACTIVE" | "INACTIVE";
   whatsappConnectionName: string | null;
+  pauseReasonName: string | null;
 }
 
 const PRESENCE_DOT: Record<string, string> = { ONLINE: "bg-green-500", AWAY: "bg-yellow-500", OFFLINE: "bg-gray-400" };
 const PRESENCE_LABEL: Record<string, string> = { ONLINE: "Online", AWAY: "Ausente", OFFLINE: "Offline" };
+
+// See TransferModal's presenceLabel — same reasoning, duplicated here since this
+// modal fetches agents via a different endpoint (/agents vs /agents/transfer-targets).
+function presenceLabel(agent: Pick<AgentOption, "presence" | "pauseReasonName">) {
+  return agent.presence === "AWAY" && agent.pauseReasonName ? `Pausado — ${agent.pauseReasonName}` : PRESENCE_LABEL[agent.presence];
+}
 
 /**
  * MANAGER/ADMIN routing a conversation straight from Gestão — to a chosen
@@ -97,7 +104,7 @@ export function GestaoTransferModal({
               <span className={`h-2 w-2 shrink-0 rounded-full ${PRESENCE_DOT[agent.presence]}`} />
               <span className={`min-w-0 flex-1 truncate text-sm ${selected === agent.id ? "font-semibold text-primary" : ""}`}>{agent.displayName}</span>
               <span className="shrink-0 text-xs text-muted">
-                {agent.id === conversation.assignedAgentId ? "Atendente atual" : PRESENCE_LABEL[agent.presence]}
+                {agent.id === conversation.assignedAgentId ? "Atendente atual" : presenceLabel(agent)}
                 {agent.whatsappConnectionName ? ` · ${agent.whatsappConnectionName}` : ""}
               </span>
               {selected === agent.id && <Check className="h-4 w-4 shrink-0 text-primary" />}

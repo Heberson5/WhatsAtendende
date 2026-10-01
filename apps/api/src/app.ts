@@ -28,6 +28,7 @@ import { notificationsRouter } from "./modules/notifications/notifications.route
 import { holidaysRouter } from "./modules/holidays/holidays.routes";
 import { metaRouter } from "./modules/meta/meta.routes";
 import { writingAssistRouter } from "./modules/writing-assist/writing-assist.routes";
+import { pauseReasonsRouter } from "./modules/pause-reasons/pause-reasons.routes";
 
 export function createApp() {
   const app = express();
@@ -131,6 +132,7 @@ export function createApp() {
   app.use("/api/holidays", holidaysRouter);
   app.use("/api/meta", metaRouter);
   app.use("/api/writing-assist", writingAssistRouter);
+  app.use("/api/pause-reasons", pauseReasonsRouter);
 
   app.use((req, res) => {
     res.status(404).json({ error: "NOT_FOUND", message: `Rota nao encontrada: ${req.method} ${req.path}` });

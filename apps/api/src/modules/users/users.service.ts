@@ -24,7 +24,7 @@ function validateAccessSchedule(schedule: AccessSchedule | null | undefined) {
   }
 }
 
-const withConnection = { whatsappConnection: true } as const;
+const withConnection = { whatsappConnection: true, pauseReason: true } as const;
 
 /** AGENT requires a home WhatsApp connection (which queue they see); ADMIN/MANAGER never have one — they see everything via oversight. */
 async function resolveConnectionAssignment(role: Role, whatsappConnectionId: string | null | undefined): Promise<string | null> {

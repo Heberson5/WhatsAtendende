@@ -29,6 +29,13 @@ interface AuthState {
   // aparecendo Online" — since nothing ever told the client the flip
   // happened. Patched from the "presence:self" socket event.
   updateOwnPresence: (presence: AgentPresence) => void;
+  // Patches the current user's own pause state after POST /profile/pause
+  // or /resume — those return the full updated UserDTO, but presence
+  // itself is already kept live by updateOwnPresence (driven by the
+  // "presence:self" socket event, which fires from the same request); this
+  // just carries the reason along so the profile menu can show "Pausado —
+  // <motivo>" immediately, without waiting on anything else.
+  updateOwnPauseState: (pauseReasonId: string | null, pauseReasonName: string | null) => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -47,4 +54,6 @@ export const useAuthStore = create<AuthState>((set) => ({
     }),
   updateOwnPresence: (presence) =>
     set((state) => (state.user ? { user: { ...state.user, presence } } : state)),
+  updateOwnPauseState: (pauseReasonId, pauseReasonName) =>
+    set((state) => (state.user ? { user: { ...state.user, pauseReasonId, pauseReasonName } } : state)),
 }));
