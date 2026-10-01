@@ -34,10 +34,10 @@ quickRepliesRouter.get(
   })
 );
 
-quickRepliesRouter.use(requirePermission(PERMISSION.RESPOSTAS_RAPIDAS_GERENCIAR));
-
 quickRepliesRouter.get(
   "/",
+  requirePermission(PERMISSION.RESPOSTAS_RAPIDAS_GERENCIAR),
+  requirePermission(PERMISSION.RESPOSTAS_RAPIDAS_VISUALIZAR),
   asyncHandler(async (_req, res) => {
     const rows = await service.listQuickReplies();
     res.json(rows.map(toQuickReplyDTO));
@@ -58,6 +58,8 @@ const createSchema = z.object({
 
 quickRepliesRouter.post(
   "/",
+  requirePermission(PERMISSION.RESPOSTAS_RAPIDAS_GERENCIAR),
+  requirePermission(PERMISSION.RESPOSTAS_RAPIDAS_ADICIONAR),
   asyncHandler(async (req, res) => {
     const input = createSchema.parse(req.body);
     const quickReply = await service.createQuickReply(input);
@@ -77,6 +79,8 @@ const updateSchema = createSchema.partial();
 
 quickRepliesRouter.patch(
   "/:id",
+  requirePermission(PERMISSION.RESPOSTAS_RAPIDAS_GERENCIAR),
+  requirePermission(PERMISSION.RESPOSTAS_RAPIDAS_EDITAR),
   asyncHandler(async (req, res) => {
     const input = updateSchema.parse(req.body);
     const quickReply = await service.updateQuickReply(req.params.id, input);
@@ -94,6 +98,8 @@ quickRepliesRouter.patch(
 
 quickRepliesRouter.delete(
   "/:id",
+  requirePermission(PERMISSION.RESPOSTAS_RAPIDAS_GERENCIAR),
+  requirePermission(PERMISSION.RESPOSTAS_RAPIDAS_EXCLUIR),
   asyncHandler(async (req, res) => {
     await service.deleteQuickReply(req.params.id);
     await writeAudit({ userId: req.auth!.userId, action: "QUICK_REPLY_DELETED", entity: "QuickReply", entityId: req.params.id, ipAddress: req.ip ?? null });

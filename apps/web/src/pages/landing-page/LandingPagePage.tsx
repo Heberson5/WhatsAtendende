@@ -2,6 +2,8 @@ import { useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ChevronDown, ChevronUp, MonitorSmartphone, Rows3, Type } from "lucide-react";
+import { PERMISSION } from "@whatsatendende/types";
+import { useAuthStore } from "../../store/auth-store";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { useBranding } from "../../hooks/useBranding";
 import { useLandingPageSettings } from "../../hooks/useLandingPageSettings";
@@ -40,6 +42,7 @@ export default function LandingPagePage() {
   const { data: branding } = useBranding();
   const { data: landingPage } = useLandingPageSettings();
   const queryClient = useQueryClient();
+  const canEditar = useAuthStore((s) => s.permissions?.[PERMISSION.LANDING_PAGE_EDITAR]);
 
   // ---- Tela de login ----
   const [logoSize, setLogoSize] = useState(80);
@@ -132,7 +135,7 @@ export default function LandingPagePage() {
     <div className="h-full overflow-auto p-3 sm:p-6">
       <h1 className="mb-6 text-xl font-semibold">Landing Page</h1>
 
-      <div className="max-w-4xl space-y-6">
+      <fieldset disabled={!canEditar} className="m-0 max-w-4xl space-y-6 border-0 p-0">
         {/* ---- Tela de login ---- */}
         <div className="shadow-soft rounded-card border border-border bg-surface p-5">
           <div className="mb-1 flex items-center gap-2">
@@ -336,7 +339,7 @@ export default function LandingPagePage() {
             {titlesMutation.isPending ? "Salvando..." : "Salvar"}
           </button>
         </div>
-      </div>
+      </fieldset>
     </div>
   );
 }

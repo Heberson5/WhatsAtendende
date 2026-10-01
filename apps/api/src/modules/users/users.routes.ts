@@ -12,9 +12,9 @@ import * as usersService from "./users.service";
 
 export const usersRouter = Router();
 
-usersRouter.use(requireAuth, requirePermission(PERMISSION.USUARIOS_GERENCIAR));
+usersRouter.use(requireAuth);
 
-// USUARIOS_GERENCIAR can be granted to a MANAGER, unlike every other
+// USUARIOS_ADICIONAR/EDITAR can be granted to a MANAGER, unlike every other
 // permission gate in this file, which is a real capability change: a
 // delegated (non-ADMIN) user manager must never be able to create a new
 // ADMIN, promote anyone to ADMIN, or touch an existing ADMIN account —
@@ -31,6 +31,7 @@ async function assertNoAdminEscalation(req: Request, targetUserId?: string, requ
 
 usersRouter.get(
   "/",
+  requirePermission(PERMISSION.USUARIOS_VISUALIZAR),
   asyncHandler(async (_req, res) => {
     const users = await usersService.listUsers();
     res.json(users.map(toUserDTO));
@@ -71,6 +72,7 @@ const createSchema = z.object({
 
 usersRouter.post(
   "/",
+  requirePermission(PERMISSION.USUARIOS_ADICIONAR),
   asyncHandler(async (req, res) => {
     const input = createSchema.parse(req.body);
     if (input.password !== input.confirmPassword) {
@@ -98,6 +100,7 @@ const updateSchema = z.object({
 
 usersRouter.patch(
   "/:id",
+  requirePermission(PERMISSION.USUARIOS_EDITAR),
   asyncHandler(async (req, res) => {
     const { confirmPassword, ...input } = updateSchema.parse(req.body);
     if (input.password && input.password !== confirmPassword) {
@@ -119,6 +122,7 @@ usersRouter.patch(
 
 usersRouter.post(
   "/:id/activate",
+  requirePermission(PERMISSION.USUARIOS_INATIVAR),
   asyncHandler(async (req, res) => {
     await assertNoAdminEscalation(req, req.params.id);
     const user = await usersService.setUserStatus(req.params.id, "ACTIVE");
@@ -129,6 +133,7 @@ usersRouter.post(
 
 usersRouter.post(
   "/:id/deactivate",
+  requirePermission(PERMISSION.USUARIOS_INATIVAR),
   asyncHandler(async (req, res) => {
     await assertNoAdminEscalation(req, req.params.id);
     const user = await usersService.setUserStatus(req.params.id, "INACTIVE");
@@ -139,6 +144,7 @@ usersRouter.post(
 
 usersRouter.post(
   "/:id/force-logout",
+  requirePermission(PERMISSION.USUARIOS_EDITAR),
   asyncHandler(async (req, res) => {
     await assertNoAdminEscalation(req, req.params.id);
     await usersService.forceLogoutUser(req.params.id);
@@ -149,7 +155,7 @@ usersRouter.post(
 );
 
 // ADMIN-only, checked directly via requireRole rather than the configurable
-// USUARIOS_GERENCIAR permission — that one's grantable to a MANAGER, but
+// USUARIOS_INATIVAR permission — that one's grantable to a MANAGER, but
 // deleting an account is irreversible (unlike deactivate, which already
 // exists and stays available to a delegated user manager), so it stays out
 // of that matrix entirely. See PROMPT: "somente para o acesso Administrador".
@@ -165,6 +171,7 @@ usersRouter.delete(
 
 usersRouter.post(
   "/:id/reset-password",
+  requirePermission(PERMISSION.USUARIOS_EDITAR),
   asyncHandler(async (req, res) => {
     await assertNoAdminEscalation(req, req.params.id);
     const result = await usersService.resetUserPassword(req.params.id);

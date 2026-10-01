@@ -46,7 +46,7 @@ export default function DashboardPage() {
   const user = useAuthStore((s) => s.user);
   const updatePresenceChartHours = useAuthStore((s) => s.updatePresenceChartHours);
   const canOpenGestao = permissions?.[PERMISSION.GESTAO_ACESSAR];
-  const canOpenUsuarios = permissions?.[PERMISSION.USUARIOS_GERENCIAR];
+  const canOpenUsuarios = permissions?.[PERMISSION.USUARIOS_VISUALIZAR];
 
   // "Aguardando" never carries the dashboard's period filter — the count
   // itself isn't period-scoped server-side (it's "right now", same as

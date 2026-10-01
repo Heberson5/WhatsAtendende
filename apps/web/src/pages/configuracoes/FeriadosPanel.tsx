@@ -2,7 +2,8 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { RefreshCw, Trash2 } from "lucide-react";
-import type { HolidayDTO, HolidayScope } from "@whatsatendende/types";
+import { PERMISSION, type HolidayDTO, type HolidayScope } from "@whatsatendende/types";
+import { useAuthStore } from "../../store/auth-store";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { StateCitySelect } from "../../components/common/StateCitySelect";
 
@@ -20,6 +21,9 @@ const EMPTY_NEW_HOLIDAY: NewHoliday = { date: "", name: "", scope: "NATIONAL", s
 
 export function FeriadosPanel() {
   const queryClient = useQueryClient();
+  const permissions = useAuthStore((s) => s.permissions);
+  const canAdicionar = permissions?.[PERMISSION.CONFIGURACOES_FERIADOS_ADICIONAR];
+  const canExcluir = permissions?.[PERMISSION.CONFIGURACOES_FERIADOS_EXCLUIR];
   const [draft, setDraft] = useState<NewHoliday>(EMPTY_NEW_HOLIDAY);
 
   const { data: holidays, isLoading } = useQuery({
@@ -80,14 +84,16 @@ export function FeriadosPanel() {
             quem tem a cidade correspondente no cadastro (Usuários).
           </p>
         </div>
-        <button
-          onClick={() => syncMutation.mutate()}
-          disabled={syncMutation.isPending}
-          className="focus-ring flex shrink-0 items-center gap-1.5 rounded-card border border-border px-3 py-1.5 text-xs font-medium hover:bg-surface-alt disabled:opacity-60"
-        >
-          <RefreshCw className={`h-3.5 w-3.5 ${syncMutation.isPending ? "animate-spin" : ""}`} />
-          Sincronizar feriados nacionais
-        </button>
+        {canAdicionar && (
+          <button
+            onClick={() => syncMutation.mutate()}
+            disabled={syncMutation.isPending}
+            className="focus-ring flex shrink-0 items-center gap-1.5 rounded-card border border-border px-3 py-1.5 text-xs font-medium hover:bg-surface-alt disabled:opacity-60"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${syncMutation.isPending ? "animate-spin" : ""}`} />
+            Sincronizar feriados nacionais
+          </button>
+        )}
       </div>
 
       <p className="text-xs text-muted">
@@ -96,6 +102,7 @@ export function FeriadosPanel() {
         sincronização.
       </p>
 
+      {canAdicionar && (
       <div className="rounded-card border border-border p-3">
         <p className="mb-2 text-sm font-medium">Cadastrar feriado manualmente</p>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -138,6 +145,7 @@ export function FeriadosPanel() {
           {createMutation.isPending ? "Salvando..." : "Adicionar feriado"}
         </button>
       </div>
+      )}
 
       <div className="overflow-x-auto rounded-card border border-border">
         <table className="w-full text-sm">
@@ -179,13 +187,15 @@ export function FeriadosPanel() {
                   </span>
                 </td>
                 <td className="px-3 py-2 text-right">
-                  <button
-                    onClick={() => deleteMutation.mutate(h.id)}
-                    className="focus-ring rounded-full p-1.5 text-muted hover:bg-surface-alt hover:text-red-600"
-                    aria-label={`Remover ${h.name}`}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                  {canExcluir && (
+                    <button
+                      onClick={() => deleteMutation.mutate(h.id)}
+                      className="focus-ring rounded-full p-1.5 text-muted hover:bg-surface-alt hover:text-red-600"
+                      aria-label={`Remover ${h.name}`}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}

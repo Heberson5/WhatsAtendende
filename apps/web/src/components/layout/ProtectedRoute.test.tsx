@@ -101,14 +101,14 @@ describe("ProtectedRoute", () => {
         presenceChartStartHour: null,
         presenceChartEndHour: null,
       },
-      permissions: { [PERMISSION.USUARIOS_GERENCIAR]: false } as never,
+      permissions: { [PERMISSION.USUARIOS_VISUALIZAR]: false } as never,
       hydrated: true,
     });
     render(
       <MemoryRouter initialEntries={["/usuarios"]}>
         <Routes>
           <Route path="/" element={<Home />} />
-          <Route element={<PermissionRoute permission={PERMISSION.USUARIOS_GERENCIAR} />}>
+          <Route element={<PermissionRoute permission={PERMISSION.USUARIOS_VISUALIZAR} />}>
             <Route path="/usuarios" element={<Secret />} />
           </Route>
         </Routes>

@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { CheckCircle2, Pencil, Plug, PlugZap, Plus, RefreshCw, Trash2, Users, X } from "lucide-react";
 import { toast } from "sonner";
+import { PERMISSION } from "@whatsatendende/types";
+import { useAuthStore } from "../../store/auth-store";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { getSocket } from "../../lib/socket";
 
@@ -41,6 +43,10 @@ const COLOR_SWATCHES = ["#0097B4", "#7C3AED", "#F97316", "#059669", "#DC2626", "
 
 export function WhatsAppConnectionPanel() {
   const queryClient = useQueryClient();
+  const permissions = useAuthStore((s) => s.permissions);
+  const canAdicionar = permissions?.[PERMISSION.CONEXOES_WHATSAPP_ADICIONAR];
+  const canEditar = permissions?.[PERMISSION.CONEXOES_WHATSAPP_EDITAR];
+  const canExcluir = permissions?.[PERMISSION.CONEXOES_WHATSAPP_EXCLUIR];
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -134,15 +140,17 @@ export function WhatsAppConnectionPanel() {
           <h2 className="text-base font-semibold">Conexões de WhatsApp</h2>
           <p className="text-sm text-muted">Cada conexão é um número de WhatsApp independente. Nomeie-as e atribua atendentes a cada uma em Usuários.</p>
         </div>
-        <button
-          onClick={() => setCreating(true)}
-          className="focus-ring flex shrink-0 items-center gap-1.5 self-start rounded-card bg-primary px-3 py-2 text-sm font-semibold text-primary-fg hover:opacity-90"
-        >
-          <Plus className="h-4 w-4" /> Nova conexão
-        </button>
+        {canAdicionar && (
+          <button
+            onClick={() => setCreating(true)}
+            className="focus-ring flex shrink-0 items-center gap-1.5 self-start rounded-card bg-primary px-3 py-2 text-sm font-semibold text-primary-fg hover:opacity-90"
+          >
+            <Plus className="h-4 w-4" /> Nova conexão
+          </button>
+        )}
       </div>
 
-      {creating && (
+      {creating && canAdicionar && (
         <div className="shadow-soft flex max-w-md flex-col items-stretch gap-2 rounded-card border border-border bg-surface p-4 sm:max-w-lg sm:flex-row sm:items-center">
           <input
             autoFocus
@@ -205,36 +213,40 @@ export function WhatsAppConnectionPanel() {
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: connection.color }} title="Cor desta conexão" />
                   <h3 className="text-sm font-semibold">{connection.name}</h3>
-                  <button
-                    onClick={() => {
-                      setRenamingId(connection.id);
-                      setRenameValue(connection.name);
-                    }}
-                    className="focus-ring rounded-full p-1 text-muted hover:bg-surface-alt"
-                    aria-label={`Renomear ${connection.name}`}
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </button>
+                  {canEditar && (
+                    <button
+                      onClick={() => {
+                        setRenamingId(connection.id);
+                        setRenameValue(connection.name);
+                      }}
+                      className="focus-ring rounded-full p-1 text-muted hover:bg-surface-alt"
+                      aria-label={`Renomear ${connection.name}`}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                   <span className="flex items-center gap-1 text-xs text-muted">
                     <Users className="h-3.5 w-3.5" /> {connection.agentCount}
                   </span>
-                  <div className="flex items-center gap-1">
-                    {COLOR_SWATCHES.map((swatch) => (
-                      <button
-                        key={swatch}
-                        onClick={() => colorMutation.mutate({ id: connection.id, color: swatch })}
-                        className="h-4 w-4 rounded-full ring-offset-1 focus-ring"
-                        style={{ backgroundColor: swatch, boxShadow: connection.color === swatch ? `0 0 0 2px ${swatch}` : undefined }}
-                        title={swatch}
-                        aria-label={`Usar a cor ${swatch} para ${connection.name}`}
-                      />
-                    ))}
-                  </div>
+                  {canEditar && (
+                    <div className="flex items-center gap-1">
+                      {COLOR_SWATCHES.map((swatch) => (
+                        <button
+                          key={swatch}
+                          onClick={() => colorMutation.mutate({ id: connection.id, color: swatch })}
+                          className="h-4 w-4 rounded-full ring-offset-1 focus-ring"
+                          style={{ backgroundColor: swatch, boxShadow: connection.color === swatch ? `0 0 0 2px ${swatch}` : undefined }}
+                          title={swatch}
+                          aria-label={`Usar a cor ${swatch} para ${connection.name}`}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
               <div className="flex items-center gap-2">
                 <span className={`rounded-full px-3 py-1 text-xs font-semibold ${STATE_COLOR[connection.state]}`}>{STATE_LABEL[connection.state]}</span>
-                {(connection.state === "CONNECTING" || connection.state === "QR_PENDING" || connection.state === "CODE_PENDING") && (
+                {canEditar && (connection.state === "CONNECTING" || connection.state === "QR_PENDING" || connection.state === "CODE_PENDING") && (
                   <button
                     onClick={() => disconnectMutation.mutate(connection.id)}
                     className="focus-ring rounded-card border border-border px-2 py-1 text-xs font-medium text-muted hover:bg-surface-alt"
@@ -243,7 +255,7 @@ export function WhatsAppConnectionPanel() {
                     Cancelar
                   </button>
                 )}
-                {connection.state !== "CONNECTED" && (
+                {canExcluir && connection.state !== "CONNECTED" && (
                   <button
                     onClick={() => deleteMutation.mutate(connection.id)}
                     disabled={connection.agentCount > 0}
@@ -268,20 +280,22 @@ export function WhatsAppConnectionPanel() {
                     )}
                   </div>
                 </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => reconnectMutation.mutate(connection.id)}
-                    className="focus-ring flex items-center gap-1.5 rounded-card border border-border px-4 py-2 text-sm font-medium hover:bg-surface-alt"
-                  >
-                    <RefreshCw className="h-4 w-4" /> Reconectar
-                  </button>
-                  <button
-                    onClick={() => disconnectMutation.mutate(connection.id)}
-                    className="focus-ring flex items-center gap-1.5 rounded-card border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
-                  >
-                    <Plug className="h-4 w-4" /> Desconectar
-                  </button>
-                </div>
+                {canEditar && (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => reconnectMutation.mutate(connection.id)}
+                      className="focus-ring flex items-center gap-1.5 rounded-card border border-border px-4 py-2 text-sm font-medium hover:bg-surface-alt"
+                    >
+                      <RefreshCw className="h-4 w-4" /> Reconectar
+                    </button>
+                    <button
+                      onClick={() => disconnectMutation.mutate(connection.id)}
+                      className="focus-ring flex items-center gap-1.5 rounded-card border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
+                    >
+                      <Plug className="h-4 w-4" /> Desconectar
+                    </button>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="space-y-4">
@@ -317,6 +331,7 @@ export function WhatsAppConnectionPanel() {
                   </div>
                 )}
 
+                {canEditar && (
                 <div className="flex gap-1 rounded-card border border-border p-1 text-xs font-medium">
                   <button
                     onClick={() => setConnectMode((m) => ({ ...m, [connection.id]: "qr" }))}
@@ -331,8 +346,9 @@ export function WhatsAppConnectionPanel() {
                     Conectar com número
                   </button>
                 </div>
+                )}
 
-                {connectMode[connection.id] === "code" ? (
+                {canEditar && (connectMode[connection.id] === "code" ? (
                   <div className="flex gap-2">
                     <input
                       value={phoneInput[connection.id] ?? ""}
@@ -356,7 +372,7 @@ export function WhatsAppConnectionPanel() {
                   >
                     <PlugZap className="h-4 w-4" /> Conectar WhatsApp
                   </button>
-                )}
+                ))}
               </div>
             )}
           </div>

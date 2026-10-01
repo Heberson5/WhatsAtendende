@@ -28,13 +28,13 @@ const TABS: { key: Tab; label: string }[] = [
 // menus e inclua nas permissões". seguranca/permissoes have no entry — they
 // stay ADMIN-only, checked separately below, same as before this feature.
 const TAB_PERMISSION: Partial<Record<Tab, Permission>> = {
-  branding: PERMISSION.CONFIGURACOES_IDENTIDADE_GERENCIAR,
+  branding: PERMISSION.CONFIGURACOES_IDENTIDADE_VISUALIZAR,
   // Its own logo/cor/nome (independent from Identidade visual) — sits
   // behind the same identity-flavored permission rather than a new one.
-  exportacoes: PERMISSION.CONFIGURACOES_IDENTIDADE_GERENCIAR,
-  email: PERMISSION.CONFIGURACOES_EMAIL_GERENCIAR,
-  "email-templates": PERMISSION.CONFIGURACOES_EMAIL_MODELOS_GERENCIAR,
-  feriados: PERMISSION.CONFIGURACOES_FERIADOS_GERENCIAR,
+  exportacoes: PERMISSION.CONFIGURACOES_IDENTIDADE_VISUALIZAR,
+  email: PERMISSION.CONFIGURACOES_EMAIL_VISUALIZAR,
+  "email-templates": PERMISSION.CONFIGURACOES_EMAIL_MODELOS_VISUALIZAR,
+  feriados: PERMISSION.CONFIGURACOES_FERIADOS_VISUALIZAR,
 };
 
 export default function ConfiguracoesPage() {

@@ -2,6 +2,8 @@ import { useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Presentation, FileSpreadsheet } from "lucide-react";
+import { PERMISSION } from "@whatsatendende/types";
+import { useAuthStore } from "../../store/auth-store";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { useExportBranding } from "../../hooks/useExportBranding";
 import { darken } from "../../lib/chart-theme";
@@ -21,6 +23,7 @@ const SAMPLE_ROWS = [
 export function ExportacoesPanel() {
   const { data: exportBranding } = useExportBranding();
   const queryClient = useQueryClient();
+  const canEditar = useAuthStore((s) => s.permissions?.[PERMISSION.CONFIGURACOES_IDENTIDADE_EDITAR]);
   const [companyName, setCompanyName] = useState(exportBranding?.companyName ?? "");
   const [primaryColor, setPrimaryColor] = useState(exportBranding?.primaryColor ?? "#0097B4");
   const logoInputRef = useRef<HTMLInputElement>(null);
@@ -65,6 +68,7 @@ export function ExportacoesPanel() {
           Logo, nome e cor usados apenas no PowerPoint e nos relatórios exportados — independente da Identidade visual do aplicativo.
         </p>
 
+        <fieldset disabled={!canEditar} className="contents">
         <div className="flex flex-wrap items-end gap-6">
           <div>
             <p className="mb-2 text-sm font-medium">Logo</p>
@@ -113,6 +117,7 @@ export function ExportacoesPanel() {
             {saveMutation.isPending ? "Salvando..." : "Salvar"}
           </button>
         </div>
+        </fieldset>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">

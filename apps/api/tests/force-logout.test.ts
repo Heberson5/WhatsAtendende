@@ -43,7 +43,7 @@ describe("force-logging out a user from Usuários", () => {
     expect(refreshAttempt.status).toBe(401);
   });
 
-  it("a non-ADMIN cannot force-log-out an ADMIN account, even with usuarios.gerenciar granted", async () => {
+  it("a non-ADMIN cannot force-log-out an ADMIN account, even with usuarios.editar granted", async () => {
     await createTestUser({ email: "admin-fl2@test.dev", role: "ADMIN" });
     const targetAdmin = await createTestUser({ email: "otheradmin-fl@test.dev", role: "ADMIN" });
     await createTestUser({ email: "manager-fl@test.dev", role: "MANAGER" });
@@ -52,7 +52,7 @@ describe("force-logging out a user from Usuários", () => {
     await request(app)
       .put("/api/permissions")
       .set("Authorization", `Bearer ${adminToken}`)
-      .send({ entries: [{ role: "MANAGER", permission: PERMISSION.USUARIOS_GERENCIAR, allowed: true }] });
+      .send({ entries: [{ role: "MANAGER", permission: PERMISSION.USUARIOS_EDITAR, allowed: true }] });
 
     const managerToken = (await loginWithCookie("manager-fl@test.dev")).accessToken;
     const res = await request(app)

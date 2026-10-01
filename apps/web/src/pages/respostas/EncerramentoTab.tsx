@@ -2,13 +2,18 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import type { ClosingMessageDTO } from "@whatsatendende/types";
+import { PERMISSION, type ClosingMessageDTO } from "@whatsatendende/types";
+import { useAuthStore } from "../../store/auth-store";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { EncerramentoFormModal, type EncerramentoFormValues } from "./EncerramentoFormModal";
 
 /** Cadastro de mensagens de encerramento automático — ver PROMPT: "Encerramento, o cadastro deverá ser similar com a resposta rápida, mas com alguns diferenciais." */
 export function EncerramentoTab() {
   const queryClient = useQueryClient();
+  const permissions = useAuthStore((s) => s.permissions);
+  const canAdicionar = permissions?.[PERMISSION.RESPOSTAS_ENCERRAMENTO_ADICIONAR];
+  const canEditar = permissions?.[PERMISSION.RESPOSTAS_ENCERRAMENTO_EDITAR];
+  const canExcluir = permissions?.[PERMISSION.RESPOSTAS_ENCERRAMENTO_EXCLUIR];
   const [modalTarget, setModalTarget] = useState<ClosingMessageDTO | null | "new">(null);
   const [deleteTarget, setDeleteTarget] = useState<ClosingMessageDTO | null>(null);
 
@@ -61,12 +66,14 @@ export function EncerramentoTab() {
         <p className="text-sm text-muted">
           Mensagem enviada automaticamente ao cliente quando um dos usuários selecionados clica em Encerrar. Um usuário só pode estar em um encerramento por vez.
         </p>
-        <button
-          onClick={() => setModalTarget("new")}
-          className="focus-ring flex shrink-0 items-center gap-1.5 rounded-card bg-primary px-4 py-2 text-sm font-semibold text-primary-fg hover:opacity-90"
-        >
-          <Plus className="h-4 w-4" /> Novo encerramento
-        </button>
+        {canAdicionar && (
+          <button
+            onClick={() => setModalTarget("new")}
+            className="focus-ring flex shrink-0 items-center gap-1.5 rounded-card bg-primary px-4 py-2 text-sm font-semibold text-primary-fg hover:opacity-90"
+          >
+            <Plus className="h-4 w-4" /> Novo encerramento
+          </button>
+        )}
       </div>
 
       <div className="shadow-soft flex-1 overflow-auto rounded-card border border-border bg-surface">
@@ -113,17 +120,21 @@ export function EncerramentoTab() {
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex justify-end gap-1">
-                    <button onClick={() => setModalTarget(cm)} className="focus-ring rounded-card p-1.5 text-muted hover:bg-surface-alt" aria-label="Editar" title="Editar">
-                      <Pencil className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => setDeleteTarget(cm)}
-                      className="focus-ring rounded-card p-1.5 text-muted hover:bg-red-50 hover:text-red-600"
-                      aria-label="Excluir"
-                      title="Excluir"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                    {canEditar && (
+                      <button onClick={() => setModalTarget(cm)} className="focus-ring rounded-card p-1.5 text-muted hover:bg-surface-alt" aria-label="Editar" title="Editar">
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                    )}
+                    {canExcluir && (
+                      <button
+                        onClick={() => setDeleteTarget(cm)}
+                        className="focus-ring rounded-card p-1.5 text-muted hover:bg-red-50 hover:text-red-600"
+                        aria-label="Excluir"
+                        title="Excluir"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>

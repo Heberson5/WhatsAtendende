@@ -20,7 +20,7 @@ const TABS: { key: Tab; label: string }[] = [
 // e Site". CONEXOES_GERENCIAR (required to reach /conexoes at all) is
 // enforced by the route itself; these gate which tab shows.
 const TAB_PERMISSION: Record<Tab, Permission> = {
-  whatsapp: PERMISSION.CONEXOES_WHATSAPP_GERENCIAR,
+  whatsapp: PERMISSION.CONEXOES_WHATSAPP_VISUALIZAR,
   instagram: PERMISSION.CONEXOES_INSTAGRAM_GERENCIAR,
   facebook: PERMISSION.CONEXOES_FACEBOOK_GERENCIAR,
   site: PERMISSION.CONEXOES_SITE_GERENCIAR,

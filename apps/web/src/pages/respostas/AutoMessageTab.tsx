@@ -2,13 +2,31 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import type { AutoMessageTemplateDTO, AutoMessageTrigger } from "@whatsatendende/types";
+import { PERMISSION, type AutoMessageTemplateDTO, type AutoMessageTrigger, type Permission } from "@whatsatendende/types";
+import { useAuthStore } from "../../store/auth-store";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { AutoMessageFormModal, type AutoMessageFormValues } from "./AutoMessageFormModal";
+
+const TRIGGER_PERMISSION: Record<AutoMessageTrigger, { adicionar: Permission; editar: Permission; excluir: Permission }> = {
+  TRANSFER: {
+    adicionar: PERMISSION.RESPOSTAS_TRANSFERENCIA_ADICIONAR,
+    editar: PERMISSION.RESPOSTAS_TRANSFERENCIA_EDITAR,
+    excluir: PERMISSION.RESPOSTAS_TRANSFERENCIA_EXCLUIR,
+  },
+  ACCEPT: {
+    adicionar: PERMISSION.RESPOSTAS_ACEITE_ADICIONAR,
+    editar: PERMISSION.RESPOSTAS_ACEITE_EDITAR,
+    excluir: PERMISSION.RESPOSTAS_ACEITE_EXCLUIR,
+  },
+};
 
 /** Transferência and Aceite are the same list/CRUD shape, just a different trigger — see AutoMessageFormModal. */
 export function AutoMessageTab({ trigger, description, emptyMessage }: { trigger: AutoMessageTrigger; description: string; emptyMessage: string }) {
   const queryClient = useQueryClient();
+  const permissions = useAuthStore((s) => s.permissions);
+  const canAdicionar = permissions?.[TRIGGER_PERMISSION[trigger].adicionar];
+  const canEditar = permissions?.[TRIGGER_PERMISSION[trigger].editar];
+  const canExcluir = permissions?.[TRIGGER_PERMISSION[trigger].excluir];
   const [modalTarget, setModalTarget] = useState<AutoMessageTemplateDTO | null | "new">(null);
   const [deleteTarget, setDeleteTarget] = useState<AutoMessageTemplateDTO | null>(null);
 
@@ -60,12 +78,14 @@ export function AutoMessageTab({ trigger, description, emptyMessage }: { trigger
     <div className="flex h-full flex-col overflow-hidden">
       <div className="mb-4 flex items-center justify-between">
         <p className="text-sm text-muted">{description}</p>
-        <button
-          onClick={() => setModalTarget("new")}
-          className="focus-ring flex shrink-0 items-center gap-1.5 rounded-card bg-primary px-4 py-2 text-sm font-semibold text-primary-fg hover:opacity-90"
-        >
-          <Plus className="h-4 w-4" /> Nova mensagem
-        </button>
+        {canAdicionar && (
+          <button
+            onClick={() => setModalTarget("new")}
+            className="focus-ring flex shrink-0 items-center gap-1.5 rounded-card bg-primary px-4 py-2 text-sm font-semibold text-primary-fg hover:opacity-90"
+          >
+            <Plus className="h-4 w-4" /> Nova mensagem
+          </button>
+        )}
       </div>
 
       <div className="shadow-soft flex-1 overflow-auto rounded-card border border-border bg-surface">
@@ -106,17 +126,21 @@ export function AutoMessageTab({ trigger, description, emptyMessage }: { trigger
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex justify-end gap-1">
-                    <button onClick={() => setModalTarget(t)} className="focus-ring rounded-card p-1.5 text-muted hover:bg-surface-alt" aria-label="Editar" title="Editar">
-                      <Pencil className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => setDeleteTarget(t)}
-                      className="focus-ring rounded-card p-1.5 text-muted hover:bg-red-50 hover:text-red-600"
-                      aria-label="Excluir"
-                      title="Excluir"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                    {canEditar && (
+                      <button onClick={() => setModalTarget(t)} className="focus-ring rounded-card p-1.5 text-muted hover:bg-surface-alt" aria-label="Editar" title="Editar">
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                    )}
+                    {canExcluir && (
+                      <button
+                        onClick={() => setDeleteTarget(t)}
+                        className="focus-ring rounded-card p-1.5 text-muted hover:bg-red-50 hover:text-red-600"
+                        aria-label="Excluir"
+                        title="Excluir"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>
