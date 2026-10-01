@@ -10,6 +10,7 @@ import { ConnectionFilter } from "../../components/common/ConnectionFilter";
 import { StatCard, formatMinutes } from "../../components/common/StatCard";
 import { DistributionChartCard } from "../../components/dashboard/DistributionChartCard";
 import { SeriesChartCard } from "../../components/dashboard/SeriesChartCard";
+import { WordCloudCard } from "../../components/dashboard/WordCloudCard";
 import { useBranding } from "../../hooks/useBranding";
 import { useExportBranding } from "../../hooks/useExportBranding";
 import { NEUTRAL_SERIES_COLOR } from "../../lib/chart-theme";
@@ -78,6 +79,22 @@ export default function DashboardPage() {
     queryFn: async () =>
       (
         await api.get<DashboardData>("/dashboard", {
+          params: {
+            period: period.period,
+            from: period.from,
+            to: period.to,
+            agentId: agentId === "all" ? undefined : agentId,
+            connectionId: connectionIds.length ? connectionIds : undefined,
+          },
+        })
+      ).data,
+  });
+
+  const { data: wordCloud, isLoading: isWordCloudLoading } = useQuery({
+    queryKey: ["dashboard-word-cloud", period, agentId, connectionIds],
+    queryFn: async () =>
+      (
+        await api.get<{ word: string; count: number }[]>("/dashboard/word-cloud", {
           params: {
             period: period.period,
             from: period.from,
@@ -229,6 +246,10 @@ export default function DashboardPage() {
                 colors={messageColors}
               />
             </div>
+          </section>
+
+          <section>
+            <WordCloudCard words={wordCloud} isLoading={isWordCloudLoading} />
           </section>
 
           <section>

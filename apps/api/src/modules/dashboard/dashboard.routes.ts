@@ -7,7 +7,7 @@ import { requirePermission } from "../../lib/permissions";
 import { resolvePeriod, optionalDateQueryParam } from "../../lib/period";
 import { parseListParam } from "../../lib/parse-list-param";
 import { resolveAllowedConnectionIds } from "../../lib/connection-access";
-import { getDashboard } from "./dashboard.service";
+import { getDashboard, getWordCloud } from "./dashboard.service";
 
 export const dashboardRouter = Router();
 dashboardRouter.use(requireAuth, requirePermission(PERMISSION.DASHBOARD_ACESSAR));
@@ -29,5 +29,16 @@ dashboardRouter.get(
     const connectionIds = await resolveAllowedConnectionIds(req.auth!, parseListParam(query.connectionId));
     const data = await getDashboard({ from, to, agentId: query.agentId, connectionIds });
     res.json(data);
+  })
+);
+
+dashboardRouter.get(
+  "/word-cloud",
+  asyncHandler(async (req, res) => {
+    const query = querySchema.parse(req.query);
+    const { from, to } = resolvePeriod(query.period, query.from, query.to, query.tzOffsetMinutes);
+    const connectionIds = await resolveAllowedConnectionIds(req.auth!, parseListParam(query.connectionId));
+    const words = await getWordCloud({ from, to, agentId: query.agentId, connectionIds });
+    res.json(words);
   })
 );
