@@ -341,30 +341,46 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
       // This whole handler only ever runs for a WhatsApp event (see
       // provider.onMessage above) — contact.phone is always set here.
       const contactLabel = contact.name ?? contact.phone!;
+      const preview = event.body ?? (event.type === "LOCATION" ? "Localizacao" : event.type === "CONTACT" ? "Contato" : "Anexo recebido");
+
+      // Same notification (bell + Windows, with the message text) for every
+      // case where this message landed straight in an agent's own list —
+      // whether it's an ongoing conversation, or one that was just routed
+      // there by "@<nome do atendente>" (new, or a customer reopening a
+      // conversation that had been Encerrada). See PROMPT: "ao direcionar
+      // deve notificar no Windows mesmo assim que tem uma conversa nova e
+      // pode até mostrar a mensagem que o cliente enviou" — this branch used
+      // to only move the conversation silently, with nothing telling the
+      // agent it had arrived.
+      const notifyAssignedAgent = async (agentId: string) => {
+        realtimeEvents.inboundMessageNotification(conversation.id, agentId, contactLabel, preview);
+        const notification = await createNotification({
+          userId: agentId,
+          type: "MESSAGE",
+          title: contactLabel,
+          body: preview,
+          entityType: "Conversation",
+          entityId: conversation.id,
+        });
+        realtimeEvents.notificationCreated(agentId, toNotificationDTO(notification));
+      };
+
       if (isNewConversation) {
         if (autoAssignedAgentId) {
-          // "@<nome do atendente>" in the customer's first message — skips
-          // the queue entirely, straight into that agent's own list, same
+          // "@<nome do atendente>" in the customer's message — skips the
+          // queue entirely, straight into that agent's own list, same
           // realtime path an accepted conversation uses.
           realtimeEvents.conversationAccepted(conversation.id, connectionId, autoAssignedAgentId);
+          await notifyAssignedAgent(autoAssignedAgentId);
         } else {
+          // A brand-new, unclaimed conversation entering the queue — on
+          // purpose, this notification never includes the message text
+          // (just who's writing), unlike every other case above/below.
           realtimeEvents.newQueueConversation(connectionId, conversation.id, contactLabel);
         }
       } else {
         realtimeEvents.newMessage(conversation.id, conversation.assignedAgentId);
-        if (conversation.assignedAgentId) {
-          const preview = event.body ?? (event.type === "LOCATION" ? "Localizacao" : event.type === "CONTACT" ? "Contato" : "Anexo recebido");
-          realtimeEvents.inboundMessageNotification(conversation.id, conversation.assignedAgentId, contactLabel, preview);
-          const notification = await createNotification({
-            userId: conversation.assignedAgentId,
-            type: "MESSAGE",
-            title: contactLabel,
-            body: preview,
-            entityType: "Conversation",
-            entityId: conversation.id,
-          });
-          realtimeEvents.notificationCreated(conversation.assignedAgentId, toNotificationDTO(notification));
-        }
+        if (conversation.assignedAgentId) await notifyAssignedAgent(conversation.assignedAgentId);
       }
     } catch (err) {
       logger.error({ err, connectionId }, "failed to process inbound whatsapp message");
