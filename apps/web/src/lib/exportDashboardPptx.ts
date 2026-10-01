@@ -1,15 +1,29 @@
 import type PptxGenJS from "pptxgenjs";
+import type { PresenceByHourDTO } from "@whatsatendende/types";
 import type { ExportBranding } from "../hooks/useExportBranding";
 import type { PeriodValue } from "../components/common/PeriodFilter";
+import type { HourRange } from "../components/dashboard/PresenceByHourChart";
 import { formatMinutes } from "../components/common/StatCard";
-import { darken } from "./chart-theme";
+import { darken, lighten, NEUTRAL_SERIES_COLOR } from "./chart-theme";
 
 interface DashboardData {
   conversations: { received: number; unique: number; inProgress: number; closed: number; waiting: number };
   messages: { received: number; sent: number; total: number };
   timings: { avgAcceptMs: number | null; avgFirstResponseMs: number | null; avgHandlingMs: number | null; avgClosingMs: number | null };
-  perAgent: { agentId: string; agentName: string; conversations: number; messagesSent: number; avgHandlingMs: number | null }[];
+  perAgent: { agentId: string; agentName: string; conversations: number; messagesSent: number; messagesReceived: number; avgHandlingMs: number | null }[];
   users: { online: number; active: number; total: number };
+}
+
+// Same palette logic as PresenceByHourChart.tsx's own seriesColor — kept
+// visually consistent between the on-screen chart and the exported slide.
+const PAUSE_COLOR = "#F59E0B";
+function presenceSeriesColor(index: number, primaryColor: string, secondaryColor: string): string {
+  const base = [primaryColor, PAUSE_COLOR, secondaryColor, NEUTRAL_SERIES_COLOR, lighten(primaryColor, 0.3), darken(secondaryColor, 0.25)];
+  return base[index % base.length];
+}
+
+function formatHour(hour: number): string {
+  return `${String(hour).padStart(2, "0")}h`;
 }
 
 const PERIOD_LABELS: Record<PeriodValue["period"], string> = {
@@ -72,6 +86,12 @@ export async function exportDashboardPptx({
   statusColors,
   messageColors,
   agentSeriesColors,
+  wordCloud,
+  presenceByHour,
+  presenceHourRange,
+  presenceIsToday,
+  primaryColor: dashboardPrimaryColor,
+  secondaryColor: dashboardSecondaryColor,
 }: {
   data: DashboardData;
   period: PeriodValue;
@@ -79,6 +99,12 @@ export async function exportDashboardPptx({
   statusColors: string[];
   messageColors: string[];
   agentSeriesColors: string[];
+  wordCloud: { word: string; count: number }[];
+  presenceByHour: PresenceByHourDTO | undefined;
+  presenceHourRange: HourRange | null;
+  presenceIsToday: boolean;
+  primaryColor: string;
+  secondaryColor: string;
 }): Promise<void> {
   const primary = branding?.primaryColor ?? "#0097B4";
   const primaryDark = darken(primary, 0.25);
@@ -255,15 +281,77 @@ export async function exportDashboardPptx({
     addFooter(slide, "4");
   }
 
-  // ---- Slide 5: atendimentos por atendente (barras 3D nativas) ----
+  // ---- Slide 5: palavras mais usadas pelos clientes ----
+  // PowerPoint has no native "word cloud" chart object, so this becomes a
+  // ranked table instead — see PROMPT: "Slide com tabela 'Palavra —
+  // Menções', ordenada da mais pra menos citada".
+  if (wordCloud.length > 0) {
+    const slide = pptx.addSlide();
+    slide.addText("Palavras mais usadas pelos clientes", { x: 0.5, y: 0.35, w: 10, h: 0.5, fontSize: 22, bold: true, color: "1E293B", fontFace: "Arial" });
+    const headerRow = [
+      { text: "Palavra", options: { fill: { color: hex(primary) }, color: "FFFFFF", bold: true, fontSize: 12, fontFace: "Arial" } },
+      { text: "Menções", options: { fill: { color: hex(primary) }, color: "FFFFFF", bold: true, fontSize: 12, fontFace: "Arial", align: "right" as const } },
+    ];
+    const wordRows = wordCloud.map((w) => [
+      { text: w.word, options: { fontSize: 11, color: "334155", fontFace: "Arial" } },
+      { text: String(w.count), options: { fontSize: 11, bold: true, color: "1E293B", fontFace: "Arial", align: "right" as const } },
+    ]);
+    // Two columns side by side so a long list doesn't spill past one slide.
+    const half = Math.ceil(wordRows.length / 2);
+    slide.addTable([headerRow, ...wordRows.slice(0, half)], {
+      x: 0.5,
+      y: 1.05,
+      w: 5.8,
+      colW: [4, 1.8],
+      border: { type: "solid", color: "E2E8F0", pt: 0.5 },
+      autoPage: false,
+    });
+    if (wordRows.length > half) {
+      slide.addTable([headerRow, ...wordRows.slice(half)], {
+        x: 6.8,
+        y: 1.05,
+        w: 5.8,
+        colW: [4, 1.8],
+        border: { type: "solid", color: "E2E8F0", pt: 0.5 },
+        autoPage: false,
+      });
+    }
+    addFooter(slide, "5");
+  }
+
+  // ---- Slide 6: conversas por atendente (barras 3D nativas) ----
   if (data.perAgent.length > 0) {
     const slide = pptx.addSlide();
-    slide.addText("Atendimentos por atendente", { x: 0.5, y: 0.35, w: 10, h: 0.5, fontSize: 22, bold: true, color: "1E293B", fontFace: "Arial" });
+    slide.addText("Conversas por atendente", { x: 0.5, y: 0.35, w: 10, h: 0.5, fontSize: 22, bold: true, color: "1E293B", fontFace: "Arial" });
+    slide.addChart(
+      pptx.ChartType.bar3d,
+      [{ name: "Conversas", labels: data.perAgent.map((a) => a.agentName), values: data.perAgent.map((a) => a.conversations) }],
+      {
+        x: 0.5,
+        y: 1.1,
+        w: 12.3,
+        h: 5.8,
+        barDir: "col",
+        bar3DShape: "box",
+        chartColors: [hex(agentSeriesColors[0])],
+        showLegend: true,
+        legendPos: "b",
+        catAxisLabelColor: "334155",
+        valAxisLabelColor: "334155",
+      }
+    );
+    addFooter(slide, "6");
+  }
+
+  // ---- Slide 7: mensagens enviadas x recebidas por atendente (barras 3D nativas) ----
+  if (data.perAgent.length > 0) {
+    const slide = pptx.addSlide();
+    slide.addText("Mensagens enviadas x recebidas por atendente", { x: 0.5, y: 0.35, w: 10, h: 0.5, fontSize: 22, bold: true, color: "1E293B", fontFace: "Arial" });
     slide.addChart(
       pptx.ChartType.bar3d,
       [
-        { name: "Conversas", labels: data.perAgent.map((a) => a.agentName), values: data.perAgent.map((a) => a.conversations) },
-        { name: "Mensagens enviadas", labels: data.perAgent.map((a) => a.agentName), values: data.perAgent.map((a) => a.messagesSent) },
+        { name: "Enviadas", labels: data.perAgent.map((a) => a.agentName), values: data.perAgent.map((a) => a.messagesSent) },
+        { name: "Recebidas", labels: data.perAgent.map((a) => a.agentName), values: data.perAgent.map((a) => a.messagesReceived) },
       ],
       {
         x: 0.5,
@@ -272,14 +360,56 @@ export async function exportDashboardPptx({
         h: 5.8,
         barDir: "col",
         bar3DShape: "box",
-        chartColors: agentSeriesColors.map(hex),
+        chartColors: [hex(messageColors[1]), hex(messageColors[0])],
         showLegend: true,
         legendPos: "b",
         catAxisLabelColor: "334155",
         valAxisLabelColor: "334155",
       }
     );
-    addFooter(slide, "5");
+    addFooter(slide, "7");
+  }
+
+  // ---- Slide 8: presença ao longo do dia (colunas empilhadas nativas) ----
+  // Mirrors PresenceByHourChart.tsx exactly: same hour-range filter, same
+  // "Hoje" progressive truncation, same series colors — see PROMPT: "Novo
+  // gráfico de colunas empilhadas nativo... respeitando a faixa de horário
+  // configurada".
+  if (presenceByHour && presenceByHour.series.length > 0) {
+    const currentLocalHour = new Date().getHours();
+    const points = presenceByHour.hours
+      .filter((p) => !presenceHourRange || (p.hour >= presenceHourRange.start && p.hour <= presenceHourRange.end))
+      .filter((p) => !presenceIsToday || p.hour <= currentLocalHour);
+    if (points.length > 0) {
+      const slide = pptx.addSlide();
+      slide.addText("Presença ao longo do dia", { x: 0.5, y: 0.35, w: 10, h: 0.5, fontSize: 22, bold: true, color: "1E293B", fontFace: "Arial" });
+      const labels = points.map((p) => formatHour(p.hour));
+      const series = presenceByHour.series.map((key, i) => ({
+        name: key,
+        labels,
+        values: points.map((p) => p.counts[key] ?? 0),
+        color: hex(presenceSeriesColor(i, dashboardPrimaryColor, dashboardSecondaryColor)),
+      }));
+      slide.addChart(
+        pptx.ChartType.bar,
+        series.map(({ name, labels: lbl, values }) => ({ name, labels: lbl, values })),
+        {
+          x: 0.5,
+          y: 1.1,
+          w: 12.3,
+          h: 5.8,
+          barDir: "col",
+          barGrouping: "stacked",
+          chartColors: series.map((s) => s.color),
+          showLegend: true,
+          legendPos: "b",
+          catAxisLabelColor: "334155",
+          valAxisLabelColor: "334155",
+          catAxisLabelFontSize: 8,
+        }
+      );
+      addFooter(slide, "8");
+    }
   }
 
   await pptx.writeFile({ fileName: `dashboard-${period.period}-${new Date().toISOString().slice(0, 10)}.pptx` });

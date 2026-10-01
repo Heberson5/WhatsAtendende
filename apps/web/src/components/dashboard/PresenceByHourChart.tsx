@@ -37,6 +37,7 @@ export function PresenceByHourChart({
   secondaryColor,
   initialRange,
   onSaveDefaultRange,
+  onActiveRangeChange,
 }: {
   data: PresenceByHourDTO | undefined;
   isLoading: boolean;
@@ -45,6 +46,11 @@ export function PresenceByHourChart({
   secondaryColor: string;
   initialRange: HourRange | null;
   onSaveDefaultRange: (range: HourRange | null) => void;
+  // Reports whatever range is currently displayed (including the initial
+  // one) so the parent can reuse it for the PPT export's own presence
+  // slide — see PROMPT: "Novo gráfico de colunas empilhadas nativo...
+  // respeitando a faixa de horário configurada".
+  onActiveRangeChange?: (range: HourRange | null) => void;
 }) {
   const [range, setRange] = useState<HourRange | null>(initialRange);
   const [gearOpen, setGearOpen] = useState(false);
@@ -60,6 +66,11 @@ export function PresenceByHourChart({
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    onActiveRangeChange?.(range);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [range]);
 
   const series = data?.series ?? [];
   const currentLocalHour = new Date().getHours();
