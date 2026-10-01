@@ -158,7 +158,7 @@ export const Composer = forwardRef<
   const [caption, setCaption] = useState("");
   const [selectionBubble, setSelectionBubble] = useState<{ top: number; left: number } | null>(null);
   const [quickReplyActiveIndex, setQuickReplyActiveIndex] = useState(0);
-  const [writingSuggestion, setWritingSuggestion] = useState<(WritingSuggestion & { top: number; left: number }) | null>(null);
+  const [writingSuggestions, setWritingSuggestions] = useState<WritingSuggestion[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const emojiPanelRef = useRef<HTMLDivElement>(null);
@@ -206,41 +206,42 @@ export const Composer = forwardRef<
     setQuickReplyActiveIndex(0);
   }, [quickReplyFilter]);
 
-  // Asks for a writing-correction suggestion a short while after the agent
+  // Asks for writing-correction suggestions a short while after the agent
   // stops typing — debounced the same way EmailTemplatesPanel debounces its
   // preview call, so it doesn't fire on every keystroke. Best-effort: the
   // backend already swallows a down/slow LanguageTool instance into an empty
-  // list, so a failed request here just means no suggestion, never an error
+  // list, so a failed request here just means no suggestions, never an error
   // the agent has to deal with.
   useEffect(() => {
     if (!text.trim() || quickReplyMatch) {
-      setWritingSuggestion(null);
+      setWritingSuggestions([]);
       return;
     }
     const timer = setTimeout(() => {
       api
         .post<WritingSuggestion[]>("/writing-assist/check", { text })
-        .then((res) => {
-          const match = res.data[0];
-          const el = textareaRef.current;
-          if (!match || !el) {
-            setWritingSuggestion(null);
-            return;
-          }
-          const { top, left } = getCaretRect(el, match.offset);
-          setWritingSuggestion({ ...match, top: top - 44, left });
-        })
-        .catch(() => setWritingSuggestion(null));
+        .then((res) => setWritingSuggestions(res.data))
+        .catch(() => setWritingSuggestions([]));
     }, WRITING_SUGGESTION_DEBOUNCE_MS);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [text]);
 
-  function applyWritingSuggestion() {
-    if (!writingSuggestion) return;
-    const { offset, length, replacement } = writingSuggestion;
+  // Applying any suggestion (one or all) just clears the list rather than
+  // trying to shift the remaining offsets by hand — the effect above
+  // re-checks the edited text a moment later and whatever's left reappears
+  // with fresh, correct offsets.
+  function applyWritingSuggestion(suggestion: WritingSuggestion) {
+    const { offset, length, replacement } = suggestion;
     setText((prev) => prev.slice(0, offset) + replacement + prev.slice(offset + length));
-    setWritingSuggestion(null);
+    setWritingSuggestions([]);
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }
+
+  function applyAllWritingSuggestions() {
+    const sorted = [...writingSuggestions].sort((a, b) => b.offset - a.offset);
+    setText((prev) => sorted.reduce((acc, s) => acc.slice(0, s.offset) + s.replacement + acc.slice(s.offset + s.length), prev));
+    setWritingSuggestions([]);
     requestAnimationFrame(() => textareaRef.current?.focus());
   }
 
@@ -936,40 +937,55 @@ export const Composer = forwardRef<
         </div>
       )}
 
-      {!selectionBubble && writingSuggestion && (
-        <div
-          className="shadow-elevated fixed z-50 flex max-w-xs items-start gap-2 rounded-card border border-border bg-surface p-2 text-xs"
-          style={{ top: writingSuggestion.top, left: writingSuggestion.left }}
-          // Same trick as the formatting bubble above — keeps the textarea
-          // (and its current selection/caret) from blurring before the
-          // button's onClick runs.
-          onMouseDown={(e) => e.preventDefault()}
-        >
-          <Wand2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-secondary" />
-          <div className="min-w-0">
-            <p className="text-muted">{writingSuggestion.message}</p>
-            <div className="mt-1 flex items-center gap-2">
-              <button
-                type="button"
-                onClick={applyWritingSuggestion}
-                className="focus-ring rounded-full bg-secondary px-2 py-0.5 font-medium text-secondary-fg hover:opacity-90"
-              >
-                Usar: {writingSuggestion.replacement}
-              </button>
-              <button
-                type="button"
-                onClick={() => setWritingSuggestion(null)}
-                className="focus-ring rounded-full p-1 text-muted hover:bg-surface-alt"
-                aria-label="Dispensar sugestão"
-              >
-                <X className="h-3 w-3" />
-              </button>
+      <div className="relative border-t border-border bg-surface">
+        {writingSuggestions.length > 0 && (
+          // Normal document flow (not absolute/fixed like the quick-reply
+          // menu above) — this grows the composer and pushes the chat up
+          // instead of floating on top of it. See PROMPT: "ficou em cima do
+          // texto" — the earlier caret-anchored floating chip covered the
+          // message being typed.
+          <div className="border-b border-border bg-surface-alt px-3 py-2 text-xs">
+            <div className="flex items-center justify-between gap-2">
+              <span className="flex items-center gap-1.5 font-medium text-muted">
+                <Wand2 className="h-3.5 w-3.5 text-secondary" />
+                {writingSuggestions.length === 1 ? "1 sugestão de escrita" : `${writingSuggestions.length} sugestões de escrita`}
+              </span>
+              <div className="flex items-center gap-3">
+                {writingSuggestions.length > 1 && (
+                  <button type="button" onClick={applyAllWritingSuggestions} className="focus-ring font-medium text-primary hover:underline">
+                    Aplicar todas
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setWritingSuggestions([])}
+                  className="focus-ring rounded-full p-0.5 text-muted hover:bg-surface"
+                  aria-label="Dispensar sugestões"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            </div>
+            <div className="mt-1.5 space-y-1">
+              {writingSuggestions.map((s, i) => (
+                <div key={`${s.offset}-${i}`} className="flex items-center justify-between gap-2">
+                  <span className="min-w-0 truncate">
+                    <span className="text-muted line-through">{text.slice(s.offset, s.offset + s.length)}</span>
+                    <span className="mx-1 text-muted">→</span>
+                    <span className="font-medium text-secondary">{s.replacement}</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => applyWritingSuggestion(s)}
+                    className="focus-ring shrink-0 rounded-full bg-secondary px-2 py-0.5 font-medium text-secondary-fg hover:opacity-90"
+                  >
+                    Aplicar
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
-        </div>
-      )}
-
-      <div className="relative border-t border-border bg-surface">
+        )}
         {quickReplyMenuOpen && (
           <div
             className="shadow-elevated absolute bottom-full left-3 right-3 z-20 mb-1 max-h-64 overflow-y-auto rounded-card border border-border bg-surface"
