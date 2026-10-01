@@ -15,7 +15,7 @@ import {
 } from "recharts";
 import { AreaChart as AreaChartIcon, BarChart3, LineChart as LineChartIcon } from "lucide-react";
 import { ChartTypeMenu } from "./ChartTypeMenu";
-import { CHART_CARD_SHADOW, CHART_DEPTH_FILTER, darken, gradientId, lighten } from "../../lib/chart-theme";
+import { CHART_CARD_SHADOW, CHART_DEPTH_FILTER, CHART_TOOLTIP_PROPS, darken, gradientId, lighten } from "../../lib/chart-theme";
 
 type SeriesKind = "bar" | "line" | "area";
 
@@ -83,7 +83,7 @@ export function SeriesChartCard({
               <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
               <XAxis dataKey={categoryKey} tick={{ fontSize: 12 }} />
               <YAxis tick={{ fontSize: 12 }} allowDecimals={false} />
-              <Tooltip />
+              <Tooltip {...CHART_TOOLTIP_PROPS} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
               {series.map((s, i) => (
                 <Bar key={s.key} dataKey={s.key} name={s.name} fill={`url(#${barIds[i]})`} radius={[4, 4, 0, 0]} />
@@ -94,7 +94,7 @@ export function SeriesChartCard({
               <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
               <XAxis dataKey={categoryKey} tick={{ fontSize: 12 }} />
               <YAxis tick={{ fontSize: 12 }} allowDecimals={false} />
-              <Tooltip />
+              <Tooltip {...CHART_TOOLTIP_PROPS} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
               {series.map((s) => (
                 <Line
@@ -122,7 +122,7 @@ export function SeriesChartCard({
               <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" />
               <XAxis dataKey={categoryKey} tick={{ fontSize: 12 }} />
               <YAxis tick={{ fontSize: 12 }} allowDecimals={false} />
-              <Tooltip />
+              <Tooltip {...CHART_TOOLTIP_PROPS} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
               {series.map((s, i) => (
                 <Area
