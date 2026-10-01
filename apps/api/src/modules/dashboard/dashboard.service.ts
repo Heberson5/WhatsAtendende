@@ -168,3 +168,73 @@ async function getPerAgentBreakdown(from: Date, to: Date, connectionFilter?: { i
 
   return results.filter((r) => r.conversations > 0 || r.messagesSent > 0);
 }
+
+// Common Portuguese function words (articles, prepositions, pronouns,
+// conjunctions, auxiliary verb forms, generic fillers) — excluded from the
+// Dashboard's word cloud so it surfaces what customers are actually asking
+// about instead of the words every sentence has anyway. Not exhaustive by
+// design: a short, high-frequency list is enough to keep the cloud useful.
+const WORD_CLOUD_STOPWORDS = new Set([
+  "a", "o", "as", "os", "de", "da", "do", "das", "dos", "em", "no", "na", "nos", "nas",
+  "um", "uma", "uns", "umas", "para", "pra", "pro", "por", "com", "sem", "que", "se",
+  "e", "ou", "mas", "como", "mais", "menos", "muito", "muita", "muitos", "muitas",
+  "já", "so", "só", "ainda", "tambem", "também", "ate", "até", "pelo", "pela", "pelos",
+  "pelas", "ao", "aos", "eu", "tu", "ele", "ela", "nos", "nós", "vos", "eles",
+  "elas", "me", "te", "lhe", "lhes", "meu", "minha", "meus", "minhas", "teu", "tua",
+  "teus", "tuas", "seu", "sua", "seus", "suas", "nosso", "nossa", "nossos", "nossas",
+  "isso", "isto", "aquilo", "este", "esta", "estes", "estas", "esse", "essa", "esses",
+  "essas", "aquele", "aquela", "aqueles", "aquelas", "qual", "quais", "quando", "onde",
+  "quem", "cujo", "cuja", "cujos", "cujas", "nao", "não", "sim", "foi", "ser",
+  "estar", "está", "estou", "estão", "estao", "tem", "têm", "ter", "tinha",
+  "vai", "vou", "vamos", "vao", "vão", "pode", "podem", "posso", "consegue", "consigo",
+  "fazer", "faz", "fez", "dia", "dias", "hoje", "ontem", "amanha", "amanhã", "aqui",
+  "ali", "la", "lá", "bom", "boa", "bem", "ola", "olá", "oi", "tudo", "ta", "tá", "num",
+  "numa", "voce", "você", "voces", "vocês", "sr", "sra",
+]);
+
+function tokenizeForWordCloud(text: string): string[] {
+  return text
+    .toLowerCase()
+    .replace(/https?:\/\/\S+/g, " ") // strip links before splitting
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((word) => word.length >= 3 && !/^\d+$/.test(word) && !WORD_CLOUD_STOPWORDS.has(word));
+}
+
+/**
+ * Top ~40 words from messages the customer sent (never the agent's own
+ * replies) in the selected period — same filters as the rest of the
+ * Dashboard. See PROMPT: "nuvem das palavras ou frases que os clientes mais
+ * escreveram". Capped at WORD_CLOUD_MESSAGE_LIMIT messages scanned so a
+ * very large date range can't turn this into an unbounded full-table scan.
+ */
+const WORD_CLOUD_MESSAGE_LIMIT = 20_000;
+const WORD_CLOUD_TOP_N = 40;
+
+export async function getWordCloud({ from, to, agentId, connectionIds }: DashboardParams): Promise<{ word: string; count: number }[]> {
+  const connectionFilter = connectionIds === undefined ? undefined : { in: connectionIds };
+  const messages = await prisma.message.findMany({
+    where: {
+      direction: "INBOUND",
+      body: { not: null },
+      createdAt: { gte: from, lte: to },
+      conversation: {
+        ...(agentId ? { assignedAgentId: agentId } : {}),
+        ...(connectionFilter ? { whatsappConnectionId: connectionFilter } : {}),
+      },
+    },
+    select: { body: true },
+    take: WORD_CLOUD_MESSAGE_LIMIT,
+  });
+
+  const counts = new Map<string, number>();
+  for (const { body } of messages) {
+    for (const word of tokenizeForWordCloud(body!)) {
+      counts.set(word, (counts.get(word) ?? 0) + 1);
+    }
+  }
+
+  return Array.from(counts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, WORD_CLOUD_TOP_N)
+    .map(([word, count]) => ({ word, count }));
+}
