@@ -426,45 +426,81 @@ export const PERMISSION = {
   GESTAO_GERENCIAR: "gestao.gerenciar",
   DASHBOARD_ACESSAR: "dashboard.acessar",
   RELATORIOS_ACESSAR: "relatorios.acessar",
-  USUARIOS_GERENCIAR: "usuarios.gerenciar",
+  // Usuários — split from the old single USUARIOS_GERENCIAR into granular
+  // visualizar/adicionar/editar/inativar. Hard delete (irreversible) stays
+  // ADMIN-only via requireRole, same as before — never part of this matrix.
+  // See PROMPT: "na me referi em apenas as pausas, mas sim tudo que é
+  // evitável, cadastravel e visualizarem".
+  USUARIOS_VISUALIZAR: "usuarios.visualizar",
+  USUARIOS_ADICIONAR: "usuarios.adicionar",
+  USUARIOS_EDITAR: "usuarios.editar",
+  USUARIOS_INATIVAR: "usuarios.inativar",
   CONFIGURACOES_GERENCIAR: "configuracoes.gerenciar",
   // Each layered ON TOP of CONFIGURACOES_GERENCIAR (need both) — see that
-  // key's own doc comment.
-  CONFIGURACOES_IDENTIDADE_GERENCIAR: "configuracoes.identidade.gerenciar",
-  CONFIGURACOES_EMAIL_GERENCIAR: "configuracoes.email.gerenciar",
-  CONFIGURACOES_EMAIL_MODELOS_GERENCIAR: "configuracoes.email_modelos.gerenciar",
-  CONFIGURACOES_FERIADOS_GERENCIAR: "configuracoes.feriados.gerenciar",
+  // key's own doc comment. Identidade visual/E-mail/Modelos de e-mail are
+  // each a single record to edit (no list to add/remove from), so they only
+  // split into visualizar/editar — unlike Feriados, which is a real list.
+  CONFIGURACOES_IDENTIDADE_VISUALIZAR: "configuracoes.identidade.visualizar",
+  CONFIGURACOES_IDENTIDADE_EDITAR: "configuracoes.identidade.editar",
+  CONFIGURACOES_EMAIL_VISUALIZAR: "configuracoes.email.visualizar",
+  CONFIGURACOES_EMAIL_EDITAR: "configuracoes.email.editar",
+  CONFIGURACOES_EMAIL_MODELOS_VISUALIZAR: "configuracoes.email_modelos.visualizar",
+  CONFIGURACOES_EMAIL_MODELOS_EDITAR: "configuracoes.email_modelos.editar",
+  CONFIGURACOES_FERIADOS_VISUALIZAR: "configuracoes.feriados.visualizar",
+  CONFIGURACOES_FERIADOS_ADICIONAR: "configuracoes.feriados.adicionar",
+  CONFIGURACOES_FERIADOS_EDITAR: "configuracoes.feriados.editar",
+  CONFIGURACOES_FERIADOS_EXCLUIR: "configuracoes.feriados.excluir",
   AUDITORIA_ACESSAR: "auditoria.acessar",
   RESPOSTAS_RAPIDAS_GERENCIAR: "respostas_rapidas.gerenciar",
   // Each layered ON TOP of RESPOSTAS_RAPIDAS_GERENCIAR (need both) — see
-  // that key's own doc comment. No separate key for the Respostas rápidas
-  // tab itself — RESPOSTAS_RAPIDAS_GERENCIAR already covers exactly that
-  // one, same as it always has.
-  RESPOSTAS_ENCERRAMENTO_GERENCIAR: "respostas_encerramento.gerenciar",
-  RESPOSTAS_TRANSFERENCIA_GERENCIAR: "respostas_transferencia.gerenciar",
-  RESPOSTAS_ACEITE_GERENCIAR: "respostas_aceite.gerenciar",
+  // that key's own doc comment. Respostas rápidas itself now also gets its
+  // own granular set here (it used to rely on RESPOSTAS_RAPIDAS_GERENCIAR
+  // alone for both the menu umbrella AND its own tab — those are now split
+  // apart, same as every sibling tab below).
+  RESPOSTAS_RAPIDAS_VISUALIZAR: "respostas_rapidas.visualizar",
+  RESPOSTAS_RAPIDAS_ADICIONAR: "respostas_rapidas.adicionar",
+  RESPOSTAS_RAPIDAS_EDITAR: "respostas_rapidas.editar",
+  RESPOSTAS_RAPIDAS_EXCLUIR: "respostas_rapidas.excluir",
+  RESPOSTAS_ENCERRAMENTO_VISUALIZAR: "respostas_encerramento.visualizar",
+  RESPOSTAS_ENCERRAMENTO_ADICIONAR: "respostas_encerramento.adicionar",
+  RESPOSTAS_ENCERRAMENTO_EDITAR: "respostas_encerramento.editar",
+  RESPOSTAS_ENCERRAMENTO_EXCLUIR: "respostas_encerramento.excluir",
+  RESPOSTAS_TRANSFERENCIA_VISUALIZAR: "respostas_transferencia.visualizar",
+  RESPOSTAS_TRANSFERENCIA_ADICIONAR: "respostas_transferencia.adicionar",
+  RESPOSTAS_TRANSFERENCIA_EDITAR: "respostas_transferencia.editar",
+  RESPOSTAS_TRANSFERENCIA_EXCLUIR: "respostas_transferencia.excluir",
+  RESPOSTAS_ACEITE_VISUALIZAR: "respostas_aceite.visualizar",
+  RESPOSTAS_ACEITE_ADICIONAR: "respostas_aceite.adicionar",
+  RESPOSTAS_ACEITE_EDITAR: "respostas_aceite.editar",
+  RESPOSTAS_ACEITE_EXCLUIR: "respostas_aceite.excluir",
   // Motivo de Pausa — unlike the other Respostas tabs above (one combined
-  // "gerenciar" permission each), this one ships with visualizar/
-  // adicionar/editar/excluir broken out from the start. See PROMPT: "nas
-  // permissões precisa estar discriminado sobre poder editar, excluir,
-  // visualizar e adicionar". VISUALIZAR is this tab's own umbrella (same
-  // role RESPOSTAS_RAPIDAS_GERENCIAR plays for its tab) — still layered on
-  // top of RESPOSTAS_RAPIDAS_GERENCIAR for the Respostas menu itself.
+  // "gerenciar" permission each, before this round of granularization), this
+  // one shipped with visualizar/adicionar/editar/excluir broken out from the
+  // start (Etapa 5). See PROMPT: "nas permissões precisa estar discriminado
+  // sobre poder editar, excluir, visualizar e adicionar". VISUALIZAR is this
+  // tab's own umbrella (same role RESPOSTAS_RAPIDAS_GERENCIAR plays for the
+  // whole menu) — still layered on top of RESPOSTAS_RAPIDAS_GERENCIAR.
   RESPOSTAS_MOTIVO_PAUSA_VISUALIZAR: "respostas_motivo_pausa.visualizar",
   RESPOSTAS_MOTIVO_PAUSA_ADICIONAR: "respostas_motivo_pausa.adicionar",
   RESPOSTAS_MOTIVO_PAUSA_EDITAR: "respostas_motivo_pausa.editar",
   RESPOSTAS_MOTIVO_PAUSA_EXCLUIR: "respostas_motivo_pausa.excluir",
   // Standalone top-level menu (not nested under CONFIGURACOES_GERENCIAR) —
-  // see PROMPT: "planeje um novo menu chamado landing page".
-  LANDING_PAGE_GERENCIAR: "landing_page.gerenciar",
+  // see PROMPT: "planeje um novo menu chamado landing page". Single record
+  // to edit (no list), so only visualizar/editar.
+  LANDING_PAGE_VISUALIZAR: "landing_page.visualizar",
+  LANDING_PAGE_EDITAR: "landing_page.editar",
   // Standalone top-level menu (not nested under CONFIGURACOES_GERENCIAR) —
   // one tab per channel. See PROMPT: "crie um novo menu chamado Conexões,
-  // onde terá a aba WhatsApp, Instagram, Facebook e Site". WHATSAPP
-  // replaces the old CONFIGURACOES_WHATSAPP_GERENCIAR (moved out of
-  // Configurações); INSTAGRAM/FACEBOOK/SITE gate tabs that only show a
-  // "not connected yet" placeholder until those integrations exist.
+  // onde terá a aba WhatsApp, Instagram, Facebook e Site". WHATSAPP is a
+  // real list (create/edit/delete connections), so it gets the full
+  // granular set; INSTAGRAM/FACEBOOK/SITE gate tabs that only show a "not
+  // connected yet" placeholder until those integrations exist, so they stay
+  // a single permission each — nothing to cadastrar there yet.
   CONEXOES_GERENCIAR: "conexoes.gerenciar",
-  CONEXOES_WHATSAPP_GERENCIAR: "conexoes.whatsapp.gerenciar",
+  CONEXOES_WHATSAPP_VISUALIZAR: "conexoes.whatsapp.visualizar",
+  CONEXOES_WHATSAPP_ADICIONAR: "conexoes.whatsapp.adicionar",
+  CONEXOES_WHATSAPP_EDITAR: "conexoes.whatsapp.editar",
+  CONEXOES_WHATSAPP_EXCLUIR: "conexoes.whatsapp.excluir",
   CONEXOES_INSTAGRAM_GERENCIAR: "conexoes.instagram.gerenciar",
   CONEXOES_FACEBOOK_GERENCIAR: "conexoes.facebook.gerenciar",
   CONEXOES_SITE_GERENCIAR: "conexoes.site.gerenciar",
@@ -538,12 +574,36 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     defaultAllowed: { AGENT: false, MANAGER: true },
   },
   {
-    key: PERMISSION.USUARIOS_GERENCIAR,
+    key: PERMISSION.USUARIOS_VISUALIZAR,
     group: "Usuários",
-    label: "Gerenciar usuários",
-    description: "Criar, editar, desativar e redefinir senha de usuários.",
+    label: "Usuários — visualizar",
+    description: "Ver a lista de usuários cadastrados.",
     editableRoles: ["AGENT", "MANAGER"],
-    defaultAllowed: { AGENT: false, MANAGER: false },
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.USUARIOS_ADICIONAR,
+    group: "Usuários",
+    label: "Usuários — adicionar",
+    description: "Cadastrar novos usuários.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.USUARIOS_EDITAR,
+    group: "Usuários",
+    label: "Usuários — editar",
+    description: "Editar dados de um usuário existente, redefinir senha e desconectar sessão ativa.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.USUARIOS_INATIVAR,
+    group: "Usuários",
+    label: "Usuários — inativar",
+    description: "Ativar ou inativar um usuário. Excluir de forma definitiva continua restrito ao Administrador.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
   },
   {
     key: PERMISSION.CONFIGURACOES_GERENCIAR,
@@ -555,36 +615,84 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     defaultAllowed: { AGENT: false, MANAGER: false },
   },
   {
-    key: PERMISSION.CONFIGURACOES_IDENTIDADE_GERENCIAR,
+    key: PERMISSION.CONFIGURACOES_IDENTIDADE_VISUALIZAR,
     group: "Configurações",
-    label: "Configurações — Identidade visual",
+    label: "Configurações — Identidade visual (visualizar)",
+    description: "Ver nome da empresa, cores, logo, ícone do app e favicon configurados.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.CONFIGURACOES_IDENTIDADE_EDITAR,
+    group: "Configurações",
+    label: "Configurações — Identidade visual (editar)",
     description: "Alterar nome da empresa, cores, logo, ícone do app e favicon.",
     editableRoles: ["AGENT", "MANAGER"],
-    defaultAllowed: { AGENT: true, MANAGER: true },
+    defaultAllowed: { AGENT: false, MANAGER: true },
   },
   {
-    key: PERMISSION.CONFIGURACOES_EMAIL_GERENCIAR,
+    key: PERMISSION.CONFIGURACOES_EMAIL_VISUALIZAR,
     group: "Configurações",
-    label: "Configurações — E-mail (SMTP)",
-    description: "Ver e alterar as credenciais de SMTP e enviar e-mail de teste.",
+    label: "Configurações — E-mail, SMTP (visualizar)",
+    description: "Ver as credenciais de SMTP configuradas (sem a senha).",
     editableRoles: ["AGENT", "MANAGER"],
-    defaultAllowed: { AGENT: true, MANAGER: true },
+    defaultAllowed: { AGENT: false, MANAGER: true },
   },
   {
-    key: PERMISSION.CONFIGURACOES_EMAIL_MODELOS_GERENCIAR,
+    key: PERMISSION.CONFIGURACOES_EMAIL_EDITAR,
     group: "Configurações",
-    label: "Configurações — Modelos de e-mail",
+    label: "Configurações — E-mail, SMTP (editar)",
+    description: "Alterar as credenciais de SMTP e enviar e-mail de teste.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.CONFIGURACOES_EMAIL_MODELOS_VISUALIZAR,
+    group: "Configurações",
+    label: "Configurações — Modelos de e-mail (visualizar)",
+    description: "Ver os modelos dos e-mails automáticos do sistema.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.CONFIGURACOES_EMAIL_MODELOS_EDITAR,
+    group: "Configurações",
+    label: "Configurações — Modelos de e-mail (editar)",
     description: "Editar os modelos dos e-mails automáticos do sistema (redefinição de senha, boas-vindas, etc).",
     editableRoles: ["AGENT", "MANAGER"],
-    defaultAllowed: { AGENT: true, MANAGER: true },
+    defaultAllowed: { AGENT: false, MANAGER: true },
   },
   {
-    key: PERMISSION.CONFIGURACOES_FERIADOS_GERENCIAR,
+    key: PERMISSION.CONFIGURACOES_FERIADOS_VISUALIZAR,
     group: "Configurações",
-    label: "Configurações — Feriados",
-    description: "Cadastrar, editar e excluir feriados que bloqueiam o acesso de usuários.",
+    label: "Configurações — Feriados (visualizar)",
+    description: "Ver a lista de feriados cadastrados.",
     editableRoles: ["AGENT", "MANAGER"],
-    defaultAllowed: { AGENT: true, MANAGER: true },
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.CONFIGURACOES_FERIADOS_ADICIONAR,
+    group: "Configurações",
+    label: "Configurações — Feriados (adicionar)",
+    description: "Cadastrar feriados manualmente ou sincronizar os feriados nacionais do ano.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.CONFIGURACOES_FERIADOS_EDITAR,
+    group: "Configurações",
+    label: "Configurações — Feriados (editar)",
+    description: "Editar um feriado cadastrado manualmente.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.CONFIGURACOES_FERIADOS_EXCLUIR,
+    group: "Configurações",
+    label: "Configurações — Feriados (excluir)",
+    description: "Excluir um feriado cadastrado.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
   },
   {
     key: PERMISSION.AUDITORIA_ACESSAR,
@@ -602,35 +710,139 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     // permissões para o administrador e gestor."
     key: PERMISSION.RESPOSTAS_RAPIDAS_GERENCIAR,
     group: "Respostas",
-    label: "Acessar Respostas / Respostas rápidas",
+    label: "Acessar Respostas",
     description:
-      "Acesso geral ao menu Respostas, e gerenciar as respostas rápidas acionadas no atendimento digitando \"/\". Necessária para qualquer uma das abas abaixo — por padrão libera todas; restrinja abas específicas desmarcando-as individualmente.",
+      "Acesso geral ao menu Respostas. Necessária para qualquer uma das abas abaixo — por padrão libera todas; restrinja abas específicas desmarcando-as individualmente.",
     editableRoles: ["AGENT", "MANAGER"],
     defaultAllowed: { AGENT: false, MANAGER: true },
   },
   {
-    key: PERMISSION.RESPOSTAS_ENCERRAMENTO_GERENCIAR,
+    key: PERMISSION.RESPOSTAS_RAPIDAS_VISUALIZAR,
     group: "Respostas",
-    label: "Respostas — Encerramento",
-    description: "Cadastrar, editar e excluir as mensagens de encerramento automático (aba Encerramento).",
+    label: "Respostas — Respostas rápidas (visualizar)",
+    description: "Ver a lista de respostas rápidas acionadas no atendimento digitando \"/\".",
     editableRoles: ["AGENT", "MANAGER"],
-    defaultAllowed: { AGENT: true, MANAGER: true },
+    defaultAllowed: { AGENT: false, MANAGER: true },
   },
   {
-    key: PERMISSION.RESPOSTAS_TRANSFERENCIA_GERENCIAR,
+    key: PERMISSION.RESPOSTAS_RAPIDAS_ADICIONAR,
     group: "Respostas",
-    label: "Respostas — Transferência",
-    description: "Cadastrar, editar e excluir a mensagem automática enviada ao cliente quando a conversa é transferida (aba Transferência).",
+    label: "Respostas — Respostas rápidas (adicionar)",
+    description: "Cadastrar novas respostas rápidas.",
     editableRoles: ["AGENT", "MANAGER"],
-    defaultAllowed: { AGENT: true, MANAGER: true },
+    defaultAllowed: { AGENT: false, MANAGER: true },
   },
   {
-    key: PERMISSION.RESPOSTAS_ACEITE_GERENCIAR,
+    key: PERMISSION.RESPOSTAS_RAPIDAS_EDITAR,
     group: "Respostas",
-    label: "Respostas — Aceite",
-    description: "Cadastrar, editar e excluir a mensagem automática enviada ao cliente quando o atendente aceita a conversa (aba Aceite).",
+    label: "Respostas — Respostas rápidas (editar)",
+    description: "Editar uma resposta rápida existente.",
     editableRoles: ["AGENT", "MANAGER"],
-    defaultAllowed: { AGENT: true, MANAGER: true },
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.RESPOSTAS_RAPIDAS_EXCLUIR,
+    group: "Respostas",
+    label: "Respostas — Respostas rápidas (excluir)",
+    description: "Excluir uma resposta rápida.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.RESPOSTAS_ENCERRAMENTO_VISUALIZAR,
+    group: "Respostas",
+    label: "Respostas — Encerramento (visualizar)",
+    description: "Ver as mensagens de encerramento automático cadastradas (aba Encerramento).",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.RESPOSTAS_ENCERRAMENTO_ADICIONAR,
+    group: "Respostas",
+    label: "Respostas — Encerramento (adicionar)",
+    description: "Cadastrar novas mensagens de encerramento automático.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.RESPOSTAS_ENCERRAMENTO_EDITAR,
+    group: "Respostas",
+    label: "Respostas — Encerramento (editar)",
+    description: "Editar uma mensagem de encerramento automático existente.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.RESPOSTAS_ENCERRAMENTO_EXCLUIR,
+    group: "Respostas",
+    label: "Respostas — Encerramento (excluir)",
+    description: "Excluir uma mensagem de encerramento automático.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.RESPOSTAS_TRANSFERENCIA_VISUALIZAR,
+    group: "Respostas",
+    label: "Respostas — Transferência (visualizar)",
+    description: "Ver a mensagem automática enviada ao cliente quando a conversa é transferida (aba Transferência).",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.RESPOSTAS_TRANSFERENCIA_ADICIONAR,
+    group: "Respostas",
+    label: "Respostas — Transferência (adicionar)",
+    description: "Cadastrar novas mensagens automáticas de transferência.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.RESPOSTAS_TRANSFERENCIA_EDITAR,
+    group: "Respostas",
+    label: "Respostas — Transferência (editar)",
+    description: "Editar uma mensagem automática de transferência existente.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.RESPOSTAS_TRANSFERENCIA_EXCLUIR,
+    group: "Respostas",
+    label: "Respostas — Transferência (excluir)",
+    description: "Excluir uma mensagem automática de transferência.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.RESPOSTAS_ACEITE_VISUALIZAR,
+    group: "Respostas",
+    label: "Respostas — Aceite (visualizar)",
+    description: "Ver a mensagem automática enviada ao cliente quando o atendente aceita a conversa (aba Aceite).",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.RESPOSTAS_ACEITE_ADICIONAR,
+    group: "Respostas",
+    label: "Respostas — Aceite (adicionar)",
+    description: "Cadastrar novas mensagens automáticas de aceite.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.RESPOSTAS_ACEITE_EDITAR,
+    group: "Respostas",
+    label: "Respostas — Aceite (editar)",
+    description: "Editar uma mensagem automática de aceite existente.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.RESPOSTAS_ACEITE_EXCLUIR,
+    group: "Respostas",
+    label: "Respostas — Aceite (excluir)",
+    description: "Excluir uma mensagem automática de aceite.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
   },
   // Motivo de Pausa — granular from the start (not a single "gerenciar"),
   // and restricted to ADMIN+MANAGER by default, unlike its Respostas
@@ -670,12 +882,20 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     defaultAllowed: { AGENT: false, MANAGER: true },
   },
   {
-    key: PERMISSION.LANDING_PAGE_GERENCIAR,
+    key: PERMISSION.LANDING_PAGE_VISUALIZAR,
     group: "Landing Page",
-    label: "Acessar Landing Page",
+    label: "Landing Page — visualizar",
+    description: "Acessar a tela de Landing Page e ver as configurações atuais.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.LANDING_PAGE_EDITAR,
+    group: "Landing Page",
+    label: "Landing Page — editar",
     description: "Editar a tela de login (logo, alinhamento, subtítulo), reordenar/renomear os itens do menu principal e os títulos das páginas.",
     editableRoles: ["AGENT", "MANAGER"],
-    defaultAllowed: { AGENT: false, MANAGER: false },
+    defaultAllowed: { AGENT: false, MANAGER: true },
   },
   {
     key: PERMISSION.CONEXOES_GERENCIAR,
@@ -687,12 +907,36 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     defaultAllowed: { AGENT: false, MANAGER: false },
   },
   {
-    key: PERMISSION.CONEXOES_WHATSAPP_GERENCIAR,
+    key: PERMISSION.CONEXOES_WHATSAPP_VISUALIZAR,
     group: "Conexões",
-    label: "Conexões — WhatsApp",
-    description: "Criar, editar, excluir, conectar e desconectar conexões de WhatsApp.",
+    label: "Conexões — WhatsApp (visualizar)",
+    description: "Ver a lista de conexões de WhatsApp cadastradas.",
     editableRoles: ["AGENT", "MANAGER"],
-    defaultAllowed: { AGENT: true, MANAGER: true },
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.CONEXOES_WHATSAPP_ADICIONAR,
+    group: "Conexões",
+    label: "Conexões — WhatsApp (adicionar)",
+    description: "Criar novas conexões de WhatsApp.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.CONEXOES_WHATSAPP_EDITAR,
+    group: "Conexões",
+    label: "Conexões — WhatsApp (editar)",
+    description: "Editar, conectar e desconectar uma conexão de WhatsApp existente.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.CONEXOES_WHATSAPP_EXCLUIR,
+    group: "Conexões",
+    label: "Conexões — WhatsApp (excluir)",
+    description: "Excluir uma conexão de WhatsApp.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
   },
   {
     key: PERMISSION.CONEXOES_INSTAGRAM_GERENCIAR,

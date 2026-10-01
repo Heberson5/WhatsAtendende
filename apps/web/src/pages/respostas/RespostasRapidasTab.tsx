@@ -2,12 +2,17 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import type { QuickReplyDTO } from "@whatsatendende/types";
+import { PERMISSION, type QuickReplyDTO } from "@whatsatendende/types";
+import { useAuthStore } from "../../store/auth-store";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { QuickReplyFormModal, type QuickReplyFormValues } from "./QuickReplyFormModal";
 
 export function RespostasRapidasTab() {
   const queryClient = useQueryClient();
+  const permissions = useAuthStore((s) => s.permissions);
+  const canAdicionar = permissions?.[PERMISSION.RESPOSTAS_RAPIDAS_ADICIONAR];
+  const canEditar = permissions?.[PERMISSION.RESPOSTAS_RAPIDAS_EDITAR];
+  const canExcluir = permissions?.[PERMISSION.RESPOSTAS_RAPIDAS_EXCLUIR];
   const [modalQuickReply, setModalQuickReply] = useState<QuickReplyDTO | null | "new">(null);
   const [deleteTarget, setDeleteTarget] = useState<QuickReplyDTO | null>(null);
 
@@ -60,12 +65,14 @@ export function RespostasRapidasTab() {
         <p className="text-sm text-muted">
           Textos prontos que o atendente insere na conversa digitando "/" seguido do atalho. Cada resposta só aparece para quem atende pela conexão selecionada.
         </p>
-        <button
-          onClick={() => setModalQuickReply("new")}
-          className="focus-ring flex shrink-0 items-center gap-1.5 rounded-card bg-primary px-4 py-2 text-sm font-semibold text-primary-fg hover:opacity-90"
-        >
-          <Plus className="h-4 w-4" /> Nova resposta rápida
-        </button>
+        {canAdicionar && (
+          <button
+            onClick={() => setModalQuickReply("new")}
+            className="focus-ring flex shrink-0 items-center gap-1.5 rounded-card bg-primary px-4 py-2 text-sm font-semibold text-primary-fg hover:opacity-90"
+          >
+            <Plus className="h-4 w-4" /> Nova resposta rápida
+          </button>
+        )}
       </div>
 
       <div className="shadow-soft flex-1 overflow-auto rounded-card border border-border bg-surface">
@@ -106,17 +113,21 @@ export function RespostasRapidasTab() {
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex justify-end gap-1">
-                    <button onClick={() => setModalQuickReply(qr)} className="focus-ring rounded-card p-1.5 text-muted hover:bg-surface-alt" aria-label="Editar" title="Editar">
-                      <Pencil className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => setDeleteTarget(qr)}
-                      className="focus-ring rounded-card p-1.5 text-muted hover:bg-red-50 hover:text-red-600"
-                      aria-label="Excluir"
-                      title="Excluir"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                    {canEditar && (
+                      <button onClick={() => setModalQuickReply(qr)} className="focus-ring rounded-card p-1.5 text-muted hover:bg-surface-alt" aria-label="Editar" title="Editar">
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                    )}
+                    {canExcluir && (
+                      <button
+                        onClick={() => setDeleteTarget(qr)}
+                        className="focus-ring rounded-card p-1.5 text-muted hover:bg-red-50 hover:text-red-600"
+                        aria-label="Excluir"
+                        title="Excluir"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>

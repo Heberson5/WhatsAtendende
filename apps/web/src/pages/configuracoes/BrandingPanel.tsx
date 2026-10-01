@@ -1,6 +1,8 @@
 import { useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { PERMISSION } from "@whatsatendende/types";
+import { useAuthStore } from "../../store/auth-store";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { useBranding } from "../../hooks/useBranding";
 
@@ -22,6 +24,7 @@ const COLOR_PALETTES: { name: string; primary: string; secondary: string }[] = [
 export function BrandingPanel() {
   const { data: branding } = useBranding();
   const queryClient = useQueryClient();
+  const canEditar = useAuthStore((s) => s.permissions?.[PERMISSION.CONFIGURACOES_IDENTIDADE_EDITAR]);
   const [companyName, setCompanyName] = useState(branding?.companyName ?? "");
   const [primaryColor, setPrimaryColor] = useState(branding?.primaryColor ?? "#0097B4");
   const [secondaryColor, setSecondaryColor] = useState(branding?.secondaryColor ?? "#FFE450");
@@ -80,9 +83,10 @@ export function BrandingPanel() {
   });
 
   return (
-    <div className="shadow-soft max-w-xl space-y-6 rounded-card border border-border bg-surface p-6">
-      <h2 className="text-base font-semibold">Identidade visual</h2>
+    <div className="shadow-soft max-w-xl rounded-card border border-border bg-surface p-6">
+      <h2 className="mb-6 text-base font-semibold">Identidade visual</h2>
 
+      <fieldset disabled={!canEditar} className="m-0 space-y-6 border-0 p-0">
       <div className="flex items-center gap-6">
         <div>
           <p className="mb-2 text-sm font-medium">Logo</p>
@@ -173,6 +177,7 @@ export function BrandingPanel() {
       >
         Salvar identidade visual
       </button>
+      </fieldset>
     </div>
   );
 }

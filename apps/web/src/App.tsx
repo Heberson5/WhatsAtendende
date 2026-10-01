@@ -27,7 +27,7 @@ const HOME_PRIORITY: { permission: (typeof PERMISSION)[keyof typeof PERMISSION];
   { permission: PERMISSION.DASHBOARD_ACESSAR, to: "/dashboard" },
   { permission: PERMISSION.GESTAO_ACESSAR, to: "/gestao" },
   { permission: PERMISSION.RELATORIOS_ACESSAR, to: "/relatorios" },
-  { permission: PERMISSION.USUARIOS_GERENCIAR, to: "/usuarios" },
+  { permission: PERMISSION.USUARIOS_VISUALIZAR, to: "/usuarios" },
   { permission: PERMISSION.RESPOSTAS_RAPIDAS_GERENCIAR, to: "/respostas" },
   { permission: PERMISSION.CONFIGURACOES_GERENCIAR, to: "/configuracoes" },
   { permission: PERMISSION.AUDITORIA_ACESSAR, to: "/auditoria" },
@@ -73,7 +73,7 @@ export default function App() {
             <Route path="/relatorios" element={<RelatoriosPage />} />
           </Route>
 
-          <Route element={<PermissionRoute permission={PERMISSION.USUARIOS_GERENCIAR} />}>
+          <Route element={<PermissionRoute permission={PERMISSION.USUARIOS_VISUALIZAR} />}>
             <Route path="/usuarios" element={<UsuariosPage />} />
           </Route>
           <Route element={<PermissionRoute permission={PERMISSION.RESPOSTAS_RAPIDAS_GERENCIAR} />}>
@@ -86,7 +86,7 @@ export default function App() {
           <Route element={<PermissionRoute permission={PERMISSION.CONFIGURACOES_GERENCIAR} />}>
             <Route path="/configuracoes" element={<ConfiguracoesPage />} />
           </Route>
-          <Route element={<PermissionRoute permission={PERMISSION.LANDING_PAGE_GERENCIAR} />}>
+          <Route element={<PermissionRoute permission={PERMISSION.LANDING_PAGE_VISUALIZAR} />}>
             <Route path="/landing-page" element={<LandingPagePage />} />
           </Route>
           <Route element={<PermissionRoute permission={PERMISSION.AUDITORIA_ACESSAR} />}>

@@ -1,6 +1,8 @@
 import { useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { PERMISSION } from "@whatsatendende/types";
+import { useAuthStore } from "../../store/auth-store";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { useBranding } from "../../hooks/useBranding";
 
@@ -14,6 +16,7 @@ import { useBranding } from "../../hooks/useBranding";
 export function AppInstallPanel() {
   const { data: branding } = useBranding();
   const queryClient = useQueryClient();
+  const canEditar = useAuthStore((s) => s.permissions?.[PERMISSION.CONFIGURACOES_IDENTIDADE_EDITAR]);
   const [appName, setAppName] = useState(branding?.appName ?? branding?.companyName ?? "");
   const [appVersion, setAppVersion] = useState(branding?.appVersion ?? "");
   const iconInputRef = useRef<HTMLInputElement>(null);
@@ -60,6 +63,7 @@ export function AppInstallPanel() {
         </p>
       </div>
 
+      <fieldset disabled={!canEditar} className="m-0 space-y-6 border-0 p-0">
       <div>
         <p className="mb-2 text-sm font-medium">Ícone do aplicativo</p>
         {branding?.appIconUrl && (
@@ -133,6 +137,7 @@ export function AppInstallPanel() {
           Salvar versão
         </button>
       </div>
+      </fieldset>
     </div>
   );
 }

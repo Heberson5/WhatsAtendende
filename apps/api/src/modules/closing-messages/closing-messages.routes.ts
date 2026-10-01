@@ -17,6 +17,7 @@ closingMessagesRouter.use(requirePermission(PERMISSION.RESPOSTAS_RAPIDAS_GERENCI
 
 closingMessagesRouter.get(
   "/",
+  requirePermission(PERMISSION.RESPOSTAS_ENCERRAMENTO_VISUALIZAR),
   asyncHandler(async (_req, res) => {
     const rows = await service.listClosingMessages();
     res.json(rows.map(toClosingMessageDTO));
@@ -32,7 +33,7 @@ const bodySchema = z.object({
 
 closingMessagesRouter.post(
   "/",
-  requirePermission(PERMISSION.RESPOSTAS_ENCERRAMENTO_GERENCIAR),
+  requirePermission(PERMISSION.RESPOSTAS_ENCERRAMENTO_ADICIONAR),
   asyncHandler(async (req, res) => {
     const input = bodySchema.parse(req.body);
     const row = await service.createClosingMessage(input);
@@ -52,7 +53,7 @@ const updateSchema = bodySchema.partial();
 
 closingMessagesRouter.patch(
   "/:id",
-  requirePermission(PERMISSION.RESPOSTAS_ENCERRAMENTO_GERENCIAR),
+  requirePermission(PERMISSION.RESPOSTAS_ENCERRAMENTO_EDITAR),
   asyncHandler(async (req, res) => {
     const input = updateSchema.parse(req.body);
     const row = await service.updateClosingMessage(req.params.id, input);
@@ -70,7 +71,7 @@ closingMessagesRouter.patch(
 
 closingMessagesRouter.delete(
   "/:id",
-  requirePermission(PERMISSION.RESPOSTAS_ENCERRAMENTO_GERENCIAR),
+  requirePermission(PERMISSION.RESPOSTAS_ENCERRAMENTO_EXCLUIR),
   asyncHandler(async (req, res) => {
     await service.deleteClosingMessage(req.params.id);
     await writeAudit({ userId: req.auth!.userId, action: "CLOSING_MESSAGE_DELETED", entity: "ClosingMessage", entityId: req.params.id, ipAddress: req.ip ?? null });

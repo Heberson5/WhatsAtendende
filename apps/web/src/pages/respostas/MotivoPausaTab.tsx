@@ -2,12 +2,17 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
-import type { PauseReasonDTO } from "@whatsatendende/types";
+import { PERMISSION, type PauseReasonDTO } from "@whatsatendende/types";
+import { useAuthStore } from "../../store/auth-store";
 import { api, getApiErrorMessage } from "../../lib/api";
 
 /** Cadastro dos motivos que um atendente pode escolher ao pausar o atendimento (ver Topbar). */
 export function MotivoPausaTab() {
   const queryClient = useQueryClient();
+  const permissions = useAuthStore((s) => s.permissions);
+  const canAdicionar = permissions?.[PERMISSION.RESPOSTAS_MOTIVO_PAUSA_ADICIONAR];
+  const canEditar = permissions?.[PERMISSION.RESPOSTAS_MOTIVO_PAUSA_EDITAR];
+  const canExcluir = permissions?.[PERMISSION.RESPOSTAS_MOTIVO_PAUSA_EXCLUIR];
   const [name, setName] = useState("");
   const [editingTarget, setEditingTarget] = useState<PauseReasonDTO | null>(null);
   const [editingName, setEditingName] = useState("");
@@ -73,23 +78,25 @@ export function MotivoPausaTab() {
         </p>
       </div>
 
-      <div className="mb-4 flex gap-2">
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleCreate()}
-          placeholder="Ex: Almoço, Banheiro, Reunião..."
-          maxLength={60}
-          className="focus-ring flex-1 rounded-card border border-border bg-transparent px-3 py-2 text-sm"
-        />
-        <button
-          onClick={handleCreate}
-          disabled={!name.trim() || createMutation.isPending}
-          className="focus-ring flex shrink-0 items-center gap-1.5 rounded-card bg-primary px-4 py-2 text-sm font-semibold text-primary-fg hover:opacity-90 disabled:opacity-60"
-        >
-          <Plus className="h-4 w-4" /> Adicionar
-        </button>
-      </div>
+      {canAdicionar && (
+        <div className="mb-4 flex gap-2">
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleCreate()}
+            placeholder="Ex: Almoço, Banheiro, Reunião..."
+            maxLength={60}
+            className="focus-ring flex-1 rounded-card border border-border bg-transparent px-3 py-2 text-sm"
+          />
+          <button
+            onClick={handleCreate}
+            disabled={!name.trim() || createMutation.isPending}
+            className="focus-ring flex shrink-0 items-center gap-1.5 rounded-card bg-primary px-4 py-2 text-sm font-semibold text-primary-fg hover:opacity-90 disabled:opacity-60"
+          >
+            <Plus className="h-4 w-4" /> Adicionar
+          </button>
+        </div>
+      )}
 
       <div className="shadow-soft flex-1 overflow-auto rounded-card border border-border bg-surface">
         <table className="w-full text-sm">
@@ -160,15 +167,17 @@ export function MotivoPausaTab() {
                       </>
                     ) : (
                       <>
-                        <button
-                          onClick={() => startEditing(r)}
-                          className="focus-ring rounded-card p-1.5 text-muted hover:bg-surface-alt"
-                          aria-label="Editar"
-                          title="Editar"
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </button>
-                        {r.active && (
+                        {canEditar && (
+                          <button
+                            onClick={() => startEditing(r)}
+                            className="focus-ring rounded-card p-1.5 text-muted hover:bg-surface-alt"
+                            aria-label="Editar"
+                            title="Editar"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                        )}
+                        {canExcluir && r.active && (
                           <button
                             onClick={() => setDeleteTarget(r)}
                             className="focus-ring rounded-card p-1.5 text-muted hover:bg-red-50 hover:text-red-600"

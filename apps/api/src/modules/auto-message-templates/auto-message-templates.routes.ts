@@ -21,13 +21,25 @@ autoMessageTemplatesRouter.use(requireAuth);
 // menus e o que tem dentro dos menus e inclua nas permissões".
 autoMessageTemplatesRouter.use(requirePermission(PERMISSION.RESPOSTAS_RAPIDAS_GERENCIAR));
 
-const TRIGGER_PERMISSION: Record<AutoMessageTrigger, Permission> = {
-  TRANSFER: PERMISSION.RESPOSTAS_TRANSFERENCIA_GERENCIAR,
-  ACCEPT: PERMISSION.RESPOSTAS_ACEITE_GERENCIAR,
+type Action = "visualizar" | "adicionar" | "editar" | "excluir";
+
+const TRIGGER_PERMISSION: Record<AutoMessageTrigger, Record<Action, Permission>> = {
+  TRANSFER: {
+    visualizar: PERMISSION.RESPOSTAS_TRANSFERENCIA_VISUALIZAR,
+    adicionar: PERMISSION.RESPOSTAS_TRANSFERENCIA_ADICIONAR,
+    editar: PERMISSION.RESPOSTAS_TRANSFERENCIA_EDITAR,
+    excluir: PERMISSION.RESPOSTAS_TRANSFERENCIA_EXCLUIR,
+  },
+  ACCEPT: {
+    visualizar: PERMISSION.RESPOSTAS_ACEITE_VISUALIZAR,
+    adicionar: PERMISSION.RESPOSTAS_ACEITE_ADICIONAR,
+    editar: PERMISSION.RESPOSTAS_ACEITE_EDITAR,
+    excluir: PERMISSION.RESPOSTAS_ACEITE_EXCLUIR,
+  },
 };
 
-async function requireTriggerPermission(req: Request, trigger: AutoMessageTrigger): Promise<void> {
-  if (!(await isPermissionAllowed(req.auth!.role, TRIGGER_PERMISSION[trigger]))) {
+async function requireTriggerPermission(req: Request, trigger: AutoMessageTrigger, action: Action): Promise<void> {
+  if (!(await isPermissionAllowed(req.auth!.role, TRIGGER_PERMISSION[trigger][action]))) {
     throw Errors.forbidden();
   }
 }
@@ -38,7 +50,7 @@ autoMessageTemplatesRouter.get(
   "/",
   asyncHandler(async (req, res) => {
     const { trigger } = triggerQuerySchema.parse(req.query);
-    await requireTriggerPermission(req, trigger);
+    await requireTriggerPermission(req, trigger, "visualizar");
     const rows = await service.listAutoMessageTemplates(trigger);
     res.json(rows.map(toAutoMessageTemplateDTO));
   })
@@ -55,7 +67,7 @@ autoMessageTemplatesRouter.post(
   "/",
   asyncHandler(async (req, res) => {
     const input = bodySchema.parse(req.body);
-    await requireTriggerPermission(req, input.trigger);
+    await requireTriggerPermission(req, input.trigger, "adicionar");
     const row = await service.createAutoMessageTemplate(input);
     await writeAudit({
       userId: req.auth!.userId,
@@ -75,7 +87,7 @@ autoMessageTemplatesRouter.patch(
   "/:id",
   asyncHandler(async (req, res) => {
     const existing = await service.getAutoMessageTemplate(req.params.id);
-    await requireTriggerPermission(req, existing.trigger);
+    await requireTriggerPermission(req, existing.trigger, "editar");
     const input = updateSchema.parse(req.body);
     const row = await service.updateAutoMessageTemplate(req.params.id, input);
     await writeAudit({
@@ -94,7 +106,7 @@ autoMessageTemplatesRouter.delete(
   "/:id",
   asyncHandler(async (req, res) => {
     const existing = await service.getAutoMessageTemplate(req.params.id);
-    await requireTriggerPermission(req, existing.trigger);
+    await requireTriggerPermission(req, existing.trigger, "excluir");
     await service.deleteAutoMessageTemplate(req.params.id);
     await writeAudit({
       userId: req.auth!.userId,

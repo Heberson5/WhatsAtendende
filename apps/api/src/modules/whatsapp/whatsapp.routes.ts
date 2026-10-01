@@ -16,6 +16,12 @@ whatsappRouter.use(requireAuth);
 
 // Full list with QR/status — admins see every connection; managers only see
 // ones they created or were explicitly granted (see listConnections).
+// Deliberately NOT gated by CONEXOES_WHATSAPP_VISUALIZAR — this same list
+// feeds the connection pickers in Usuários/Respostas rápidas/Nova conversa
+// and the ConnectionFilter used across Dashboard/Gestão/Relatórios, not just
+// the Conexões page itself. "Curating" connections (create/edit/delete) is
+// the part that's gated below; everyone who can reach this role pair needs
+// to be able to see the list to pick from it.
 whatsappRouter.get(
   "/connections",
   requireRole("ADMIN", "MANAGER"),
@@ -42,7 +48,7 @@ async function requireManagerCanManageConnection(req: Request): Promise<void> {
 whatsappRouter.post(
   "/connections",
   requirePermission(PERMISSION.CONEXOES_GERENCIAR),
-  requirePermission(PERMISSION.CONEXOES_WHATSAPP_GERENCIAR),
+  requirePermission(PERMISSION.CONEXOES_WHATSAPP_ADICIONAR),
   asyncHandler(async (req, res) => {
     const { name, color } = createSchema.parse(req.body);
     const connection = await service.createConnection(name, color, req.auth!.userId);
@@ -54,7 +60,7 @@ whatsappRouter.post(
 whatsappRouter.patch(
   "/connections/:id",
   requirePermission(PERMISSION.CONEXOES_GERENCIAR),
-  requirePermission(PERMISSION.CONEXOES_WHATSAPP_GERENCIAR),
+  requirePermission(PERMISSION.CONEXOES_WHATSAPP_EDITAR),
   asyncHandler(async (req, res) => {
     await requireManagerCanManageConnection(req);
     const patch = updateSchema.parse(req.body);
@@ -67,7 +73,7 @@ whatsappRouter.patch(
 whatsappRouter.delete(
   "/connections/:id",
   requirePermission(PERMISSION.CONEXOES_GERENCIAR),
-  requirePermission(PERMISSION.CONEXOES_WHATSAPP_GERENCIAR),
+  requirePermission(PERMISSION.CONEXOES_WHATSAPP_EXCLUIR),
   asyncHandler(async (req, res) => {
     await requireManagerCanManageConnection(req);
     await service.deleteConnection(req.params.id);
@@ -81,7 +87,7 @@ const connectSchema = z.object({ phoneNumber: z.string().trim().regex(/^\d{8,15}
 whatsappRouter.post(
   "/connections/:id/connect",
   requirePermission(PERMISSION.CONEXOES_GERENCIAR),
-  requirePermission(PERMISSION.CONEXOES_WHATSAPP_GERENCIAR),
+  requirePermission(PERMISSION.CONEXOES_WHATSAPP_EDITAR),
   asyncHandler(async (req, res) => {
     await requireManagerCanManageConnection(req);
     // Connecting (QR/pairing-code generation, then the real handshake) takes
@@ -100,7 +106,7 @@ whatsappRouter.post(
 whatsappRouter.post(
   "/connections/:id/disconnect",
   requirePermission(PERMISSION.CONEXOES_GERENCIAR),
-  requirePermission(PERMISSION.CONEXOES_WHATSAPP_GERENCIAR),
+  requirePermission(PERMISSION.CONEXOES_WHATSAPP_EDITAR),
   asyncHandler(async (req, res) => {
     await requireManagerCanManageConnection(req);
     await service.disconnect(req.params.id);
@@ -112,7 +118,7 @@ whatsappRouter.post(
 whatsappRouter.post(
   "/connections/:id/reconnect",
   requirePermission(PERMISSION.CONEXOES_GERENCIAR),
-  requirePermission(PERMISSION.CONEXOES_WHATSAPP_GERENCIAR),
+  requirePermission(PERMISSION.CONEXOES_WHATSAPP_EDITAR),
   asyncHandler(async (req, res) => {
     await requireManagerCanManageConnection(req);
     await service.disconnect(req.params.id);

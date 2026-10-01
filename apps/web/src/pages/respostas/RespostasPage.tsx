@@ -9,15 +9,16 @@ import { MotivoPausaTab } from "./MotivoPausaTab";
 
 type Tab = "rapidas" | "encerramento" | "transferencia" | "aceite" | "motivo-pausa";
 
-// "rapidas" needs no entry — reaching /respostas at all already requires the
-// RESPOSTAS_RAPIDAS_GERENCIAR umbrella (see Sidebar's MENU_ITEMS), so that
-// tab has nothing further to gate. The other three each sit behind their own
-// finer permission on top of that umbrella — see PROMPT: "Mapeie todos os
-// menus e o que tem dentro dos menus e inclua nas permissões".
+// Reaching /respostas at all already requires the RESPOSTAS_RAPIDAS_GERENCIAR
+// umbrella (see Sidebar's MENU_ITEMS) — each tab below additionally sits
+// behind its own visualizar/adicionar/editar/excluir granular set on top of
+// that umbrella. See PROMPT: "na me referi em apenas as pausas, mas sim tudo
+// que é evitável, cadastravel e visualizarem".
 const TAB_PERMISSION: Partial<Record<Tab, Permission>> = {
-  encerramento: PERMISSION.RESPOSTAS_ENCERRAMENTO_GERENCIAR,
-  transferencia: PERMISSION.RESPOSTAS_TRANSFERENCIA_GERENCIAR,
-  aceite: PERMISSION.RESPOSTAS_ACEITE_GERENCIAR,
+  rapidas: PERMISSION.RESPOSTAS_RAPIDAS_VISUALIZAR,
+  encerramento: PERMISSION.RESPOSTAS_ENCERRAMENTO_VISUALIZAR,
+  transferencia: PERMISSION.RESPOSTAS_TRANSFERENCIA_VISUALIZAR,
+  aceite: PERMISSION.RESPOSTAS_ACEITE_VISUALIZAR,
   "motivo-pausa": PERMISSION.RESPOSTAS_MOTIVO_PAUSA_VISUALIZAR,
 };
 
