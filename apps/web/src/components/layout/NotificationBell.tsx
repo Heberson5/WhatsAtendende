@@ -112,7 +112,17 @@ export function NotificationBell() {
       </button>
 
       {open && (
-        <div className="shadow-lg absolute right-0 top-12 z-20 flex max-h-[28rem] w-80 flex-col rounded-card border border-border bg-surface">
+        <div
+          className={
+            // Fixed to the viewport with side gutters on mobile — anchoring
+            // this to the bell's own position (like the md:+ behavior below)
+            // let a 320px-wide panel run off the left edge of a narrow
+            // phone screen, clipping the notification text. See PROMPT:
+            // "ao clicar no sininho... está cortada a tela das notificações".
+            "shadow-lg fixed inset-x-3 top-16 z-20 flex max-h-[28rem] flex-col rounded-card border border-border bg-surface " +
+            "md:absolute md:inset-x-auto md:right-0 md:top-12 md:w-80"
+          }
+        >
           <div className="flex items-center justify-between border-b border-border px-3 py-2.5">
             <span className="text-sm font-semibold">Notificações</span>
             {unreadCount > 0 && (
