@@ -26,6 +26,15 @@ services:
     volumes:
       - redis_data:/data
 
+  languagetool:
+    image: erikvl87/languagetool:latest
+    restart: unless-stopped
+    # Same reasoning as postgres/redis above — internal-only, no host port.
+    # Stateless (no volume needed). The api service calls it over the
+    # compose network via LANGUAGETOOL_URL below; a Composer correction
+    # suggestion is best-effort, so the api already tolerates this service
+    # being slow or down (see writing-assist.service.ts).
+
   api:
     build:
       context: .
@@ -53,6 +62,7 @@ services:
       # WhatsApp-protocol level instead of guessing from the outside.
       WHATSAPP_LOG_LEVEL: ${WHATSAPP_LOG_LEVEL:-silent}
       WEB_APP_URL: ${WEB_APP_URL:-http://localhost:8080}
+      LANGUAGETOOL_URL: http://languagetool:8010
       UPLOAD_DIR: /data/uploads
       # Left false (the default) on purpose: this stack still publishes the
       # api container's port directly (see `ports` below), so a client could

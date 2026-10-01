@@ -20,6 +20,10 @@ const schema = z.object({
   WHATSAPP_PROVIDER: z.enum(["mock", "baileys"]).default("mock"),
   WHATSAPP_AUTH_DIR: z.string().default("./whatsapp-sessions"),
   WEB_APP_URL: z.string().default("http://localhost:5173"),
+  // Self-hosted LanguageTool instance (see docker-compose.yml) backing the
+  // Composer's writing-suggestion chip. Best-effort only — a down/slow
+  // instance degrades to no suggestions, never blocks sending.
+  LANGUAGETOOL_URL: z.string().default("http://localhost:8010"),
   UPLOAD_DIR: z.string().default("./uploads"),
   UPLOAD_MAX_SIZE_MB: z.coerce.number().default(25),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60_000),

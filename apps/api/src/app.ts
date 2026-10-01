@@ -27,6 +27,7 @@ import { autoMessageTemplatesRouter } from "./modules/auto-message-templates/aut
 import { notificationsRouter } from "./modules/notifications/notifications.routes";
 import { holidaysRouter } from "./modules/holidays/holidays.routes";
 import { metaRouter } from "./modules/meta/meta.routes";
+import { writingAssistRouter } from "./modules/writing-assist/writing-assist.routes";
 
 export function createApp() {
   const app = express();
@@ -129,6 +130,7 @@ export function createApp() {
   app.use("/api/notifications", notificationsRouter);
   app.use("/api/holidays", holidaysRouter);
   app.use("/api/meta", metaRouter);
+  app.use("/api/writing-assist", writingAssistRouter);
 
   app.use((req, res) => {
     res.status(404).json({ error: "NOT_FOUND", message: `Rota nao encontrada: ${req.method} ${req.path}` });
