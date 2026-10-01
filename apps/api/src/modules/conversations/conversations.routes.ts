@@ -153,11 +153,14 @@ const oversightQuerySchema = z.object({
   from: optionalDateQueryParam,
   to: optionalDateQueryParam,
   agentId: z.string().uuid().optional(),
-  status: z.enum(["NEW", "WAITING", "IN_PROGRESS", "TRANSFERRED", "CLOSED", "ABANDONED", "HANDLED_EXTERNALLY"]).optional(),
+  // Repeated query param (?status=a&status=b) or comma-separated — see
+  // PROMPT: Dashboard's "Em atendimento" card needs IN_PROGRESS + TRANSFERRED at once.
+  status: z.union([z.string(), z.array(z.string())]).optional(),
   q: z.string().optional(),
   // Repeated query param (?connectionId=a&connectionId=b) or comma-separated; empty/absent = all connections.
   connectionId: z.union([z.string(), z.array(z.string())]).optional(),
 });
+const OVERSIGHT_STATUSES = new Set(["NEW", "WAITING", "IN_PROGRESS", "TRANSFERRED", "CLOSED", "ABANDONED", "HANDLED_EXTERNALLY"]);
 conversationsRouter.get(
   "/oversight",
   requirePermission(PERMISSION.GESTAO_ACESSAR),
@@ -167,11 +170,12 @@ conversationsRouter.get(
     if (req.auth!.role === "MANAGER") {
       connectionIds = await resolveAllowedConnectionIds(req.auth!, connectionIds, "manage");
     }
+    const status = parseListParam(filters.status)?.filter((s) => OVERSIGHT_STATUSES.has(s));
     const conversations = await service.listAllConversations({
       from: filters.from,
       to: filters.to,
       agentId: filters.agentId,
-      status: filters.status,
+      status,
       contactSearch: filters.q,
       connectionIds,
     });
