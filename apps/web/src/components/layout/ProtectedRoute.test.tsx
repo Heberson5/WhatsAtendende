@@ -57,6 +57,8 @@ describe("ProtectedRoute", () => {
         pauseReasonId: null,
         pauseReasonName: null,
         pausedAt: null,
+        presenceChartStartHour: null,
+        presenceChartEndHour: null,
       },
       hydrated: true,
     });
@@ -96,6 +98,8 @@ describe("ProtectedRoute", () => {
         pauseReasonId: null,
         pauseReasonName: null,
         pausedAt: null,
+        presenceChartStartHour: null,
+        presenceChartEndHour: null,
       },
       permissions: { [PERMISSION.USUARIOS_GERENCIAR]: false } as never,
       hydrated: true,

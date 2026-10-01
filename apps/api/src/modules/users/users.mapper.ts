@@ -24,5 +24,7 @@ export function toUserDTO(user: UserWithConnection): UserDTO {
     pauseReasonId: user.pauseReasonId,
     pauseReasonName: user.pauseReason?.name ?? null,
     pausedAt: user.pausedAt ? user.pausedAt.toISOString() : null,
+    presenceChartStartHour: user.presenceChartStartHour,
+    presenceChartEndHour: user.presenceChartEndHour,
   };
 }

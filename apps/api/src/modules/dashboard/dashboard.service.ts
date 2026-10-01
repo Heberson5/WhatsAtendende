@@ -210,6 +210,96 @@ function tokenizeForWordCloud(text: string): string[] {
 const WORD_CLOUD_MESSAGE_LIMIT = 20_000;
 const WORD_CLOUD_TOP_N = 40;
 
+// ---------------------------------------------------------------------------
+// "Presença ao longo do dia" (Dashboard section 8): for each hour-of-day
+// (0-23), how many distinct agent/day occurrences were Online vs Paused
+// (broken down by pause reason) during that hour across the selected
+// period. Built from AgentStatusLog, the per-transition history that feeds
+// this chart (see presence-status.ts) — before that table existed, only the
+// *current* presence was known, never when a change happened.
+// ---------------------------------------------------------------------------
+
+const OTHER_PAUSE_REASON_LABEL = "Outros motivos";
+// Defensive cap on how many hour-cells a single log segment can touch —
+// comfortably above any real shift length, just in case a row is ever left
+// open for an unexpectedly long time (e.g. a crashed disconnect timer).
+const MAX_HOUR_CELLS_PER_SEGMENT = 24 * 62;
+
+/** Every local hour-of-day cell `[startUtc, endUtc)` touches, as `{dateKey, hour}` — dateKey disambiguates the same hour-of-day across different calendar days. */
+function iterateHourCells(startUtc: Date, endUtc: Date, tzOffsetMinutes: number): { dateKey: string; hour: number }[] {
+  const offsetMs = tzOffsetMinutes * 60_000;
+  const cells: { dateKey: string; hour: number }[] = [];
+  let cursor = new Date(startUtc.getTime() - offsetMs);
+  const endLocal = new Date(endUtc.getTime() - offsetMs);
+  let guard = 0;
+  while (cursor < endLocal && guard < MAX_HOUR_CELLS_PER_SEGMENT) {
+    cells.push({ dateKey: cursor.toISOString().slice(0, 10), hour: cursor.getUTCHours() });
+    cursor = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth(), cursor.getUTCDate(), cursor.getUTCHours() + 1));
+    guard++;
+  }
+  return cells;
+}
+
+export interface PresenceByHourParams {
+  from: Date;
+  to: Date;
+  agentId?: string;
+  tzOffsetMinutes: number;
+}
+
+export async function getPresenceByHour({ from, to, agentId, tzOffsetMinutes }: PresenceByHourParams) {
+  const now = new Date();
+  const logs = await prisma.agentStatusLog.findMany({
+    where: {
+      status: { in: ["ONLINE", "AWAY"] },
+      startedAt: { lt: to },
+      OR: [{ endedAt: null }, { endedAt: { gt: from } }],
+      user: { role: "AGENT", ...(agentId ? { id: agentId } : {}) },
+    },
+    select: { userId: true, status: true, startedAt: true, endedAt: true, pauseReason: { select: { name: true } } },
+  });
+
+  // Dedup per (agent, calendar day, hour, bucket) — a reconnect every ~15min
+  // (presence-tracker's access-token refresh) closes and reopens the ONLINE
+  // log back-to-back, which would otherwise inflate the same hour's count
+  // several times over for one agent who was online the whole time.
+  const touched = new Set<string>();
+  const countsByHour: Record<number, Record<string, number>> = {};
+  for (let h = 0; h < 24; h++) countsByHour[h] = {};
+
+  for (const log of logs) {
+    const bucket = log.status === "ONLINE" ? "Online" : log.pauseReason?.name ?? OTHER_PAUSE_REASON_LABEL;
+    const segStart = Math.max(log.startedAt.getTime(), from.getTime());
+    const segEnd = Math.min((log.endedAt ?? now).getTime(), to.getTime(), now.getTime());
+    if (segEnd <= segStart) continue;
+
+    for (const cell of iterateHourCells(new Date(segStart), new Date(segEnd), tzOffsetMinutes)) {
+      const key = `${log.userId}|${cell.dateKey}|${cell.hour}|${bucket}`;
+      if (touched.has(key)) continue;
+      touched.add(key);
+      countsByHour[cell.hour][bucket] = (countsByHour[cell.hour][bucket] ?? 0) + 1;
+    }
+  }
+
+  // "Online" always first, then every pause reason seen — by total count
+  // descending so the biggest bar segments legend first, "Outros motivos"
+  // (if present) always last since it's a catch-all, not a real reason.
+  const reasonTotals = new Map<string, number>();
+  for (const hourCounts of Object.values(countsByHour)) {
+    for (const [bucket, count] of Object.entries(hourCounts)) {
+      if (bucket === "Online") continue;
+      reasonTotals.set(bucket, (reasonTotals.get(bucket) ?? 0) + count);
+    }
+  }
+  const reasons = Array.from(reasonTotals.entries())
+    .sort((a, b) => (a[0] === OTHER_PAUSE_REASON_LABEL ? 1 : b[0] === OTHER_PAUSE_REASON_LABEL ? -1 : b[1] - a[1]))
+    .map(([name]) => name);
+  const series = ["Online", ...reasons];
+
+  const hours = Array.from({ length: 24 }, (_, hour) => ({ hour, counts: countsByHour[hour] }));
+  return { series, hours };
+}
+
 export async function getWordCloud({ from, to, agentId, connectionIds }: DashboardParams): Promise<{ word: string; count: number }[]> {
   const connectionFilter = connectionIds === undefined ? undefined : { in: connectionIds };
   const messages = await prisma.message.findMany({
