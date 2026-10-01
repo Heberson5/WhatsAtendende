@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, ChevronDown, X } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, X } from "lucide-react";
 import { api } from "../../lib/api";
 
 interface AgentOption {
@@ -120,15 +120,18 @@ export function TransferModal({
                     setConfirmingOffline(false);
                     setDropdownOpen(false);
                   }}
-                  className={`focus-ring flex w-full items-center gap-3 rounded-card px-2.5 py-2 text-left hover:bg-surface-alt ${selected === agent.id ? "bg-primary/5" : ""}`}
+                  className={`focus-ring flex w-full items-center gap-3 rounded-card border px-2.5 py-2 text-left ${
+                    selected === agent.id ? "border-primary bg-primary/10" : "border-transparent hover:bg-surface-alt"
+                  }`}
                 >
                   <AgentAvatar agent={agent} />
                   <span className={`h-2 w-2 shrink-0 rounded-full ${PRESENCE_DOT[agent.presence]}`} />
-                  <span className="flex-1 truncate text-sm">{agent.displayName}</span>
+                  <span className={`flex-1 truncate text-sm ${selected === agent.id ? "font-semibold text-primary" : ""}`}>{agent.displayName}</span>
                   <span className="shrink-0 text-xs text-muted">
                     {PRESENCE_LABEL[agent.presence]}
                     {agent.whatsappConnectionName ? ` · ${agent.whatsappConnectionName}` : ""}
                   </span>
+                  {selected === agent.id && <Check className="h-4 w-4 shrink-0 text-primary" />}
                 </button>
               ))}
             </div>

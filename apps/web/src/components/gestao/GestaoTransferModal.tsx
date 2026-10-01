@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { AlertTriangle, X } from "lucide-react";
+import { AlertTriangle, Check, X } from "lucide-react";
 import type { ConversationListItemDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { contactDisplayName } from "../../lib/contact-display";
@@ -90,16 +90,17 @@ export function GestaoTransferModal({
                 setConfirmingOffline(false);
               }}
               disabled={agent.id === conversation.assignedAgentId}
-              className={`focus-ring flex w-full items-center gap-3 border-b border-border px-3 py-2 text-left last:border-b-0 hover:bg-surface-alt disabled:cursor-not-allowed disabled:opacity-50 ${
-                selected === agent.id ? "bg-primary/5" : ""
+              className={`focus-ring flex w-full items-center gap-3 border-b border-border px-3 py-2 text-left last:border-b-0 disabled:cursor-not-allowed disabled:opacity-50 ${
+                selected === agent.id ? "bg-primary/10 shadow-[inset_3px_0_0_0_var(--color-primary)]" : "hover:bg-surface-alt"
               }`}
             >
               <span className={`h-2 w-2 shrink-0 rounded-full ${PRESENCE_DOT[agent.presence]}`} />
-              <span className="min-w-0 flex-1 truncate text-sm">{agent.displayName}</span>
+              <span className={`min-w-0 flex-1 truncate text-sm ${selected === agent.id ? "font-semibold text-primary" : ""}`}>{agent.displayName}</span>
               <span className="shrink-0 text-xs text-muted">
                 {agent.id === conversation.assignedAgentId ? "Atendente atual" : PRESENCE_LABEL[agent.presence]}
                 {agent.whatsappConnectionName ? ` · ${agent.whatsappConnectionName}` : ""}
               </span>
+              {selected === agent.id && <Check className="h-4 w-4 shrink-0 text-primary" />}
             </button>
           ))}
         </div>
