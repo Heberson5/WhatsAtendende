@@ -4,13 +4,14 @@ import { BrandingPanel } from "./BrandingPanel";
 import { AppInstallPanel } from "./AppInstallPanel";
 import { ExportacoesPanel } from "./ExportacoesPanel";
 import { FeriadosPanel } from "./FeriadosPanel";
+import { FilaSettingsPanel } from "./FilaSettingsPanel";
 import { EmailSettingsPanel } from "./EmailSettingsPanel";
 import { EmailTemplatesPanel } from "./EmailTemplatesPanel";
 import { PermissionsPanel } from "./PermissionsPanel";
 import { SecuritySettingsPanel } from "./SecuritySettingsPanel";
 import { useAuthStore } from "../../store/auth-store";
 
-type Tab = "branding" | "exportacoes" | "email" | "email-templates" | "feriados" | "seguranca" | "permissoes";
+type Tab = "branding" | "exportacoes" | "email" | "email-templates" | "feriados" | "fila" | "seguranca" | "permissoes";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "branding", label: "Identidade visual" },
@@ -18,6 +19,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "email", label: "E-mail" },
   { key: "email-templates", label: "Modelos de e-mail" },
   { key: "feriados", label: "Feriados" },
+  { key: "fila", label: "Fila" },
   { key: "seguranca", label: "Segurança" },
   { key: "permissoes", label: "Permissões" },
 ];
@@ -35,6 +37,7 @@ const TAB_PERMISSION: Partial<Record<Tab, Permission>> = {
   email: PERMISSION.CONFIGURACOES_EMAIL_VISUALIZAR,
   "email-templates": PERMISSION.CONFIGURACOES_EMAIL_MODELOS_VISUALIZAR,
   feriados: PERMISSION.CONFIGURACOES_FERIADOS_VISUALIZAR,
+  fila: PERMISSION.CONFIGURACOES_FILA_VISUALIZAR,
 };
 
 export default function ConfiguracoesPage() {
@@ -83,6 +86,7 @@ export default function ConfiguracoesPage() {
       {activeTab === "email" && <EmailSettingsPanel />}
       {activeTab === "email-templates" && <EmailTemplatesPanel />}
       {activeTab === "feriados" && <FeriadosPanel />}
+      {activeTab === "fila" && <FilaSettingsPanel />}
       {activeTab === "seguranca" && role === "ADMIN" && <SecuritySettingsPanel />}
       {activeTab === "permissoes" && role === "ADMIN" && <PermissionsPanel />}
     </div>

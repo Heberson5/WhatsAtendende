@@ -394,6 +394,25 @@ settingsRouter.patch(
   })
 );
 
+// Its own route/permission pair (not folded into the generic /business PATCH
+// above) so the new "Fila" tab's own CONFIGURACOES_FILA_EDITAR permission
+// governs just this one field — same SystemSetting "business" bag
+// underneath, read back through the same GET /business any authenticated
+// user already has.
+const queueSettingsSchema = z.object({ queueReminderIntervalMinutes: z.number().int().min(1).max(60) }).strict();
+
+settingsRouter.patch(
+  "/queue",
+  requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
+  requirePermission(PERMISSION.CONFIGURACOES_FILA_EDITAR),
+  asyncHandler(async (req, res) => {
+    const patch = queueSettingsSchema.parse(req.body ?? {});
+    const settings = await service.updateBusinessSettings(patch);
+    await writeAudit({ userId: req.auth!.userId, action: "SETTINGS_QUEUE_UPDATED", entity: "SystemSetting", entityId: "business", ipAddress: req.ip ?? null, metadata: patch });
+    res.json(settings);
+  })
+);
+
 const themeSchema = z.object({ theme: z.enum(["LIGHT", "DARK", "AUTO"]) });
 settingsRouter.patch(
   "/theme",

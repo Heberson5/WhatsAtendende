@@ -27,6 +27,20 @@ export function useSocketEvents(activeConversationId: string | null) {
       toast.info(`Nova conversa na fila: ${payload.contactName}`);
       notifyDesktop("Nova conversa na fila", payload.contactName, `wa-queue-${payload.conversationId}`);
     };
+    // Periodic nudge while this agent's connection still has a conversation
+    // waiting to be accepted — see lib/queue-reminder.ts on the API. Tagged
+    // by connectionId (not conversationId/tick) so each re-fire replaces the
+    // previous desktop notification instead of stacking a new one every
+    // interval. See PROMPT: "notificações a cada um minuto quando tem
+    // conversas na fila para ser aceitas".
+    const onQueueReminder = (payload: { connectionId: string; connectionName: string; waitingCount: number }) => {
+      const message =
+        payload.waitingCount === 1
+          ? `1 conversa aguardando em ${payload.connectionName}`
+          : `${payload.waitingCount} conversas aguardando em ${payload.connectionName}`;
+      toast.info(message);
+      notifyDesktop("Conversas aguardando na fila", message, `wa-queue-reminder-${payload.connectionId}`);
+    };
     const onAssigned = () => {
       queryClient.invalidateQueries({ queryKey: ["mine"] });
       queryClient.invalidateQueries({ queryKey: ["queue"] });
@@ -96,6 +110,7 @@ export function useSocketEvents(activeConversationId: string | null) {
 
     socket.on("queue:updated", onQueueUpdated);
     socket.on("queue:new-conversation", onNewQueueConversation);
+    socket.on("queue:reminder", onQueueReminder);
     socket.on("conversation:assigned", onAssigned);
     socket.on("conversation:removed", onRemoved);
     socket.on("conversation:transferred-in", onTransferredIn);
@@ -111,6 +126,7 @@ export function useSocketEvents(activeConversationId: string | null) {
     return () => {
       socket.off("queue:updated", onQueueUpdated);
       socket.off("queue:new-conversation", onNewQueueConversation);
+      socket.off("queue:reminder", onQueueReminder);
       socket.off("conversation:assigned", onAssigned);
       socket.off("conversation:removed", onRemoved);
       socket.off("conversation:transferred-in", onTransferredIn);

@@ -176,4 +176,15 @@ export const realtimeEvents = {
     getIO()?.to(ROOMS.user(revertedToAgentId)).emit("conversation:transferred-in", { conversationId });
     getIO()?.to(ROOMS.oversight()).emit("oversight:updated");
   },
+  /**
+   * Periodic nudge (see lib/queue-reminder.ts) for one ONLINE agent whose own
+   * connection still has a conversation waiting — unlike newQueueConversation
+   * above, this is targeted at this one user's room, not the whole
+   * connection's queue room, since eligibility is presence-filtered per
+   * agent, not shared by everyone watching that connection. See PROMPT:
+   * "notificações a cada um minuto quando tem conversas na fila".
+   */
+  queueReminder: (userId: string, connectionId: string, connectionName: string, waitingCount: number) => {
+    getIO()?.to(ROOMS.user(userId)).emit("queue:reminder", { connectionId, connectionName, waitingCount });
+  },
 };
