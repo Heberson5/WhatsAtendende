@@ -115,6 +115,10 @@ export interface UserDTO {
   pauseReasonId: string | null;
   pauseReasonName: string | null;
   pausedAt: string | null;
+  // Custom hour range (0-23) saved as this user's default for the Dashboard's
+  // "Presença ao longo do dia" chart — both null means "show every hour".
+  presenceChartStartHour: number | null;
+  presenceChartEndHour: number | null;
 }
 
 // HH:mm, 24h, e.g. "08:00" / "18:30".
@@ -156,6 +160,22 @@ export interface PauseReasonDTO {
   id: string;
   name: string;
   active: boolean;
+}
+
+// Dashboard's "Presença ao longo do dia" chart — one point per hour-of-day
+// (0-23), each a count of distinct agent/day occurrences per status seen
+// during that hour across the selected period. "counts" keys are "Online"
+// plus every pause-reason name that occurred (or "Outros motivos" for an
+// AWAY segment whose reason was later deactivated/removed); "series" lists
+// those same keys in the order they should be stacked/legended.
+export interface PresenceByHourPoint {
+  hour: number;
+  counts: Record<string, number>;
+}
+
+export interface PresenceByHourDTO {
+  series: string[];
+  hours: PresenceByHourPoint[];
 }
 
 export interface QuickReplyDTO {

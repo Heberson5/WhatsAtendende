@@ -36,6 +36,11 @@ interface AuthState {
   // just carries the reason along so the profile menu can show "Pausado —
   // <motivo>" immediately, without waiting on anything else.
   updateOwnPauseState: (pauseReasonId: string | null, pauseReasonName: string | null) => void;
+  // Patches the saved default hour range for the Dashboard's "Presença ao
+  // longo do dia" chart after PATCH /settings/presence-chart-hours — so a
+  // later remount of the Dashboard in this same session picks it up without
+  // a refetch of the whole profile.
+  updatePresenceChartHours: (startHour: number | null, endHour: number | null) => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -56,4 +61,6 @@ export const useAuthStore = create<AuthState>((set) => ({
     set((state) => (state.user ? { user: { ...state.user, presence } } : state)),
   updateOwnPauseState: (pauseReasonId, pauseReasonName) =>
     set((state) => (state.user ? { user: { ...state.user, pauseReasonId, pauseReasonName } } : state)),
+  updatePresenceChartHours: (presenceChartStartHour, presenceChartEndHour) =>
+    set((state) => (state.user ? { user: { ...state.user, presenceChartStartHour, presenceChartEndHour } } : state)),
 }));

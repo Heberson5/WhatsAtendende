@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { FileBarChart2, Inbox, MessageSquare, Timer, UserCheck, Users, Wifi } from "lucide-react";
-import { PERMISSION } from "@whatsatendende/types";
+import { PERMISSION, type PresenceByHourDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
 import { PeriodFilter, type PeriodValue } from "../../components/common/PeriodFilter";
@@ -11,6 +11,7 @@ import { StatCard, formatMinutes } from "../../components/common/StatCard";
 import { DistributionChartCard } from "../../components/dashboard/DistributionChartCard";
 import { SeriesChartCard } from "../../components/dashboard/SeriesChartCard";
 import { WordCloudCard } from "../../components/dashboard/WordCloudCard";
+import { PresenceByHourChart, type HourRange } from "../../components/dashboard/PresenceByHourChart";
 import { useBranding } from "../../hooks/useBranding";
 import { useExportBranding } from "../../hooks/useExportBranding";
 import { NEUTRAL_SERIES_COLOR } from "../../lib/chart-theme";
@@ -42,6 +43,8 @@ export default function DashboardPage() {
   const [exportingPptx, setExportingPptx] = useState(false);
   const navigate = useNavigate();
   const permissions = useAuthStore((s) => s.permissions);
+  const user = useAuthStore((s) => s.user);
+  const updatePresenceChartHours = useAuthStore((s) => s.updatePresenceChartHours);
   const canOpenGestao = permissions?.[PERMISSION.GESTAO_ACESSAR];
   const canOpenUsuarios = permissions?.[PERMISSION.USUARIOS_GERENCIAR];
 
@@ -104,6 +107,27 @@ export default function DashboardPage() {
           },
         })
       ).data,
+  });
+
+  const { data: presenceByHour, isLoading: isPresenceByHourLoading } = useQuery({
+    queryKey: ["dashboard-presence-by-hour", period, agentId],
+    queryFn: async () =>
+      (
+        await api.get<PresenceByHourDTO>("/dashboard/presence-by-hour", {
+          params: {
+            period: period.period,
+            from: period.from,
+            to: period.to,
+            agentId: agentId === "all" ? undefined : agentId,
+          },
+        })
+      ).data,
+  });
+
+  const saveDefaultHourRangeMutation = useMutation({
+    mutationFn: (range: HourRange | null) =>
+      api.patch("/settings/presence-chart-hours", { startHour: range?.start ?? null, endHour: range?.end ?? null }),
+    onSuccess: (_res, range) => updatePresenceChartHours(range?.start ?? null, range?.end ?? null),
   });
 
   // Native, editable PowerPoint charts (not screenshots) built straight from
@@ -281,6 +305,22 @@ export default function DashboardPage() {
                 ]}
               />
             </div>
+          </section>
+
+          <section>
+            <PresenceByHourChart
+              data={presenceByHour}
+              isLoading={isPresenceByHourLoading}
+              isToday={period.period === "today"}
+              primaryColor={primaryColor}
+              secondaryColor={secondaryColor}
+              initialRange={
+                user?.presenceChartStartHour != null && user?.presenceChartEndHour != null
+                  ? { start: user.presenceChartStartHour, end: user.presenceChartEndHour }
+                  : null
+              }
+              onSaveDefaultRange={(range) => saveDefaultHourRangeMutation.mutate(range)}
+            />
           </section>
         </div>
       )}

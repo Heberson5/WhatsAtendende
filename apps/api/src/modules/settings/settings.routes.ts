@@ -404,6 +404,23 @@ settingsRouter.patch(
   })
 );
 
+// Dashboard chart's gear icon — both null clears back to "show every hour";
+// otherwise startHour must be strictly before endHour. Personal preference,
+// same as theme above: no permission beyond being logged in.
+const presenceChartHoursSchema = z
+  .object({ startHour: z.number().int().min(0).max(23).nullable(), endHour: z.number().int().min(0).max(23).nullable() })
+  .refine((v) => (v.startHour === null) === (v.endHour === null), { message: "Informe os dois horários ou nenhum" })
+  .refine((v) => v.startHour === null || v.startHour! < v.endHour!, { message: "O horário inicial deve ser antes do final" });
+
+settingsRouter.patch(
+  "/presence-chart-hours",
+  asyncHandler(async (req, res) => {
+    const { startHour, endHour } = presenceChartHoursSchema.parse(req.body);
+    await service.setUserPresenceChartHours(req.auth!.userId, startHour, endHour);
+    res.json({ startHour, endHour });
+  })
+);
+
 // ---------------------------------------------------------------------------
 // E-mail / SMTP (used to deliver the password-reset link — section 5/56).
 // ---------------------------------------------------------------------------

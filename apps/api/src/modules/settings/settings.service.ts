@@ -219,6 +219,11 @@ export async function setUserThemePreference(userId: string, theme: "LIGHT" | "D
   await prisma.user.update({ where: { id: userId }, data: { themePreference: theme } });
 }
 
+/** Dashboard "Presença ao longo do dia" gear icon's "Definir como padrão" — both null clears back to "show every hour". */
+export async function setUserPresenceChartHours(userId: string, startHour: number | null, endHour: number | null) {
+  await prisma.user.update({ where: { id: userId }, data: { presenceChartStartHour: startHour, presenceChartEndHour: endHour } });
+}
+
 // ---------------------------------------------------------------------------
 // SMTP / e-mail delivery (used for password-reset links) — section 5/56.
 // ---------------------------------------------------------------------------

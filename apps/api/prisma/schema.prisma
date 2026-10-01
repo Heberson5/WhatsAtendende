@@ -112,6 +112,13 @@ model User {
   pausedAt      DateTime?
   statusLogs    AgentStatusLog[]
 
+  // Custom hour range (0-23) for the Dashboard's "Presença ao longo do dia"
+  // chart, saved via the gear icon's "Definir como padrão" checkbox — both
+  // null means "show every hour", same as never having opened the gear menu.
+  // See PROMPT: "podendo marcar como padrão também".
+  presenceChartStartHour Int?
+  presenceChartEndHour   Int?
+
   @@index([role])
   @@index([status])
   @@index([whatsappConnectionId])
