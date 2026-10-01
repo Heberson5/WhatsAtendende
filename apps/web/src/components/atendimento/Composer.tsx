@@ -1,7 +1,19 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import clsx from "clsx";
-import { Mic, Paperclip, Pause, Play, Plus, Send, Trash2, X, MapPin, Bold, Italic, Strikethrough, Code } from "lucide-react";
+import { Mic, Paperclip, Pause, Play, Plus, Send, Trash2, X, MapPin, Bold, Italic, Strikethrough, Code, Wand2 } from "lucide-react";
 import type { MessageDTO } from "@whatsatendende/types";
+import { api } from "../../lib/api";
+
+// How long to wait after the agent stops typing before asking for a writing
+// suggestion — same debounce shape as EmailTemplatesPanel's preview call.
+const WRITING_SUGGESTION_DEBOUNCE_MS = 600;
+
+interface WritingSuggestion {
+  offset: number;
+  length: number;
+  message: string;
+  replacement: string;
+}
 
 // How many bars the live/frozen waveform keeps — older samples scroll off
 // the left, matching WhatsApp Web's own recording indicator.
@@ -146,6 +158,7 @@ export const Composer = forwardRef<
   const [caption, setCaption] = useState("");
   const [selectionBubble, setSelectionBubble] = useState<{ top: number; left: number } | null>(null);
   const [quickReplyActiveIndex, setQuickReplyActiveIndex] = useState(0);
+  const [writingSuggestion, setWritingSuggestion] = useState<(WritingSuggestion & { top: number; left: number }) | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const emojiPanelRef = useRef<HTMLDivElement>(null);
@@ -192,6 +205,44 @@ export const Composer = forwardRef<
   useEffect(() => {
     setQuickReplyActiveIndex(0);
   }, [quickReplyFilter]);
+
+  // Asks for a writing-correction suggestion a short while after the agent
+  // stops typing — debounced the same way EmailTemplatesPanel debounces its
+  // preview call, so it doesn't fire on every keystroke. Best-effort: the
+  // backend already swallows a down/slow LanguageTool instance into an empty
+  // list, so a failed request here just means no suggestion, never an error
+  // the agent has to deal with.
+  useEffect(() => {
+    if (!text.trim() || quickReplyMatch) {
+      setWritingSuggestion(null);
+      return;
+    }
+    const timer = setTimeout(() => {
+      api
+        .post<WritingSuggestion[]>("/writing-assist/check", { text })
+        .then((res) => {
+          const match = res.data[0];
+          const el = textareaRef.current;
+          if (!match || !el) {
+            setWritingSuggestion(null);
+            return;
+          }
+          const { top, left } = getCaretRect(el, match.offset);
+          setWritingSuggestion({ ...match, top: top - 44, left });
+        })
+        .catch(() => setWritingSuggestion(null));
+    }, WRITING_SUGGESTION_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text]);
+
+  function applyWritingSuggestion() {
+    if (!writingSuggestion) return;
+    const { offset, length, replacement } = writingSuggestion;
+    setText((prev) => prev.slice(0, offset) + replacement + prev.slice(offset + length));
+    setWritingSuggestion(null);
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }
 
   function selectQuickReply(reply: QuickReplyOption) {
     setText(reply.text);
@@ -885,6 +936,39 @@ export const Composer = forwardRef<
         </div>
       )}
 
+      {!selectionBubble && writingSuggestion && (
+        <div
+          className="shadow-elevated fixed z-50 flex max-w-xs items-start gap-2 rounded-card border border-border bg-surface p-2 text-xs"
+          style={{ top: writingSuggestion.top, left: writingSuggestion.left }}
+          // Same trick as the formatting bubble above — keeps the textarea
+          // (and its current selection/caret) from blurring before the
+          // button's onClick runs.
+          onMouseDown={(e) => e.preventDefault()}
+        >
+          <Wand2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-secondary" />
+          <div className="min-w-0">
+            <p className="text-muted">{writingSuggestion.message}</p>
+            <div className="mt-1 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={applyWritingSuggestion}
+                className="focus-ring rounded-full bg-secondary px-2 py-0.5 font-medium text-secondary-fg hover:opacity-90"
+              >
+                Usar: {writingSuggestion.replacement}
+              </button>
+              <button
+                type="button"
+                onClick={() => setWritingSuggestion(null)}
+                className="focus-ring rounded-full p-1 text-muted hover:bg-surface-alt"
+                aria-label="Dispensar sugestão"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="relative border-t border-border bg-surface">
         {quickReplyMenuOpen && (
           <div
@@ -1010,6 +1094,8 @@ export const Composer = forwardRef<
           onBlur={() => setSelectionBubble(null)}
           disabled={disabled}
           rows={1}
+          spellCheck
+          lang="pt-BR"
           placeholder="Digite uma mensagem"
           className="focus-ring mx-1 flex-1 resize-none rounded-2xl border border-border bg-transparent px-4 py-2 text-sm leading-5 disabled:opacity-60"
         />
