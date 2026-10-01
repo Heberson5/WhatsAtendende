@@ -124,6 +124,12 @@ export default function DashboardPage() {
       ).data,
   });
 
+  const [activeHourRange, setActiveHourRange] = useState<HourRange | null>(
+    user?.presenceChartStartHour != null && user?.presenceChartEndHour != null
+      ? { start: user.presenceChartStartHour, end: user.presenceChartEndHour }
+      : null
+  );
+
   const saveDefaultHourRangeMutation = useMutation({
     mutationFn: (range: HourRange | null) =>
       api.patch("/settings/presence-chart-hours", { startHour: range?.start ?? null, endHour: range?.end ?? null }),
@@ -144,6 +150,12 @@ export default function DashboardPage() {
         statusColors,
         messageColors,
         agentSeriesColors,
+        wordCloud: wordCloud ?? [],
+        presenceByHour,
+        presenceHourRange: activeHourRange,
+        presenceIsToday: period.period === "today",
+        primaryColor,
+        secondaryColor,
       });
     } finally {
       setExportingPptx(false);
@@ -320,6 +332,7 @@ export default function DashboardPage() {
                   : null
               }
               onSaveDefaultRange={(range) => saveDefaultHourRangeMutation.mutate(range)}
+              onActiveRangeChange={setActiveHourRange}
             />
           </section>
         </div>
