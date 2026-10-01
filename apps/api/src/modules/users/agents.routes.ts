@@ -30,7 +30,14 @@ agentsRouter.get(
         status: "ACTIVE",
         ...(excludeSelf ? { id: { not: req.auth!.userId } } : {}),
       },
-      select: { id: true, displayName: true, presence: true, photoUrl: true, whatsappConnection: { select: { name: true } } },
+      select: {
+        id: true,
+        displayName: true,
+        presence: true,
+        photoUrl: true,
+        whatsappConnection: { select: { name: true } },
+        pauseReason: { select: { name: true } },
+      },
       orderBy: { displayName: "asc" },
     });
     res.json(
@@ -40,6 +47,7 @@ agentsRouter.get(
         presence: a.presence,
         photoUrl: a.photoUrl,
         whatsappConnectionName: a.whatsappConnection?.name ?? null,
+        pauseReasonName: a.pauseReason?.name ?? null,
       }))
     );
   })
@@ -51,9 +59,25 @@ agentsRouter.get(
   asyncHandler(async (_req, res) => {
     const agents = await prisma.user.findMany({
       where: { role: "AGENT" },
-      select: { id: true, displayName: true, presence: true, status: true, whatsappConnection: { select: { name: true } } },
+      select: {
+        id: true,
+        displayName: true,
+        presence: true,
+        status: true,
+        whatsappConnection: { select: { name: true } },
+        pauseReason: { select: { name: true } },
+      },
       orderBy: { displayName: "asc" },
     });
-    res.json(agents.map((a) => ({ id: a.id, displayName: a.displayName, presence: a.presence, status: a.status, whatsappConnectionName: a.whatsappConnection?.name ?? null })));
+    res.json(
+      agents.map((a) => ({
+        id: a.id,
+        displayName: a.displayName,
+        presence: a.presence,
+        status: a.status,
+        whatsappConnectionName: a.whatsappConnection?.name ?? null,
+        pauseReasonName: a.pauseReason?.name ?? null,
+      }))
+    );
   })
 );

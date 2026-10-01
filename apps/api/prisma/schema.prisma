@@ -101,10 +101,64 @@ model User {
   closingMessage   ClosingMessage? @relation(fields: [closingMessageId], references: [id], onDelete: SetNull)
   closingMessageId String?
 
+  // Set together with presence=AWAY when this agent pauses themselves from
+  // the profile menu — both null again on resume. onDelete: Restrict so a
+  // PauseReason still referenced by a currently-paused agent can't be
+  // deleted out from under them (the UI deactivates instead — see
+  // pause-reasons.service.ts). See PROMPT: "poderão pausar no mesmo local
+  // onde está a foto do perfil do usuário".
+  pauseReason   PauseReason?     @relation(fields: [pauseReasonId], references: [id], onDelete: Restrict)
+  pauseReasonId String?
+  pausedAt      DateTime?
+  statusLogs    AgentStatusLog[]
+
   @@index([role])
   @@index([status])
   @@index([whatsappConnectionId])
   @@index([closingMessageId])
+  @@index([pauseReasonId])
+}
+
+// ---------------------------------------------------------------------------
+// Pausar atendimento — motivos cadastráveis (Respostas > Motivo de Pausa) e
+// o histórico de presença que alimenta o gráfico "Presença ao longo do dia"
+// no Dashboard. See PROMPT: "nova aba em Respostas, chamada Motivo de
+// Pausa... pausar no mesmo local onde está a foto do perfil".
+// ---------------------------------------------------------------------------
+
+model PauseReason {
+  id        String   @id @default(uuid())
+  name      String
+  // "Excluir" in the UI always deactivates rather than deleting the row —
+  // a reason already used in AgentStatusLog/User.pauseReasonId must stick
+  // around for that history (and the Dashboard chart) to keep making sense;
+  // it just stops showing up as an option to pick when pausing.
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  users      User[]
+  statusLogs AgentStatusLog[]
+}
+
+// One open-ended row per presence transition (ONLINE/AWAY/OFFLINE) —
+// `endedAt` null means "this is the agent's current status right now".
+// Written by presence-tracker.ts (connect/disconnect) and the pause/resume
+// routes. Purely additive history — nothing else reads or writes this
+// table — queried hour-by-hour for the Dashboard's "Presença ao longo do
+// dia" chart.
+model AgentStatusLog {
+  id            String        @id @default(uuid())
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        String
+  status        AgentPresence
+  pauseReason   PauseReason?  @relation(fields: [pauseReasonId], references: [id], onDelete: Restrict)
+  pauseReasonId String?
+  startedAt     DateTime      @default(now())
+  endedAt       DateTime?
+
+  @@index([userId])
+  @@index([startedAt])
+  @@index([pauseReasonId])
 }
 
 model PasswordResetToken {

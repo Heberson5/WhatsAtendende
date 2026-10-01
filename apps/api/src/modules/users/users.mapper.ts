@@ -1,7 +1,7 @@
-import type { User, WhatsAppConnection } from "@prisma/client";
+import type { PauseReason, User, WhatsAppConnection } from "@prisma/client";
 import type { AccessSchedule, UserDTO } from "@whatsatendende/types";
 
-type UserWithConnection = User & { whatsappConnection: WhatsAppConnection | null };
+type UserWithConnection = User & { whatsappConnection: WhatsAppConnection | null; pauseReason?: PauseReason | null };
 
 export function toUserDTO(user: UserWithConnection): UserDTO {
   return {
@@ -21,5 +21,8 @@ export function toUserDTO(user: UserWithConnection): UserDTO {
     workState: user.workState,
     workCity: user.workCity,
     accessSchedule: (user.accessSchedule as AccessSchedule | null) ?? null,
+    pauseReasonId: user.pauseReasonId,
+    pauseReasonName: user.pauseReason?.name ?? null,
+    pausedAt: user.pausedAt ? user.pausedAt.toISOString() : null,
   };
 }

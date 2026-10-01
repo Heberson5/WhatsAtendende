@@ -1,4 +1,5 @@
 import { prisma } from "../lib/prisma";
+import { recordPresenceTransition } from "../lib/presence-status";
 
 /**
  * Presence ("Online"/"Offline" in Usuários) used to be set ONLY on an
@@ -55,7 +56,19 @@ export async function registerConnection(userId: string, socketId: string): Prom
   }
   sockets.add(socketId);
   cancelPendingOffline(userId);
+
+  // A socket reconnecting (the routine disconnect+reconnect on every
+  // access-token refresh, same as the grace window above exists for) must
+  // never silently clobber a manual pause — AWAY only ever means "this
+  // agent paused themselves" (see profile.service.ts), and that should
+  // only end when they explicitly click "Retomar", not because their tab
+  // happened to reconnect. See PROMPT: "poderão pausar no mesmo local onde
+  // está a foto do perfil do usuário".
+  const current = await prisma.user.findUnique({ where: { id: userId }, select: { presence: true } }).catch(() => null);
+  if (current?.presence === "AWAY") return;
+
   await prisma.user.update({ where: { id: userId }, data: { presence: "ONLINE" } }).catch(() => undefined);
+  await recordPresenceTransition(userId, "ONLINE").catch(() => undefined);
 }
 
 /**
@@ -83,6 +96,7 @@ export function registerDisconnection(userId: string, socketId: string, graceMs:
     // rather than clobber a now-genuinely-online user.
     if (activeSocketsByUser.get(userId)?.size) return;
     prisma.user.update({ where: { id: userId }, data: { presence: "OFFLINE" } }).catch(() => undefined);
+    recordPresenceTransition(userId, "OFFLINE").catch(() => undefined);
   }, graceMs);
   pendingOfflineTimers.set(userId, timer);
 }

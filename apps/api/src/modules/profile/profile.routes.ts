@@ -10,6 +10,7 @@ import { writeAudit } from "../../lib/audit";
 import { env } from "../../config/env";
 import { Errors } from "../../lib/http-error";
 import { toUserDTO } from "../users/users.mapper";
+import { realtimeEvents } from "../../realtime/realtime";
 import * as service from "./profile.service";
 
 export const profileRouter = Router();
@@ -105,5 +106,28 @@ profileRouter.post(
     await service.changeOwnPassword(req.auth!.userId, currentPassword, newPassword);
     await writeAudit({ userId: req.auth!.userId, action: "PROFILE_PASSWORD_CHANGED", entity: "User", entityId: req.auth!.userId, ipAddress: req.ip ?? null });
     res.status(204).end();
+  })
+);
+
+const pauseSchema = z.object({ pauseReasonId: z.string().uuid() });
+
+profileRouter.post(
+  "/pause",
+  asyncHandler(async (req, res) => {
+    const { pauseReasonId } = pauseSchema.parse(req.body);
+    const user = await service.pauseOwnAttendance(req.auth!.userId, pauseReasonId);
+    realtimeEvents.presenceChanged(req.auth!.userId, "AWAY");
+    await writeAudit({ userId: req.auth!.userId, action: "PROFILE_PAUSED", entity: "User", entityId: req.auth!.userId, ipAddress: req.ip ?? null, metadata: { pauseReasonId } });
+    res.json(toUserDTO(user));
+  })
+);
+
+profileRouter.post(
+  "/resume",
+  asyncHandler(async (req, res) => {
+    const user = await service.resumeOwnAttendance(req.auth!.userId);
+    realtimeEvents.presenceChanged(req.auth!.userId, "ONLINE");
+    await writeAudit({ userId: req.auth!.userId, action: "PROFILE_RESUMED", entity: "User", entityId: req.auth!.userId, ipAddress: req.ip ?? null });
+    res.json(toUserDTO(user));
   })
 );

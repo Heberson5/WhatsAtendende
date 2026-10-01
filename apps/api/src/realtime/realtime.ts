@@ -29,6 +29,18 @@ export const realtimeEvents = {
     getIO()?.to(ROOMS.oversight()).emit("oversight:updated");
     getIO()?.to(ROOMS.user(agentId)).emit("conversation:assigned", { conversationId });
   },
+  /**
+   * Pausing/resuming from the profile menu — broadcast to every open tab/
+   * device this user has (same room presence-tracker.ts's own ONLINE/
+   * OFFLINE writes don't need to touch, since those happen on the socket
+   * connection itself). Same event name/shape socket-server.ts already
+   * emits on connect, so useSocketEvents' existing listener just picks it
+   * up. See PROMPT: "poderão pausar no mesmo local onde está a foto do
+   * perfil".
+   */
+  presenceChanged: (userId: string, presence: "ONLINE" | "AWAY" | "OFFLINE") => {
+    getIO()?.to(ROOMS.user(userId)).emit("presence:self", { presence });
+  },
   conversationTransferred: (conversationId: string, fromAgentId: string, toAgentId: string) => {
     getIO()?.to(ROOMS.user(fromAgentId)).emit("conversation:removed", { conversationId });
     getIO()?.to(ROOMS.user(toAgentId)).emit("conversation:transferred-in", { conversationId });
