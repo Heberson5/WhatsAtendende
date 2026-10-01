@@ -185,7 +185,13 @@ export async function updateMaintenanceSettings(patch: Partial<MaintenanceSettin
 
 export async function getBusinessSettings(): Promise<Record<string, unknown>> {
   const record = await prisma.systemSetting.findUnique({ where: { key: "business" } });
-  return (record?.value as Record<string, unknown> | undefined) ?? DEFAULT_BUSINESS_SETTINGS;
+  // Merge over the defaults (same pattern as getBranding/getMaintenanceSettings
+  // below) rather than returning the stored row as-is — a key added to
+  // DEFAULT_BUSINESS_SETTINGS after this row was first saved would otherwise
+  // come back undefined forever, since nothing here ever re-saves the whole
+  // object. See queueReminderIntervalMinutes, added well after this key was
+  // already in use in any environment that had touched Configurações > Segurança.
+  return record ? { ...DEFAULT_BUSINESS_SETTINGS, ...(record.value as Record<string, unknown>) } : DEFAULT_BUSINESS_SETTINGS;
 }
 
 // Roadmap knobs (spec section 52/53): not all are enforced by business
@@ -202,6 +208,12 @@ const DEFAULT_BUSINESS_SETTINGS = {
   businessHours: null as { start: string; end: string; days: number[] } | null,
   greetingMessage: null as string | null,
   awayMessage: null as string | null,
+  // How often (in minutes) an ONLINE agent is reminded that their
+  // connection's queue still has a conversation waiting to be accepted —
+  // see PROMPT: "notificações a cada um minuto quando tem conversas na
+  // fila... parametrizado quanto tempo deverá ser notificado". Checked by
+  // the queue-reminder timer in server.ts.
+  queueReminderIntervalMinutes: 1,
 };
 
 export async function updateBusinessSettings(patch: Record<string, unknown>) {

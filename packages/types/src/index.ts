@@ -450,6 +450,10 @@ export const PERMISSION = {
   CONFIGURACOES_FERIADOS_ADICIONAR: "configuracoes.feriados.adicionar",
   CONFIGURACOES_FERIADOS_EDITAR: "configuracoes.feriados.editar",
   CONFIGURACOES_FERIADOS_EXCLUIR: "configuracoes.feriados.excluir",
+  // Single record (the queue reminder's interval, see business settings),
+  // so only visualizar/editar — same pattern as Identidade visual/E-mail.
+  CONFIGURACOES_FILA_VISUALIZAR: "configuracoes.fila.visualizar",
+  CONFIGURACOES_FILA_EDITAR: "configuracoes.fila.editar",
   AUDITORIA_ACESSAR: "auditoria.acessar",
   RESPOSTAS_RAPIDAS_GERENCIAR: "respostas_rapidas.gerenciar",
   // Each layered ON TOP of RESPOSTAS_RAPIDAS_GERENCIAR (need both) — see
@@ -691,6 +695,22 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     group: "Configurações",
     label: "Configurações — Feriados (excluir)",
     description: "Excluir um feriado cadastrado.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.CONFIGURACOES_FILA_VISUALIZAR,
+    group: "Configurações",
+    label: "Configurações — Fila (visualizar)",
+    description: "Ver o intervalo configurado do lembrete de conversas aguardando na fila.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.CONFIGURACOES_FILA_EDITAR,
+    group: "Configurações",
+    label: "Configurações — Fila (editar)",
+    description: "Alterar o intervalo do lembrete de conversas aguardando na fila.",
     editableRoles: ["AGENT", "MANAGER"],
     defaultAllowed: { AGENT: false, MANAGER: true },
   },

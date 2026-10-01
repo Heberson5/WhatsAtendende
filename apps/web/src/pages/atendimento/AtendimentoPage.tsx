@@ -113,6 +113,15 @@ export default function AtendimentoPage() {
   });
 
   const selectedConversation = mineQuery.data?.find((c) => c.id === selectedId) ?? null;
+  // Highlights the Fila tab itself (not just its count) while there's at
+  // least one conversation still waiting to be accepted — so an agent
+  // parked on "Ativos" notices without having to switch tabs. Goes back to
+  // the plain look the instant the queue empties out (accepted/transferred/
+  // returned elsewhere), same as the count already does today. See PROMPT:
+  // "destaque maior em filas... quando não tem conversas pendentes...
+  // continue normalmente sem um destaque".
+  const queueCount = queueQuery.data?.length ?? 0;
+  const queueHasPending = queueCount > 0;
 
   return (
     <div className="grid h-full overflow-hidden md:grid-cols-[340px_1fr]">
@@ -154,9 +163,18 @@ export default function AtendimentoPage() {
           </button>
           <button
             onClick={() => setTab("queue")}
-            className={`flex flex-1 items-center justify-center gap-1.5 py-3 text-sm font-medium ${tab === "queue" ? "border-b-2 border-primary text-primary" : "text-muted"}`}
+            className={`flex flex-1 items-center justify-center gap-1.5 py-3 text-sm font-medium ${
+              tab === "queue" ? "border-b-2 border-primary text-primary" : queueHasPending ? "font-semibold text-amber-600" : "text-muted"
+            }`}
           >
-            <Inbox className="h-4 w-4" /> Fila ({queueQuery.data?.length ?? 0})
+            <Inbox className={`h-4 w-4 ${queueHasPending && tab !== "queue" ? "text-amber-500" : ""}`} /> Fila
+            {queueHasPending ? (
+              <span className="inline-flex h-5 min-w-5 animate-pulse items-center justify-center rounded-full bg-amber-500 px-1.5 text-xs font-bold text-white">
+                {queueCount}
+              </span>
+            ) : (
+              <span>({queueCount})</span>
+            )}
           </button>
           <button
             onClick={() => setTab("transferred")}

@@ -4,6 +4,7 @@ import { createSocketServer } from "./realtime/socket-server";
 import { initWhatsAppConnections, shutdownAllConnections } from "./modules/whatsapp/whatsapp.service";
 import { revertExpiredTransfers } from "./modules/conversations/conversations.service";
 import { runHolidaySyncIfDue } from "./modules/holidays/holidays.service";
+import { sendQueueRemindersIfDue } from "./lib/queue-reminder";
 import { env } from "./config/env";
 import { logger } from "./lib/logger";
 import { prisma } from "./lib/prisma";
@@ -15,6 +16,11 @@ const TRANSFER_SWEEP_INTERVAL_MS = 5 * 60 * 1000; // see PROMPT: revert an unacc
 // manual") once its own ~monthly cadence marker says it's due, so most
 // days this is a single no-op SystemSetting read.
 const HOLIDAY_SYNC_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
+// The admin-configured queueReminderIntervalMinutes (default 1 minute)
+// decides the real cadence via sendQueueRemindersIfDue's own marker — this
+// is just how often it's cheap to check whether it's due yet. See PROMPT:
+// "notificações a cada um minuto quando tem conversas na fila".
+const QUEUE_REMINDER_CHECK_INTERVAL_MS = 60 * 1000;
 
 async function main() {
   // Presence is otherwise only ever kept correct by live socket connections
@@ -45,6 +51,11 @@ async function main() {
   // time shouldn't have to wait a full day for the first check.
   runHolidaySyncIfDue().catch((err) => logger.error({ err }, "failed to run the startup holiday sync check"));
 
+  const queueReminderTimer = setInterval(() => {
+    sendQueueRemindersIfDue().catch((err) => logger.error({ err }, "failed to check/send queue reminders"));
+  }, QUEUE_REMINDER_CHECK_INTERVAL_MS);
+  queueReminderTimer.unref();
+
   httpServer.listen(env.PORT, () => {
     logger.info(`API listening on port ${env.PORT} (env=${env.NODE_ENV}, whatsapp=${env.WHATSAPP_PROVIDER})`);
   });
@@ -53,6 +64,7 @@ async function main() {
     logger.info(`${signal} received, shutting down`);
     clearInterval(transferSweepTimer);
     clearInterval(holidaySyncTimer);
+    clearInterval(queueReminderTimer);
     httpServer.close();
     // Every deploy sends this signal to the outgoing container — ending
     // each WhatsApp connection's socket cleanly here (rather than letting
