@@ -139,6 +139,18 @@ async function getPerAgentBreakdown(from: Date, to: Date, connectionFilter?: { i
           ...(connectionFilter ? { conversation: { whatsappConnectionId: connectionFilter } } : {}),
         },
       });
+      // Inbound messages inside this agent's own conversations — not
+      // "messages sent to this agent specifically" (WhatsApp has no such
+      // concept), the same scoping the rest of this breakdown already uses.
+      // See PROMPT: "separe gráficos... de mensagens enviadas/recebidas por
+      // atendentes".
+      const receivedCount = await prisma.message.count({
+        where: {
+          direction: "INBOUND",
+          createdAt: { gte: from, lte: to },
+          conversation: { assignedAgentId: agent.id, ...(connectionFilter ? { whatsappConnectionId: connectionFilter } : {}) },
+        },
+      });
       const handlingDiffs = conversations
         .filter((c) => c.acceptedAt && c.closedAt)
         .map((c) => c.closedAt!.getTime() - c.acceptedAt!.getTime());
@@ -148,6 +160,7 @@ async function getPerAgentBreakdown(from: Date, to: Date, connectionFilter?: { i
         agentName: agent.displayName,
         conversations: conversations.length,
         messagesSent: sentCount,
+        messagesReceived: receivedCount,
         avgHandlingMs: avgMs(handlingDiffs),
       };
     })

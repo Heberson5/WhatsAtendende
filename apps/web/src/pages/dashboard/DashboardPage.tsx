@@ -24,7 +24,7 @@ interface DashboardData {
   conversations: { received: number; unique: number; inProgress: number; closed: number; waiting: number };
   messages: { received: number; sent: number; total: number };
   timings: { avgAcceptMs: number | null; avgFirstResponseMs: number | null; avgHandlingMs: number | null; avgClosingMs: number | null };
-  perAgent: { agentId: string; agentName: string; conversations: number; messagesSent: number; avgHandlingMs: number | null }[];
+  perAgent: { agentId: string; agentName: string; conversations: number; messagesSent: number; messagesReceived: number; avgHandlingMs: number | null }[];
   users: { online: number; active: number; total: number };
 }
 
@@ -243,15 +243,23 @@ export default function DashboardPage() {
 
           <section>
             <h2 className="mb-3 text-sm font-semibold text-muted">Atendimentos por atendente</h2>
-            <SeriesChartCard
-              title="Conversas e mensagens enviadas por atendente"
-              data={data.perAgent}
-              categoryKey="agentName"
-              series={[
-                { key: "conversations", name: "Conversas", color: agentSeriesColors[0] },
-                { key: "messagesSent", name: "Mensagens enviadas", color: agentSeriesColors[1] },
-              ]}
-            />
+            <div className="grid gap-4 md:grid-cols-2">
+              <SeriesChartCard
+                title="Conversas por atendente"
+                data={data.perAgent}
+                categoryKey="agentName"
+                series={[{ key: "conversations", name: "Conversas", color: agentSeriesColors[0] }]}
+              />
+              <SeriesChartCard
+                title="Mensagens enviadas x recebidas por atendente"
+                data={data.perAgent}
+                categoryKey="agentName"
+                series={[
+                  { key: "messagesSent", name: "Enviadas", color: messageColors[1] },
+                  { key: "messagesReceived", name: "Recebidas", color: messageColors[0] },
+                ]}
+              />
+            </div>
           </section>
         </div>
       )}
