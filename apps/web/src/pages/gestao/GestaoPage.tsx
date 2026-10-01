@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
@@ -64,6 +65,40 @@ export default function GestaoPage() {
   const canManage = useAuthStore((s) => s.permissions?.[PERMISSION.GESTAO_GERENCIAR]);
   const queryClient = useQueryClient();
 
+  // Deep link from the Dashboard's Aguardando/Em atendimento/Encerradas
+  // cards (?status=a,b&period=...&from=...&to=...) — status may carry more
+  // than one value (Em atendimento = IN_PROGRESS + TRANSFERRED), joined
+  // with a comma since this page's own filter is a single <select>; it just
+  // won't show a matching option when more than one status came in, same
+  // as "Todos os status" would. See PROMPT: "direcionado para a tela de
+  // gestão, já aplicado o filtro do período do dashboard e o filtro do card".
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const statusParam = searchParams.get("status");
+    const periodParam = searchParams.get("period");
+    if (!statusParam && !periodParam) return;
+    if (statusParam) setStatus(statusParam);
+    if (periodParam) {
+      setPeriod({
+        period: periodParam as PeriodValue["period"],
+        from: searchParams.get("from") ?? undefined,
+        to: searchParams.get("to") ?? undefined,
+      });
+    }
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("status");
+        next.delete("period");
+        next.delete("from");
+        next.delete("to");
+        return next;
+      },
+      { replace: true }
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
   const { data: agents } = useQuery({
     queryKey: ["agents"],
     queryFn: async () => (await api.get<AgentOption[]>("/agents")).data,
@@ -98,7 +133,7 @@ export default function GestaoPage() {
             from: period.from,
             to: period.to,
             agentId: agentId === "all" ? undefined : agentId,
-            status: status === "all" ? undefined : status,
+            status: status === "all" ? undefined : status.split(","),
             q: search || undefined,
             connectionId: connectionIds.length ? connectionIds : undefined,
           },

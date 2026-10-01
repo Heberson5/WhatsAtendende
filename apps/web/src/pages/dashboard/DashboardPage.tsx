@@ -1,7 +1,10 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { FileBarChart2, Inbox, MessageSquare, Timer, UserCheck, Users, Wifi } from "lucide-react";
+import { PERMISSION } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
+import { useAuthStore } from "../../store/auth-store";
 import { PeriodFilter, type PeriodValue } from "../../components/common/PeriodFilter";
 import { ConnectionFilter } from "../../components/common/ConnectionFilter";
 import { StatCard, formatMinutes } from "../../components/common/StatCard";
@@ -36,6 +39,27 @@ export default function DashboardPage() {
   const [agentId, setAgentId] = useState("all");
   const [connectionIds, setConnectionIds] = useState<string[]>([]);
   const [exportingPptx, setExportingPptx] = useState(false);
+  const navigate = useNavigate();
+  const permissions = useAuthStore((s) => s.permissions);
+  const canOpenGestao = permissions?.[PERMISSION.GESTAO_ACESSAR];
+  const canOpenUsuarios = permissions?.[PERMISSION.USUARIOS_GERENCIAR];
+
+  // "Aguardando" never carries the dashboard's period filter — the count
+  // itself isn't period-scoped server-side (it's "right now", same as
+  // listQueue), so applying the period here would open a list that doesn't
+  // match the card's own number. "Em atendimento"/"Encerradas" do apply it,
+  // since those counts ARE scoped to the selected period. See PROMPT: "já
+  // aplicado o filtro do período do dashboard e o filtro do card".
+  function goToGestao(statuses: string[], includePeriod: boolean) {
+    const params = new URLSearchParams({ status: statuses.join(",") });
+    if (includePeriod) {
+      params.set("period", period.period);
+      if (period.from) params.set("from", period.from);
+      if (period.to) params.set("to", period.to);
+    }
+    navigate(`/gestao?${params.toString()}`);
+  }
+
   const { data: branding } = useBranding();
   const { data: exportBranding } = useExportBranding();
   const primaryColor = branding?.primaryColor ?? "#0097B4";
@@ -122,9 +146,27 @@ export default function DashboardPage() {
           <section>
             <h2 className="mb-3 text-sm font-semibold text-muted">Usuários</h2>
             <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
-              <StatCard label="Online agora" value={data.users.online} icon={Wifi} />
-              <StatCard label="Ativos" value={data.users.active} icon={UserCheck} />
-              <StatCard label="Total" value={data.users.total} icon={Users} />
+              <StatCard
+                label="Online agora"
+                value={data.users.online}
+                icon={Wifi}
+                onClick={canOpenUsuarios ? () => navigate("/usuarios") : undefined}
+                goToLabel="Ver Usuários →"
+              />
+              <StatCard
+                label="Ativos"
+                value={data.users.active}
+                icon={UserCheck}
+                onClick={canOpenUsuarios ? () => navigate("/usuarios") : undefined}
+                goToLabel="Ver Usuários →"
+              />
+              <StatCard
+                label="Total"
+                value={data.users.total}
+                icon={Users}
+                onClick={canOpenUsuarios ? () => navigate("/usuarios") : undefined}
+                goToLabel="Ver Usuários →"
+              />
             </div>
           </section>
 
@@ -133,9 +175,27 @@ export default function DashboardPage() {
             <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
               <StatCard label="Recebidas" value={data.conversations.received} icon={Inbox} />
               <StatCard label="Únicas" value={data.conversations.unique} icon={Users} />
-              <StatCard label="Aguardando" value={data.conversations.waiting} icon={Timer} />
-              <StatCard label="Em atendimento" value={data.conversations.inProgress} icon={MessageSquare} />
-              <StatCard label="Encerradas" value={data.conversations.closed} icon={Inbox} />
+              <StatCard
+                label="Aguardando"
+                value={data.conversations.waiting}
+                icon={Timer}
+                onClick={canOpenGestao ? () => goToGestao(["NEW", "WAITING"], false) : undefined}
+                goToLabel="Ver na Gestão →"
+              />
+              <StatCard
+                label="Em atendimento"
+                value={data.conversations.inProgress}
+                icon={MessageSquare}
+                onClick={canOpenGestao ? () => goToGestao(["IN_PROGRESS", "TRANSFERRED"], true) : undefined}
+                goToLabel="Ver na Gestão →"
+              />
+              <StatCard
+                label="Encerradas"
+                value={data.conversations.closed}
+                icon={Inbox}
+                onClick={canOpenGestao ? () => goToGestao(["CLOSED"], true) : undefined}
+                goToLabel="Ver na Gestão →"
+              />
             </div>
           </section>
 

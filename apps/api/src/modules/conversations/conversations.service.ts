@@ -879,7 +879,8 @@ export interface OversightFilters {
   from?: Date;
   to?: Date;
   agentId?: string;
-  status?: string;
+  /** One or more statuses (OR'd) — a list so the Dashboard's "Em atendimento" card can deep-link into both IN_PROGRESS and TRANSFERRED at once. */
+  status?: string[];
   contactSearch?: string;
   /** Empty/undefined = all connections — see PROMPT: filtro podendo selecionar várias ou todas. */
   connectionIds?: string[];
@@ -891,7 +892,7 @@ export async function listAllConversations(filters: OversightFilters) {
     where: {
       createdAt: filters.from || filters.to ? { gte: filters.from, lte: filters.to } : undefined,
       assignedAgentId: filters.agentId,
-      status: filters.status ? (filters.status as any) : undefined,
+      status: filters.status?.length ? { in: filters.status as any } : undefined,
       // Same WhatsApp-only-filter + "every Meta conversation regardless"
       // OR shape as listQueue above (see its own comment for why).
       OR: [
