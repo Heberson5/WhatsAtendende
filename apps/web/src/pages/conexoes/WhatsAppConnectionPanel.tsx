@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { CheckCircle2, Pencil, Plug, PlugZap, Plus, RefreshCw, Trash2, Users, X } from "lucide-react";
+import { CheckCircle2, MessageCircle, Pencil, Plug, PlugZap, Plus, RefreshCw, Trash2, Users, X } from "lucide-react";
 import { toast } from "sonner";
-import { PERMISSION } from "@whatsatendende/types";
+import { PERMISSION, type ConversationListItemDTO } from "@whatsatendende/types";
 import { useAuthStore } from "../../store/auth-store";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { getSocket } from "../../lib/socket";
@@ -31,11 +31,11 @@ const STATE_LABEL: Record<string, string> = {
 };
 
 const STATE_COLOR: Record<string, string> = {
-  DISCONNECTED: "bg-gray-100 text-gray-600",
-  CONNECTING: "bg-secondary/40 text-text",
-  QR_PENDING: "bg-secondary/40 text-text",
-  CODE_PENDING: "bg-secondary/40 text-text",
-  CONNECTED: "bg-green-100 text-green-700",
+  DISCONNECTED: "bg-danger-soft text-danger",
+  CONNECTING: "bg-warning-soft text-warning",
+  QR_PENDING: "bg-warning-soft text-warning",
+  CODE_PENDING: "bg-warning-soft text-warning",
+  CONNECTED: "bg-success-soft text-success",
 };
 
 // A curated set the admin can pick from with one click; the color input
@@ -139,6 +139,13 @@ export function WhatsAppConnectionPanel() {
   // whose controls (QR code, pairing code) make no sense for an
   // OFFICIAL_API row. See WhatsAppOfficialConnectionPanel.tsx for the mirror filter.
   const qrConnections = connections?.filter((c) => c.connectionMode === "QRCODE");
+  // Same query (and key) as the menu's queue badge, so it's already cached.
+  const { data: queue } = useQuery({
+    queryKey: ["queue", "menu-badge"],
+    queryFn: async () => (await api.get<ConversationListItemDTO[]>("/conversations/queue")).data,
+  });
+  const queueByConnection: Record<string, number> = {};
+  for (const c of queue ?? []) queueByConnection[c.whatsappConnectionId] = (queueByConnection[c.whatsappConnectionId] ?? 0) + 1;
 
   return (
     <div className="space-y-4">
@@ -195,8 +202,11 @@ export function WhatsAppConnectionPanel() {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {qrConnections?.map((connection) => (
-          <div key={connection.id} className="shadow-soft flex flex-col rounded-card border border-border bg-surface p-5">
-            <div className="mb-3 flex items-center justify-between gap-3">
+          <div
+            key={connection.id}
+            className={`shadow-soft flex flex-col rounded-card border bg-surface p-5 ${connection.state === "DISCONNECTED" ? "border-danger/40" : "border-border"}`}
+          >
+            <div className="mb-3 flex items-start justify-between gap-3">
               {renamingId === connection.id ? (
                 <div className="flex flex-1 items-center gap-2">
                   <input
@@ -217,9 +227,21 @@ export function WhatsAppConnectionPanel() {
                   </button>
                 </div>
               ) : (
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: connection.color }} title="Cor desta conexão" />
-                  <h3 className="text-sm font-semibold">{connection.name}</h3>
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <span
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white"
+                    style={{ backgroundColor: connection.color }}
+                    title="Cor desta conexão"
+                  >
+                    <MessageCircle className="h-4 w-4" />
+                  </span>
+                  <span className="min-w-0">
+                    <h3 className="truncate text-sm font-semibold">{connection.name}</h3>
+                    <p className="text-xs text-muted">
+                      {connection.connectedNumber ?? connection.linkedNumber ?? "Sem número vinculado"}
+                      {queueByConnection[connection.id] ? ` · ${queueByConnection[connection.id]} na fila` : ""}
+                    </p>
+                  </span>
                   {canEditar && (
                     <button
                       onClick={() => {
@@ -252,7 +274,10 @@ export function WhatsAppConnectionPanel() {
                 </div>
               )}
               <div className="flex items-center gap-2">
-                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${STATE_COLOR[connection.state]}`}>{STATE_LABEL[connection.state]}</span>
+                <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ${STATE_COLOR[connection.state]}`}>
+                  <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                  {STATE_LABEL[connection.state]}
+                </span>
                 {canEditar && (connection.state === "CONNECTING" || connection.state === "QR_PENDING" || connection.state === "CODE_PENDING") && (
                   <button
                     onClick={() => disconnectMutation.mutate(connection.id)}

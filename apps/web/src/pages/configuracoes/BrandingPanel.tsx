@@ -1,10 +1,11 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { PERMISSION } from "@whatsatendende/types";
 import { useAuthStore } from "../../store/auth-store";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { useBranding } from "../../hooks/useBranding";
+import { UnsavedChangesBar } from "../../components/common/UnsavedChangesBar";
 
 // Curated primary/secondary combinations — see PROMPT: "Nas configurações
 // precisa ter paletas de cores para alterar quando o administrador desejar."
@@ -52,6 +53,28 @@ export function BrandingPanel() {
     onError: (err) => toast.error(getApiErrorMessage(err)),
   });
 
+  const dirty =
+    Boolean(branding) &&
+    (companyName !== (branding?.companyName ?? "") ||
+      primaryColor.toLowerCase() !== (branding?.primaryColor ?? "").toLowerCase() ||
+      secondaryColor.toLowerCase() !== (branding?.secondaryColor ?? "").toLowerCase() ||
+      (customReadReceipt ? readReceiptColor.toLowerCase() : null) !== (branding?.readReceiptColor?.toLowerCase() ?? null));
+
+  function discardChanges() {
+    setCompanyName(branding?.companyName ?? "");
+    setPrimaryColor(branding?.primaryColor ?? "#0097B4");
+    setSecondaryColor(branding?.secondaryColor ?? "#FFE450");
+    setCustomReadReceipt(Boolean(branding?.readReceiptColor));
+    setReadReceiptColor(branding?.readReceiptColor ?? branding?.secondaryColor ?? "#FFE450");
+  }
+
+  // The form used to start empty when branding hadn't loaded yet at mount
+  // (blank "Nome da empresa") — load it, and reload after every save.
+  useEffect(() => {
+    if (branding) discardChanges();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [branding]);
+
   function applyPalette(palette: { primary: string; secondary: string }) {
     setPrimaryColor(palette.primary);
     setSecondaryColor(palette.secondary);
@@ -86,7 +109,7 @@ export function BrandingPanel() {
     <div className="shadow-soft max-w-xl rounded-card border border-border bg-surface p-6">
       <h2 className="mb-6 text-base font-semibold">Identidade visual</h2>
 
-      <fieldset disabled={!canEditar} className="m-0 space-y-6 border-0 p-0">
+      <fieldset disabled={!canEditar} className="m-0 min-w-0 space-y-6 border-0 p-0">
       <div className="flex items-center gap-6">
         <div>
           <p className="mb-2 text-sm font-medium">Logo</p>
@@ -178,6 +201,9 @@ export function BrandingPanel() {
         Salvar identidade visual
       </button>
       </fieldset>
+      {canEditar && (
+        <UnsavedChangesBar dirty={dirty} saving={saveMutation.isPending} onSave={() => saveMutation.mutate(undefined)} onDiscard={discardChanges} />
+      )}
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { PERMISSION } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
+import { UnsavedChangesBar } from "../../components/common/UnsavedChangesBar";
 import { useAuthStore } from "../../store/auth-store";
 
 interface BusinessSettings {
@@ -69,6 +70,15 @@ export function FilaSettingsPanel() {
         >
           Salvar configuração
         </button>
+      )}
+      {canEditar && data && (
+        <UnsavedChangesBar
+          dirty={data.queueReminderIntervalMinutes !== undefined && minutes !== data.queueReminderIntervalMinutes}
+          saving={saveMutation.isPending}
+          canSave={minutes >= MIN_MINUTES && minutes <= MAX_MINUTES}
+          onSave={() => saveMutation.mutate()}
+          onDiscard={() => setMinutes(data.queueReminderIntervalMinutes ?? 1)}
+        />
       )}
     </div>
   );
