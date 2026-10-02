@@ -12,6 +12,7 @@ interface ConnectionSummary {
   id: string;
   name: string;
   color: string;
+  connectionMode: "QRCODE" | "OFFICIAL_API";
   state: "DISCONNECTED" | "CONNECTING" | "QR_PENDING" | "CODE_PENDING" | "CONNECTED";
   qrCodeDataUrl: string | null;
   pairingCode: string | null;
@@ -133,6 +134,12 @@ export function WhatsAppConnectionPanel() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["whatsapp-connections"] }),
   });
 
+  // This endpoint is shared with the WhatsApp Oficial tab (same
+  // WhatsAppConnection table) — only QRCODE rows belong on this screen,
+  // whose controls (QR code, pairing code) make no sense for an
+  // OFFICIAL_API row. See WhatsAppOfficialConnectionPanel.tsx for the mirror filter.
+  const qrConnections = connections?.filter((c) => c.connectionMode === "QRCODE");
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -180,14 +187,14 @@ export function WhatsAppConnectionPanel() {
         </div>
       )}
 
-      {connections?.length === 0 && !creating && (
+      {qrConnections?.length === 0 && !creating && (
         <div className="rounded-card border border-dashed border-border p-8 text-center text-sm text-muted">
           Nenhuma conexão de WhatsApp cadastrada ainda.
         </div>
       )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {connections?.map((connection) => (
+        {qrConnections?.map((connection) => (
           <div key={connection.id} className="shadow-soft flex flex-col rounded-card border border-border bg-surface p-5">
             <div className="mb-3 flex items-center justify-between gap-3">
               {renamingId === connection.id ? (

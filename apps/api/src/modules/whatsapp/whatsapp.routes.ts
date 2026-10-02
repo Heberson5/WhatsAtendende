@@ -12,6 +12,49 @@ import { canManagerAccessConnection } from "../../lib/connection-access";
 import * as service from "./whatsapp.service";
 
 export const whatsappRouter = Router();
+
+// ---------------------------------------------------------------------------
+// WhatsApp Oficial (Cloud API) webhook — public (Meta's servers call these,
+// not a logged-in browser), so declared before requireAuth below, same
+// pattern as meta.routes.ts's own webhook pair. One shared URL/verify
+// handshake serves every OFFICIAL_API connection — see
+// verifyAndIngestOfficialWebhook/officialWebhookVerifyTokenExists's own doc
+// comments in whatsapp.service.ts for why.
+// ---------------------------------------------------------------------------
+
+const officialVerifySchema = z.object({
+  "hub.mode": z.string(),
+  "hub.verify_token": z.string(),
+  "hub.challenge": z.string(),
+});
+
+whatsappRouter.get(
+  "/oficial/webhook",
+  asyncHandler(async (req, res) => {
+    const parsed = officialVerifySchema.safeParse(req.query);
+    if (!parsed.success) return res.status(400).send("Bad Request");
+    if (parsed.data["hub.mode"] === "subscribe" && (await service.officialWebhookVerifyTokenExists(parsed.data["hub.verify_token"]))) {
+      return res.status(200).send(parsed.data["hub.challenge"]);
+    }
+    res.sendStatus(403);
+  })
+);
+
+whatsappRouter.post(
+  "/oficial/webhook",
+  asyncHandler(async (req, res) => {
+    // Acknowledge immediately — Meta retries aggressively on anything but a
+    // fast 200, and processing below never needs to hold up that response.
+    res.sendStatus(200);
+    try {
+      const signature = req.headers["x-hub-signature-256"];
+      await service.verifyAndIngestOfficialWebhook(req.rawBody ?? Buffer.alloc(0), typeof signature === "string" ? signature : undefined, req.body);
+    } catch (err) {
+      logger.error({ err }, "failed to process a WhatsApp Cloud API webhook event");
+    }
+  })
+);
+
 whatsappRouter.use(requireAuth);
 
 // Full list with QR/status — admins see every connection; managers only see
@@ -31,8 +74,19 @@ whatsappRouter.get(
 );
 
 const colorSchema = z.string().regex(/^#[0-9A-Fa-f]{6}$/);
-const createSchema = z.object({ name: z.string().trim().min(1).max(60), color: colorSchema.optional() });
-const updateSchema = z.object({ name: z.string().trim().min(1).max(60).optional(), color: colorSchema.optional() });
+// Present (and required) only when creating/editing a WhatsApp Oficial
+// (Cloud API) connection — see PROMPT: "entra no mesmo formato que a
+// conexão pelo QRCode". A QRCODE connection never sends this object at all.
+const officialSchema = z.object({
+  phoneNumberId: z.string().trim().min(1),
+  wabaId: z.string().trim().min(1),
+  accessToken: z.string().trim().min(1),
+  appSecret: z.string().trim().min(1).optional(),
+  webhookVerifyToken: z.string().trim().min(1).optional(),
+});
+const officialPatchSchema = officialSchema.extend({ accessToken: z.string().trim().min(1).optional() });
+const createSchema = z.object({ name: z.string().trim().min(1).max(60), color: colorSchema.optional(), official: officialSchema.optional() });
+const updateSchema = z.object({ name: z.string().trim().min(1).max(60).optional(), color: colorSchema.optional(), official: officialPatchSchema.optional() });
 
 // A MANAGER may only manage (update/delete/connect/disconnect) a connection
 // they created themselves or were explicitly granted "view/edit" on — see
@@ -50,9 +104,17 @@ whatsappRouter.post(
   requirePermission(PERMISSION.CONEXOES_GERENCIAR),
   requirePermission(PERMISSION.CONEXOES_WHATSAPP_ADICIONAR),
   asyncHandler(async (req, res) => {
-    const { name, color } = createSchema.parse(req.body);
-    const connection = await service.createConnection(name, color, req.auth!.userId);
-    await writeAudit({ userId: req.auth!.userId, action: "WHATSAPP_CONNECTION_CREATED", entity: "WhatsAppConnection", entityId: connection.id, ipAddress: req.ip ?? null, metadata: { name } });
+    const { name, color, official } = createSchema.parse(req.body);
+    const connection = await service.createConnection(name, color, req.auth!.userId, official);
+    await writeAudit({
+      userId: req.auth!.userId,
+      action: "WHATSAPP_CONNECTION_CREATED",
+      entity: "WhatsAppConnection",
+      entityId: connection.id,
+      ipAddress: req.ip ?? null,
+      // Never audit-log the raw secrets themselves.
+      metadata: { name, connectionMode: official ? "OFFICIAL_API" : "QRCODE" },
+    });
     res.status(201).json(connection);
   })
 );
@@ -65,7 +127,15 @@ whatsappRouter.patch(
     await requireManagerCanManageConnection(req);
     const patch = updateSchema.parse(req.body);
     const connection = await service.updateConnection(req.params.id, patch);
-    await writeAudit({ userId: req.auth!.userId, action: "WHATSAPP_CONNECTION_UPDATED", entity: "WhatsAppConnection", entityId: connection.id, ipAddress: req.ip ?? null, metadata: patch });
+    await writeAudit({
+      userId: req.auth!.userId,
+      action: "WHATSAPP_CONNECTION_UPDATED",
+      entity: "WhatsAppConnection",
+      entityId: connection.id,
+      ipAddress: req.ip ?? null,
+      // Never audit-log the raw secrets themselves — just which fields changed.
+      metadata: { name: patch.name, color: patch.color, officialFieldsChanged: patch.official ? Object.keys(patch.official) : undefined },
+    });
     res.json(connection);
   })
 );
