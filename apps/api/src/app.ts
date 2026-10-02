@@ -28,6 +28,7 @@ import { notificationsRouter } from "./modules/notifications/notifications.route
 import { holidaysRouter } from "./modules/holidays/holidays.routes";
 import { metaRouter } from "./modules/meta/meta.routes";
 import { writingAssistRouter } from "./modules/writing-assist/writing-assist.routes";
+import { messageTemplatesRouter } from "./modules/message-templates/message-templates.routes";
 import { pauseReasonsRouter } from "./modules/pause-reasons/pause-reasons.routes";
 
 export function createApp() {
@@ -110,6 +111,7 @@ export function createApp() {
   app.use("/uploads/branding", express.static(path.join(env.UPLOAD_DIR, "branding")));
   app.use("/uploads/profile", express.static(path.join(env.UPLOAD_DIR, "profile")));
   app.use("/uploads/contacts", express.static(path.join(env.UPLOAD_DIR, "contacts")));
+  app.use("/uploads/message-templates", express.static(path.join(env.UPLOAD_DIR, "message-templates")));
 
   app.get("/api/health", (_req, res) => res.json({ status: "ok", timestamp: new Date().toISOString() }));
 
@@ -123,6 +125,7 @@ export function createApp() {
   app.use("/api/settings", settingsRouter);
   app.use("/api/audit-logs", auditRouter);
   app.use("/api/whatsapp", whatsappRouter);
+  app.use("/api/message-templates", messageTemplatesRouter);
   app.use("/api/profile", profileRouter);
   app.use("/api/permissions", permissionsRouter);
   app.use("/api/quick-replies", quickRepliesRouter);

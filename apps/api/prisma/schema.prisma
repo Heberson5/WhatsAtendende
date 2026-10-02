@@ -248,6 +248,11 @@ model WhatsAppConnection {
   // developers.facebook.com/docs/whatsapp/cloud-api/get-started.
   phoneNumberId      String?
   wabaId             String?
+  // The Meta App this connection was registered under — needed only for the
+  // Resumable Upload API (POST /{appId}/uploads) when submitting a message
+  // template with a media header sample; not required to send/receive
+  // regular messages, so left optional. See message-templates.service.ts.
+  appId              String?
   // Long-lived System User access token for this phone number — encrypted
   // at rest with the same encryptSecret/decryptSecret already used for
   // MetaSettings' Instagram/Messenger tokens. Never returned by the API in
@@ -278,11 +283,12 @@ model WhatsAppConnection {
   createdAt       DateTime                 @default(now())
   updatedAt       DateTime                 @updatedAt
 
-  agents        User[]
-  contacts      Contact[]
-  conversations Conversation[]
-  quickReplies  QuickReply[]
-  managerGrants ManagerConnectionAccess[]
+  agents           User[]
+  contacts         Contact[]
+  conversations    Conversation[]
+  quickReplies     QuickReply[]
+  managerGrants    ManagerConnectionAccess[]
+  messageTemplates MessageTemplate[]
 
   @@index([status])
 }
@@ -376,6 +382,93 @@ model ClosingMessage {
   assignedUsers User[]
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// WhatsApp message templates (Meta approval) — see PROMPT: "nova aba
+// chamada Templates, onde será cadastrado as mensagens em que a Meta terá
+// que aprovar ou não, nas categorias de Marketing, Utilidade e
+// Autenticação". Only ever submitted for an OFFICIAL_API connection — a
+// template is a WABA-level concept Meta reviews/approves, with no Baileys
+// equivalent at all.
+// ---------------------------------------------------------------------------
+
+enum MessageTemplateCategory {
+  MARKETING
+  UTILITY
+  AUTHENTICATION
+}
+
+// NONE/TEXT need no sample file; IMAGE/VIDEO/DOCUMENT require one (the
+// headerSample* fields below) — see PROMPT: "tem que ter a opção de
+// incluir anexo (imagem, documento ou vídeo)".
+enum MessageTemplateHeaderType {
+  NONE
+  TEXT
+  IMAGE
+  VIDEO
+  DOCUMENT
+}
+
+// DRAFT = created locally, not yet submitted. PENDING/APPROVED/REJECTED/
+// PAUSED/DISABLED mirror Meta's own template review states 1:1 — see
+// message-templates.service.ts's handleStatusWebhook, which is the only
+// thing that ever moves a template OUT of PENDING.
+enum MessageTemplateStatus {
+  DRAFT
+  PENDING
+  APPROVED
+  REJECTED
+  PAUSED
+  DISABLED
+}
+
+model MessageTemplate {
+  id       String                    @id @default(uuid())
+  // Meta's own naming rule: lowercase snake_case, unique per (WABA, language).
+  name     String
+  category MessageTemplateCategory
+  // BCP-47 code Meta expects (e.g. "pt_BR") — see PROMPT: "nas categorias de
+  // Marketing, Utilidade e Autenticação" (category) plus the language picker
+  // in the cadastro form.
+  language String
+
+  headerType MessageTemplateHeaderType @default(NONE)
+  // HEADER text — only meaningful when headerType = TEXT.
+  headerText String?
+  // The sample media Meta's review team needs when headerType is IMAGE/
+  // VIDEO/DOCUMENT — same storage pattern as MessageAttachment
+  // (fs-backed, see env.UPLOAD_DIR). Uploaded to Meta's Resumable Upload
+  // API at submission time to obtain the header_handle Meta requires; kept
+  // here so editing/resubmitting a rejected template doesn't require
+  // re-uploading the same file.
+  headerSampleFileName   String?
+  headerSampleMimeType   String?
+  headerSampleSizeBytes  Int?
+  headerSampleStorageKey String?
+
+  bodyText   String
+  footerText String?
+  // Call-to-action / quick-reply buttons, e.g.
+  // [{"type":"QUICK_REPLY","text":"Confirmar"},{"type":"URL","text":"Ver pedido","url":"https://..."}]
+  // — kept as a single JSON blob rather than a child table since it's
+  // always read/written as one unit (never queried by button content).
+  buttons Json?
+
+  whatsappConnection   WhatsAppConnection @relation(fields: [whatsappConnectionId], references: [id], onDelete: Cascade)
+  whatsappConnectionId String
+
+  status         MessageTemplateStatus @default(DRAFT)
+  rejectionReason String?
+  // Meta's own template id, assigned on successful submission — the
+  // message_template_status_update webhook event carries this, not the
+  // name, so status updates are matched by it. Null until first submitted.
+  metaTemplateId String? @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([whatsappConnectionId, name, language])
 }
 
 // ---------------------------------------------------------------------------
