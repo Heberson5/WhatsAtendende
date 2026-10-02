@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { api } from "../lib/api";
+import { setNotificationIcon } from "./useDesktopNotifications";
 
 export interface Branding {
   companyName: string;
@@ -53,6 +54,7 @@ export function useBranding() {
     const appName = query.data.appName ?? query.data.companyName;
     const titleMeta = document.getElementById("app-apple-title") as HTMLMetaElement | null;
     if (titleMeta) titleMeta.content = appName;
+    setNotificationIcon(query.data.appIconUrl);
     if (query.data.appIconUrl) {
       const iconLink = document.getElementById("app-apple-touch-icon") as HTMLLinkElement | null;
       if (iconLink) iconLink.href = query.data.appIconUrl;

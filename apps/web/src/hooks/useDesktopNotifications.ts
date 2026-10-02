@@ -53,6 +53,17 @@ export function useNotificationPermission() {
   return { permission, requestPermission };
 }
 
+// Same icon as the installed app (Identidade visual > ícone do aplicativo,
+// or the default PNG the manifest falls back to). Windows can't render the
+// SVG favicon in a notification, which is why a generic icon used to show up.
+const DEFAULT_NOTIFICATION_ICON = "/icons/icon-192.png";
+let notificationIcon = DEFAULT_NOTIFICATION_ICON;
+
+/** Called by useBranding whenever the configured app icon is known/changes. */
+export function setNotificationIcon(url: string | null): void {
+  notificationIcon = url ? new URL(url, window.location.origin).href : DEFAULT_NOTIFICATION_ICON;
+}
+
 /**
  * Fires a native OS notification for a new message. Always fires alongside
  * the in-app toast (see useSocketEvents), even while the browser window is
@@ -64,7 +75,7 @@ export function useNotificationPermission() {
 export function notifyDesktop(title: string, body: string, tag?: string): void {
   if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
 
-  const notification = new Notification(title, { body, icon: "/favicon.svg", tag });
+  const notification = new Notification(title, { body, icon: notificationIcon, badge: notificationIcon, tag });
   notification.onclick = () => {
     window.focus();
     notification.close();
