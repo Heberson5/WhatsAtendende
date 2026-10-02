@@ -231,6 +231,61 @@ export interface MessageTemplateDTO {
   updatedAt: string;
 }
 
+export type FlowNodeType = "START" | "TEXT_MESSAGE" | "MENU" | "TRANSFER_TO_AGENT" | "END";
+
+/** One option of a MENU node — its `id` doubles as the FlowEdgeDTO.sourceHandle the chosen branch leaves from. */
+export interface FlowMenuOption {
+  id: string;
+  label: string;
+}
+
+/**
+ * Node-type-specific config — which shape applies is driven by the node's
+ * own `type`. assignedAgentIds on TRANSFER_TO_AGENT is empty by default
+ * (any agent on the connection's queue); see PROMPT: "para quais
+ * atendentes serão designados para ser configurado no nó".
+ */
+export type FlowNodeData =
+  | { text?: string } // TEXT_MESSAGE
+  | { options: FlowMenuOption[] } // MENU
+  | { assignedAgentIds: string[] } // TRANSFER_TO_AGENT
+  | Record<string, never>; // START / END — no config
+
+export interface FlowNodeDTO {
+  id: string;
+  type: FlowNodeType;
+  positionX: number;
+  positionY: number;
+  data: FlowNodeData;
+}
+
+export interface FlowEdgeDTO {
+  id: string;
+  sourceNodeId: string;
+  targetNodeId: string;
+  sourceHandle: string | null;
+}
+
+/** Fluxo — visual chatbot flow builder (menu "Fluxo"). See PROMPT: "um novo menu chamado Fluxo... função de ativar e desativar o fluxo". */
+export interface FlowListItemDTO {
+  id: string;
+  name: string;
+  description: string | null;
+  active: boolean;
+  connectionIds: string[];
+  connectionNames: string[];
+  nodeCount: number;
+  createdByUserName: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Full graph for the canvas — fetched once per flow when opening the editor. */
+export interface FlowDetailDTO extends FlowListItemDTO {
+  nodes: FlowNodeDTO[];
+  edges: FlowEdgeDTO[];
+}
+
 /** A missed-you-live event surfaced in the Topbar bell — see NotificationBell. entityType/entityId (e.g. "Conversation"/id) drive where clicking it navigates. */
 export interface NotificationDTO {
   id: string;
@@ -544,6 +599,12 @@ export const PERMISSION = {
   CONEXOES_INSTAGRAM_GERENCIAR: "conexoes.instagram.gerenciar",
   CONEXOES_FACEBOOK_GERENCIAR: "conexoes.facebook.gerenciar",
   CONEXOES_SITE_GERENCIAR: "conexoes.site.gerenciar",
+  // Standalone top-level menu — construtor visual de fluxos de atendimento
+  // automático. See PROMPT: "um novo menu chamado Fluxo".
+  FLUXO_VISUALIZAR: "fluxo.visualizar",
+  FLUXO_ADICIONAR: "fluxo.adicionar",
+  FLUXO_EDITAR: "fluxo.editar",
+  FLUXO_EXCLUIR: "fluxo.excluir",
 } as const;
 export type Permission = (typeof PERMISSION)[keyof typeof PERMISSION];
 
@@ -1049,6 +1110,38 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     description: "Gerenciar o widget de chat do site (integração ainda não disponível).",
     editableRoles: ["AGENT", "MANAGER"],
     defaultAllowed: { AGENT: true, MANAGER: true },
+  },
+  {
+    key: PERMISSION.FLUXO_VISUALIZAR,
+    group: "Fluxo",
+    label: "Fluxo (visualizar)",
+    description: "Ver os fluxos de atendimento automático cadastrados, seu status (ativo/inativo) e conexões vinculadas.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.FLUXO_ADICIONAR,
+    group: "Fluxo",
+    label: "Fluxo (adicionar)",
+    description: "Criar um novo fluxo de atendimento automático.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.FLUXO_EDITAR,
+    group: "Fluxo",
+    label: "Fluxo (editar)",
+    description: "Editar o construtor visual de um fluxo, ativar/desativar, e alterar quais conexões ele atende.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.FLUXO_EXCLUIR,
+    group: "Fluxo",
+    label: "Fluxo (excluir)",
+    description: "Excluir um fluxo de atendimento automático.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
   },
 ];
 

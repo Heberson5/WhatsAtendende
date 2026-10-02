@@ -13,6 +13,8 @@ import RelatoriosPage from "./pages/relatorios/RelatoriosPage";
 import UsuariosPage from "./pages/usuarios/UsuariosPage";
 import RespostasPage from "./pages/respostas/RespostasPage";
 import ConexoesPage from "./pages/conexoes/ConexoesPage";
+import FluxoPage from "./pages/fluxo/FluxoPage";
+import FlowEditorPage from "./pages/fluxo/FlowEditorPage";
 import ConfiguracoesPage from "./pages/configuracoes/ConfiguracoesPage";
 import AuditoriaPage from "./pages/auditoria/AuditoriaPage";
 import MeuPerfilPage from "./pages/perfil/MeuPerfilPage";
@@ -82,6 +84,10 @@ export default function App() {
           <Route path="/respostas-rapidas" element={<Navigate to="/respostas" replace />} />
           <Route element={<PermissionRoute permission={PERMISSION.CONEXOES_GERENCIAR} />}>
             <Route path="/conexoes" element={<ConexoesPage />} />
+          </Route>
+          <Route element={<PermissionRoute permission={PERMISSION.FLUXO_VISUALIZAR} />}>
+            <Route path="/fluxo" element={<FluxoPage />} />
+            <Route path="/fluxo/:id" element={<FlowEditorPage />} />
           </Route>
           <Route element={<PermissionRoute permission={PERMISSION.CONFIGURACOES_GERENCIAR} />}>
             <Route path="/configuracoes" element={<ConfiguracoesPage />} />
