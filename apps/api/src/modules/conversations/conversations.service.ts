@@ -1065,6 +1065,19 @@ export async function assertAgentCanReadConversation(
  * read-then-write race window, whether we actually won the assignment.
  */
 export async function acceptConversation(conversationId: string, agentId: string) {
+  // A paused agent keeps full access to whatever is already theirs
+  // (Composer, Aceite/Transferência etc. are untouched) — this is the one
+  // gate that stops them picking up anything new while away. startConversation
+  // also routes through here when the contact already has an unclaimed
+  // conversation (see its own "equivalent to accepting it" comment), so
+  // this single check covers both the Fila's Aceitar button and that path.
+  // See PROMPT: "quando estiver pausado, não permitirá aceitar novas
+  // conversas, só poderá responder as existentes".
+  const agent = await prisma.user.findUnique({ where: { id: agentId }, select: { presence: true } });
+  if (agent?.presence === "AWAY") {
+    throw Errors.badRequest("Voce esta pausado — retome o atendimento para aceitar novas conversas");
+  }
+
   const target = await prisma.conversation.findUnique({
     where: { id: conversationId },
     select: { whatsappConnection: { select: { status: true } }, metaConnection: { select: { status: true } } },
