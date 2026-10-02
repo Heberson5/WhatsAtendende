@@ -200,7 +200,7 @@ export async function exportDashboardPptx({
       metricRow("Total", data.users.total),
       sectionRow("Conversas"),
       metricRow("Recebidas", data.conversations.received),
-      metricRow("Únicas", data.conversations.unique),
+      metricRow("Atendimentos únicos", data.conversations.unique),
       metricRow("Aguardando", data.conversations.waiting),
       metricRow("Em atendimento", data.conversations.inProgress),
       metricRow("Encerradas", data.conversations.closed),

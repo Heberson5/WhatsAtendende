@@ -50,6 +50,6 @@ describe("dashboard: team now and presence durations", () => {
   it("returns the previous period's headline numbers for comparison", async () => {
     const res = await request(app).get("/api/dashboard").query({ period: "today" }).set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
-    expect(res.body.previous).toEqual({ received: 0, closed: 0, messagesTotal: 0, avgFirstResponseMs: null });
+    expect(res.body.previous).toEqual({ received: 0, unique: 0, closed: 0, messagesTotal: 0, avgFirstResponseMs: null });
   });
 });

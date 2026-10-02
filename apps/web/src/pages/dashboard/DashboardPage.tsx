@@ -29,7 +29,7 @@ interface DashboardData {
   timings: { avgAcceptMs: number | null; avgFirstResponseMs: number | null; avgHandlingMs: number | null; avgClosingMs: number | null };
   perAgent: { agentId: string; agentName: string; conversations: number; messagesSent: number; messagesReceived: number; avgHandlingMs: number | null }[];
   users: { online: number; active: number; total: number };
-  previous: { received: number; closed: number; messagesTotal: number; avgFirstResponseMs: number | null };
+  previous: { received: number; unique: number; closed: number; messagesTotal: number; avgFirstResponseMs: number | null };
 }
 
 // Amber for "waiting" doesn't come from the brand (it's a status-severity
@@ -221,12 +221,19 @@ export default function DashboardPage() {
 
       {data && (
         <div className="space-y-8">
-          <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+          <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
             <StatCard
               label="Conversas recebidas"
               value={data.conversations.received.toLocaleString("pt-BR")}
               icon={Inbox}
               delta={compareWithPrevious(data.conversations.received, data.previous.received)}
+            />
+            <StatCard
+              label="Atendimentos únicos"
+              value={data.conversations.unique.toLocaleString("pt-BR")}
+              icon={Users}
+              hint="clientes diferentes atendidos"
+              delta={compareWithPrevious(data.conversations.unique, data.previous.unique)}
             />
             <StatCard
               label="Na fila agora"
@@ -283,8 +290,7 @@ export default function DashboardPage() {
 
           <section>
             <h2 className="mb-3 text-sm font-semibold text-muted">Mais números {periodLabel}</h2>
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-              <StatCard label="Contatos únicos" value={data.conversations.unique} icon={Users} />
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
               <StatCard
                 label="Em atendimento"
                 value={data.conversations.inProgress}

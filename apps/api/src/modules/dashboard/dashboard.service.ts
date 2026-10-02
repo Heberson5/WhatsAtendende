@@ -130,12 +130,13 @@ async function getPeriodTotals({ from, to, agentId, connectionIds }: DashboardPa
   const [conversations, messagesTotal] = await Promise.all([
     prisma.conversation.findMany({
       where: { createdAt: { gte: from, lte: to }, ...conversationScope },
-      select: { status: true, acceptedAt: true, firstResponseAt: true },
+      select: { contactId: true, status: true, acceptedAt: true, firstResponseAt: true },
     }),
     prisma.message.count({ where: { createdAt: { gte: from, lte: to }, conversation: conversationScope } }),
   ]);
   return {
     received: conversations.length,
+    unique: new Set(conversations.map((c) => c.contactId)).size,
     closed: conversations.filter((c) => c.status === "CLOSED").length,
     messagesTotal,
     avgFirstResponseMs: avgMs(
