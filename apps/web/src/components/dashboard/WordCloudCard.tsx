@@ -27,22 +27,30 @@ export function WordCloudCard({ words, isLoading }: { words: WordCount[] | undef
       ) : !words?.length ? (
         <p className="py-8 text-center text-sm text-muted">Sem mensagens de clientes no período selecionado.</p>
       ) : (
-        <div className="flex min-h-[180px] flex-wrap items-center justify-center gap-x-3 gap-y-1.5 px-2 py-4">
+        <div className="flex min-h-[180px] flex-wrap items-baseline justify-center gap-x-3 gap-y-2 px-2 py-4">
           {words.map((w, i) => {
             const t = (w.count - min) / range;
+            const color = COLORS[i % COLORS.length];
             return (
               <span
                 key={w.word}
                 title={`${w.count} ${w.count === 1 ? "menção" : "menções"}`}
+                className="inline-flex items-baseline gap-1"
                 style={{
                   fontSize: `${14 + t * 28}px`,
                   fontWeight: t > 0.5 ? 700 : 500,
-                  color: COLORS[i % COLORS.length],
+                  color,
                   opacity: 0.55 + t * 0.45,
                   lineHeight: 1,
                 }}
               >
                 {w.word}
+                <span
+                  className="rounded-full px-1.5 py-0.5 text-[0.55em] font-bold tabular-nums"
+                  style={{ backgroundColor: color, color: "var(--color-surface)" }}
+                >
+                  {w.count}
+                </span>
               </span>
             );
           })}

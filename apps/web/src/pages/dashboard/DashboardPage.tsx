@@ -300,7 +300,13 @@ export default function DashboardPage() {
 
           <section>
             <h2 className="mb-3 text-sm font-semibold text-muted">Atendimentos por atendente</h2>
-            <div className="grid gap-4 md:grid-cols-2">
+            {/* With few agents the two charts sit side by side; past a point,
+                squeezing both into half-width starts crowding the X axis
+                again regardless of the label fix in SeriesChartCard, so each
+                chart gets the full row instead — see PROMPT: "deixe
+                responsivo para quando houver muitos atendentes, os gráficos
+                ficam um abaixo do outro". */}
+            <div className={`grid gap-4 ${data.perAgent.length > 6 ? "grid-cols-1" : "md:grid-cols-2"}`}>
               <SeriesChartCard
                 title="Conversas por atendente"
                 data={data.perAgent}

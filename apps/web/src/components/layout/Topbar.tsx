@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LogOut, Moon, Sun, Monitor, UserCircle, Menu, PauseCircle, PlayCircle } from "lucide-react";
+import { LogOut, Moon, Sun, Monitor, UserCircle, Menu, PauseCircle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import type { PauseReasonDTO, UserDTO } from "@whatsatendende/types";
@@ -71,6 +71,54 @@ export function Topbar({ title, onMenuClick }: { title: string; onMenuClick?: ()
         <h1 className="truncate text-lg font-semibold">{title}</h1>
       </div>
       <div className="flex shrink-0 items-center gap-2 sm:gap-4">
+        <div className="relative">
+          <button
+            className={`focus-ring flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-xs font-semibold sm:px-3 sm:text-sm ${
+              user?.presence === "AWAY"
+                ? "border-amber-500/40 bg-amber-500/15 text-amber-500"
+                : "border-border text-muted hover:bg-surface-alt"
+            }`}
+            onClick={() => {
+              if (user?.presence === "AWAY") {
+                resumeMutation.mutate();
+                return;
+              }
+              setPausePickerOpen((o) => !o);
+              setMenuOpen(false);
+            }}
+            disabled={resumeMutation.isPending}
+          >
+            {user?.presence === "AWAY" ? (
+              <>
+                <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-amber-500" />
+                <span className="hidden sm:inline">{resumeMutation.isPending ? "Retomando..." : `Pausado${user.pauseReasonName ? ` — ${user.pauseReasonName}` : ""}`}</span>
+              </>
+            ) : (
+              <>
+                <PauseCircle className="h-4 w-4 shrink-0" />
+                <span className="hidden sm:inline">Pausar</span>
+              </>
+            )}
+          </button>
+          {pausePickerOpen && user?.presence !== "AWAY" && (
+            <div className="absolute left-0 top-11 z-20 w-48 rounded-card border border-border bg-surface p-2 shadow-lg">
+              <p className="mb-1.5 px-1 text-xs font-medium text-muted">Motivo da pausa</p>
+              {pauseReasons?.length === 0 && <p className="px-1 text-xs text-muted">Nenhum motivo cadastrado.</p>}
+              <div className="max-h-52 space-y-0.5 overflow-y-auto">
+                {pauseReasons?.map((reason) => (
+                  <button
+                    key={reason.id}
+                    onClick={() => pauseMutation.mutate(reason.id)}
+                    disabled={pauseMutation.isPending}
+                    className="focus-ring block w-full rounded-card px-2 py-1.5 text-left text-sm hover:bg-surface-alt disabled:opacity-60"
+                  >
+                    {reason.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
         <NotificationBell />
         <InstallAppButton />
         <div className="flex items-center gap-0.5 rounded-full border border-border p-1 sm:gap-1">
@@ -130,43 +178,6 @@ export function Topbar({ title, onMenuClick }: { title: string; onMenuClick?: ()
               >
                 <UserCircle className="h-4 w-4" /> Meu Perfil
               </button>
-
-              {user?.presence === "AWAY" ? (
-                <button
-                  onClick={() => resumeMutation.mutate()}
-                  disabled={resumeMutation.isPending}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-sm text-green-600 hover:bg-surface-alt disabled:opacity-60"
-                >
-                  <PlayCircle className="h-4 w-4" /> {resumeMutation.isPending ? "Retomando..." : "Retomar atendimento"}
-                </button>
-              ) : pausePickerOpen ? (
-                <div className="px-3 py-2">
-                  <p className="mb-1.5 text-xs font-medium text-muted">Motivo da pausa</p>
-                  {pauseReasons?.length === 0 && <p className="text-xs text-muted">Nenhum motivo cadastrado.</p>}
-                  <div className="max-h-40 space-y-0.5 overflow-y-auto">
-                    {pauseReasons?.map((reason) => (
-                      <button
-                        key={reason.id}
-                        onClick={() => pauseMutation.mutate(reason.id)}
-                        disabled={pauseMutation.isPending}
-                        className="focus-ring block w-full rounded-card px-2 py-1.5 text-left text-sm hover:bg-surface-alt disabled:opacity-60"
-                      >
-                        {reason.name}
-                      </button>
-                    ))}
-                  </div>
-                  <button onClick={() => setPausePickerOpen(false)} className="mt-1 text-xs text-muted hover:underline">
-                    Cancelar
-                  </button>
-                </div>
-              ) : (
-                <button
-                  onClick={() => setPausePickerOpen(true)}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-surface-alt"
-                >
-                  <PauseCircle className="h-4 w-4" /> Pausar atendimento
-                </button>
-              )}
 
               <button
                 onClick={handleLogout}

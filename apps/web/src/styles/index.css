@@ -59,6 +59,23 @@
   --shadow-inset-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
+/* color-scheme above is not enough on its own: some browser/OS
+   combinations keep the native <select> popup's *background* on the
+   system's light default while still applying the page's light option
+   `color` — pale text on a white popup, unreadable. Setting
+   background-color/color directly on <option> is the older, far more
+   consistently-supported mechanism (Chromium/Firefox/Edge have honored it
+   for years, unlike color-scheme's auto-theming), so it's used here too
+   as the real fix. See PROMPT: "em todas as listas suspensas... quando
+   está no tema escuro, as letras não aparecem". */
+.dark select {
+  color-scheme: dark;
+}
+.dark option {
+  background-color: var(--color-surface-alt);
+  color: var(--color-text);
+}
+
 html,
 body,
 #root {
