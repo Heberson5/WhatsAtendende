@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
-import { Eye, EyeOff, Loader2, Lock, Mail } from "lucide-react";
+import { AlertTriangle, ArrowRight, Eye, EyeOff, Loader2, Lock, Mail, Moon, Sun } from "lucide-react";
+import clsx from "clsx";
 import { toast } from "sonner";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
@@ -22,10 +23,10 @@ import { InstallAppLink } from "./InstallAppLink";
 // before that read as jarring, so this is translation only, sized to
 // actually be seen.
 const GLOW_SPOTS: { className: string; color: "primary" | "secondary"; strength: number; drift: string }[] = [
-  { className: "-left-32 -top-36 h-[520px] w-[520px]", color: "primary", strength: 24, drift: "animate-login-drift-a" },
-  { className: "-right-36 -top-32 h-[480px] w-[480px]", color: "secondary", strength: 30, drift: "animate-login-drift-b" },
-  { className: "-bottom-40 left-[20%] h-[560px] w-[560px]", color: "primary", strength: 20, drift: "animate-login-drift-c" },
-  { className: "-bottom-36 -right-32 h-[440px] w-[440px]", color: "secondary", strength: 18, drift: "animate-login-drift-d" },
+  { className: "-left-32 -top-36 h-[520px] w-[520px]", color: "primary", strength: 18, drift: "animate-login-drift-a" },
+  { className: "-right-36 -top-32 h-[480px] w-[480px]", color: "secondary", strength: 24, drift: "animate-login-drift-b" },
+  { className: "-bottom-40 left-[20%] h-[560px] w-[560px]", color: "primary", strength: 14, drift: "animate-login-drift-c" },
+  { className: "-bottom-36 -right-32 h-[440px] w-[440px]", color: "secondary", strength: 14, drift: "animate-login-drift-d" },
 ];
 
 export default function LoginPage() {
@@ -39,10 +40,18 @@ export default function LoginPage() {
   // card stayed stuck in light mode regardless of the account's or OS's
   // dark-mode preference. See PROMPT: "adaptável para o tema escuro e
   // adaptável quando altera o tema nas configurações".
-  useTheme();
+  const { preference, setTheme } = useTheme();
+  const isDark = preference === "DARK" || (preference === "AUTO" && window.matchMedia("(prefers-color-scheme: dark)").matches);
   const navigate = useNavigate();
 
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(() => {
+    try {
+      return localStorage.getItem("lastEmail") ?? "";
+    } catch {
+      return "";
+    }
+  });
+  const [capsLock, setCapsLock] = useState(false);
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [remember, setRemember] = useState(true);
@@ -93,12 +102,14 @@ export default function LoginPage() {
     }
   }
 
+  const logoSize = landingPage?.loginLogoSizePx ?? 64;
+
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[var(--color-bg)] px-4">
+    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-[var(--color-bg)] px-4 py-10">
       <InstallPromptModal />
 
-      {/* The glow blobs drift slowly (see GLOW_SPOTS); the card and its
-          layered-glass panels below stay completely still. */}
+      {/* The glow blobs drift slowly (see GLOW_SPOTS); a faint dot texture
+          sits on top, fading out toward the edges. */}
       <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
         {GLOW_SPOTS.map((spot, i) => (
           <div
@@ -109,48 +120,46 @@ export default function LoginPage() {
             }}
           />
         ))}
+        <div
+          className="absolute inset-0 opacity-60"
+          style={{
+            backgroundImage: "radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--color-text) 9%, transparent) 1px, transparent 0)",
+            backgroundSize: "18px 18px",
+            maskImage: "radial-gradient(ellipse at center, #000 25%, transparent 72%)",
+            WebkitMaskImage: "radial-gradient(ellipse at center, #000 25%, transparent 72%)",
+          }}
+        />
       </div>
 
-      <div className="relative w-full max-w-md">
-        {/* Two offset "echo" panels behind the main card — the layered-glass
-            depth cue, entirely static (no blur/opacity animation either). */}
-        <div
-          aria-hidden
-          className="absolute inset-0 translate-x-5 translate-y-6 rounded-[22px] border border-border/60"
-          style={{ background: "color-mix(in srgb, var(--color-surface) 45%, transparent)" }}
-        />
-        <div
-          aria-hidden
-          className="absolute inset-0 translate-x-2.5 translate-y-3 rounded-[22px] border border-border/70"
-          style={{ background: "color-mix(in srgb, var(--color-surface) 62%, transparent)" }}
-        />
+      <button
+        type="button"
+        onClick={() => setTheme(isDark ? "LIGHT" : "DARK")}
+        className="focus-ring absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-surface/80 text-muted backdrop-blur hover:text-[var(--color-text)]"
+        aria-label={isDark ? "Usar tema claro" : "Usar tema escuro"}
+        title={isDark ? "Tema claro" : "Tema escuro"}
+      >
+        {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+      </button>
 
-        <div
-          className="shadow-elevated relative rounded-[20px] border border-border p-8 backdrop-blur-xl sm:p-10"
-          style={{ background: "color-mix(in srgb, var(--color-surface) 80%, transparent)" }}
-        >
+      <div className="relative w-full max-w-[400px]">
+        <div className="shadow-elevated rounded-[20px] border border-border bg-surface p-7 sm:p-9">
           <div
-            className={`mb-8 flex flex-col gap-3 ${
+            className={`mb-7 flex flex-col gap-3 ${
               landingPage?.loginLogoAlign === "left" ? "items-start text-left" : "items-center text-center"
             }`}
           >
             {branding?.logoUrl ? (
-              <img
-                src={branding.logoUrl}
-                alt={branding.companyName}
-                className="object-contain"
-                style={{ width: landingPage?.loginLogoSizePx ?? 80, height: landingPage?.loginLogoSizePx ?? 80 }}
-              />
+              <img src={branding.logoUrl} alt={branding.companyName} className="object-contain" style={{ width: logoSize, height: logoSize }} />
             ) : (
               <div
-                className="shadow-soft flex items-center justify-center rounded-2xl bg-primary text-2xl font-bold text-primary-fg"
-                style={{ width: landingPage?.loginLogoSizePx ?? 80, height: landingPage?.loginLogoSizePx ?? 80 }}
+                className="flex items-center justify-center rounded-2xl bg-primary text-xl font-bold text-primary-fg shadow-[0_10px_24px_color-mix(in_srgb,var(--color-primary)_35%,transparent)]"
+                style={{ width: logoSize, height: logoSize }}
               >
                 {(branding?.companyName ?? "WA").slice(0, 2).toUpperCase()}
               </div>
             )}
             <div>
-              <h1 className="text-xl font-semibold">{branding?.companyName ?? "WhatsAtendende"}</h1>
+              <h1 className="text-lg font-semibold tracking-tight">{branding?.companyName ?? "WhatsAtendende"}</h1>
               <p className="text-sm text-muted">{landingPage?.loginSubtitle || "Plataforma de atendimento via WhatsApp"}</p>
             </div>
           </div>
@@ -172,7 +181,7 @@ export default function LoginPage() {
                     autoComplete="username"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="focus-ring w-full rounded-card border border-border bg-[var(--color-surface-alt)] py-2.5 pl-10 pr-3 text-sm"
+                    className="focus-ring w-full rounded-card border border-border bg-[var(--color-surface-alt)] py-2.5 pl-10 pr-3 text-sm focus:bg-surface"
                     placeholder="voce@empresa.com"
                   />
                 </div>
@@ -190,8 +199,19 @@ export default function LoginPage() {
                     required
                     autoComplete="current-password"
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="focus-ring w-full rounded-card border border-border bg-[var(--color-surface-alt)] py-2.5 pl-10 pr-10 text-sm"
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      if (error) setError(null);
+                    }}
+                    onKeyDown={(e) => setCapsLock(e.getModifierState("CapsLock"))}
+                    onKeyUp={(e) => setCapsLock(e.getModifierState("CapsLock"))}
+                    onBlur={() => setCapsLock(false)}
+                    aria-invalid={Boolean(error)}
+                    aria-describedby={error ? "login-error" : capsLock ? "caps-lock-warning" : undefined}
+                    className={clsx(
+                      "focus-ring w-full rounded-card border bg-[var(--color-surface-alt)] py-2.5 pl-10 pr-10 text-sm focus:bg-surface",
+                      error ? "border-danger" : "border-border"
+                    )}
                     placeholder="********"
                   />
                   <button
@@ -203,20 +223,26 @@ export default function LoginPage() {
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
+                {capsLock && (
+                  <p id="caps-lock-warning" className="mt-1.5 flex items-center gap-1 text-xs font-medium text-warning">
+                    <AlertTriangle className="h-3.5 w-3.5" /> Caps Lock está ligado
+                  </p>
+                )}
               </div>
 
               <div className="flex items-center justify-between text-sm">
                 <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
+                  <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} className="h-4 w-4 accent-[var(--color-primary)]" />
                   Lembrar acesso
                 </label>
-                <button type="button" onClick={() => setForgotOpen(true)} className="focus-ring text-primary hover:underline">
-                  Recuperar senha
+                <button type="button" onClick={() => setForgotOpen(true)} className="focus-ring font-medium text-primary hover:underline">
+                  Esqueci a senha
                 </button>
               </div>
 
               {error && (
-                <p role="alert" className="rounded-card bg-red-50 px-3 py-2 text-sm text-red-700">
+                <p id="login-error" role="alert" className="flex items-start gap-2 rounded-card bg-danger-soft px-3 py-2 text-sm text-danger">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                   {error}
                 </p>
               )}
@@ -224,16 +250,30 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="focus-ring flex w-full items-center justify-center gap-2 rounded-card bg-primary py-2.5 text-sm font-semibold text-primary-fg disabled:opacity-60"
+                className="focus-ring flex w-full items-center justify-center gap-2 rounded-card bg-primary py-2.5 text-sm font-semibold text-primary-fg disabled:opacity-70"
               >
-                {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-                Entrar
+                {loading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" /> Entrando…
+                  </>
+                ) : (
+                  <>
+                    Entrar <ArrowRight className="h-4 w-4" />
+                  </>
+                )}
               </button>
             </form>
           )}
 
           <InstallAppLink />
         </div>
+        <p className="mt-5 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-center text-xs text-muted">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-green-500 shadow-[0_0_0_3px_rgba(34,197,94,0.18)]" /> Sistema funcionando
+          </span>
+          <span aria-hidden>·</span>
+          <span>Problemas para entrar? Fale com o administrador</span>
+        </p>
       </div>
     </div>
   );
