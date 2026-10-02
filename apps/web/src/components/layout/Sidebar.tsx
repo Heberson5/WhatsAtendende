@@ -176,7 +176,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
       >
         <div className={clsx("flex h-16 shrink-0 items-center", isCollapsed ? "justify-center px-3" : "gap-2.5 px-4")}>
           {branding?.logoUrl ? (
-            <img src={branding.logoUrl} alt={branding.companyName} className="h-8 w-8 shrink-0 rounded-lg bg-white/90 object-contain p-0.5" />
+            <img src={branding.logoUrl} alt={branding.companyName} className="h-8 w-8 shrink-0 rounded-lg bg-white object-contain ring-1 ring-side-border p-0.5" />
           ) : (
             <div
               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-fg"
@@ -185,11 +185,11 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
               {(branding?.companyName ?? "WA").slice(0, 2).toUpperCase()}
             </div>
           )}
-          {!isCollapsed && <span className="flex-1 truncate text-sm font-semibold text-white">{branding?.companyName ?? "WhatsAtendende"}</span>}
+          {!isCollapsed && <span className="flex-1 truncate text-sm font-semibold text-side-strong">{branding?.companyName ?? "WhatsAtendende"}</span>}
           <button
             type="button"
             onClick={onMobileClose}
-            className="focus-ring flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/10 text-side-muted hover:text-white md:hidden"
+            className="focus-ring flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-side-border text-side-muted hover:text-side-strong md:hidden"
             aria-label="Fechar menu"
           >
             <X className="h-4 w-4" />
@@ -198,7 +198,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
             <button
               type="button"
               onClick={() => setCollapsed(true)}
-              className="focus-ring hidden h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/10 text-side-muted hover:text-white md:flex"
+              className="focus-ring hidden h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-side-border text-side-muted hover:text-side-strong md:flex"
               aria-label="Recolher menu"
               title="Recolher menu"
             >
@@ -215,7 +215,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
           {groups.map(({ group, items }, groupIndex) => (
             <div key={group} role="group" aria-label={group}>
               {isCollapsed ? (
-                groupIndex > 0 && <div className="mx-auto my-2 h-px w-6 bg-white/10" aria-hidden />
+                groupIndex > 0 && <div className="mx-auto my-2 h-px w-6 bg-side-border" aria-hidden />
               ) : (
                 <p
                   className={clsx(
@@ -247,8 +247,8 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
                           "focus-ring relative flex items-center rounded-lg text-[13px] font-medium transition-colors",
                           isCollapsed ? "justify-center p-2.5" : "gap-3 px-2.5 py-2",
                           isActive
-                            ? "bg-primary/20 text-white shadow-[inset_2px_0_0_var(--color-primary)]"
-                            : "text-side-text hover:bg-side-hover hover:text-white"
+                            ? "bg-primary/15 text-side-strong shadow-[inset_2px_0_0_var(--color-primary)]"
+                            : "text-side-text hover:bg-side-hover hover:text-side-strong"
                         )
                       }
                       aria-label={isCollapsed || badge ? tooltipText : undefined}
@@ -281,14 +281,14 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
           <button
             type="button"
             onClick={() => setCollapsed(false)}
-            className="focus-ring mx-auto mb-3 hidden h-9 w-9 shrink-0 items-center justify-center rounded-lg text-side-muted hover:bg-side-hover hover:text-white md:flex"
+            className="focus-ring mx-auto mb-3 hidden h-9 w-9 shrink-0 items-center justify-center rounded-lg text-side-muted hover:bg-side-hover hover:text-side-strong md:flex"
             aria-label="Expandir menu"
             title="Expandir menu"
           >
             <PanelLeftOpen className="h-[18px] w-[18px]" />
           </button>
         ) : (
-          branding?.appVersion && <p className="shrink-0 border-t border-white/10 px-4 py-2 text-xs text-side-muted">Versão {branding.appVersion}</p>
+          branding?.appVersion && <p className="shrink-0 border-t border-side-border px-4 py-2 text-xs text-side-muted">Versão {branding.appVersion}</p>
         )}
       </aside>
       {tooltip && isCollapsed && (

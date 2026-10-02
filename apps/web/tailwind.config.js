@@ -40,6 +40,8 @@ export default {
           hover: themeColor("side-hover"),
           text: themeColor("side-text"),
           muted: themeColor("side-muted"),
+          strong: themeColor("side-strong"),
+          border: themeColor("side-border"),
         },
       },
       borderRadius: {
