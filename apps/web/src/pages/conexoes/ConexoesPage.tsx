@@ -2,14 +2,16 @@ import { useState } from "react";
 import { Globe } from "lucide-react";
 import { PERMISSION, type Permission } from "@whatsatendende/types";
 import { WhatsAppConnectionPanel } from "./WhatsAppConnectionPanel";
+import { WhatsAppOfficialConnectionPanel } from "./WhatsAppOfficialConnectionPanel";
 import { MetaConnectionPanel } from "./MetaConnectionPanel";
 import { ChannelComingSoonPanel } from "./ChannelComingSoonPanel";
 import { useAuthStore } from "../../store/auth-store";
 
-type Tab = "whatsapp" | "instagram" | "facebook" | "site";
+type Tab = "whatsapp" | "whatsapp-oficial" | "instagram" | "facebook" | "site";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "whatsapp", label: "WhatsApp" },
+  { key: "whatsapp-oficial", label: "WhatsApp Oficial" },
   { key: "instagram", label: "Instagram" },
   { key: "facebook", label: "Facebook" },
   { key: "site", label: "Site" },
@@ -18,9 +20,13 @@ const TABS: { key: Tab; label: string }[] = [
 // Same umbrella + per-tab pattern as Configurações — see PROMPT: "crie um
 // novo menu chamado Conexões, onde terá a aba WhatsApp, Instagram, Facebook
 // e Site". CONEXOES_GERENCIAR (required to reach /conexoes at all) is
-// enforced by the route itself; these gate which tab shows.
+// enforced by the route itself; these gate which tab shows. WhatsApp
+// Oficial reuses the same CONEXOES_WHATSAPP_* permissions as the QR tab —
+// see PROMPT: "inclua uma nova aba chamada WhatsApp Oficial" — both are the
+// same WhatsAppConnection resource, just a different linking method.
 const TAB_PERMISSION: Record<Tab, Permission> = {
   whatsapp: PERMISSION.CONEXOES_WHATSAPP_VISUALIZAR,
+  "whatsapp-oficial": PERMISSION.CONEXOES_WHATSAPP_VISUALIZAR,
   instagram: PERMISSION.CONEXOES_INSTAGRAM_GERENCIAR,
   facebook: PERMISSION.CONEXOES_FACEBOOK_GERENCIAR,
   site: PERMISSION.CONEXOES_SITE_GERENCIAR,
@@ -50,6 +56,7 @@ export default function ConexoesPage() {
       </div>
 
       {activeTab === "whatsapp" && <WhatsAppConnectionPanel />}
+      {activeTab === "whatsapp-oficial" && <WhatsAppOfficialConnectionPanel />}
       {activeTab === "instagram" && <MetaConnectionPanel channel="INSTAGRAM" />}
       {activeTab === "facebook" && <MetaConnectionPanel channel="MESSENGER" />}
       {activeTab === "site" && (

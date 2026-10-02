@@ -3,11 +3,14 @@ import fs from "node:fs";
 import { randomUUID } from "node:crypto";
 import {
   createWhatsAppProvider,
+  CloudApiWhatsAppProvider,
+  type CloudApiWebhookValue,
   type InboundMessageEvent,
   type SendResult,
   type WhatsAppProvider,
   type WhatsAppStatusSnapshot,
 } from "@whatsatendende/whatsapp";
+import { verifyWebhookSignature } from "../meta/meta.service";
 import { env } from "../../config/env";
 import { prisma } from "../../lib/prisma";
 import { logger } from "../../lib/logger";
@@ -22,6 +25,7 @@ import { toMessageDTO } from "../messages/messages.mapper";
 import { getManagerConnectionIds } from "../../lib/connection-access";
 import { createNotification } from "../notifications/notifications.service";
 import { toNotificationDTO } from "../notifications/notifications.mapper";
+import { encryptSecret, decryptSecret } from "../../lib/crypto";
 
 fs.mkdirSync(env.UPLOAD_DIR, { recursive: true });
 
@@ -213,21 +217,39 @@ export function withSenderPrefix(senderDisplayName: string, text: string): strin
 export async function initWhatsAppConnections(): Promise<void> {
   const rows = await prisma.whatsAppConnection.findMany();
   for (const row of rows) {
-    const provider = bootstrapConnection(row.id);
-    if (row.status === "CONNECTED") {
+    const provider = bootstrapConnection(row);
+    // An OFFICIAL_API connection has no persistent socket to auto-reconnect
+    // — its "CONNECTED" status just means the credentials were last known
+    // valid, re-checked on demand (see connect() below), never on boot.
+    if (row.status === "CONNECTED" && row.connectionMode === "QRCODE") {
       provider.connect().catch((err) => logger.error({ err, connectionId: row.id }, "failed to auto-reconnect WhatsApp connection on startup"));
     }
   }
 }
 
-function bootstrapConnection(connectionId: string): WhatsAppProvider {
-  const provider = createWhatsAppProvider({
-    provider: env.WHATSAPP_PROVIDER,
-    authStateDir: path.join(env.WHATSAPP_AUTH_DIR, connectionId),
-  });
-  providers.set(connectionId, provider);
-  wireProviderEvents(connectionId, provider);
+type ConnectionRow = { id: string; connectionMode: "QRCODE" | "OFFICIAL_API"; phoneNumberId: string | null; accessToken: string | null };
+
+function bootstrapConnection(row: ConnectionRow): WhatsAppProvider {
+  const provider =
+    row.connectionMode === "OFFICIAL_API"
+      ? createWhatsAppProvider({
+          provider: "cloud-api",
+          phoneNumberId: row.phoneNumberId!,
+          accessToken: decryptSecret(row.accessToken!),
+        })
+      : createWhatsAppProvider({
+          provider: env.WHATSAPP_PROVIDER,
+          authStateDir: path.join(env.WHATSAPP_AUTH_DIR, row.id),
+        });
+  providers.set(row.id, provider);
+  wireProviderEvents(row.id, provider);
   return provider;
+}
+
+/** Re-creates a connection's provider instance with freshly-saved credentials — called after updateConnection changes an OFFICIAL_API row's phoneNumberId/accessToken, since CloudApiWhatsAppProvider captures them at construction time. */
+function rebootstrapConnection(row: ConnectionRow): WhatsAppProvider {
+  providers.delete(row.id);
+  return bootstrapConnection(row);
 }
 
 function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
@@ -671,6 +693,7 @@ export interface ConnectionSummaryDTO {
   id: string;
   name: string;
   color: string;
+  connectionMode: "QRCODE" | "OFFICIAL_API";
   state: string;
   qrCodeDataUrl: string | null;
   pairingCode: string | null;
@@ -678,12 +701,21 @@ export interface ConnectionSummaryDTO {
   // The number this connection was first ever linked to — see PROMPT:
   // "reconectar somente no mesmo número que já estava antes". Null only for
   // a connection that has never completed a pairing yet, in which case any
-  // number is accepted (there's nothing to conflict with).
+  // number is accepted (there's nothing to conflict with). QRCODE only.
   linkedNumber: string | null;
   lastConnectedAt: string | null;
   agentCount: number;
   createdByUserId: string | null;
   createdByUserName: string | null;
+  // OFFICIAL_API only — accessToken itself is never returned, only whether
+  // one is on file (same masking precedent as MetaSettingsMasked).
+  phoneNumberId: string | null;
+  wabaId: string | null;
+  hasAccessToken: boolean;
+  hasAppSecret: boolean;
+  webhookVerifyToken: string | null;
+  displayPhoneNumber: string | null;
+  businessName: string | null;
 }
 
 // Distinct, readable-on-white swatches auto-assigned to new connections in
@@ -697,18 +729,27 @@ function toConnectionSummary(row: {
   id: string;
   name: string;
   color: string;
+  connectionMode: "QRCODE" | "OFFICIAL_API";
   status: string;
   connectedNumber: string | null;
   linkedNumber: string | null;
   lastConnectedAt: Date | null;
   _count: { agents: number };
   createdByUser: { id: string; displayName: string } | null;
+  phoneNumberId: string | null;
+  wabaId: string | null;
+  accessToken: string | null;
+  appSecret: string | null;
+  webhookVerifyToken: string | null;
+  displayPhoneNumber: string | null;
+  businessName: string | null;
 }): ConnectionSummaryDTO {
   const runtime = providers.get(row.id)?.getStatus();
   return {
     id: row.id,
     name: row.name,
     color: row.color,
+    connectionMode: row.connectionMode,
     state: runtime?.state ?? row.status,
     qrCodeDataUrl: runtime?.qrCodeDataUrl ?? null,
     pairingCode: runtime?.pairingCode ?? null,
@@ -718,6 +759,13 @@ function toConnectionSummary(row: {
     agentCount: row._count.agents,
     createdByUserId: row.createdByUser?.id ?? null,
     createdByUserName: row.createdByUser?.displayName ?? null,
+    phoneNumberId: row.phoneNumberId,
+    wabaId: row.wabaId,
+    hasAccessToken: Boolean(row.accessToken),
+    hasAppSecret: Boolean(row.appSecret),
+    webhookVerifyToken: row.webhookVerifyToken,
+    displayPhoneNumber: row.displayPhoneNumber,
+    businessName: row.businessName,
   };
 }
 
@@ -747,23 +795,80 @@ export async function getConnectionSummary(connectionId: string): Promise<Connec
   return toConnectionSummary(row);
 }
 
-export async function createConnection(name: string, color: string | undefined, createdByUserId: string): Promise<ConnectionSummaryDTO> {
+export interface OfficialCredentialsInput {
+  phoneNumberId: string;
+  wabaId: string;
+  accessToken: string;
+  appSecret?: string;
+  webhookVerifyToken?: string;
+}
+
+export async function createConnection(
+  name: string,
+  color: string | undefined,
+  createdByUserId: string,
+  official?: OfficialCredentialsInput
+): Promise<ConnectionSummaryDTO> {
   const existing = await prisma.whatsAppConnection.findUnique({ where: { name } });
   if (existing) throw Errors.conflict("Ja existe uma conexao com este nome");
   const existingCount = await prisma.whatsAppConnection.count();
   const row = await prisma.whatsAppConnection.create({
-    data: { name, color: color ?? COLOR_PALETTE[existingCount % COLOR_PALETTE.length], createdByUserId },
+    data: {
+      name,
+      color: color ?? COLOR_PALETTE[existingCount % COLOR_PALETTE.length],
+      createdByUserId,
+      ...(official
+        ? {
+            connectionMode: "OFFICIAL_API" as const,
+            phoneNumberId: official.phoneNumberId,
+            wabaId: official.wabaId,
+            accessToken: encryptSecret(official.accessToken),
+            appSecret: official.appSecret ? encryptSecret(official.appSecret) : null,
+            webhookVerifyToken: official.webhookVerifyToken || null,
+          }
+        : {}),
+    },
   });
-  bootstrapConnection(row.id);
+  bootstrapConnection(row);
   return getConnectionSummary(row.id);
 }
 
-export async function updateConnection(connectionId: string, patch: { name?: string; color?: string }): Promise<ConnectionSummaryDTO> {
+export async function updateConnection(
+  connectionId: string,
+  patch: { name?: string; color?: string; official?: Partial<OfficialCredentialsInput> }
+): Promise<ConnectionSummaryDTO> {
   if (patch.name) {
     const clash = await prisma.whatsAppConnection.findUnique({ where: { name: patch.name } });
     if (clash && clash.id !== connectionId) throw Errors.conflict("Ja existe uma conexao com este nome");
   }
-  await prisma.whatsAppConnection.update({ where: { id: connectionId }, data: { name: patch.name, color: patch.color } });
+  const row = await prisma.whatsAppConnection.update({
+    where: { id: connectionId },
+    data: {
+      name: patch.name,
+      color: patch.color,
+      ...(patch.official
+        ? {
+            phoneNumberId: patch.official.phoneNumberId,
+            wabaId: patch.official.wabaId,
+            // Only overwrite when a new non-empty secret is sent — same
+            // precedent as updateEmailSettings/updateMetaSettings, since
+            // the API never echoes the current one back for the admin to
+            // resubmit unchanged.
+            ...(patch.official.accessToken ? { accessToken: encryptSecret(patch.official.accessToken) } : {}),
+            ...(patch.official.appSecret ? { appSecret: encryptSecret(patch.official.appSecret) } : {}),
+            webhookVerifyToken: patch.official.webhookVerifyToken,
+          }
+        : {}),
+    },
+  });
+  // Credentials changed — rebuild the provider instance so the next
+  // connect()/send picks up the new phoneNumberId/accessToken instead of
+  // the ones it was constructed with. Marked DISCONNECTED until re-tested,
+  // same as a QR connection must be reconnected after any real change.
+  if (patch.official && row.connectionMode === "OFFICIAL_API") {
+    rebootstrapConnection(row);
+    await prisma.whatsAppConnection.update({ where: { id: connectionId }, data: { status: "DISCONNECTED" } });
+  }
   return getConnectionSummary(connectionId);
 }
 
@@ -997,4 +1102,54 @@ export async function sendOutboundLocation(connectionId: string, messageId: stri
 
 export async function sendReaction(connectionId: string, contactPhone: string, providerMessageId: string, emoji: string | null) {
   await getProvider(connectionId).sendReaction(toChatId(contactPhone), providerMessageId, emoji);
+}
+
+interface CloudApiWebhookBody {
+  object?: string;
+  entry?: { changes?: { field?: string; value?: CloudApiWebhookValue }[] }[];
+}
+
+/**
+ * Entry point for POST /whatsapp/oficial/webhook — mirrors meta.service.ts's
+ * processWebhookPayload as closely as the two APIs' shapes allow. One
+ * physical webhook URL/route can serve every OFFICIAL_API connection,
+ * however many different Meta Apps they were registered under: each
+ * change's own value.metadata.phone_number_id picks out which connection
+ * (and therefore which Meta App Secret to verify the signature against)
+ * it belongs to — see WhatsAppConnection.appSecret's own doc comment for
+ * why this can't be checked before parsing the body, the same way the
+ * verify-token handshake below also has to.
+ */
+export async function verifyAndIngestOfficialWebhook(rawBody: Buffer, signatureHeader: string | undefined, body: CloudApiWebhookBody): Promise<void> {
+  if (body.object !== "whatsapp_business_account") return;
+  for (const entry of body.entry ?? []) {
+    for (const change of entry.changes ?? []) {
+      const phoneNumberId = change.value?.metadata?.phone_number_id;
+      if (change.field !== "messages" || !phoneNumberId || !change.value) continue;
+      const connection = await prisma.whatsAppConnection.findFirst({
+        where: { phoneNumberId, connectionMode: "OFFICIAL_API" },
+        select: { id: true, appSecret: true },
+      });
+      if (!connection) {
+        logger.warn({ phoneNumberId }, "received a WhatsApp Cloud API webhook event for an unknown phoneNumberId");
+        continue;
+      }
+      if (connection.appSecret && !verifyWebhookSignature(rawBody, signatureHeader, decryptSecret(connection.appSecret))) {
+        logger.warn({ connectionId: connection.id }, "rejected a WhatsApp Cloud API webhook event: missing or invalid X-Hub-Signature-256");
+        continue;
+      }
+      const provider = providers.get(connection.id);
+      if (!(provider instanceof CloudApiWhatsAppProvider)) {
+        logger.warn({ connectionId: connection.id }, "received a WhatsApp Cloud API webhook event for a connection with no cloud-api provider bootstrapped");
+        continue;
+      }
+      await provider.ingestWebhookChange(change.value);
+    }
+  }
+}
+
+/** The verify-token handshake (GET) accepts a token that matches ANY configured OFFICIAL_API connection — see verifyAndIngestOfficialWebhook's doc comment for why one shared URL has to support several independently-registered Meta Apps/verify tokens. */
+export async function officialWebhookVerifyTokenExists(token: string): Promise<boolean> {
+  const match = await prisma.whatsAppConnection.findFirst({ where: { connectionMode: "OFFICIAL_API", webhookVerifyToken: token } });
+  return Boolean(match);
 }

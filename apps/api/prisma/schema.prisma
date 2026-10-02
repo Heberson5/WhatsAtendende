@@ -204,6 +204,18 @@ enum WhatsAppConnectionStatus {
   CONNECTED
 }
 
+// QRCODE = linked via a scanned QR/pairing code (Baileys, a companion-device
+// session piggybacking the owner's own WhatsApp account — see
+// BaileysWhatsAppProvider). OFFICIAL_API = linked via Meta's WhatsApp Cloud
+// API using a WABA's own phoneNumberId/accessToken below — no QR/pairing
+// code involved at all, see CloudApiWhatsAppProvider. See PROMPT: "inclua
+// uma nova aba chamada WhatsApp Oficial, para a conexão via API Oficial da
+// Meta... entra no mesmo formato que a conexão pelo QRCode".
+enum WhatsAppConnectionMode {
+  QRCODE
+  OFFICIAL_API
+}
+
 // One row per connected WhatsApp number/session. An organization using
 // several numbers (e.g. "Suporte", "Vendas") creates one named connection
 // per number here; each is backed by its own WhatsAppProvider instance
@@ -216,6 +228,7 @@ model WhatsAppConnection {
   // conversation card is tinted with its originating connection's color, so
   // an agent can tell them apart even after a cross-connection transfer.
   color           String                   @default("#0097B4")
+  connectionMode  WhatsAppConnectionMode   @default(QRCODE)
   status          WhatsAppConnectionStatus @default(DISCONNECTED)
   connectedNumber String?
   // The phone number this connection was FIRST successfully linked to — set
@@ -224,10 +237,37 @@ model WhatsAppConnection {
   // attempt be checked against the original number so this connection's
   // conversation history never ends up mixed with a different real-world
   // phone number — see PROMPT: "reconectar somente no mesmo número que já
-  // estava antes".
+  // estava antes". QRCODE only — an OFFICIAL_API connection's number comes
+  // from Meta's own API (displayPhoneNumber below), never from a pairing
+  // handshake, so it can never drift the way a QR-linked session could.
   linkedNumber    String?
   lastConnectedAt DateTime?
   lastQrAt        DateTime?
+  // --- OFFICIAL_API only (all null for a QRCODE connection) ---
+  // Meta Cloud API identifiers for this WABA's phone number — see
+  // developers.facebook.com/docs/whatsapp/cloud-api/get-started.
+  phoneNumberId      String?
+  wabaId             String?
+  // Long-lived System User access token for this phone number — encrypted
+  // at rest with the same encryptSecret/decryptSecret already used for
+  // MetaSettings' Instagram/Messenger tokens. Never returned by the API in
+  // plaintext (see whatsapp.mapper.ts).
+  accessToken        String?
+  // The Meta App Secret that owns this phone number — encrypted at rest,
+  // same as accessToken. Used only to verify the X-Hub-Signature-256 header
+  // on inbound Cloud API webhook events (see verifyWebhookSignature in
+  // meta.service.ts, reused here), so a POST to /whatsapp/oficial/webhook
+  // can't be forged by anyone who merely guesses a valid phoneNumberId.
+  appSecret          String?
+  // Arbitrary string chosen by the admin and entered on both sides (here
+  // and in the Meta App Dashboard's webhook config), same precedent as
+  // MetaSettings.webhookVerifyToken — but per-connection here, since each
+  // OFFICIAL_API connection can be registered under a different Meta App.
+  webhookVerifyToken String?
+  // Resolved from the Graph API by testOfficialConnection (never typed in
+  // by the admin) — shown in the UI once credentials are validated.
+  displayPhoneNumber String?
+  businessName       String?
   // Whoever ran POST /connections to create this row — a MANAGER who
   // created a connection themselves gets full view/edit/receive access to
   // it automatically, with no ManagerConnectionAccess grant needed. Null
