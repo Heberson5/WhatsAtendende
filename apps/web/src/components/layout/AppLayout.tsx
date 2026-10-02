@@ -5,6 +5,7 @@ import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 import { BottomNav } from "./BottomNav";
 import { AppUpdateBanner } from "./AppUpdateBanner";
+import { CommandPalette } from "./CommandPalette";
 import { useAuthStore } from "../../store/auth-store";
 import { useActiveConversationStore } from "../../store/active-conversation-store";
 import { connectSocket, disconnectSocket, getSocket } from "../../lib/socket";
@@ -117,6 +118,7 @@ export function AppLayout() {
             navegação". */}
         {!activeConversationId && <BottomNav onMoreClick={() => setMobileNavOpen(true)} />}
       </div>
+      <CommandPalette />
     </div>
   );
 }

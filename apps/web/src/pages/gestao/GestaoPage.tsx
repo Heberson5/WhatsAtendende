@@ -76,7 +76,15 @@ export default function GestaoPage() {
   useEffect(() => {
     const statusParam = searchParams.get("status");
     const periodParam = searchParams.get("period");
-    if (!statusParam && !periodParam) return;
+    // ?open=<id> from the Ctrl+K palette: open that conversation read-only.
+    const openParam = searchParams.get("open");
+    if (openParam) {
+      api
+        .get<ConversationListItemDTO>(`/conversations/${openParam}`)
+        .then((res) => setSelected(res.data))
+        .catch((err) => toast.error(getApiErrorMessage(err)));
+    }
+    if (!statusParam && !periodParam && !openParam) return;
     if (statusParam) setStatus(statusParam);
     if (periodParam) {
       setPeriod({
@@ -92,6 +100,7 @@ export default function GestaoPage() {
         next.delete("period");
         next.delete("from");
         next.delete("to");
+        next.delete("open");
         return next;
       },
       { replace: true }

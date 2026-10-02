@@ -18,6 +18,16 @@ export default {
         border: "var(--color-border)",
         muted: "var(--color-muted)",
         text: "var(--color-text)",
+        success: { DEFAULT: "var(--color-success)", soft: "var(--color-success-soft)" },
+        warning: { DEFAULT: "var(--color-warning)", soft: "var(--color-warning-soft)" },
+        danger: { DEFAULT: "var(--color-danger)", soft: "var(--color-danger-soft)" },
+        info: { DEFAULT: "var(--color-info)", soft: "var(--color-info-soft)" },
+        side: {
+          DEFAULT: "var(--color-side)",
+          hover: "var(--color-side-hover)",
+          text: "var(--color-side-text)",
+          muted: "var(--color-side-muted)",
+        },
       },
       borderRadius: {
         card: "12px",
