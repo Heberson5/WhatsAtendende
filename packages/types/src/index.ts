@@ -119,6 +119,9 @@ export interface UserDTO {
   // "Presença ao longo do dia" chart — both null means "show every hour".
   presenceChartStartHour: number | null;
   presenceChartEndHour: number | null;
+  // Newest Notas de versão release this user has already seen — null until
+  // the first time they open the page or dismiss the "O que há de novo" popup.
+  releaseNotesSeenVersion: string | null;
 }
 
 // HH:mm, 24h, e.g. "08:00" / "18:30".

@@ -120,6 +120,9 @@ model User {
   // See PROMPT: "podendo marcar como padrão também".
   presenceChartStartHour Int?
   presenceChartEndHour   Int?
+  // Newest Notas de versão release this user has opened (or dismissed in the
+  // "O que há de novo" popup) — drives the "Novo" badge in the sidebar.
+  releaseNotesSeenVersion String?
 
   // Flows this user authored — see Flow.createdByUserId. onDelete: SetNull
   // there (not listed here) means a flow outlives its creator's account.

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import clsx from "clsx";
-import { LogOut, Monitor, Moon, PauseCircle, PlayCircle, Search, Sun, UserCircle, type LucideIcon } from "lucide-react";
+import { LogOut, Monitor, Moon, PauseCircle, PlayCircle, Search, Sparkles, Sun, UserCircle, type LucideIcon } from "lucide-react";
 import { PERMISSION, type ConversationListItemDTO, type PauseReasonDTO } from "@whatsatendende/types";
 import { api } from "../../lib/api";
 import { contactDisplayName } from "../../lib/contact-display";
@@ -136,6 +136,7 @@ function PaletteDialog({ onClose }: { onClose: () => void }) {
     const screens: PaletteItem[] = [
       ...menuItems.map((m) => ({ id: `screen-${m.to}`, group: "Telas" as const, label: m.label, icon: m.icon, hint: "ir para", run: () => navigate(m.to) })),
       { id: "screen-perfil", group: "Telas" as const, label: "Meu Perfil", icon: UserCircle, hint: "ir para", run: () => navigate("/perfil") },
+      { id: "screen-notas", group: "Telas" as const, label: "Notas de versão", icon: Sparkles, hint: "ir para", run: () => navigate("/notas-de-versao") },
     ].filter((s) => matches(s.label));
 
     const actions: PaletteItem[] = [

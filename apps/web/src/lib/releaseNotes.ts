@@ -1,0 +1,840 @@
+import { PERMISSION, type Permission, type PermissionMap, type Role } from "@whatsatendende/types";
+
+/**
+ * Notas de versão — what changed in each release, written for the people
+ * using the system (not developers). Each note belongs to an area of the
+ * app and is only shown to users who can open that area, using the same
+ * permissions that gate the sidebar menu, so nobody reads about screens
+ * they can't use.
+ *
+ * Adding a release: put it at the top of RELEASES. Screenshots live in
+ * public/notas-de-versao/ (webp, taken with demo data — never real
+ * customers). In step/caption text, "{1}" renders as the numbered marker
+ * drawn on the screenshot.
+ */
+
+export type ReleaseNoteType = "novo" | "melhoria" | "correcao";
+
+export type ReleaseNoteArea = "geral" | "atendimento" | "gestao" | "dashboard" | "usuarios" | "respostas" | "fluxo" | "conexoes" | "configuracoes" | "landingPage" | "administracao";
+
+export interface ReleaseNoteImage {
+  file: string;
+  caption: string;
+  size?: "small" | "tiny";
+}
+
+export interface ReleaseNote {
+  type: ReleaseNoteType;
+  area: ReleaseNoteArea;
+  title: string;
+  text?: string;
+  before?: string;
+  after?: string;
+  steps?: string[];
+  where?: string;
+  images?: ReleaseNoteImage[];
+  // Extra permissions on top of the area's own (e.g. a specific tab).
+  requires?: Permission[];
+}
+
+export interface Release {
+  version: string;
+  date: string;
+  name: string;
+  summary: string;
+  notes: ReleaseNote[];
+}
+
+export const RELEASE_NOTE_TYPE_LABEL: Record<ReleaseNoteType, string> = { novo: "Novo", melhoria: "Melhoria", correcao: "Correção" };
+
+// Area order is the display order inside a release.
+export const RELEASE_NOTE_AREAS: Record<ReleaseNoteArea, { label: string; requires: Permission[]; adminOnly?: boolean }> = {
+  geral: { label: "Geral", requires: [] },
+  atendimento: { label: "Atendimento", requires: [PERMISSION.ATENDIMENTO_ACESSAR] },
+  gestao: { label: "Gestão", requires: [PERMISSION.GESTAO_ACESSAR] },
+  dashboard: { label: "Dashboard e Relatórios", requires: [PERMISSION.DASHBOARD_ACESSAR] },
+  usuarios: { label: "Usuários", requires: [PERMISSION.USUARIOS_VISUALIZAR] },
+  respostas: { label: "Respostas", requires: [PERMISSION.RESPOSTAS_RAPIDAS_GERENCIAR] },
+  fluxo: { label: "Fluxo", requires: [PERMISSION.FLUXO_VISUALIZAR] },
+  conexoes: { label: "Conexões", requires: [PERMISSION.CONEXOES_GERENCIAR] },
+  configuracoes: { label: "Configurações", requires: [PERMISSION.CONFIGURACOES_GERENCIAR] },
+  landingPage: { label: "Landing Page", requires: [PERMISSION.LANDING_PAGE_VISUALIZAR] },
+  administracao: { label: "Administração", requires: [], adminOnly: true },
+};
+
+export const RELEASES: Release[] = [
+  {
+    version: "2.0.0",
+    date: "02 out 2026",
+    name: "Novo visual",
+    summary: "A maior atualização até agora. Todas as telas foram redesenhadas, o atendimento ficou mais completo e cada área ganhou recursos novos.",
+    notes: [
+      {
+        type: "novo",
+        area: "geral",
+        title: "Novo visual em todo o sistema",
+        text: "Todas as telas foram redesenhadas para ficarem mais limpas e fáceis de ler. O sistema funciona no tema claro e no escuro, no computador e no celular.",
+        steps: ["No topo da tela, clique no sol (claro), na lua (escuro) ou no monitor (segue o computador)."],
+        where: "Topo da tela, ao lado da sua foto",
+        images: [{ file: "dark-atendimento", caption: "Tela de atendimento no tema escuro." }],
+      },
+      {
+        type: "novo",
+        area: "geral",
+        title: "Menu lateral agrupado e recolhível",
+        text: "Os itens do menu estão separados em grupos: Operação, Análise, Automação e Administração. Você vê só os itens que tem permissão para usar. Recolhido, o menu mostra apenas os ícones e deixa mais espaço para o trabalho.",
+        steps: [
+          "Clique no botão ao lado do nome da empresa para recolher.",
+          "Com o menu recolhido, passe o mouse sobre um ícone para ver o nome do item.",
+          "Clique no botão do rodapé para abrir de novo. O sistema lembra a sua escolha.",
+        ],
+        where: "Lado esquerdo da tela",
+        images: [
+          { file: "menu-gestor", caption: "Menu aberto, como o gestor vê.", size: "tiny" },
+          { file: "menu-recolhido", caption: "Menu recolhido, com o nome do item ao passar o mouse.", size: "tiny" },
+        ],
+      },
+      {
+        type: "novo",
+        area: "geral",
+        title: "Busca rápida com Ctrl+K",
+        text: "Uma busca única que encontra contatos, telas e ações. Digite o nome de um cliente para abrir a conversa, “dash” para ir ao Dashboard ou “pausar” para pausar o atendimento, sem tirar a mão do teclado.",
+        steps: ["Aperte Ctrl+K ou clique na barra “Buscar contato, tela ou ação…” no topo.", "Digite parte do que procura.", "Use as setas para escolher e Enter para abrir. Esc fecha."],
+        where: "Barra de busca no topo de qualquer tela",
+        images: [{ file: "ctrlk", caption: "Buscando “pa”: aparecem a cliente Ana Paula, a tela Landing Page e as ações de pausa.", size: "small" }],
+      },
+      {
+        type: "novo",
+        area: "geral",
+        title: "Notas de versão",
+        text: "Esta tela. Ela lista o que mudou em cada versão, só das partes do sistema que você usa. Quando sair uma versão nova, o item “Notas de versão” no menu ganha a etiqueta “Novo” até você abrir.",
+        where: "Menu lateral, no rodapé",
+      },
+      {
+        type: "melhoria",
+        area: "geral",
+        title: "Pausa, notificações, tema e perfil no topo",
+        text: "Tudo o que é seu fica no canto superior direito. O pontinho na sua foto mostra se você está online (verde) ou em pausa (amarelo).",
+        where: "Canto superior direito",
+        images: [
+          { file: "topbar", caption: "{1} Pausar {2} Notificações {3} Tema: claro, escuro ou automático." },
+          { file: "perfil-menu", caption: "Clique na sua foto para abrir Meu perfil ou Sair.", size: "small" },
+        ],
+      },
+      {
+        type: "melhoria",
+        area: "geral",
+        title: "Tela de login mais simples",
+        text: "O cartão de entrada ficou centralizado e mais limpo. Se a senha estiver errada, o aviso aparece no próprio formulário, sem janela por cima. O sistema avisa quando o Caps Lock está ligado e lembra o último e-mail usado.",
+        images: [{ file: "login", caption: "Senha errada: o aviso aparece em vermelho, logo acima do botão Entrar." }],
+      },
+      {
+        type: "melhoria",
+        area: "geral",
+        title: "Avisos no canto inferior direito",
+        text: "As mensagens de confirmação (“Salvo”) e de erro agora aparecem embaixo, à direita. Elas não cobrem mais os botões do topo da tela.",
+      },
+      {
+        type: "correcao",
+        area: "geral",
+        title: "Notificações do Windows com o ícone do app",
+        before: "A notificação do Windows mostrava um ícone genérico.",
+        after: "Mostra o ícone do aplicativo configurado pela empresa.",
+      },
+      {
+        type: "correcao",
+        area: "geral",
+        title: "Avisos legíveis no tema escuro",
+        before: "No tema escuro, alguns avisos de erro e de sucesso ficavam com fundo claro e texto difícil de ler.",
+        after: "Os avisos seguem o tema e ficam legíveis nos dois.",
+      },
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "Painel do cliente",
+        text: "À direita da conversa aparece um painel com os dados do cliente: conexão usada, quando entrou na fila, há quanto tempo está em atendimento, desde quando é cliente, as etiquetas e as conversas anteriores. Quando precisar de mais espaço para o chat, recolha o painel.",
+        steps: [
+          "Abra uma conversa: o painel aparece à direita.",
+          "Clique em » {1} para recolher. O sistema lembra a sua escolha.",
+          "Veja e edite as etiquetas {2} e consulte as conversas anteriores {3}.",
+        ],
+        where: "Atendimento › conversa aberta › lado direito",
+        images: [{ file: "painel-cliente", caption: "{1} Recolher {2} Etiquetas {3} Conversas anteriores", size: "small" }],
+      },
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "Notas internas",
+        text: "Anotações dentro da conversa que só a equipe vê. Servem para registrar combinados e lembretes para quem pegar a conversa depois. O cliente nunca recebe uma nota interna.",
+        steps: [
+          "Na caixa de mensagem, clique na aba “Nota interna” {1}.",
+          "Escreva a anotação e clique em “Salvar nota”.",
+          "A nota aparece na conversa com fundo amarelo e borda tracejada {2}, com o seu nome e o horário.",
+        ],
+        where: "Atendimento › conversa aberta › caixa de mensagem",
+        images: [{ file: "notas-internas", caption: "{1} Aba Nota interna {2} Nota salva na conversa", size: "small" }],
+      },
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "Etiquetas nos contatos",
+        text: "Marque clientes com etiquetas como VIP, Orçamento ou Retorno. A etiqueta fica no contato e aparece em todas as conversas dele, para qualquer atendente.",
+        steps: [
+          "No painel do cliente, clique em “+ adicionar”.",
+          "Digite o nome: as etiquetas que já existem aparecem como sugestão {1}.",
+          "Clique em uma sugestão ou em “Criar” para uma etiqueta nova. Para tirar, clique no × da etiqueta.",
+        ],
+        where: "Atendimento › painel do cliente › Etiquetas",
+        images: [{ file: "etiquetas", caption: "Digitando “Re”: aparece a etiqueta Retorno e a opção de criar uma nova.", size: "small" }],
+      },
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "Aviso de cliente sem resposta, filtros e busca",
+        text: "Quando o cliente manda mensagem e ainda não foi respondido, a conversa ganha a etiqueta “sem resposta” e o tempo de espera. Fica amarela depois de 5 minutos e vermelha depois de 15. Acima da lista há busca por nome ou número e os filtros Todas, Não lidas e Sem resposta, cada um com a quantidade.",
+        steps: [
+          "Clique em “Não lidas” ou “Sem resposta” {1} {3} para ver só essas conversas.",
+          "Digite um nome ou número na busca {2}.",
+          "Atenda primeiro as conversas em vermelho: são as que esperam há mais tempo.",
+        ],
+        where: "Atendimento › lista de conversas",
+        images: [{ file: "lista-filtros", caption: "{1} Filtros {2} Busca {3} Sem resposta. Carlos espera há 9 minutos (amarelo); Juliana, há 21 (vermelho).", size: "small" }],
+      },
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "Respostas rápidas em um clique",
+        text: "As respostas rápidas cadastradas para a conexão aparecem como atalhos logo acima da caixa de texto. Um clique insere o texto, sem precisar lembrar ou digitar o atalho.",
+        steps: ["Clique no atalho {1} para inserir o texto na caixa.", "Revise e envie normalmente."],
+        where: "Atendimento › caixa de mensagem",
+        images: [{ file: "respostas-chips", caption: "{1} Atalho “/pix”, que insere a chave Pix da empresa.", size: "small" }],
+      },
+      {
+        type: "melhoria",
+        area: "atendimento",
+        title: "Em pausa, não é possível aceitar conversas",
+        text: "Enquanto você está em pausa, o botão Aceitar fica bloqueado. Isso evita pegar uma conversa sem querer e deixar o cliente esperando. Para atender, clique em “Retomar” no topo da tela.",
+      },
+      {
+        type: "novo",
+        area: "gestao",
+        title: "Filtros por situação e ações em lote",
+        text: "A Gestão mostra quantas conversas há em cada situação (na fila, em atendimento, pelo celular, encerradas, abandonadas) e filtra com um clique. Dá para selecionar várias conversas e transferir ou devolver para a fila de uma vez. A coluna Esperando mostra há quanto tempo o cliente aguarda, e a coluna Última mensagem mostra o que ele disse por último.",
+        steps: [
+          "Clique em uma situação {1} para filtrar.",
+          "Marque as conversas na caixa à esquerda {2}.",
+          "Use a barra que aparece no topo {3}: Transferir ou Devolver para a fila.",
+          "Acompanhe a espera de cada cliente na coluna Esperando {4}.",
+        ],
+        where: "Gestão",
+        images: [{ file: "gestao-lote", caption: "Duas conversas selecionadas, com a barra de ações em lote." }],
+      },
+      {
+        type: "novo",
+        area: "dashboard",
+        title: "Comparação com o período anterior e Atendimentos únicos",
+        text: "Cada indicador mostra se subiu ou caiu em relação ao período anterior de mesmo tamanho: em verde quando melhorou, em vermelho quando piorou. Com “7 dias” selecionado, por exemplo, a comparação é com os 7 dias anteriores. O novo card Atendimentos únicos mostra quantos clientes diferentes foram atendidos: se o mesmo cliente abriu três conversas, conta uma vez.",
+        where: "Dashboard › primeira linha",
+        images: [{ file: "dash-kpis", caption: "{1} Comparação com o período anterior {2} Atendimentos únicos" }],
+      },
+      {
+        type: "novo",
+        area: "dashboard",
+        title: "Equipe agora",
+        text: "Mostra em tempo real quantas pessoas estão online, em pausa e offline, quem está em pausa, o motivo e há quanto tempo. A pausa fica em vermelho quando passa de 30 minutos.",
+        where: "Dashboard",
+        images: [{ file: "dash-equipe", caption: "Maria está em pausa para almoço há 23 minutos.", size: "small" }],
+      },
+      {
+        type: "novo",
+        area: "dashboard",
+        title: "Tabela de atendentes",
+        text: "Uma linha por atendente com a situação agora, conversas atendidas, tempo médio, tempo online e tempo em pausa no período. O maior tempo de pausa da equipe aparece em vermelho.",
+        where: "Dashboard",
+        images: [{ file: "dash-atendentes", caption: "Tempo online e em pausa de cada atendente no período." }],
+      },
+      {
+        type: "novo",
+        area: "usuarios",
+        title: "Foto do usuário pelo gestor",
+        text: "Gestores e administradores podem colocar ou trocar a foto de qualquer usuário direto no cadastro. Antes, só o próprio usuário conseguia.",
+        steps: ["Em Usuários, clique no lápis do usuário.", "No topo do painel, clique em “Escolher foto” {1}. Aceita JPG, PNG ou WEBP de até 8 MB.", "Clique em Salvar."],
+        where: "Usuários › editar usuário",
+        requires: [PERMISSION.USUARIOS_EDITAR],
+        images: [{ file: "usuarios-foto", caption: "{1} Foto do usuário", size: "small" }],
+      },
+      {
+        type: "melhoria",
+        area: "usuarios",
+        title: "Lista de usuários mais completa",
+        text: "Busca por nome ou e-mail, filtros com contagem (Todos, Online, Em pausa, Inativos), foto, presença atual e último acesso de cada pessoa.",
+        where: "Usuários",
+        images: [{ file: "usuarios-lista", caption: "Lista com presença e último acesso." }],
+      },
+      {
+        type: "melhoria",
+        area: "respostas",
+        title: "Cadastros em painel lateral",
+        text: "Ao criar ou editar uma resposta rápida, mensagem automática ou template, o formulário abre em um painel à direita. A lista continua visível atrás, para consultar enquanto edita.",
+        where: "Respostas",
+        images: [{ file: "resp-rapida-nova", caption: "Nova resposta rápida aberta ao lado da lista." }],
+      },
+      {
+        type: "novo",
+        area: "respostas",
+        title: "Templates de mensagem",
+        text: "Modelos de mensagem aprovados pela Meta, usados para iniciar conversas pela API Oficial fora da janela de 24 horas. Você escolhe a categoria (Marketing, Utilidade ou Autenticação), escreve o texto com variáveis, adiciona botões e vê como o cliente vai receber antes de enviar para aprovação.",
+        steps: [
+          "Em Respostas, abra a aba Templates e clique em “Novo template”.",
+          "Escolha a conexão WhatsApp Oficial e a categoria.",
+          "Preencha o texto e confira a prévia.",
+          "Clique em “Enviar para aprovação”. O status muda sozinho quando a Meta responder.",
+        ],
+        where: "Respostas › Templates",
+        requires: [PERMISSION.RESPOSTAS_TEMPLATES_VISUALIZAR],
+        images: [{ file: "resp-template-novo", caption: "Cadastro de template com categoria, cabeçalho, texto, rodapé e botões." }],
+      },
+      {
+        type: "novo",
+        area: "fluxo",
+        title: "Novo menu Fluxo",
+        text: "Monte o caminho que o cliente percorre antes de falar com um atendente: mensagem de boas-vindas, menu de opções e transferência para a equipe certa. Comece de um modelo pronto (Boas-vindas ou Fora do horário) ou do zero. Cada cartão mostra um desenho do fluxo e avisa o que falta para ativar.",
+        steps: ["Em Fluxo, clique em “Novo fluxo”.", "Escolha um modelo ou comece em branco.", "Vincule o fluxo a uma conexão WhatsApp Oficial."],
+        where: "Fluxo",
+        images: [{ file: "fluxo-lista", caption: "Fluxos Boas-vindas e Fora do horário, criados a partir dos modelos." }],
+      },
+      {
+        type: "novo",
+        area: "fluxo",
+        title: "Editor de fluxo",
+        text: "Arraste os blocos da esquerda para a área de desenho e ligue um ao outro. Ao clicar em um bloco, o painel da direita mostra as opções dele e uma prévia de como fica no WhatsApp. O editor tem zoom, desfazer (Ctrl+Z), salvar (Ctrl+S) e avisa o que falta antes de ativar.",
+        steps: [
+          "Arraste um bloco da lista à esquerda para o desenho.",
+          "Ligue a bolinha de saída de um bloco à entrada do próximo.",
+          "Clique no bloco para editar o texto e as opções à direita.",
+          "Salve e ative quando não houver avisos.",
+        ],
+        where: "Fluxo › abrir um fluxo",
+        images: [{ file: "fluxo-editor-no", caption: "Bloco “Menu de opções” selecionado, com a prévia no WhatsApp à direita." }],
+      },
+      {
+        type: "novo",
+        area: "conexoes",
+        title: "WhatsApp pela API Oficial",
+        text: "Além da conexão por QR Code, agora é possível conectar um número pela API Oficial da Meta (WhatsApp Business). É a opção recomendada para empresas com mais volume e é necessária para usar Templates e Fluxos.",
+        steps: [
+          "Em Conexões, abra a aba “WhatsApp Oficial”.",
+          "Clique em “Nova conexão oficial” e informe os dados do app da Meta.",
+          "Copie a URL de callback mostrada na tela e cole no painel da Meta.",
+        ],
+        where: "Conexões › WhatsApp Oficial",
+        requires: [PERMISSION.CONEXOES_WHATSAPP_VISUALIZAR],
+        images: [{ file: "conexoes-oficial", caption: "Aba WhatsApp Oficial com a URL de callback para a Meta." }],
+      },
+      {
+        type: "melhoria",
+        area: "conexoes",
+        title: "Conexões em cartões",
+        text: "Cada conexão virou um cartão com o estado em cores, o número, a cor da conexão e quantos atendentes estão vinculados. A conexão desconectada fica com borda vermelha para chamar atenção.",
+        where: "Conexões › WhatsApp",
+        requires: [PERMISSION.CONEXOES_WHATSAPP_VISUALIZAR],
+        images: [{ file: "conexoes", caption: "Conexões Suporte e Vendas em cartões." }],
+      },
+      {
+        type: "melhoria",
+        area: "configuracoes",
+        title: "Configurações por seção e aviso de não salvo",
+        text: "As configurações ficam organizadas em seções no menu à esquerda (Atendimento, Aparência, E-mail, Segurança). Ao alterar algo, aparece uma barra avisando que há alterações não salvas, com os botões Descartar e Salvar.",
+        where: "Configurações",
+        images: [{ file: "config-naosalvo", caption: "Nome da empresa alterado: a barra escura embaixo avisa que falta salvar." }],
+      },
+    ],
+  },
+  {
+    version: "1.5.0",
+    date: "01 out 2026",
+    name: "Pausas e Dashboard",
+    summary: "Pausa com motivo, ajuda na escrita e um Dashboard bem mais completo.",
+    notes: [
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "Pausar atendimento",
+        text: "Precisa sair um pouco? Clique em Pausar e escolha o motivo. Enquanto estiver em pausa, você não recebe conversas novas, e a equipe vê que você está em pausa e por quê.",
+        steps: ["Clique em “Pausar” no topo da tela.", "Escolha o motivo: Almoço, Reunião, Treinamento etc.", "Quando voltar, clique em “Retomar”."],
+        where: "Topo da tela",
+        images: [{ file: "pausa", caption: "Lista de motivos ao clicar em Pausar.", size: "small" }],
+      },
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "Sugestões de correção de escrita",
+        text: "Enquanto você digita, o sistema confere o português e mostra sugestões logo acima da caixa de texto. Aplicar é opcional: você pode ignorar e enviar como está.",
+        steps: ["Digite a mensagem normalmente.", "Se houver sugestão, ela aparece acima da caixa: o trecho riscado e a correção.", "Clique em “Aplicar” para corrigir ou no × para dispensar."],
+        where: "Atendimento › caixa de mensagem",
+        images: [{ file: "sugestao-escrita", caption: "Sugestão de trocar “um reunião” por “uma reunião”.", size: "small" }],
+      },
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "Fila em destaque e lembrete",
+        text: "Quando há clientes esperando, a aba Fila fica em destaque e quem está online recebe lembretes de tempos em tempos até alguém aceitar. Cada cliente aparece com o tempo de espera e o número de mensagens.",
+        where: "Atendimento › aba Fila",
+        images: [{ file: "fila", caption: "Três clientes na fila, cada um com o botão Aceitar.", size: "small" }],
+      },
+      {
+        type: "melhoria",
+        area: "atendimento",
+        title: "Traço de mensagem lida na cor da empresa",
+        text: "Os tracinhos que mostram que o cliente leu a mensagem usam a cor da identidade visual da empresa.",
+      },
+      {
+        type: "correcao",
+        area: "atendimento",
+        title: "Atendente escolhido para transferir fica destacado",
+        before: "Na lista de transferência, não dava para ter certeza de qual atendente estava selecionado.",
+        after: "O escolhido fica realçado, e a lista mostra quem está online, em pausa (com o motivo) e a conexão de cada um.",
+        requires: [PERMISSION.ATENDIMENTO_TRANSFERIR],
+        images: [{ file: "transfer-lista", caption: "Lista de atendentes com presença e conexão.", size: "small" }],
+      },
+      {
+        type: "correcao",
+        area: "geral",
+        title: "Painel de notificações em telas estreitas",
+        before: "Em telas pequenas, o painel do sininho saía para fora da tela.",
+        after: "O painel se ajusta à largura da tela.",
+      },
+      {
+        type: "novo",
+        area: "dashboard",
+        title: "Presença ao longo do dia",
+        text: "Gráfico com quantos atendentes estavam online e em pausa em cada hora do dia. Ajuda a ver horários com pouca gente. Você pode escolher a faixa de horas e salvar como padrão.",
+        where: "Dashboard",
+        images: [{ file: "dash-presenca", caption: "Online (azul) e em pausa para almoço (laranja) por hora.", size: "small" }],
+      },
+      {
+        type: "novo",
+        area: "dashboard",
+        title: "Nuvem de palavras",
+        text: "As palavras que os clientes mais usaram no período, em tamanho proporcional ao uso, com o número de vezes ao lado. Mostra rapidamente os assuntos mais procurados.",
+        where: "Dashboard",
+        images: [{ file: "dash-nuvem", caption: "“pedido”, “ajuda” e “preciso” foram as mais usadas." }],
+      },
+      {
+        type: "novo",
+        area: "dashboard",
+        title: "Cards que levam à tela certa",
+        text: "Clique em um card do Dashboard, como “Na fila agora” ou “Encerradas”, para abrir a Gestão já filtrada com aquelas conversas.",
+        where: "Dashboard",
+        images: [{ file: "dash-cards-clicaveis", caption: "{1} Ao passar o mouse, o card mostra “Ver na Gestão →”.", size: "small" }],
+      },
+      {
+        type: "melhoria",
+        area: "dashboard",
+        title: "Gráfico por atendente separado",
+        text: "Conversas e mensagens por atendente ficaram em dois gráficos, mais fáceis de comparar.",
+      },
+      {
+        type: "melhoria",
+        area: "dashboard",
+        title: "PowerPoint com os novos gráficos",
+        text: "O botão Exportar PPT inclui a presença ao longo do dia, a nuvem de palavras e os gráficos por atendente.",
+      },
+      {
+        type: "correcao",
+        area: "dashboard",
+        title: "Dicas dos gráficos no tema escuro",
+        before: "Ao passar o mouse nos gráficos, a dica aparecia branca no tema escuro.",
+        after: "A dica segue o tema.",
+      },
+      {
+        type: "novo",
+        area: "respostas",
+        title: "Motivos de pausa",
+        text: "Cadastre os motivos que aparecem para o atendente ao pausar, como Almoço, Reunião ou Treinamento. Desativar um motivo tira ele da lista, mas mantém o histórico das pausas.",
+        where: "Respostas › Motivo de Pausa",
+        requires: [PERMISSION.RESPOSTAS_MOTIVO_PAUSA_VISUALIZAR],
+        images: [{ file: "resp-pausa", caption: "Motivos cadastrados." }],
+      },
+      {
+        type: "novo",
+        area: "configuracoes",
+        title: "Configurações › Fila",
+        text: "Defina de quantos em quantos minutos os atendentes online são lembrados quando há clientes esperando na fila.",
+        where: "Configurações › Fila",
+        requires: [PERMISSION.CONFIGURACOES_FILA_VISUALIZAR],
+        images: [{ file: "config-fila", caption: "Intervalo do lembrete de fila, em minutos." }],
+      },
+      {
+        type: "melhoria",
+        area: "administracao",
+        title: "Permissões mais detalhadas",
+        text: "Cada tela tem permissões separadas para visualizar, adicionar, editar e excluir. Por exemplo: um gestor pode ver os modelos de e-mail sem poder alterá-los.",
+        where: "Configurações › Permissões",
+      },
+    ],
+  },
+  {
+    version: "1.4.0",
+    date: "27 set 2026",
+    name: "Conexões e Landing Page",
+    summary: "Novos menus Conexões e Landing Page, e o app ficou mais fácil de instalar.",
+    notes: [
+      {
+        type: "novo",
+        area: "geral",
+        title: "Botão de instalar o app na tela de login",
+        text: "Enquanto o app não estiver instalado, a tela de login mostra o botão “Instalar aplicativo”. Instalado, o sistema abre direto, como um programa, e as notificações funcionam melhor.",
+        where: "Tela de login, abaixo do botão Entrar",
+      },
+      { type: "melhoria", area: "geral", title: "Logo maior na tela de login", text: "A logo da empresa aparece maior e mais nítida na entrada." },
+      {
+        type: "correcao",
+        area: "geral",
+        title: "Notificação do Windows com o sistema aberto",
+        before: "Com o sistema aberto em outra aba, a notificação do Windows não aparecia.",
+        after: "Ela aparece mesmo com o navegador aberto em outra aba ou minimizado.",
+      },
+      {
+        type: "novo",
+        area: "conexoes",
+        title: "Menu Conexões",
+        text: "WhatsApp, Instagram, Facebook e Site ficam reunidos em um só menu, cada um em uma aba.",
+        where: "Menu lateral › Conexões",
+      },
+      {
+        type: "novo",
+        area: "conexoes",
+        title: "Instagram e Messenger (preparação)",
+        text: "Preparação para receber mensagens do Instagram e do Messenger na mesma fila do WhatsApp. As abas já aparecem em Conexões; a ativação vem em uma próxima versão.",
+        requires: [PERMISSION.CONEXOES_INSTAGRAM_GERENCIAR],
+      },
+      {
+        type: "novo",
+        area: "landingPage",
+        title: "Menu Landing Page",
+        text: "Personalize a tela de login (tamanho da logo, alinhamento e subtítulo), a ordem, os nomes e os ícones do menu principal e os títulos das telas. A prévia ao lado mostra o resultado antes de salvar.",
+        where: "Menu lateral › Landing Page",
+        images: [{ file: "landing", caption: "Ajustes da tela de login com prévia ao vivo." }],
+      },
+      {
+        type: "novo",
+        area: "configuracoes",
+        title: "Versão do app",
+        text: "Informe a versão atual do aplicativo. Quando ela muda, quem já instalou recebe um aviso para reinstalar e pegar o ícone e o nome novos.",
+        where: "Configurações › Identidade visual",
+        requires: [PERMISSION.CONFIGURACOES_IDENTIDADE_VISUALIZAR],
+        images: [{ file: "config-identidade", caption: "Identidade visual: logo, nome, cores e versão do app." }],
+      },
+      {
+        type: "correcao",
+        area: "configuracoes",
+        title: "Ícone do app no Android",
+        before: "No Android, o ícone podia aparecer cortado ou com fundo errado.",
+        after: "O sistema gera a versão certa do ícone para o formato do Android.",
+        requires: [PERMISSION.CONFIGURACOES_IDENTIDADE_VISUALIZAR],
+      },
+    ],
+  },
+  {
+    version: "1.3.0",
+    date: "26 set 2026",
+    name: "Mensagens com o seu nome",
+    summary: "Mensagens automáticas assinadas por quem atende e várias correções.",
+    notes: [
+      {
+        type: "correcao",
+        area: "atendimento",
+        title: "Mensagens automáticas com o nome do atendente",
+        before: "Aceite, transferência e encerramento apareciam como enviados por “Sistema”.",
+        after: "Saem com o nome de quem aceitou, transferiu ou encerrou.",
+      },
+      {
+        type: "correcao",
+        area: "atendimento",
+        title: "@menção só puxa o colega que está online",
+        before: "Mencionar um colega offline tirava a conversa da fila, e ela ficava parada com ele.",
+        after: "A conversa só vai direto para quem foi mencionado se a pessoa estiver online.",
+      },
+      {
+        type: "correcao",
+        area: "geral",
+        title: "Avisos amarelos no tema escuro",
+        before: "Etiquetas e observações amarelas ficavam ilegíveis no tema escuro.",
+        after: "O contraste foi corrigido.",
+      },
+      {
+        type: "novo",
+        area: "geral",
+        title: "App para Android por download direto",
+        text: "Quando o celular não oferece a instalação pelo navegador, aparece um link para baixar o aplicativo Android.",
+      },
+      {
+        type: "correcao",
+        area: "dashboard",
+        title: "Conversas na fila contam como Aguardando",
+        before: "Algumas conversas na fila não entravam na contagem de Aguardando.",
+        after: "Toda conversa na fila é contada.",
+      },
+      {
+        type: "correcao",
+        area: "dashboard",
+        title: "Logo sem distorção no PowerPoint",
+        before: "A logo aparecia esticada no PowerPoint exportado.",
+        after: "A logo mantém a proporção original.",
+      },
+      {
+        type: "novo",
+        area: "respostas",
+        title: "Campos automáticos com prévia ao vivo",
+        text: "Nos textos de aceite, transferência e encerramento, use campos como {{cliente}} e {{atendente}}. Eles são trocados pelo nome certo na hora do envio. Abaixo do texto, a prévia mostra exatamente como o cliente vai receber.",
+        steps: ["Em Respostas, abra Aceite, Transferência ou Encerramento.", "Edite a mensagem e clique nos campos acima do texto para inseri-los.", "Confira a prévia antes de salvar."],
+        where: "Respostas › Aceite / Transferência / Encerramento",
+        requires: [PERMISSION.RESPOSTAS_ACEITE_VISUALIZAR],
+        images: [{ file: "resp-aceite-editar", caption: "Mensagem de aceite com os campos e a prévia em azul." }],
+      },
+      {
+        type: "correcao",
+        area: "configuracoes",
+        title: "Configurações no celular",
+        before: "No celular, as abas de Configurações saíam da tela e as cores ficavam desalinhadas.",
+        after: "Tudo se ajusta à largura da tela.",
+      },
+      {
+        type: "correcao",
+        area: "configuracoes",
+        title: "Ícone do app conferido no envio",
+        before: "Dava para enviar uma imagem de tamanho errado como ícone do app.",
+        after: "O sistema avisa na hora se a imagem não tiver o tamanho certo.",
+        requires: [PERMISSION.CONFIGURACOES_IDENTIDADE_VISUALIZAR],
+      },
+      {
+        type: "novo",
+        area: "configuracoes",
+        title: "Aba Exportações",
+        text: "Defina a logo, o nome e a cor usados no PowerPoint e nos relatórios exportados, separados da identidade visual do sistema. A tela mostra uma prévia de cada exportação.",
+        where: "Configurações › Exportações",
+        requires: [PERMISSION.CONFIGURACOES_IDENTIDADE_VISUALIZAR],
+        images: [{ file: "config-exportacoes", caption: "Identidade das exportações, com prévia do PowerPoint e do relatório." }],
+      },
+    ],
+  },
+  {
+    version: "1.2.0",
+    date: "24 set 2026",
+    name: "Respostas e notificações",
+    summary: "Menu Respostas, central de notificações e mais controle na Gestão.",
+    notes: [
+      {
+        type: "correcao",
+        area: "atendimento",
+        title: "Mensagens não ficam mais pendentes",
+        before: "Às vezes uma mensagem ficava com o reloginho de pendente para sempre.",
+        after: "Se o envio falhar, a mensagem mostra o erro e pode ser enviada de novo.",
+      },
+      {
+        type: "correcao",
+        area: "atendimento",
+        title: "Reenvio automático",
+        before: "Quando o WhatsApp do cliente pedia a mensagem de novo, ela não era reenviada e ficava “aguardando mensagem”.",
+        after: "O sistema reenvia sozinho.",
+      },
+      {
+        type: "melhoria",
+        area: "atendimento",
+        title: "Conversa atendida pelo celular volta para a fila",
+        text: "Se uma conversa foi respondida pelo celular e o cliente manda mensagem nova, ela volta para a fila do sistema para alguém atender.",
+      },
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "Nova conversa confere o número",
+        text: "Ao iniciar uma conversa com um número novo, o sistema verifica se ele tem WhatsApp antes de abrir a conversa. Se não tiver, avisa na hora.",
+        steps: [
+          "Em Atendimento, clique em “Nova conversa”.",
+          "Escolha a conexão e a aba “Novo número”.",
+          "Digite o número com DDI e DDD {1}. Se ele não tiver WhatsApp, o aviso aparece logo abaixo.",
+        ],
+        where: "Atendimento › Nova conversa",
+        images: [{ file: "nova-conversa", caption: "{1} Número sem WhatsApp: o aviso aparece em vermelho.", size: "small" }],
+      },
+      {
+        type: "melhoria",
+        area: "atendimento",
+        title: "Aba Transf.",
+        text: "A aba Transf. lista as conversas que você transferiu nos últimos 7 dias. Clique em uma para ver como ela está, sem sair da tela.",
+        where: "Atendimento › aba Transf.",
+      },
+      {
+        type: "melhoria",
+        area: "atendimento",
+        title: "Observação de transferência no lugar certo",
+        text: "A observação escrita na transferência aparece dentro da conversa, no ponto exato em que a transferência aconteceu.",
+      },
+      {
+        type: "novo",
+        area: "geral",
+        title: "Central de notificações",
+        text: "O sininho guarda as suas notificações: mensagens novas, menções e transferências. Clique em uma para abrir a conversa. O número em vermelho mostra quantas ainda não foram lidas.",
+        steps: ["Clique no sininho no topo da tela.", "Clique em uma notificação para abrir a conversa.", "Use “Marcar todas como lidas” para limpar."],
+        where: "Topo da tela › sininho",
+        images: [{ file: "notificacoes", caption: "Notificações de mensagens novas, com atalho para a conversa.", size: "small" }],
+      },
+      {
+        type: "novo",
+        area: "gestao",
+        title: "Transferir ou devolver para a fila pela Gestão",
+        text: "Use os ícones da linha para transferir a conversa para outro atendente ou devolvê-la para a fila. A lista mostra quem está online, em pausa e offline.",
+        where: "Gestão › ícones da linha",
+        requires: [PERMISSION.GESTAO_GERENCIAR],
+        images: [{ file: "gestao-transferir", caption: "Transferir uma conversa para outro atendente.", size: "small" }],
+      },
+      {
+        type: "novo",
+        area: "gestao",
+        title: "Encerrar pela Gestão",
+        text: "O gestor pode encerrar uma conversa direto da Gestão e escolher se o cliente recebe ou não a mensagem de encerramento.",
+        where: "Gestão › ícones da linha",
+        requires: [PERMISSION.GESTAO_GERENCIAR],
+        images: [{ file: "gestao-encerrar", caption: "Encerrar com ou sem a mensagem de encerramento.", size: "small" }],
+      },
+      {
+        type: "correcao",
+        area: "gestao",
+        title: "Conversa reaberta aparece em linha nova",
+        before: "Quando um cliente voltava a falar, a conversa nova sobrescrevia a anterior na Gestão.",
+        after: "Cada conversa tem a sua linha, e o histórico fica preservado.",
+      },
+      {
+        type: "novo",
+        area: "respostas",
+        title: "Menu Respostas",
+        text: "Respostas rápidas e mensagens automáticas ficam em um só menu, com uma aba para cada tipo.",
+        where: "Menu lateral › Respostas",
+        images: [{ file: "resp-rapidas", caption: "Respostas rápidas com atalho, conexão e texto." }],
+      },
+      {
+        type: "novo",
+        area: "respostas",
+        title: "Mensagem de encerramento",
+        text: "Mensagem enviada ao cliente quando a conversa é encerrada. Você escolhe para quais atendentes ela vale.",
+        where: "Respostas › Encerramento",
+        requires: [PERMISSION.RESPOSTAS_ENCERRAMENTO_VISUALIZAR],
+        images: [{ file: "resp-encerramento", caption: "Mensagem de encerramento e os usuários que a usam." }],
+      },
+      {
+        type: "novo",
+        area: "respostas",
+        title: "Mensagens automáticas de aceite e de transferência",
+        text: "Mensagens enviadas ao cliente quando um atendente aceita a conversa ou quando ela é transferida. Exemplo: “Olá! Meu nome é Ana e vou continuar seu atendimento.”",
+        where: "Respostas › Aceite e Transferência",
+        requires: [PERMISSION.RESPOSTAS_ACEITE_VISUALIZAR],
+        images: [{ file: "resp-aceite", caption: "Mensagens de aceite cadastradas." }],
+      },
+      {
+        type: "novo",
+        area: "administracao",
+        title: "Permissões por menu e aba",
+        text: "Escolha o que atendentes e gestores podem acessar, menu a menu e aba a aba.",
+        where: "Configurações › Permissões",
+      },
+    ],
+  },
+  {
+    version: "1.1.0",
+    date: "23 set 2026",
+    name: "Histórico e menções",
+    summary: "Histórico de antes da conexão, menções e transferência com observação.",
+    notes: [
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "Mensagens de antes da conexão",
+        text: "Ao abrir uma conversa, você pode carregar as mensagens trocadas com o cliente antes de o número ser conectado ao sistema.",
+      },
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "Conversas não lidas entram na fila",
+        text: "Mensagens que chegaram antes de conectar o WhatsApp e ainda não tinham sido lidas viram conversas na fila. Assim ninguém fica sem resposta.",
+      },
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "@menção com erro de digitação",
+        text: "Ao mencionar um colega com @ em uma nota, o sistema encontra o nome mesmo com erro de digitação, como “@Jao” para João.",
+      },
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "Observação ao transferir",
+        text: "Ao transferir, escreva para o colega o motivo e o que já foi feito. Ele lê a observação antes de responder ao cliente.",
+        steps: ["Na conversa, clique em Transferir.", "Escolha o atendente.", "Escreva a observação {1} e confirme."],
+        where: "Atendimento › conversa › Transferir",
+        requires: [PERMISSION.ATENDIMENTO_TRANSFERIR],
+        images: [{ file: "transferir-obs", caption: "{1} Observação para o colega.", size: "small" }],
+      },
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "Aba de conversas transferidas",
+        text: "Uma aba na lista de conversas para acompanhar as que você passou adiante.",
+      },
+      {
+        type: "correcao",
+        area: "atendimento",
+        title: "Número real e nome do celular",
+        before: "Alguns contatos apareciam com um número estranho no lugar do telefone.",
+        after: "Mostra o número verdadeiro e o nome salvo na agenda do celular.",
+      },
+      {
+        type: "correcao",
+        area: "atendimento",
+        title: "Lida e não lida em tempo real",
+        before: "Ler uma conversa em uma aba não atualizava as outras telas abertas.",
+        after: "A conversa fica como lida em todas as telas na hora.",
+      },
+      { type: "correcao", area: "geral", title: "Notificações do Windows", before: "As notificações do Windows não apareciam.", after: "Voltaram a funcionar." },
+      { type: "melhoria", area: "geral", title: "Nova tela de login", text: "A tela de entrada ganhou visual novo." },
+    ],
+  },
+  {
+    version: "1.0.0",
+    date: "21 set 2026",
+    name: "Lançamento",
+    summary: "Primeira versão do WhatsAtendende.",
+    notes: [
+      {
+        type: "novo",
+        area: "geral",
+        title: "Atendimento pelo WhatsApp com fila compartilhada",
+        text: "O cliente chama, a conversa entra na fila e um atendente aceita. Durante a conversa, dá para transferir para um colega e, no fim, encerrar.",
+      },
+      { type: "novo", area: "geral", title: "Instale como aplicativo", text: "O sistema pode ser instalado no computador e no celular e abre como um programa." },
+      { type: "novo", area: "gestao", title: "Gestão", text: "Acompanhe, em modo leitura, as conversas de todos os atendentes." },
+      { type: "novo", area: "dashboard", title: "Dashboard e Relatórios", text: "Indicadores de conversas, mensagens e tempos de atendimento, com exportação." },
+      { type: "novo", area: "usuarios", title: "Cadastro de usuários", text: "Cadastre atendentes, gestores e administradores, cada um com o seu acesso." },
+      { type: "novo", area: "administracao", title: "Excluir usuários", text: "Somente o administrador pode excluir um usuário." },
+    ],
+  },
+];
+
+export const RELEASE_NOTE_IMAGE_BASE = "/notas-de-versao/";
+
+function canSeeNote(note: ReleaseNote, role: Role, permissions: PermissionMap): boolean {
+  const area = RELEASE_NOTE_AREAS[note.area];
+  if (area.adminOnly) return role === "ADMIN";
+  return [...area.requires, ...(note.requires ?? [])].every((p) => permissions[p]);
+}
+
+/** Releases trimmed to the notes this user can see; releases left empty are dropped. */
+export function visibleReleases(role: Role, permissions: PermissionMap): Release[] {
+  return RELEASES.map((r) => ({ ...r, notes: r.notes.filter((n) => canSeeNote(n, role, permissions)) })).filter((r) => r.notes.length > 0);
+}
+
+export function compareVersions(a: string, b: string): number {
+  const pa = a.split(".").map(Number);
+  const pb = b.split(".").map(Number);
+  for (let i = 0; i < 3; i++) if (pa[i] !== pb[i]) return pa[i] - pb[i];
+  return 0;
+}
