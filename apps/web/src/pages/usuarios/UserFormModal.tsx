@@ -1,7 +1,7 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { X } from "lucide-react";
+import { Camera, Trash2, X } from "lucide-react";
 import type { UserDTO, Role, ManagerConnectionAccessDTO, AccessSchedule, WeekdayKey } from "@whatsatendende/types";
 import { WEEKDAY_KEYS } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
@@ -42,8 +42,26 @@ export function UserFormModal({
 }: {
   user: UserDTO | null;
   onClose: () => void;
-  onSubmit: (values: UserFormValues) => Promise<void>;
+  /** Saves the user and resolves with its id (needed to attach a photo to a brand-new user). */
+  onSubmit: (values: UserFormValues) => Promise<string>;
 }) {
+  const queryClient = useQueryClient();
+  // The photo is staged here and sent right after the user itself is saved,
+  // so it works the same for "Novo usuário" (no id yet) and "Editar".
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoRemoved, setPhotoRemoved] = useState(false);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  useEffect(() => {
+    if (!photoFile) {
+      setPhotoPreview(null);
+      return;
+    }
+    const url = URL.createObjectURL(photoFile);
+    setPhotoPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [photoFile]);
+  const shownPhoto = photoPreview ?? (photoRemoved ? null : (user?.photoUrl ?? null));
   const { data: connections } = useQuery({
     queryKey: ["whatsapp-connections"],
     queryFn: async () => (await api.get<ConnectionOption[]>("/whatsapp/connections")).data,
@@ -84,7 +102,19 @@ export function UserFormModal({
     setLoading(true);
     try {
       const payload = wantsPasswordChange ? values : { ...values, password: undefined, confirmPassword: undefined };
-      await onSubmit(payload);
+      const userId = await onSubmit(payload);
+      try {
+        if (photoFile) {
+          const form = new FormData();
+          form.append("file", photoFile);
+          await api.post(`/users/${userId}/photo`, form, { headers: { "Content-Type": "multipart/form-data" } });
+        } else if (photoRemoved && user?.photoUrl) {
+          await api.delete(`/users/${userId}/photo`);
+        }
+      } catch (photoErr) {
+        toast.error(`Usuário salvo, mas a foto não foi atualizada: ${getApiErrorMessage(photoErr)}`);
+      }
+      queryClient.invalidateQueries({ queryKey: ["users"] });
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao salvar usuário");
@@ -94,7 +124,7 @@ export function UserFormModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-8">
+    <div className="drawer-backdrop">
       {/* flex-col + max-h-full on the form itself (not just this wrapper) is
           what keeps the header/footer always visible: the form's own height
           is capped to the available viewport space, and only the middle
@@ -102,7 +132,7 @@ export function UserFormModal({
           semana, cidade, permissões de conexão...) grows taller than the
           screen with nothing to shrink it, pushing the X/Cancelar/Salvar
           buttons out of view with no way to reach them. */}
-      <form onSubmit={handleSubmit} className="flex max-h-full w-full max-w-md flex-col overflow-hidden rounded-card border border-border bg-surface shadow-elevated">
+      <form onSubmit={handleSubmit} className="drawer-panel max-w-md overflow-hidden">
         <div className="flex shrink-0 items-center justify-between border-b border-border p-5 pb-4">
           <h2 className="text-base font-semibold">{user ? "Editar usuário" : "Novo usuário"}</h2>
           <button type="button" onClick={onClose} className="focus-ring rounded-full p-1 text-muted hover:bg-surface-alt" aria-label="Fechar">
@@ -111,6 +141,67 @@ export function UserFormModal({
         </div>
 
         <div className="flex-1 space-y-3 overflow-y-auto p-5">
+          <div className="flex items-center gap-4 rounded-card border border-dashed border-border bg-surface-alt p-3">
+            <button
+              type="button"
+              onClick={() => photoInputRef.current?.click()}
+              className="focus-ring relative h-16 w-16 shrink-0 rounded-full"
+              aria-label="Escolher foto do usuário"
+            >
+              <span className="block h-full w-full overflow-hidden rounded-full bg-primary/15 text-lg font-semibold text-primary">
+                {shownPhoto ? (
+                  <img src={shownPhoto} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <span className="flex h-full w-full items-center justify-center">{(values.displayName || values.fullName || "?").slice(0, 1).toUpperCase()}</span>
+                )}
+              </span>
+              <span className="absolute -bottom-0.5 -right-0.5 flex h-6 w-6 items-center justify-center rounded-full border-2 border-surface bg-primary text-primary-fg">
+                <Camera className="h-3 w-3" />
+              </span>
+            </button>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold">Foto do usuário</p>
+              <p className="mb-1.5 text-xs text-muted">JPG, PNG ou WEBP, até 8 MB.</p>
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => photoInputRef.current?.click()}
+                  className="focus-ring rounded-lg border border-border bg-surface px-2.5 py-1 text-xs font-medium hover:bg-surface-alt"
+                >
+                  {shownPhoto ? "Trocar foto" : "Escolher foto"}
+                </button>
+                {shownPhoto && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPhotoFile(null);
+                      setPhotoRemoved(true);
+                    }}
+                    className="focus-ring flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-danger hover:bg-danger-soft"
+                  >
+                    <Trash2 className="h-3 w-3" /> Remover
+                  </button>
+                )}
+              </div>
+            </div>
+            <input
+              ref={photoInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (!file) return;
+                if (file.size > 8 * 1024 * 1024) {
+                  setError("A foto deve ter no máximo 8 MB.");
+                  return;
+                }
+                setPhotoFile(file);
+                setPhotoRemoved(false);
+              }}
+            />
+          </div>
           <Field label="Nome completo">
             <input required value={values.fullName} onChange={(e) => setValues((v) => ({ ...v, fullName: e.target.value }))} className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm" />
           </Field>

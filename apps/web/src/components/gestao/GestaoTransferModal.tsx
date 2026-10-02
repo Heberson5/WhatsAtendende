@@ -32,14 +32,17 @@ function presenceLabel(agent: Pick<AgentOption, "presence" | "pauseReasonName">)
  * enviar para fila."
  */
 export function GestaoTransferModal({
-  conversation,
+  conversations,
   onClose,
   onTransferred,
 }: {
-  conversation: ConversationListItemDTO;
+  /** One conversation, or several picked with Gestão's bulk selection — all go to the same agent. */
+  conversations: ConversationListItemDTO[];
   onClose: () => void;
   onTransferred: () => void;
 }) {
+  const conversation = conversations[0];
+  const isBulk = conversations.length > 1;
   const queryClient = useQueryClient();
   const [selected, setSelected] = useState<string | null>(null);
   const [confirmingOffline, setConfirmingOffline] = useState(false);
@@ -52,9 +55,17 @@ export function GestaoTransferModal({
   const selectedAgent = activeAgents.find((a) => a.id === selected) ?? null;
 
   const transferMutation = useMutation({
-    mutationFn: (toAgentId: string) => api.post(`/conversations/${conversation.id}/gestao-transfer`, { toAgentId }),
-    onSuccess: () => {
-      toast.success(`Conversa transferida para ${selectedAgent?.displayName ?? "o atendente"}.`);
+    mutationFn: async (toAgentId: string) => {
+      const targets = conversations.filter((c) => c.assignedAgentId !== toAgentId);
+      const results = await Promise.allSettled(targets.map((c) => api.post(`/conversations/${c.id}/gestao-transfer`, { toAgentId })));
+      const failed = results.filter((r) => r.status === "rejected") as PromiseRejectedResult[];
+      if (failed.length === targets.length && failed.length > 0) throw failed[0].reason;
+      return { ok: targets.length - failed.length, failed: failed.length };
+    },
+    onSuccess: ({ ok, failed }) => {
+      const who = selectedAgent?.displayName ?? "o atendente";
+      toast.success(isBulk ? `${ok} ${ok === 1 ? "conversa transferida" : "conversas transferidas"} para ${who}.` : `Conversa transferida para ${who}.`);
+      if (failed) toast.error(`${failed} não puderam ser transferidas.`);
       queryClient.invalidateQueries({ queryKey: ["oversight"] });
       onTransferred();
     },
@@ -82,8 +93,16 @@ export function GestaoTransferModal({
           </button>
         </div>
         <p className="mb-4 text-sm text-muted">
-          Conversa de <strong>{displayName}</strong>
-          {conversation.assignedAgentName ? <> — atualmente com {conversation.assignedAgentName}</> : null}.
+          {isBulk ? (
+            <>
+              <strong>{conversations.length} conversas</strong> selecionadas.
+            </>
+          ) : (
+            <>
+              Conversa de <strong>{displayName}</strong>
+              {conversation.assignedAgentName ? <> — atualmente com {conversation.assignedAgentName}</> : null}.
+            </>
+          )}
         </p>
 
         <div className="max-h-64 overflow-y-auto rounded-card border border-border">
@@ -96,7 +115,7 @@ export function GestaoTransferModal({
                 setSelected(agent.id);
                 setConfirmingOffline(false);
               }}
-              disabled={agent.id === conversation.assignedAgentId}
+              disabled={!isBulk && agent.id === conversation.assignedAgentId}
               className={`focus-ring flex w-full items-center gap-3 border-b border-border px-3 py-2 text-left last:border-b-0 disabled:cursor-not-allowed disabled:opacity-50 ${
                 selected === agent.id ? "bg-primary/10 shadow-[inset_3px_0_0_0_var(--color-primary)]" : "hover:bg-surface-alt"
               }`}
@@ -104,7 +123,7 @@ export function GestaoTransferModal({
               <span className={`h-2 w-2 shrink-0 rounded-full ${PRESENCE_DOT[agent.presence]}`} />
               <span className={`min-w-0 flex-1 truncate text-sm ${selected === agent.id ? "font-semibold text-primary" : ""}`}>{agent.displayName}</span>
               <span className="shrink-0 text-xs text-muted">
-                {agent.id === conversation.assignedAgentId ? "Atendente atual" : presenceLabel(agent)}
+                {!isBulk && agent.id === conversation.assignedAgentId ? "Atendente atual" : presenceLabel(agent)}
                 {agent.whatsappConnectionName ? ` · ${agent.whatsappConnectionName}` : ""}
               </span>
               {selected === agent.id && <Check className="h-4 w-4 shrink-0 text-primary" />}

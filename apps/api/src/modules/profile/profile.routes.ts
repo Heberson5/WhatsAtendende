@@ -1,14 +1,9 @@
 import { Router } from "express";
-import multer from "multer";
-import path from "node:path";
-import fs from "node:fs";
-import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { asyncHandler } from "../../lib/async-handler";
 import { requireAuth } from "../../middleware/auth";
 import { writeAudit } from "../../lib/audit";
-import { env } from "../../config/env";
-import { Errors } from "../../lib/http-error";
+import { profilePhotoUpload, saveProfilePhoto } from "../../lib/profile-photo";
 import { toUserDTO } from "../users/users.mapper";
 import { realtimeEvents } from "../../realtime/realtime";
 import * as service from "./profile.service";
@@ -16,34 +11,6 @@ import * as service from "./profile.service";
 export const profileRouter = Router();
 
 profileRouter.use(requireAuth);
-
-const profilePhotoDir = path.join(env.UPLOAD_DIR, "profile");
-fs.mkdirSync(profilePhotoDir, { recursive: true });
-
-// Same reasoning as the branding-logo upload: raster formats only, SVG
-// excluded (an uploaded SVG can embed <script>).
-const ALLOWED_PHOTO_MIME_TO_EXT: Record<string, string> = {
-  "image/png": ".png",
-  "image/jpeg": ".jpg",
-  "image/webp": ".webp",
-};
-
-const upload = multer({
-  storage: multer.memoryStorage(),
-  // A raw, un-resized phone camera photo is routinely 3-8MB — 2MB used to
-  // reject exactly that (the most common source for a profile photo) with
-  // an error the UI only ever showed as a generic "erro interno do
-  // servidor", making the upload look silently broken. See error-handler.ts
-  // for the other half of this fix (a real message for whichever limit is
-  // still hit).
-  limits: { fileSize: 8 * 1024 * 1024 },
-  fileFilter: (_req, file, cb) => {
-    if (!(file.mimetype in ALLOWED_PHOTO_MIME_TO_EXT)) {
-      return cb(Errors.badRequest("Formato de imagem nao suportado"));
-    }
-    cb(null, true);
-  },
-});
 
 profileRouter.get(
   "/",
@@ -70,12 +37,10 @@ profileRouter.patch(
 
 profileRouter.post(
   "/photo",
-  upload.single("file"),
+  profilePhotoUpload.single("file"),
   asyncHandler(async (req, res) => {
     if (!req.file) return res.status(400).json({ error: "BAD_REQUEST", message: "Nenhum arquivo enviado" });
-    const fileName = `photo-${req.auth!.userId}-${randomUUID()}${ALLOWED_PHOTO_MIME_TO_EXT[req.file.mimetype]}`;
-    fs.writeFileSync(path.join(profilePhotoDir, fileName), req.file.buffer);
-    const user = await service.updateOwnPhoto(req.auth!.userId, `/uploads/profile/${fileName}`);
+    const user = await service.updateOwnPhoto(req.auth!.userId, saveProfilePhoto(req.auth!.userId, req.file));
     await writeAudit({ userId: req.auth!.userId, action: "PROFILE_PHOTO_UPLOADED", entity: "User", entityId: user.id, ipAddress: req.ip ?? null });
     res.json(toUserDTO(user));
   })

@@ -9,6 +9,8 @@ import { Errors } from "../../lib/http-error";
 import { realtimeEvents } from "../../realtime/realtime";
 import { toUserDTO } from "./users.mapper";
 import * as usersService from "./users.service";
+import { profilePhotoUpload, saveProfilePhoto } from "../../lib/profile-photo";
+import { updateOwnPhoto as setUserPhoto } from "../profile/profile.service";
 
 export const usersRouter = Router();
 
@@ -116,6 +118,34 @@ usersRouter.patch(
       ipAddress: req.ip ?? null,
       metadata: { ...input, password: input.password ? "[alterada]" : undefined },
     });
+    res.json(toUserDTO(user));
+  })
+);
+
+// A manager/admin setting or clearing someone else's photo from Usuários —
+// the user can still change their own in Meu Perfil. Same upload rules.
+usersRouter.post(
+  "/:id/photo",
+  requirePermission(PERMISSION.USUARIOS_EDITAR),
+  profilePhotoUpload.single("file"),
+  asyncHandler(async (req, res) => {
+    await assertNoAdminEscalation(req, req.params.id);
+    if (!req.file) throw Errors.badRequest("Nenhum arquivo enviado");
+    await usersService.getUser(req.params.id);
+    const user = await setUserPhoto(req.params.id, saveProfilePhoto(req.params.id, req.file));
+    await writeAudit({ userId: req.auth!.userId, action: "USER_PHOTO_UPDATED", entity: "User", entityId: user.id, ipAddress: req.ip ?? null });
+    res.json(toUserDTO(user));
+  })
+);
+
+usersRouter.delete(
+  "/:id/photo",
+  requirePermission(PERMISSION.USUARIOS_EDITAR),
+  asyncHandler(async (req, res) => {
+    await assertNoAdminEscalation(req, req.params.id);
+    await usersService.getUser(req.params.id);
+    const user = await setUserPhoto(req.params.id, null);
+    await writeAudit({ userId: req.auth!.userId, action: "USER_PHOTO_REMOVED", entity: "User", entityId: user.id, ipAddress: req.ip ?? null });
     res.json(toUserDTO(user));
   })
 );
