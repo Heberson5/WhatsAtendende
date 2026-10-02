@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { KeyRound, LogOut, Pencil, Plus, Trash2, UserCheck, UserX } from "lucide-react";
+import { KeyRound, LogOut, Pencil, Plus, Search, Trash2, UserCheck, UserX } from "lucide-react";
 import { toast } from "sonner";
 import { PERMISSION, type UserDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
@@ -21,6 +21,8 @@ export default function UsuariosPage() {
   const canInativar = permissions?.[PERMISSION.USUARIOS_INATIVAR];
   const [modalUser, setModalUser] = useState<UserDTO | null | "new">(null);
   const [deletingUser, setDeletingUser] = useState<UserDTO | null>(null);
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<"all" | "online" | "paused" | "inactive">("all");
 
   const { data: users, isLoading } = useQuery({
     queryKey: ["users"],
@@ -32,7 +34,7 @@ export default function UsuariosPage() {
   });
 
   const createMutation = useMutation({
-    mutationFn: (values: UserFormValues) => api.post("/users", values),
+    mutationFn: (values: UserFormValues) => api.post<UserDTO>("/users", values),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["users"] });
       toast.success("Usuário criado com sucesso.");
@@ -79,21 +81,38 @@ export default function UsuariosPage() {
     onError: (err) => toast.error(getApiErrorMessage(err)),
   });
 
-  async function handleSubmit(values: UserFormValues) {
+  async function handleSubmit(values: UserFormValues): Promise<string> {
     try {
       if (modalUser && modalUser !== "new") {
         await updateMutation.mutateAsync({ id: modalUser.id, values });
-      } else {
-        await createMutation.mutateAsync(values);
+        return modalUser.id;
       }
+      return (await createMutation.mutateAsync(values)).data.id;
     } catch (err) {
       throw new Error(getApiErrorMessage(err));
     }
   }
 
+  const all = users ?? [];
+  const q = search.trim().toLowerCase();
+  const filterCounts = {
+    all: all.length,
+    online: all.filter((u) => u.presence === "ONLINE").length,
+    paused: all.filter((u) => u.presence === "AWAY").length,
+    inactive: all.filter((u) => u.status !== "ACTIVE").length,
+  };
+  const visibleUsers = all.filter(
+    (u) =>
+      (!q || u.fullName.toLowerCase().includes(q) || u.displayName.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)) &&
+      (filter === "all" ||
+        (filter === "online" && u.presence === "ONLINE") ||
+        (filter === "paused" && u.presence === "AWAY") ||
+        (filter === "inactive" && u.status !== "ACTIVE"))
+  );
+
   return (
     <div className="flex h-full flex-col overflow-hidden p-3 sm:p-6">
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted">Gerencie os atendentes, gestores e administradores do sistema.</p>
         {canAdicionar && (
           <button
@@ -103,6 +122,37 @@ export default function UsuariosPage() {
             <Plus className="h-4 w-4" /> Novo usuário
           </button>
         )}
+      </div>
+
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <label className="flex min-w-[220px] items-center gap-2 rounded-card border border-border bg-surface px-3 py-2 text-sm focus-within:border-primary/50">
+          <Search className="h-4 w-4 shrink-0 text-muted" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar nome ou e-mail"
+            className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted"
+          />
+        </label>
+        {(
+          [
+            { value: "all", label: "Todos" },
+            { value: "online", label: "Online" },
+            { value: "paused", label: "Em pausa" },
+            { value: "inactive", label: "Inativos" },
+          ] as const
+        ).map((f) => (
+          <button
+            key={f.value}
+            onClick={() => setFilter(f.value)}
+            aria-pressed={filter === f.value}
+            className={`focus-ring rounded-full border px-3 py-1 text-xs font-medium ${
+              filter === f.value ? "border-primary bg-primary/10 text-primary" : "border-border bg-surface text-muted hover:text-[var(--color-text)]"
+            }`}
+          >
+            {f.label} · {filterCounts[f.value]}
+          </button>
+        ))}
       </div>
 
       <div className="shadow-soft flex-1 overflow-auto rounded-card border border-border bg-surface">
@@ -127,21 +177,38 @@ export default function UsuariosPage() {
                 </td>
               </tr>
             )}
-            {users?.map((u) => (
+            {!isLoading && visibleUsers.length === 0 && (
+              <tr>
+                <td colSpan={8} className="px-4 py-8 text-center text-muted">
+                  Nenhum usuário encontrado.
+                </td>
+              </tr>
+            )}
+            {visibleUsers.map((u) => (
               <tr key={u.id} className="border-t border-border hover:bg-surface-alt">
                 <td className="px-4 py-3">
-                  <div className="font-medium">{u.fullName}</div>
-                  <div className="text-xs text-muted">{u.displayName}</div>
+                  <div className="flex items-center gap-2.5">
+                    <span className="h-8 w-8 shrink-0 overflow-hidden rounded-full bg-primary/15 text-xs font-semibold text-primary">
+                      {u.photoUrl ? (
+                        <img src={u.photoUrl} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        <span className="flex h-full w-full items-center justify-center">{u.displayName.slice(0, 2).toUpperCase()}</span>
+                      )}
+                    </span>
+                    <div className="min-w-0">
+                      <div className="truncate font-medium">{u.fullName}</div>
+                      <div className="truncate text-xs text-muted">{u.displayName}</div>
+                    </div>
+                  </div>
                 </td>
                 <td className="px-4 py-3">{u.email}</td>
                 <td className="px-4 py-3">{ROLE_LABEL[u.role]}</td>
                 <td className="px-4 py-3 text-muted">{u.whatsappConnectionName ?? "-"}</td>
                 <td className="px-4 py-3">
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${u.status === "ACTIVE" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}`}>
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${u.status === "ACTIVE" ? "bg-success-soft text-success" : "border border-border bg-surface-alt text-muted"}`}>
                     {u.status === "ACTIVE" ? "Ativo" : "Inativo"}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-muted">{u.lastAccessAt ? format(new Date(u.lastAccessAt), "dd/MM/yyyy HH:mm") : "Nunca acessou"}</td>
                 <td className="px-4 py-3">
                   <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted">
                     <span
@@ -150,6 +217,7 @@ export default function UsuariosPage() {
                     {u.presence === "AWAY" && u.pauseReasonName ? `Pausado — ${u.pauseReasonName}` : PRESENCE_LABEL[u.presence]}
                   </span>
                 </td>
+                <td className="px-4 py-3 text-muted">{u.lastAccessAt ? format(new Date(u.lastAccessAt), "dd/MM/yyyy HH:mm") : "Nunca acessou"}</td>
                 <td className="px-4 py-3">
                   <div className="flex justify-end gap-1">
                     {canEditar && (

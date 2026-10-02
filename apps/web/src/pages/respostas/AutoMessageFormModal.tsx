@@ -94,8 +94,8 @@ export function AutoMessageFormModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <form onSubmit={handleSubmit} className="w-full max-w-md rounded-card border border-border bg-surface p-5 shadow-elevated">
+    <div className="drawer-backdrop">
+      <form onSubmit={handleSubmit} className="drawer-panel max-w-md overflow-y-auto p-5">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-base font-semibold">{template ? "Editar mensagem automática" : "Nova mensagem automática"}</h2>
           <button type="button" onClick={onClose} className="focus-ring rounded-full p-1 text-muted hover:bg-surface-alt" aria-label="Fechar">

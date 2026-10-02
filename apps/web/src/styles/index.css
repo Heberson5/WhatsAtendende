@@ -133,6 +133,56 @@ body {
   border-radius: 8px;
 }
 
+/* Side drawer used by every create/edit form (Usuários, Respostas, Fluxo…):
+   slides in from the right so the list stays visible behind it. The last
+   child (the Cancelar/Salvar row) is pushed to the bottom. */
+@keyframes drawer-in {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+@keyframes backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  justify-content: flex-end;
+  background-color: rgb(0 0 0 / 0.32);
+  animation: backdrop-in 0.15s ease-out;
+}
+.drawer-panel {
+  display: flex;
+  height: 100%;
+  width: 100%;
+  flex-direction: column;
+  border-left: 1px solid var(--color-border);
+  background-color: var(--color-surface);
+  box-shadow: -12px 0 32px rgb(15 23 42 / 0.14);
+  animation: drawer-in 0.2s ease-out;
+}
+.drawer-panel > :last-child {
+  margin-top: auto;
+}
+@media (prefers-reduced-motion: reduce) {
+  .drawer-panel,
+  .drawer-backdrop {
+    animation: none;
+  }
+}
+
 .focus-ring:focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
