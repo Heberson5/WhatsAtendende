@@ -40,6 +40,11 @@ const HEADER_SAMPLE_ACCEPT: Record<string, string> = {
 
 const VARIABLE_TAGS = ["{{1}}", "{{2}}", "{{3}}"];
 
+// Campo de idioma oculto do cadastro — ver PROMPT: "nao quero que tenha o
+// campo de idioma, isso tem que estar oculto, cadastrado como padrão para
+// todas as templates". Único idioma usado neste projeto.
+const DEFAULT_LANGUAGE = "pt_BR";
+
 type ButtonDraft = MessageTemplateButton;
 
 export function TemplateFormModal({ onClose }: { onClose: () => void }) {
@@ -53,7 +58,6 @@ export function TemplateFormModal({ onClose }: { onClose: () => void }) {
 
   const [name, setName] = useState("");
   const [category, setCategory] = useState<MessageTemplateCategory>("MARKETING");
-  const [language, setLanguage] = useState("pt_BR");
   const [whatsappConnectionId, setWhatsappConnectionId] = useState("");
   const [headerType, setHeaderType] = useState<MessageTemplateHeaderType>("NONE");
   const [headerText, setHeaderText] = useState("");
@@ -98,7 +102,7 @@ export function TemplateFormModal({ onClose }: { onClose: () => void }) {
       const form = new FormData();
       form.append("name", name.trim());
       form.append("category", category);
-      form.append("language", language.trim());
+      form.append("language", DEFAULT_LANGUAGE);
       form.append("headerType", headerType);
       if (headerType === "TEXT" && headerText.trim()) form.append("headerText", headerText.trim());
       form.append("bodyText", bodyText.trim());
@@ -182,26 +186,15 @@ export function TemplateFormModal({ onClose }: { onClose: () => void }) {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Nome (identificador)">
-              <input
-                required
-                value={name}
-                onChange={(e) => setName(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "_"))}
-                placeholder="ex: boas_vindas_promocao"
-                className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 font-mono text-sm"
-              />
-            </Field>
-            <Field label="Idioma">
-              <input
-                required
-                value={language}
-                onChange={(e) => setLanguage(e.target.value)}
-                placeholder="pt_BR"
-                className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm"
-              />
-            </Field>
-          </div>
+          <Field label="Nome (identificador)">
+            <input
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "_"))}
+              placeholder="ex: boas_vindas_promocao"
+              className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 font-mono text-sm"
+            />
+          </Field>
 
           <div>
             <span className="mb-1.5 block text-sm font-medium">Cabeçalho</span>
