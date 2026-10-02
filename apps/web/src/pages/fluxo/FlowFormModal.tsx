@@ -4,6 +4,7 @@ import { X } from "lucide-react";
 import { toast } from "sonner";
 import type { FlowListItemDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
+import type { FlowTemplate } from "./flowMeta";
 
 interface OfficialConnectionOption {
   id: string;
@@ -11,9 +12,18 @@ interface OfficialConnectionOption {
   connectionMode: "QRCODE" | "OFFICIAL_API";
 }
 
-export function FlowFormModal({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => void }) {
+export function FlowFormModal({
+  onClose,
+  onCreated,
+  template,
+}: {
+  onClose: () => void;
+  onCreated: (id: string) => void;
+  /** Starts the new flow from one of the ready-made templates instead of a lone Início. */
+  template?: { key: FlowTemplate; name: string };
+}) {
   const queryClient = useQueryClient();
-  const [name, setName] = useState("");
+  const [name, setName] = useState(template?.name ?? "");
   const [description, setDescription] = useState("");
   const [connectionIds, setConnectionIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -25,7 +35,8 @@ export function FlowFormModal({ onClose, onCreated }: { onClose: () => void; onC
   const officialConnections = connections?.filter((c) => c.connectionMode === "OFFICIAL_API") ?? [];
 
   const createMutation = useMutation({
-    mutationFn: () => api.post<FlowListItemDTO>("/flows", { name: name.trim(), description: description.trim() || undefined, connectionIds }),
+    mutationFn: () =>
+      api.post<FlowListItemDTO>("/flows", { name: name.trim(), description: description.trim() || undefined, connectionIds, template: template?.key }),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ["flows"] });
       toast.success("Fluxo criado.");
@@ -49,7 +60,7 @@ export function FlowFormModal({ onClose, onCreated }: { onClose: () => void; onC
     <div className="drawer-backdrop">
       <form onSubmit={handleSubmit} className="drawer-panel max-w-md overflow-y-auto p-5">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-base font-semibold">Novo fluxo</h2>
+          <h2 className="text-base font-semibold">{template ? `Novo fluxo: ${template.name}` : "Novo fluxo"}</h2>
           <button type="button" onClick={onClose} className="focus-ring rounded-full p-1 text-muted hover:bg-surface-alt" aria-label="Fechar">
             <X className="h-5 w-5" />
           </button>

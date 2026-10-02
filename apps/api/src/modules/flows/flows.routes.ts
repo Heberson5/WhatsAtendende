@@ -50,13 +50,25 @@ flowsRouter.get(
   })
 );
 
+const createSchema = metaSchema.extend({ template: z.enum(["welcome", "after-hours"]).optional() });
+
 flowsRouter.post(
   "/",
   requirePermission(PERMISSION.FLUXO_ADICIONAR),
   asyncHandler(async (req, res) => {
-    const input = metaSchema.parse(req.body);
+    const input = createSchema.parse(req.body);
     const row = await service.createFlow(input, req.auth!.userId);
     await writeAudit({ userId: req.auth!.userId, action: "FLOW_CREATED", entity: "Flow", entityId: row.id, ipAddress: req.ip ?? null, metadata: { name: input.name } });
+    res.status(201).json(toFlowListItemDTO(row));
+  })
+);
+
+flowsRouter.post(
+  "/:id/duplicate",
+  requirePermission(PERMISSION.FLUXO_ADICIONAR),
+  asyncHandler(async (req, res) => {
+    const row = await service.duplicateFlow(req.params.id, req.auth!.userId);
+    await writeAudit({ userId: req.auth!.userId, action: "FLOW_DUPLICATED", entity: "Flow", entityId: row.id, ipAddress: req.ip ?? null, metadata: { sourceFlowId: req.params.id } });
     res.status(201).json(toFlowListItemDTO(row));
   })
 );

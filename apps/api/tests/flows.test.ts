@@ -52,17 +52,46 @@ describe("Fluxo — see PROMPT: \"um novo menu chamado Fluxo... função de ativ
     expect(res.status).toBe(400);
   });
 
-  it("activates and deactivates a flow", async () => {
+  it("refuses to activate an incomplete flow, and activates/deactivates a complete one", async () => {
     const token = await loginAs("admin@test.dev");
-    const create = await request(app).post("/api/flows").set("Authorization", `Bearer ${token}`).send({ name: "Fluxo A" });
-    expect(create.body.active).toBe(false);
+    const blank = await request(app).post("/api/flows").set("Authorization", `Bearer ${token}`).send({ name: "Fluxo A" });
+    expect(blank.body.active).toBe(false);
+    expect(blank.body.issues.map((i: { message: string }) => i.message)).toEqual(
+      expect.arrayContaining(["Vincule pelo menos uma conexão WhatsApp Oficial", "O Início não leva a nenhum passo"])
+    );
 
-    const activate = await request(app).patch(`/api/flows/${create.body.id}`).set("Authorization", `Bearer ${token}`).send({ active: true });
+    const refused = await request(app).patch(`/api/flows/${blank.body.id}`).set("Authorization", `Bearer ${token}`).send({ active: true });
+    expect(refused.status).toBe(400);
+    expect(refused.body.message).toMatch(/precisa estar completo/);
+
+    const oficial = await createOfficialConnection("Vendas Oficial");
+    const complete = await request(app)
+      .post("/api/flows")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ name: "Fluxo B", template: "welcome", connectionIds: [oficial.id] });
+    expect(complete.status).toBe(201);
+    expect(complete.body.nodeCount).toBe(6);
+    expect(complete.body.issues).toEqual([]);
+
+    const activate = await request(app).patch(`/api/flows/${complete.body.id}`).set("Authorization", `Bearer ${token}`).send({ active: true });
     expect(activate.status).toBe(200);
     expect(activate.body.active).toBe(true);
 
-    const deactivate = await request(app).patch(`/api/flows/${create.body.id}`).set("Authorization", `Bearer ${token}`).send({ active: false });
+    // While active, the flow can't be left without a connection.
+    const unlink = await request(app).patch(`/api/flows/${complete.body.id}`).set("Authorization", `Bearer ${token}`).send({ connectionIds: [] });
+    expect(unlink.status).toBe(400);
+
+    const deactivate = await request(app).patch(`/api/flows/${complete.body.id}`).set("Authorization", `Bearer ${token}`).send({ active: false });
     expect(deactivate.body.active).toBe(false);
+  });
+
+  it("duplicates a flow with its whole graph, switched off", async () => {
+    const token = await loginAs("admin@test.dev");
+    const source = await request(app).post("/api/flows").set("Authorization", `Bearer ${token}`).send({ name: "Fora do horário", template: "after-hours" });
+    const copy = await request(app).post(`/api/flows/${source.body.id}/duplicate`).set("Authorization", `Bearer ${token}`);
+    expect(copy.status).toBe(201);
+    expect(copy.body).toMatchObject({ name: "Fora do horário (cópia)", active: false, nodeCount: 3 });
+    expect(copy.body.preview.edges).toHaveLength(2);
   });
 
   it("saves a graph with a TRANSFER_TO_AGENT node carrying the assigned agent ids", async () => {
