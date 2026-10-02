@@ -235,7 +235,7 @@ export function WhatsAppOfficialConnectionPanel() {
                     onClick={() => deleteMutation.mutate(connection.id)}
                     disabled={connection.agentCount > 0}
                     title={connection.agentCount > 0 ? "Reatribua os atendentes antes de excluir" : "Excluir conexão"}
-                    className="focus-ring rounded-full p-1.5 text-muted hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="focus-ring rounded-full p-1.5 text-muted hover:bg-danger-soft hover:text-danger disabled:cursor-not-allowed disabled:opacity-40"
                     aria-label={`Excluir ${connection.name}`}
                   >
                     <Trash2 className="h-4 w-4" />
@@ -263,7 +263,7 @@ export function WhatsAppOfficialConnectionPanel() {
             ) : (
               <div className="space-y-3">
                 {connection.state === "CONNECTED" ? (
-                  <div className="flex items-center gap-2 rounded-card bg-green-50 px-4 py-3 text-green-800">
+                  <div className="flex items-center gap-2 rounded-card bg-success-soft px-4 py-3 text-success">
                     <CheckCircle2 className="h-5 w-5" />
                     <div>
                       <p className="text-sm font-medium">Número: {connection.displayPhoneNumber ?? connection.connectedNumber}</p>
@@ -314,7 +314,7 @@ export function WhatsAppOfficialConnectionPanel() {
                     {connection.state === "CONNECTED" && (
                       <button
                         onClick={() => disconnectMutation.mutate(connection.id)}
-                        className="focus-ring flex items-center gap-1.5 rounded-card border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
+                        className="focus-ring flex items-center gap-1.5 rounded-card border border-danger/30 px-3 py-2 text-sm font-medium text-red-600 hover:bg-danger-soft"
                         title="Marca a conexão como desconectada (não revoga o token na Meta)"
                       >
                         <Plug className="h-4 w-4" />

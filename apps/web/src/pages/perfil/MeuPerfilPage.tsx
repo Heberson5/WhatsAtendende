@@ -167,7 +167,7 @@ export default function MeuPerfilPage() {
           <Field label="Confirmar nova senha">
             <input required type="password" minLength={8} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm" />
           </Field>
-          {passwordError && <p className="rounded-card bg-red-50 px-3 py-2 text-sm text-red-700">{passwordError}</p>}
+          {passwordError && <p className="rounded-card bg-danger-soft px-3 py-2 text-sm text-danger">{passwordError}</p>}
           <div className="pt-1">
             <button type="submit" disabled={passwordMutation.isPending} className="focus-ring rounded-card bg-primary px-4 py-2 text-sm font-semibold text-primary-fg disabled:opacity-60">
               {passwordMutation.isPending ? "Alterando..." : "Alterar senha"}

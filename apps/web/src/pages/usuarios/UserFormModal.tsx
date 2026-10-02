@@ -323,7 +323,7 @@ export function UserFormModal({
         </div>
 
         <div className="shrink-0 border-t border-border p-5 pt-4">
-          {error && <p className="mb-3 rounded-card bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+          {error && <p className="mb-3 rounded-card bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
           <div className="flex gap-2">
             <button type="button" onClick={onClose} className="focus-ring flex-1 rounded-card border border-border py-2 text-sm">
               Cancelar

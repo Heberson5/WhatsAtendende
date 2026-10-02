@@ -51,7 +51,7 @@ export default function ResetPasswordPage() {
         </div>
 
         {!token && (
-          <p className="rounded-card bg-red-50 px-3 py-2 text-center text-sm text-red-700">
+          <p className="rounded-card bg-danger-soft px-3 py-2 text-center text-sm text-danger">
             Link de redefinição inválido. Solicite um novo link na tela de login.
           </p>
         )}
@@ -108,7 +108,7 @@ export default function ResetPasswordPage() {
             </div>
 
             {error && (
-              <p role="alert" className="rounded-card bg-red-50 px-3 py-2 text-sm text-red-700">
+              <p role="alert" className="rounded-card bg-danger-soft px-3 py-2 text-sm text-danger">
                 {error}
               </p>
             )}

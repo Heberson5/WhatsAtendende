@@ -106,7 +106,7 @@ export function FlowFormModal({
           </div>
         </div>
 
-        {error && <p className="mt-3 rounded-card bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+        {error && <p className="mt-3 rounded-card bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
 
         <div className="mt-5 flex gap-2">
           <button type="button" onClick={onClose} className="focus-ring flex-1 rounded-card border border-border py-2 text-sm">

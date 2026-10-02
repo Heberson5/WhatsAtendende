@@ -330,7 +330,7 @@ export function TemplateFormModal({ onClose }: { onClose: () => void }) {
                       className="focus-ring min-w-0 flex-1 rounded-card border border-border bg-transparent px-2 py-1 text-xs"
                     />
                   )}
-                  <button type="button" onClick={() => removeButton(i)} className="focus-ring shrink-0 rounded-card p-1 text-muted hover:bg-red-50 hover:text-red-600">
+                  <button type="button" onClick={() => removeButton(i)} className="focus-ring shrink-0 rounded-card p-1 text-muted hover:bg-danger-soft hover:text-danger">
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </div>
@@ -355,7 +355,7 @@ export function TemplateFormModal({ onClose }: { onClose: () => void }) {
           </div>
         </div>
 
-        {error && <p className="mt-3 rounded-card bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+        {error && <p className="mt-3 rounded-card bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
 
         <div className="mt-5 flex gap-2">
           <button type="button" onClick={onClose} className="focus-ring flex-1 rounded-card border border-border py-2 text-sm">

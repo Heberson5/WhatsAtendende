@@ -171,7 +171,7 @@ export function MetaConnectionPanel({ channel }: { channel: "INSTAGRAM" | "MESSE
                 {c.status === "CONNECTED" ? <CheckCircle2 className="mr-1 inline h-3 w-3" /> : <XCircle className="mr-1 inline h-3 w-3" />}
                 {c.status === "CONNECTED" ? "Conectado" : "Desconectado"}
               </span>
-              <button onClick={() => deleteMutation.mutate(c.id)} className="focus-ring rounded-full p-1.5 text-muted hover:bg-red-50 hover:text-red-600">
+              <button onClick={() => deleteMutation.mutate(c.id)} className="focus-ring rounded-full p-1.5 text-muted hover:bg-danger-soft hover:text-danger">
                 <Trash2 className="h-4 w-4" />
               </button>
             </div>

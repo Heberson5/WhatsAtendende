@@ -124,7 +124,7 @@ export function TemplatesTab() {
                     {canExcluir && (
                       <button
                         onClick={() => setDeleteTarget(t)}
-                        className="focus-ring rounded-card p-1.5 text-muted hover:bg-red-50 hover:text-red-600"
+                        className="focus-ring rounded-card p-1.5 text-muted hover:bg-danger-soft hover:text-danger"
                         aria-label="Excluir"
                         title="Excluir"
                       >
