@@ -77,6 +77,8 @@ model User {
   transfersFrom         ConversationTransfer[]    @relation("TransferFromAgent")
   transfersTo           ConversationTransfer[]    @relation("TransferToAgent")
   messages              Message[]                 @relation("SentByAgent")
+  conversationNotes     ConversationNote[]
+  contactTagsAdded      ContactTag[]
   messageReactions      MessageReaction[]
   auditLogs             AuditLog[]
   notifications         Notification[]
@@ -570,6 +572,7 @@ model Contact {
 
   conversations Conversation[]
   flowSessions  FlowSession[]
+  tags          ContactTag[]
 
   @@unique([phone, whatsappConnectionId])
   @@unique([providerChatId, whatsappConnectionId])
@@ -636,6 +639,10 @@ model Conversation {
 
   lastMessageAt        DateTime @default(now())
   lastMessageDirection String?
+  // When the customer's oldest still-unanswered message arrived — set on
+  // the first INBOUND message after an agent reply, cleared on the next
+  // OUTBOUND one. Drives Atendimento's "sem resposta há X min" warning.
+  awaitingReplySince   DateTime?
 
   // optimistic-lock version, used together with a conditional UPDATE to
   // guarantee only one agent can accept a conversation (see conversations
@@ -643,6 +650,7 @@ model Conversation {
   version Int @default(0)
 
   messages    Message[]
+  notes       ConversationNote[]
   assignments ConversationAssignment[]
   transfers   ConversationTransfer[]
   events      ConversationEvent[]
@@ -1083,4 +1091,39 @@ model FlowSession {
 
   @@index([flowId])
   @@index([contactId])
+}
+
+/// Internal note on a conversation — visible only to the team, never sent to the customer.
+model ConversationNote {
+  id             String       @id @default(uuid())
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversationId String
+  author         User         @relation(fields: [authorId], references: [id])
+  authorId       String
+  body           String
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+/// Label an agent puts on a customer (e.g. "Cliente recorrente"), shared by the whole team.
+model Tag {
+  id        String       @id @default(uuid())
+  name      String       @unique
+  color     String       @default("#0097B4")
+  createdAt DateTime     @default(now())
+  contacts  ContactTag[]
+}
+
+model ContactTag {
+  contact     Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  contactId   String
+  tag         Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  tagId       String
+  addedBy     User?    @relation(fields: [addedById], references: [id], onDelete: SetNull)
+  addedById   String?
+  createdAt   DateTime @default(now())
+
+  @@id([contactId, tagId])
+  @@index([tagId])
 }

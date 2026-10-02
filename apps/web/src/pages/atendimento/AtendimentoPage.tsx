@@ -3,10 +3,13 @@ import { useSearchParams } from "react-router-dom";
 import clsx from "clsx";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowRightLeft, Inbox, Plus, Radio, Users2 } from "lucide-react";
+import { MessagesSquare, Plus, Radio, Search } from "lucide-react";
 import type { ConversationListItemDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
-import { ConversationCard } from "../../components/atendimento/ConversationCard";
+import { ConversationCard, minutesWaiting, NO_REPLY_WARNING_MINUTES } from "../../components/atendimento/ConversationCard";
+import { ClientPanel } from "../../components/atendimento/ClientPanel";
+import { contactDisplayName } from "../../lib/contact-display";
+import { useNow } from "../../hooks/useNow";
 import { ChatPanel } from "../../components/atendimento/ChatPanel";
 import { ReadOnlyConversationDrawer } from "../../components/gestao/ReadOnlyConversationDrawer";
 import { ConnectionFilter } from "../../components/common/ConnectionFilter";
@@ -14,11 +17,41 @@ import { NovaConversaModal } from "../../components/atendimento/NovaConversaModa
 import { useActiveConversationStore } from "../../store/active-conversation-store";
 import { useAuthStore } from "../../store/auth-store";
 
+const CLIENT_PANEL_KEY = "client-panel-collapsed";
+// Below this width the chat needs the room, so the panel starts collapsed.
+const CLIENT_PANEL_AUTO_COLLAPSE_PX = 1280;
+
+function readClientPanelCollapsed() {
+  try {
+    const stored = localStorage.getItem(CLIENT_PANEL_KEY);
+    if (stored !== null) return stored === "1";
+  } catch {
+    // storage blocked: fall back to the screen-size default
+  }
+  return window.innerWidth < CLIENT_PANEL_AUTO_COLLAPSE_PX;
+}
+
+type ListFilter = "all" | "unread" | "noReply";
+
 export default function AtendimentoPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tab, setTab] = useState<"queue" | "mine" | "transferred">("mine");
   const [connectionIds, setConnectionIds] = useState<string[]>([]);
   const [novaConversaOpen, setNovaConversaOpen] = useState(false);
+  const [listSearch, setListSearch] = useState("");
+  const [listFilter, setListFilter] = useState<ListFilter>("all");
+  const [clientPanelCollapsed, setClientPanelCollapsed] = useState(readClientPanelCollapsed);
+  const now = useNow();
+  function toggleClientPanel() {
+    setClientPanelCollapsed((c) => {
+      try {
+        localStorage.setItem(CLIENT_PANEL_KEY, c ? "0" : "1");
+      } catch {
+        // storage blocked: the choice just won't persist
+      }
+      return !c;
+    });
+  }
   // A transferred-out conversation opens read-only (ReadOnlyConversationDrawer,
   // variant="inline") in the SAME right-column slot ChatPanel normally
   // fills — not a floating overlay like Gestão's own use of that
@@ -123,8 +156,40 @@ export default function AtendimentoPage() {
   const queueCount = queueQuery.data?.length ?? 0;
   const queueHasPending = queueCount > 0;
 
+  const matchesSearch = (c: ConversationListItemDTO) => {
+    const q = listSearch.trim().toLowerCase();
+    if (!q) return true;
+    return contactDisplayName(c.contact, c.channel).toLowerCase().includes(q) || (c.contact.phone ?? "").includes(q.replace(/\D/g, "") || q);
+  };
+  const mine = mineQuery.data ?? [];
+  const unreadCount = mine.filter((c) => c.unreadCount > 0).length;
+  const noReplyCount = mine.filter((c) => minutesWaiting(c, now) >= NO_REPLY_WARNING_MINUTES).length;
+  const visibleMine = mine.filter(
+    (c) =>
+      matchesSearch(c) &&
+      (listFilter === "all" || (listFilter === "unread" ? c.unreadCount > 0 : minutesWaiting(c, now) >= NO_REPLY_WARNING_MINUTES))
+  );
+  const visibleQueue = (queueQuery.data ?? []).filter(matchesSearch);
+  const visibleTransferred = (transferredOutQuery.data ?? []).filter(matchesSearch);
+  const panelConversation = selectedConversation ?? watchingConversation;
+
+  const tabs = [
+    { value: "mine" as const, label: "Meus", count: mine.length },
+    { value: "queue" as const, label: "Fila", count: queueCount },
+    { value: "transferred" as const, label: "Transf.", count: transferredOutQuery.data?.length ?? 0 },
+  ];
+
   return (
-    <div className="grid h-full overflow-hidden md:grid-cols-[340px_1fr]">
+    <div
+      className={clsx(
+        "grid h-full overflow-hidden",
+        panelConversation
+          ? clientPanelCollapsed
+            ? "md:grid-cols-[320px_1fr_auto]"
+            : "md:grid-cols-[300px_1fr_260px] xl:grid-cols-[320px_1fr_280px]"
+          : "md:grid-cols-[320px_1fr]"
+      )}
+    >
       <div
         className={clsx(
           "flex-col overflow-hidden border-r border-border bg-surface md:flex",
@@ -132,62 +197,99 @@ export default function AtendimentoPage() {
         )}
       >
         {hasFixedConnection && user?.whatsappConnectionStatus !== "CONNECTED" && (
-          <div className="border-b border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
+          <div className="border-b border-danger/20 bg-danger-soft px-3 py-2 text-xs font-medium text-danger">
             Sua conexão de WhatsApp está desconectada — não é possível enviar mensagens nem aceitar conversas até que ela seja reconectada. Avise um administrador.
           </div>
         )}
-        <div className="flex items-center gap-1.5 border-b border-border bg-surface-alt px-3 py-2">
-          {canFilterByConnection ? (
-            <div className="flex-1">
-              <ConnectionFilter value={connectionIds} onChange={setConnectionIds} />
-            </div>
-          ) : (
-            <span className="flex flex-1 items-center gap-1.5 text-xs font-medium text-muted">
-              <Radio className="h-3.5 w-3.5 text-primary" /> Conexão: {user?.whatsappConnectionName}
-            </span>
-          )}
-          <button
-            onClick={() => setNovaConversaOpen(true)}
-            className="focus-ring flex shrink-0 items-center gap-1 rounded-card bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-fg hover:opacity-90"
-            title="Iniciar nova conversa a partir dos contatos do WhatsApp"
-          >
-            <Plus className="h-3.5 w-3.5" /> Nova conversa
-          </button>
-        </div>
-        <div className="flex border-b border-border">
-          <button
-            onClick={() => setTab("mine")}
-            className={`flex flex-1 items-center justify-center gap-1.5 py-3 text-sm font-medium ${tab === "mine" ? "border-b-2 border-primary text-primary" : "text-muted"}`}
-          >
-            <Users2 className="h-4 w-4" /> Ativos ({mineQuery.data?.length ?? 0})
-          </button>
-          <button
-            onClick={() => setTab("queue")}
-            className={`flex flex-1 items-center justify-center gap-1.5 py-3 text-sm font-medium ${
-              tab === "queue" ? "border-b-2 border-primary text-primary" : queueHasPending ? "font-semibold text-amber-600" : "text-muted"
-            }`}
-          >
-            <Inbox className={`h-4 w-4 ${queueHasPending && tab !== "queue" ? "text-amber-500" : ""}`} /> Fila
-            {queueHasPending ? (
-              <span className="inline-flex h-5 min-w-5 animate-pulse items-center justify-center rounded-full bg-amber-500 px-1.5 text-xs font-bold text-white">
-                {queueCount}
-              </span>
+        <div className="space-y-2.5 border-b border-border px-3 pb-3 pt-3">
+          <div className="flex items-center gap-1.5">
+            {canFilterByConnection ? (
+              <div className="min-w-0 flex-1">
+                <ConnectionFilter value={connectionIds} onChange={setConnectionIds} />
+              </div>
             ) : (
-              <span>({queueCount})</span>
+              <span className="flex min-w-0 flex-1 items-center gap-1.5 truncate text-xs font-medium text-muted">
+                <Radio className="h-3.5 w-3.5 shrink-0 text-primary" /> Conexão: {user?.whatsappConnectionName}
+              </span>
             )}
-          </button>
-          <button
-            onClick={() => setTab("transferred")}
-            className={`flex flex-1 items-center justify-center gap-1.5 py-3 text-sm font-medium ${tab === "transferred" ? "border-b-2 border-primary text-primary" : "text-muted"}`}
-          >
-            <ArrowRightLeft className="h-4 w-4" /> Transf. ({transferredOutQuery.data?.length ?? 0})
-          </button>
+            <button
+              onClick={() => setNovaConversaOpen(true)}
+              className="focus-ring flex shrink-0 items-center gap-1 rounded-lg bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-fg hover:opacity-90"
+              title="Iniciar nova conversa a partir dos contatos do WhatsApp"
+            >
+              <Plus className="h-3.5 w-3.5" /> Nova conversa
+            </button>
+          </div>
+
+          <div className="grid grid-cols-3 rounded-[10px] border border-border bg-surface-alt p-[3px]" role="tablist" aria-label="Conversas">
+            {tabs.map((t) => {
+              const highlightQueue = t.value === "queue" && queueHasPending;
+              return (
+                <button
+                  key={t.value}
+                  role="tab"
+                  aria-selected={tab === t.value}
+                  onClick={() => setTab(t.value)}
+                  className={clsx(
+                    "focus-ring flex items-center justify-center gap-1.5 rounded-[7px] py-1.5 text-[13px] font-medium transition-colors",
+                    tab === t.value ? "bg-surface font-semibold text-[var(--color-text)] shadow-sm" : "text-muted hover:text-[var(--color-text)]"
+                  )}
+                >
+                  {t.label}
+                  <span
+                    className={clsx(
+                      "rounded-full px-1.5 text-[11px] font-bold",
+                      highlightQueue ? "animate-pulse bg-secondary text-secondary-fg" : "bg-border/70 text-muted"
+                    )}
+                  >
+                    {t.count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          <label className="flex h-8 items-center gap-2 rounded-lg border border-border bg-surface px-2.5 text-xs text-muted focus-within:border-primary/50">
+            <Search className="h-3.5 w-3.5 shrink-0" />
+            <input
+              value={listSearch}
+              onChange={(e) => setListSearch(e.target.value)}
+              placeholder="Buscar nome ou número"
+              className="min-w-0 flex-1 bg-transparent text-[13px] text-[var(--color-text)] outline-none placeholder:text-muted"
+              aria-label="Buscar conversas por nome ou número"
+            />
+          </label>
+
+          {tab === "mine" && (
+            <div className="flex flex-wrap gap-1.5">
+              {(
+                [
+                  { value: "all", label: "Todas", count: mine.length },
+                  { value: "unread", label: "Não lidas", count: unreadCount },
+                  { value: "noReply", label: "Sem resposta", count: noReplyCount },
+                ] as const
+              ).map((f) => (
+                <button
+                  key={f.value}
+                  onClick={() => setListFilter(f.value)}
+                  aria-pressed={listFilter === f.value}
+                  className={clsx(
+                    "focus-ring rounded-full border px-2.5 py-0.5 text-[11.5px] font-medium",
+                    listFilter === f.value ? "border-primary bg-primary/10 text-primary" : "border-border text-muted hover:text-[var(--color-text)]",
+                    f.value === "noReply" && f.count > 0 && listFilter !== f.value && "border-warning/40 text-warning"
+                  )}
+                >
+                  {f.label} · {f.count}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
-        <div className="flex-1 space-y-2 overflow-y-auto p-3">
+        <div className="flex-1 overflow-y-auto">
           {tab === "mine" &&
-            (mineQuery.data?.length ? (
-              mineQuery.data.map((c) => (
+            (visibleMine.length ? (
+              visibleMine.map((c) => (
                 <ConversationCard
                   key={c.id}
                   conversation={c}
@@ -199,12 +301,12 @@ export default function AtendimentoPage() {
                 />
               ))
             ) : (
-              <EmptyState message="Nenhum atendimento em andamento." />
+              <EmptyState message={mine.length ? "Nenhuma conversa com esse filtro." : "Nenhum atendimento em andamento."} />
             ))}
 
           {tab === "queue" &&
-            (queueQuery.data?.length ? (
-              queueQuery.data.map((c) => (
+            (visibleQueue.length ? (
+              visibleQueue.map((c) => (
                 <ConversationCard
                   key={c.id}
                   conversation={c}
@@ -218,8 +320,8 @@ export default function AtendimentoPage() {
             ))}
 
           {tab === "transferred" &&
-            (transferredOutQuery.data?.length ? (
-              transferredOutQuery.data.map((c) => (
+            (visibleTransferred.length ? (
+              visibleTransferred.map((c) => (
                 <ConversationCard
                   key={c.id}
                   conversation={c}
@@ -237,7 +339,7 @@ export default function AtendimentoPage() {
         </div>
       </div>
 
-      <div className={clsx("overflow-hidden bg-[var(--color-bg)]", selectedConversation || watchingConversation ? "block" : "hidden md:block")}>
+      <div className={clsx("min-w-0 overflow-hidden bg-[var(--color-bg)]", selectedConversation || watchingConversation ? "block" : "hidden md:block")}>
         {selectedConversation ? (
           <ChatPanel
             conversation={selectedConversation}
@@ -248,15 +350,30 @@ export default function AtendimentoPage() {
               setSelectedId(conv.id);
               setTab("mine");
             }}
+            clientPanelOpen={!clientPanelCollapsed}
+            onToggleClientPanel={toggleClientPanel}
           />
         ) : watchingConversation ? (
           <ReadOnlyConversationDrawer variant="inline" conversation={watchingConversation} onClose={() => setWatchingConversation(null)} />
         ) : (
-          <div className="flex h-full items-center justify-center text-sm text-muted">
+          <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-muted">
+            <MessagesSquare className="h-10 w-10 opacity-30" />
             Selecione um atendimento para visualizar a conversa
           </div>
         )}
       </div>
+
+      {panelConversation && (
+        <div className="hidden min-w-0 overflow-hidden md:block">
+          <ClientPanel
+            key={panelConversation.id}
+            conversation={panelConversation}
+            collapsed={clientPanelCollapsed}
+            onToggle={toggleClientPanel}
+            readOnly={!selectedConversation}
+          />
+        </div>
+      )}
 
       {novaConversaOpen && (
         <NovaConversaModal
@@ -270,11 +387,10 @@ export default function AtendimentoPage() {
           }}
         />
       )}
-
     </div>
   );
 }
 
 function EmptyState({ message }: { message: string }) {
-  return <p className="px-2 py-8 text-center text-sm text-muted">{message}</p>;
+  return <p className="px-4 py-10 text-center text-sm text-muted">{message}</p>;
 }

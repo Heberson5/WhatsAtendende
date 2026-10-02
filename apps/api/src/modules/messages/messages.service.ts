@@ -75,7 +75,7 @@ export async function createOutboundMessage(input: CreateOutboundMessageInput) {
     include: messageInclude,
   });
 
-  const updates: Record<string, unknown> = { lastMessageAt: new Date(), lastMessageDirection: "OUTBOUND" };
+  const updates: Record<string, unknown> = { lastMessageAt: new Date(), lastMessageDirection: "OUTBOUND", awaitingReplySince: null };
   if (!conversation.firstResponseAt) updates.firstResponseAt = new Date();
   await prisma.conversation.update({ where: { id: input.conversationId }, data: updates });
 
@@ -123,7 +123,7 @@ export async function createSystemOutboundMessage(input: CreateSystemOutboundMes
 
   await prisma.conversation.update({
     where: { id: input.conversationId },
-    data: { lastMessageAt: new Date(), lastMessageDirection: "OUTBOUND" },
+    data: { lastMessageAt: new Date(), lastMessageDirection: "OUTBOUND", awaitingReplySince: null },
   });
 
   return message;
@@ -206,7 +206,7 @@ export async function createOutboundMessageFromDevice(input: CreateOutboundMessa
 
   await prisma.conversation.update({
     where: { id: input.conversationId },
-    data: { lastMessageAt: input.timestamp, lastMessageDirection: "OUTBOUND" },
+    data: { lastMessageAt: input.timestamp, lastMessageDirection: "OUTBOUND", awaitingReplySince: null },
   });
 
   return message;
@@ -283,9 +283,15 @@ export async function createInboundMessage(input: CreateInboundMessageInput) {
     include: messageInclude,
   });
 
+  const now = new Date();
   await prisma.conversation.update({
     where: { id: input.conversationId },
-    data: { lastMessageAt: new Date(), lastMessageDirection: "INBOUND" },
+    data: { lastMessageAt: now, lastMessageDirection: "INBOUND" },
+  });
+  // Only the first unanswered message starts the "sem resposta" clock.
+  await prisma.conversation.updateMany({
+    where: { id: input.conversationId, awaitingReplySince: null },
+    data: { awaitingReplySince: now },
   });
 
   return message;

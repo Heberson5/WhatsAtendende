@@ -30,6 +30,7 @@ import { metaRouter } from "./modules/meta/meta.routes";
 import { writingAssistRouter } from "./modules/writing-assist/writing-assist.routes";
 import { messageTemplatesRouter } from "./modules/message-templates/message-templates.routes";
 import { pauseReasonsRouter } from "./modules/pause-reasons/pause-reasons.routes";
+import { clientPanelRouter, tagsRouter } from "./modules/client-panel/client-panel.routes";
 import { flowsRouter } from "./modules/flows/flows.routes";
 
 export function createApp() {
@@ -120,6 +121,8 @@ export function createApp() {
   app.use("/api/users", usersRouter);
   app.use("/api/agents", agentsRouter);
   app.use("/api/conversations", conversationsRouter);
+  app.use("/api/conversations", clientPanelRouter);
+  app.use("/api/tags", tagsRouter);
   app.use("/api/messages", messagesRouter);
   app.use("/api/dashboard", dashboardRouter);
   app.use("/api/reports", reportsRouter);

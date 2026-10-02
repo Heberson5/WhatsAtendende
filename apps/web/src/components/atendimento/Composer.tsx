@@ -114,6 +114,8 @@ interface PendingAttachment {
 export interface ComposerHandle {
   /** Stages one or more files for sending, exactly like picking them via the paperclip button — used by ChatPanel's drag-and-drop-from-folder handler so a drop anywhere over the conversation feeds the same preview/caption flow. */
   addFiles: (files: File[]) => void;
+  /** Fills the box with a quick reply's text (the chips under the composer), ready to edit or send. */
+  applyQuickReply: (reply: QuickReplyOption) => void;
 }
 
 export const Composer = forwardRef<
@@ -357,7 +359,7 @@ export const Composer = forwardRef<
     }
   }
 
-  useImperativeHandle(ref, () => ({ addFiles }));
+  useImperativeHandle(ref, () => ({ addFiles, applyQuickReply: selectQuickReply }));
 
   // Revokes the object URL for any file removed from (or sent out of)
   // pendingFiles — the cache would otherwise hold every staged file for the
