@@ -74,6 +74,19 @@ profileRouter.post(
   })
 );
 
+// Notas de versão: remembers the newest release this user has seen, so the
+// sidebar's "Novo" badge and the "O que há de novo" popup stop showing it.
+const releaseNotesSeenSchema = z.object({ version: z.string().regex(/^\d+\.\d+\.\d+$/, "Versão inválida") });
+
+profileRouter.patch(
+  "/release-notes-seen",
+  asyncHandler(async (req, res) => {
+    const { version } = releaseNotesSeenSchema.parse(req.body);
+    await service.markReleaseNotesSeen(req.auth!.userId, version);
+    res.json({ releaseNotesSeenVersion: version });
+  })
+);
+
 const pauseSchema = z.object({ pauseReasonId: z.string().uuid() });
 
 profileRouter.post(

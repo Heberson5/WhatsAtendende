@@ -19,6 +19,7 @@ import ConfiguracoesPage from "./pages/configuracoes/ConfiguracoesPage";
 import AuditoriaPage from "./pages/auditoria/AuditoriaPage";
 import MeuPerfilPage from "./pages/perfil/MeuPerfilPage";
 import LandingPagePage from "./pages/landing-page/LandingPagePage";
+import NotasDeVersaoPage from "./pages/notas-de-versao/NotasDeVersaoPage";
 
 // Where "/" lands depends on what this user's role can actually reach —
 // picks the first permitted destination in this priority order rather than
@@ -60,6 +61,7 @@ export default function App() {
         <Route element={<AppLayout />}>
           <Route path="/" element={<RoleHome />} />
           <Route path="/perfil" element={<MeuPerfilPage />} />
+          <Route path="/notas-de-versao" element={<NotasDeVersaoPage />} />
 
           <Route element={<PermissionRoute permission={PERMISSION.ATENDIMENTO_ACESSAR} />}>
             <Route path="/atendimento" element={<AtendimentoPage />} />

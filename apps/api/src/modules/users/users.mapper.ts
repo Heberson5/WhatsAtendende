@@ -26,5 +26,6 @@ export function toUserDTO(user: UserWithConnection): UserDTO {
     pausedAt: user.pausedAt ? user.pausedAt.toISOString() : null,
     presenceChartStartHour: user.presenceChartStartHour,
     presenceChartEndHour: user.presenceChartEndHour,
+    releaseNotesSeenVersion: user.releaseNotesSeenVersion,
   };
 }

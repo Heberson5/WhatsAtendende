@@ -59,6 +59,7 @@ describe("ProtectedRoute", () => {
         pausedAt: null,
         presenceChartStartHour: null,
         presenceChartEndHour: null,
+        releaseNotesSeenVersion: null,
       },
       hydrated: true,
     });
@@ -100,6 +101,7 @@ describe("ProtectedRoute", () => {
         pausedAt: null,
         presenceChartStartHour: null,
         presenceChartEndHour: null,
+        releaseNotesSeenVersion: null,
       },
       permissions: { [PERMISSION.USUARIOS_VISUALIZAR]: false } as never,
       hydrated: true,

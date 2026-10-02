@@ -17,6 +17,7 @@ import {
   MonitorSmartphone,
   Plug,
   Workflow,
+  Sparkles,
 } from "lucide-react";
 import { PERMISSION, type ConversationListItemDTO, type Permission } from "@whatsatendende/types";
 import { api } from "../../lib/api";
@@ -24,6 +25,7 @@ import { useAuthStore } from "../../store/auth-store";
 import { useBranding } from "../../hooks/useBranding";
 import { useLandingPageSettings } from "../../hooks/useLandingPageSettings";
 import { ICON_LIBRARY } from "../../lib/icon-library";
+import { useReleaseNotes } from "../../hooks/useReleaseNotes";
 
 export type MenuGroup = "Operação" | "Análise" | "Automação" | "Administração";
 const GROUP_ORDER: MenuGroup[] = ["Operação", "Análise", "Automação", "Administração"];
@@ -123,6 +125,14 @@ export function useMenuBadges(): Record<string, MenuBadge | undefined> {
   };
 }
 
+function navItemClass(isActive: boolean, isCollapsed: boolean) {
+  return clsx(
+    "focus-ring relative flex items-center rounded-lg text-[13px] font-medium transition-colors",
+    isCollapsed ? "justify-center p-2.5" : "gap-3 px-2.5 py-2",
+    isActive ? "bg-primary/15 text-side-strong shadow-[inset_2px_0_0_var(--color-primary)]" : "text-side-text hover:bg-side-hover hover:text-side-strong"
+  );
+}
+
 const COLLAPSED_KEY = "sidebar-collapsed";
 
 function readCollapsed() {
@@ -149,6 +159,8 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
   const { data: branding } = useBranding();
   const visibleItems = useVisibleMenuItems();
   const badges = useMenuBadges();
+  const { hasUnseen: hasUnseenReleaseNotes } = useReleaseNotes();
+  const releaseNotesLabel = hasUnseenReleaseNotes ? "Notas de versão · novidades" : "Notas de versão";
   // The off-canvas drawer on mobile is always shown expanded.
   const isCollapsed = collapsed && !mobileOpen;
 
@@ -242,15 +254,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
                       onMouseLeave={() => setTooltip(null)}
                       onFocus={(e) => showTooltip(e, tooltipText)}
                       onBlur={() => setTooltip(null)}
-                      className={({ isActive }) =>
-                        clsx(
-                          "focus-ring relative flex items-center rounded-lg text-[13px] font-medium transition-colors",
-                          isCollapsed ? "justify-center p-2.5" : "gap-3 px-2.5 py-2",
-                          isActive
-                            ? "bg-primary/15 text-side-strong shadow-[inset_2px_0_0_var(--color-primary)]"
-                            : "text-side-text hover:bg-side-hover hover:text-side-strong"
-                        )
-                      }
+                      className={({ isActive }) => navItemClass(isActive, isCollapsed)}
                       aria-label={isCollapsed || badge ? tooltipText : undefined}
                     >
                       <item.icon className="h-[18px] w-[18px] shrink-0" aria-hidden />
@@ -277,6 +281,33 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
           ))}
         </nav>
 
+        <div className={clsx("shrink-0 border-t border-side-border py-2", isCollapsed ? "px-2.5" : "px-3")}>
+          <NavLink
+            to="/notas-de-versao"
+            onClick={() => {
+              setTooltip(null);
+              onMobileClose?.();
+            }}
+            onMouseEnter={(e) => showTooltip(e, releaseNotesLabel)}
+            onMouseLeave={() => setTooltip(null)}
+            onFocus={(e) => showTooltip(e, releaseNotesLabel)}
+            onBlur={() => setTooltip(null)}
+            className={({ isActive }) => navItemClass(isActive, isCollapsed)}
+            aria-label={isCollapsed || hasUnseenReleaseNotes ? releaseNotesLabel : undefined}
+          >
+            <Sparkles className="h-[18px] w-[18px] shrink-0" aria-hidden />
+            {!isCollapsed && <span className="flex-1 truncate">Notas de versão</span>}
+            {hasUnseenReleaseNotes &&
+              (isCollapsed ? (
+                <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-secondary ring-2 ring-side" aria-hidden />
+              ) : (
+                <span className="rounded-full bg-secondary px-1.5 py-px text-[10px] font-bold text-secondary-fg" aria-hidden>
+                  Novo
+                </span>
+              ))}
+          </NavLink>
+        </div>
+
         {isCollapsed ? (
           <button
             type="button"
@@ -288,7 +319,16 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
             <PanelLeftOpen className="h-[18px] w-[18px]" />
           </button>
         ) : (
-          branding?.appVersion && <p className="shrink-0 border-t border-side-border px-4 py-2 text-xs text-side-muted">Versão {branding.appVersion}</p>
+          branding?.appVersion && (
+            <NavLink
+              to="/notas-de-versao"
+              onClick={onMobileClose}
+              className="focus-ring shrink-0 px-4 pb-2 text-xs text-side-muted hover:text-side-strong"
+              title="Ver as notas de versão"
+            >
+              Versão {branding.appVersion}
+            </NavLink>
+          )
         )}
       </aside>
       {tooltip && isCollapsed && (

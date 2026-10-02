@@ -18,6 +18,10 @@ export async function updateOwnProfile(userId: string, input: { fullName?: strin
   });
 }
 
+export async function markReleaseNotesSeen(userId: string, version: string) {
+  await prisma.user.update({ where: { id: userId }, data: { releaseNotesSeenVersion: version } });
+}
+
 export async function updateOwnPhoto(userId: string, photoUrl: string | null) {
   return prisma.user.update({ where: { id: userId }, data: { photoUrl }, include: withConnection });
 }
