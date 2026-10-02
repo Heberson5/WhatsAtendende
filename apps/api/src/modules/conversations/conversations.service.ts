@@ -339,7 +339,11 @@ export async function importHistoricalMessages(
     if (m.timestamp > conversation.lastMessageAt) {
       await prisma.conversation.update({
         where: { id: conversation.id },
-        data: { lastMessageAt: m.timestamp, lastMessageDirection: m.fromMe ? "OUTBOUND" : "INBOUND" },
+        data: {
+          lastMessageAt: m.timestamp,
+          lastMessageDirection: m.fromMe ? "OUTBOUND" : "INBOUND",
+          ...(m.fromMe ? { awaitingReplySince: null } : {}),
+        },
       });
     }
     touchedConversationIds.add(conversation.id);

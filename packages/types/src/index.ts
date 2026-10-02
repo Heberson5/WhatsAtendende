@@ -394,6 +394,9 @@ export interface ConversationListItemDTO {
   acceptedAt: string | null;
   lastMessageAt: string;
   lastMessagePreview: string | null; // omitted entirely by API while WAITING
+  // When the customer's oldest still-unanswered message arrived (null when
+  // the last word was the agent's) — drives "sem resposta há X min".
+  awaitingReplySince: string | null;
   unreadCount: number;
   isNew: boolean;
   pendingTransferDeadline: string | null;
@@ -1146,3 +1149,36 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
 ];
 
 export type PermissionMap = Record<Permission, boolean>;
+
+export interface TagDTO {
+  id: string;
+  name: string;
+  color: string;
+}
+
+/** Internal note on a conversation — seen only by the team. */
+export interface ConversationNoteDTO {
+  id: string;
+  conversationId: string;
+  authorId: string;
+  authorName: string;
+  body: string;
+  createdAt: string;
+}
+
+/** Client panel beside the chat: the customer's tags and earlier conversations. */
+export interface ContactPanelDTO {
+  contactId: string;
+  firstConversationAt: string;
+  tags: TagDTO[];
+  previousConversations: {
+    id: string;
+    status: ConversationStatus;
+    agentName: string | null;
+    connectionName: string;
+    startedAt: string;
+    closedAt: string | null;
+    messageCount: number;
+  }[];
+  previousConversationCount: number;
+}

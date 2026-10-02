@@ -12,6 +12,9 @@ export async function resetDatabase() {
   await prisma.flowNode.deleteMany();
   await prisma.flowConnection.deleteMany();
   await prisma.flow.deleteMany();
+  await prisma.conversationNote.deleteMany();
+  await prisma.contactTag.deleteMany();
+  await prisma.tag.deleteMany();
   await prisma.conversationEvent.deleteMany();
   await prisma.conversationTransfer.deleteMany();
   await prisma.conversationAssignment.deleteMany();

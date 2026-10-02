@@ -1,8 +1,9 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, ArrowRightLeft, CheckCircle2, ChevronDown, ChevronUp, Paperclip, Phone, Search, X as CloseIcon } from "lucide-react";
-import { PERMISSION, type ConversationListItemDTO, type MessageDTO, type PaginatedResult, type QuickReplyDTO } from "@whatsatendende/types";
+import { ArrowLeft, ArrowRightLeft, CheckCircle2, ChevronDown, ChevronUp, PanelRight, Paperclip, Phone, Search, StickyNote, X as CloseIcon } from "lucide-react";
+import clsx from "clsx";
+import { PERMISSION, type ConversationListItemDTO, type ConversationNoteDTO, type MessageDTO, type PaginatedResult, type QuickReplyDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { contactDisplayName } from "../../lib/contact-display";
 import { getSocket } from "../../lib/socket";
@@ -27,10 +28,15 @@ export function ChatPanel({
   onClosed,
   onBack,
   onConversationStarted,
+  clientPanelOpen,
+  onToggleClientPanel,
 }: {
   conversation: ConversationListItemDTO;
   onClosed: () => void;
   onBack?: () => void;
+  /** Whether the client panel beside the chat is expanded — drives the header toggle's pressed state. */
+  clientPanelOpen?: boolean;
+  onToggleClientPanel?: () => void;
   /** A new conversation was started from a vCard received in this chat (see MessageBubble's "Iniciar conversa") — the caller decides what to do with it (open it, refresh lists...). */
   onConversationStarted?: (conversation: ConversationListItemDTO) => void;
 }) {
@@ -47,6 +53,9 @@ export function ChatPanel({
   const [replyTo, setReplyTo] = useState<MessageDTO | null>(null);
   const [transferOpen, setTransferOpen] = useState(false);
   const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
+  // "Responder" sends to the customer; "Nota interna" only saves a note the team sees.
+  const [composerMode, setComposerMode] = useState<"reply" | "note">("reply");
+  const [noteText, setNoteText] = useState("");
   const composerRef = useRef<ComposerHandle>(null);
   // Whether a file is currently being dragged over this conversation, to
   // show the "solte para anexar" overlay — see PROMPT: "podendo também
@@ -88,6 +97,19 @@ export function ChatPanel({
   const [searchQuery, setSearchQuery] = useState("");
   const [matchIndex, setMatchIndex] = useState(0);
   const messageElementsRef = useRef(new Map<string, HTMLDivElement>());
+
+  const notesQuery = useQuery({
+    queryKey: ["notes", conversation.id],
+    queryFn: async () => (await api.get<ConversationNoteDTO[]>(`/conversations/${conversation.id}/notes`)).data,
+  });
+  const createNoteMutation = useMutation({
+    mutationFn: (body: string) => api.post<ConversationNoteDTO>(`/conversations/${conversation.id}/notes`, { body }),
+    onSuccess: () => {
+      setNoteText("");
+      queryClient.invalidateQueries({ queryKey: ["notes", conversation.id] });
+    },
+    onError: (err) => toast.error(getApiErrorMessage(err)),
+  });
 
   const messagesQuery = useQuery({
     queryKey: ["messages", conversation.id],
@@ -486,9 +508,23 @@ export function ChatPanel({
           {canClose && (
             <button
               onClick={() => setCloseConfirmOpen(true)}
-              className="focus-ring flex items-center gap-1.5 rounded-card bg-primary px-2 py-1.5 text-xs font-medium text-primary-fg hover:opacity-90 sm:px-3"
+              className="focus-ring flex items-center gap-1.5 rounded-card bg-primary px-2 py-1.5 text-xs font-semibold text-primary-fg hover:opacity-90 sm:px-3"
             >
               <CheckCircle2 className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Encerrar</span>
+            </button>
+          )}
+          {onToggleClientPanel && (
+            <button
+              onClick={onToggleClientPanel}
+              className={clsx(
+                "focus-ring hidden items-center rounded-card border p-1.5 md:flex",
+                clientPanelOpen ? "border-primary/30 bg-primary/10 text-primary" : "border-border text-muted hover:bg-surface-alt"
+              )}
+              aria-pressed={clientPanelOpen}
+              aria-label={clientPanelOpen ? "Recolher painel do cliente" : "Mostrar painel do cliente"}
+              title={clientPanelOpen ? "Recolher painel do cliente" : "Mostrar painel do cliente"}
+            >
+              <PanelRight className="h-3.5 w-3.5" />
             </button>
           )}
         </div>
@@ -560,11 +596,22 @@ export function ChatPanel({
             // static banner above the whole thread. See TransferNoteCard.
             const transferAt = conversation.transfer?.note ? new Date(conversation.transfer.at).getTime() : null;
             let noteInserted = false;
+            // Internal notes sit in the timeline right where they were written.
+            const pendingNotes = [...(notesQuery.data ?? [])];
+            const takeNotesUpTo = (at: number) => {
+              const due: ConversationNoteDTO[] = [];
+              while (pendingNotes.length && new Date(pendingNotes[0].createdAt).getTime() <= at) due.push(pendingNotes.shift()!);
+              return due;
+            };
             const rendered = messages.map((message) => {
               const insertNoteHere = transferAt !== null && !noteInserted && new Date(message.createdAt).getTime() >= transferAt;
               if (insertNoteHere) noteInserted = true;
+              const notesHere = takeNotesUpTo(new Date(message.createdAt).getTime());
               return (
                 <Fragment key={message.id}>
+                  {notesHere.map((note) => (
+                    <InternalNoteCard key={note.id} note={note} />
+                  ))}
                   {insertNoteHere && <TransferNoteCard transfer={conversation.transfer!} />}
                   <div
                     ref={(el) => {
@@ -588,6 +635,7 @@ export function ChatPanel({
             });
             // No message on/after the transfer yet (nobody's replied since) — the note still belongs at the end, not nowhere.
             if (transferAt !== null && !noteInserted) rendered.push(<TransferNoteCard key="transfer-note" transfer={conversation.transfer!} />);
+            for (const note of pendingNotes) rendered.push(<InternalNoteCard key={note.id} note={note} />);
             return rendered;
           })()}
         </div>
@@ -599,6 +647,79 @@ export function ChatPanel({
         </div>
       )}
 
+      <div className="flex items-center gap-4 border-t border-border bg-surface px-4 pt-2 text-xs" role="tablist" aria-label="Tipo de mensagem">
+        {(
+          [
+            { value: "reply", label: "Responder" },
+            { value: "note", label: "Nota interna" },
+          ] as const
+        ).map((tab) => (
+          <button
+            key={tab.value}
+            role="tab"
+            aria-selected={composerMode === tab.value}
+            onClick={() => setComposerMode(tab.value)}
+            className={clsx(
+              "focus-ring -mb-px border-b-2 pb-1.5 font-medium",
+              composerMode === tab.value
+                ? tab.value === "note"
+                  ? "border-amber-500 text-amber-600 dark:text-amber-400"
+                  : "border-primary text-primary"
+                : "border-transparent text-muted hover:text-[var(--color-text)]"
+            )}
+          >
+            {tab.label}
+          </button>
+        ))}
+        {composerMode === "reply" && quickRepliesQuery.data && quickRepliesQuery.data.length > 0 && (
+          <div className="ml-auto hidden min-w-0 items-center gap-1.5 overflow-hidden pb-1.5 lg:flex">
+            {quickRepliesQuery.data.slice(0, 4).map((reply) => (
+              <button
+                key={reply.id}
+                onClick={() => {
+                  if (!connectionDisconnected) composerRef.current?.applyQuickReply(reply);
+                }}
+                className="focus-ring shrink-0 truncate rounded-full border border-border px-2 py-0.5 text-[11px] text-muted hover:border-primary/40 hover:text-[var(--color-text)]"
+                title={reply.text}
+              >
+                <span className="font-mono text-primary">/{reply.shortcut}</span> {reply.name}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {composerMode === "note" ? (
+        <form
+          className="flex items-end gap-2 bg-surface px-3 pb-3 pt-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (noteText.trim()) createNoteMutation.mutate(noteText.trim());
+          }}
+        >
+          <textarea
+            value={noteText}
+            onChange={(e) => setNoteText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                if (noteText.trim()) createNoteMutation.mutate(noteText.trim());
+              }
+            }}
+            rows={2}
+            maxLength={2000}
+            placeholder="Escreva uma nota para a equipe — o cliente não vê"
+            className="focus-ring min-h-[44px] flex-1 resize-none rounded-card border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950 placeholder:text-amber-700/60 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100"
+          />
+          <button
+            type="submit"
+            disabled={!noteText.trim() || createNoteMutation.isPending}
+            className="focus-ring flex h-10 shrink-0 items-center gap-1.5 rounded-card bg-amber-500 px-3 text-xs font-semibold text-white disabled:opacity-50"
+          >
+            <StickyNote className="h-4 w-4" /> {createNoteMutation.isPending ? "Salvando..." : "Salvar nota"}
+          </button>
+        </form>
+      ) : (
       <Composer
         ref={composerRef}
         disabled={sendTextMutation.isPending || connectionDisconnected}
@@ -618,6 +739,7 @@ export function ChatPanel({
           await sendLocationMutation.mutateAsync({ latitude: lat, longitude: lng });
         }}
       />
+      )}
 
       {transferOpen && (
         <TransferModal
@@ -650,6 +772,19 @@ export function ChatPanel({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Internal note in the timeline — yellow and dashed so it never reads as something the customer saw. */
+export function InternalNoteCard({ note }: { note: ConversationNoteDTO }) {
+  return (
+    <div className="mx-auto max-w-[85%] rounded-card border border-dashed border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100">
+      <p className="mb-0.5 flex items-center gap-1 font-semibold">
+        <StickyNote className="h-3 w-3" /> Nota interna · {note.authorName}
+        <span className="ml-auto font-normal opacity-70">{new Date(note.createdAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
+      </p>
+      <p className="whitespace-pre-wrap break-words">{note.body}</p>
     </div>
   );
 }

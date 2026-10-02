@@ -60,6 +60,7 @@ export function toConversationListItemDTO(
     acceptedAt: conversation.acceptedAt ? conversation.acceptedAt.toISOString() : null,
     lastMessageAt: conversation.lastMessageAt.toISOString(),
     lastMessagePreview: revealPreview ? (conversation._lastMessageBody ?? null) : null,
+    awaitingReplySince: revealPreview && conversation.awaitingReplySince ? conversation.awaitingReplySince.toISOString() : null,
     unreadCount: conversation._unreadCount ?? 0,
     isNew: conversation.status === "NEW",
     pendingTransferDeadline: revealPreview && conversation.pendingTransferDeadline ? conversation.pendingTransferDeadline.toISOString() : null,
