@@ -248,7 +248,7 @@ export interface FlowMenuOption {
 export type FlowNodeData =
   | { text?: string } // TEXT_MESSAGE
   | { options: FlowMenuOption[] } // MENU
-  | { assignedAgentIds: string[] } // TRANSFER_TO_AGENT
+  | { assignedAgentIds: string[]; mode?: "any" | "selected" } // TRANSFER_TO_AGENT — "selected" restricts to assignedAgentIds
   | Record<string, never>; // START / END — no config
 
 export interface FlowNodeDTO {
@@ -275,9 +275,53 @@ export interface FlowListItemDTO {
   connectionIds: string[];
   connectionNames: string[];
   nodeCount: number;
+  /** Tiny layout of the graph for the list's thumbnail: node positions/types and edges as node-index pairs. */
+  preview: { nodes: { x: number; y: number; type: FlowNodeType }[]; edges: [number, number][] };
+  /** Problems that would block activation (see validateFlowGraph). */
+  issues: FlowIssue[];
   createdByUserName: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface FlowIssue {
+  /** The node the problem is on (null = the flow as a whole, e.g. no connection). */
+  nodeId: string | null;
+  message: string;
+}
+
+/**
+ * What must hold before a flow can be switched on — shared by the API (which
+ * refuses activation) and the editor (which marks the offending nodes).
+ */
+export function validateFlowGraph(input: { nodes: FlowNodeDTO[]; edges: Pick<FlowEdgeDTO, "sourceNodeId" | "sourceHandle">[]; connectionCount: number }): FlowIssue[] {
+  const issues: FlowIssue[] = [];
+  if (input.connectionCount === 0) issues.push({ nodeId: null, message: "Vincule pelo menos uma conexão WhatsApp Oficial" });
+  const hasExit = (nodeId: string, handle: string | null) =>
+    input.edges.some((e) => e.sourceNodeId === nodeId && (e.sourceHandle ?? null) === handle);
+  for (const node of input.nodes) {
+    if (node.type === "START" && !hasExit(node.id, null)) issues.push({ nodeId: node.id, message: "O Início não leva a nenhum passo" });
+    if (node.type === "TEXT_MESSAGE") {
+      const text = (node.data as { text?: string }).text?.trim();
+      if (!text) issues.push({ nodeId: node.id, message: "Mensagem sem texto" });
+      if (!hasExit(node.id, null)) issues.push({ nodeId: node.id, message: "Mensagem sem próximo passo" });
+    }
+    if (node.type === "MENU") {
+      const options = (node.data as { options?: FlowMenuOption[] }).options ?? [];
+      if (options.length === 0) issues.push({ nodeId: node.id, message: "Menu sem opções" });
+      for (const option of options) {
+        if (!option.label.trim()) issues.push({ nodeId: node.id, message: "Opção do menu sem nome" });
+        else if (!hasExit(node.id, option.id)) issues.push({ nodeId: node.id, message: `Opção “${option.label}” sem destino` });
+      }
+    }
+    if (node.type === "TRANSFER_TO_AGENT") {
+      const data = node.data as { assignedAgentIds?: string[]; mode?: "any" | "selected" };
+      if (data.mode === "selected" && (data.assignedAgentIds ?? []).length === 0) {
+        issues.push({ nodeId: node.id, message: "Nenhum atendente selecionado" });
+      }
+    }
+  }
+  return issues;
 }
 
 /** Full graph for the canvas — fetched once per flow when opening the editor. */

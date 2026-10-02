@@ -27,6 +27,8 @@ export const TITLES: Record<string, string> = {
   "/auditoria": "Auditoria",
   "/perfil": "Meu Perfil",
   "/landing-page": "Landing Page",
+  "/respostas": "Respostas",
+  "/fluxo": "Fluxo",
 };
 
 export function AppLayout() {
@@ -98,7 +100,9 @@ export function AppLayout() {
   }, [location.pathname]);
 
   const { data: landingPage } = useLandingPageSettings();
-  const title = landingPage?.pageTitles[location.pathname] || TITLES[location.pathname] || "WhatsAtendende";
+  // Nested pages (e.g. /fluxo/:id) take their section's title.
+  const section = "/" + (location.pathname.split("/")[1] ?? "");
+  const title = landingPage?.pageTitles[location.pathname] || landingPage?.pageTitles[section] || TITLES[location.pathname] || TITLES[section] || "WhatsAtendende";
 
   return (
     <div className="flex h-screen gap-2 overflow-hidden bg-[var(--color-bg)] p-2 sm:gap-3 sm:p-3">
