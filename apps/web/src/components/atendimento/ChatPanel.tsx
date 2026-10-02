@@ -642,7 +642,7 @@ export function ChatPanel({
       </div>
 
       {connectionDisconnected && (
-        <div className="mx-4 mb-2 rounded-card bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
+        <div className="mx-4 mb-2 rounded-card bg-danger-soft px-3 py-2 text-xs font-medium text-danger">
           Esta conexão de WhatsApp está desconectada — não é possível enviar mensagens até que ela seja reconectada.
         </div>
       )}
