@@ -1,13 +1,14 @@
 import { useState } from "react";
-import { Slash, LogOut, ArrowRightLeft, UserCheck, PauseCircle } from "lucide-react";
+import { Slash, LogOut, ArrowRightLeft, UserCheck, PauseCircle, FileText } from "lucide-react";
 import { PERMISSION, type Permission } from "@whatsatendende/types";
 import { useAuthStore } from "../../store/auth-store";
 import { RespostasRapidasTab } from "./RespostasRapidasTab";
 import { EncerramentoTab } from "./EncerramentoTab";
 import { AutoMessageTab } from "./AutoMessageTab";
 import { MotivoPausaTab } from "./MotivoPausaTab";
+import { TemplatesTab } from "./TemplatesTab";
 
-type Tab = "rapidas" | "encerramento" | "transferencia" | "aceite" | "motivo-pausa";
+type Tab = "rapidas" | "encerramento" | "transferencia" | "aceite" | "motivo-pausa" | "templates";
 
 // Reaching /respostas at all already requires the RESPOSTAS_RAPIDAS_GERENCIAR
 // umbrella (see Sidebar's MENU_ITEMS) — each tab below additionally sits
@@ -20,6 +21,7 @@ const TAB_PERMISSION: Partial<Record<Tab, Permission>> = {
   transferencia: PERMISSION.RESPOSTAS_TRANSFERENCIA_VISUALIZAR,
   aceite: PERMISSION.RESPOSTAS_ACEITE_VISUALIZAR,
   "motivo-pausa": PERMISSION.RESPOSTAS_MOTIVO_PAUSA_VISUALIZAR,
+  templates: PERMISSION.RESPOSTAS_TEMPLATES_VISUALIZAR,
 };
 
 const TABS: { key: Tab; label: string; icon: typeof Slash }[] = [
@@ -28,6 +30,7 @@ const TABS: { key: Tab; label: string; icon: typeof Slash }[] = [
   { key: "transferencia", label: "Transferência", icon: ArrowRightLeft },
   { key: "aceite", label: "Aceite", icon: UserCheck },
   { key: "motivo-pausa", label: "Motivo de Pausa", icon: PauseCircle },
+  { key: "templates", label: "Templates", icon: FileText },
 ];
 
 export default function RespostasPage() {
@@ -72,6 +75,7 @@ export default function RespostasPage() {
           />
         )}
         {tab === "motivo-pausa" && <MotivoPausaTab />}
+        {tab === "templates" && <TemplatesTab />}
       </div>
     </div>
   );

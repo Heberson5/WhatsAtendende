@@ -201,6 +201,36 @@ export interface ClosingMessageDTO {
   updatedAt: string;
 }
 
+export type MessageTemplateCategory = "MARKETING" | "UTILITY" | "AUTHENTICATION";
+export type MessageTemplateHeaderType = "NONE" | "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT";
+export type MessageTemplateStatus = "DRAFT" | "PENDING" | "APPROVED" | "REJECTED" | "PAUSED" | "DISABLED";
+export type MessageTemplateButton =
+  | { type: "QUICK_REPLY"; text: string }
+  | { type: "URL"; text: string; url: string }
+  | { type: "PHONE_NUMBER"; text: string; phoneNumber: string };
+
+/** A WhatsApp message template submitted for Meta's approval — see PROMPT: "nova aba chamada Templates... nas categorias de Marketing, Utilidade e Autenticação". Only ever tied to an OFFICIAL_API connection. */
+export interface MessageTemplateDTO {
+  id: string;
+  name: string;
+  category: MessageTemplateCategory;
+  language: string;
+  headerType: MessageTemplateHeaderType;
+  headerText: string | null;
+  /** Non-null only when headerType is IMAGE/VIDEO/DOCUMENT and a sample was uploaded. */
+  headerSampleFileName: string | null;
+  headerSampleUrl: string | null;
+  bodyText: string;
+  footerText: string | null;
+  buttons: MessageTemplateButton[];
+  whatsappConnectionId: string;
+  whatsappConnectionName: string;
+  status: MessageTemplateStatus;
+  rejectionReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 /** A missed-you-live event surfaced in the Topbar bell — see NotificationBell. entityType/entityId (e.g. "Conversation"/id) drive where clicking it navigates. */
 export interface NotificationDTO {
   id: string;
@@ -488,6 +518,12 @@ export const PERMISSION = {
   RESPOSTAS_MOTIVO_PAUSA_ADICIONAR: "respostas_motivo_pausa.adicionar",
   RESPOSTAS_MOTIVO_PAUSA_EDITAR: "respostas_motivo_pausa.editar",
   RESPOSTAS_MOTIVO_PAUSA_EXCLUIR: "respostas_motivo_pausa.excluir",
+  // Templates — mensagens pré-aprovadas pela Meta (Marketing/Utilidade/
+  // Autenticação). See PROMPT: "nova aba chamada Templates".
+  RESPOSTAS_TEMPLATES_VISUALIZAR: "respostas_templates.visualizar",
+  RESPOSTAS_TEMPLATES_ADICIONAR: "respostas_templates.adicionar",
+  RESPOSTAS_TEMPLATES_EDITAR: "respostas_templates.editar",
+  RESPOSTAS_TEMPLATES_EXCLUIR: "respostas_templates.excluir",
   // Standalone top-level menu (not nested under CONFIGURACOES_GERENCIAR) —
   // see PROMPT: "planeje um novo menu chamado landing page". Single record
   // to edit (no list), so only visualizar/editar.
@@ -898,6 +934,38 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     group: "Respostas",
     label: "Respostas — Motivo de Pausa (excluir)",
     description: "Excluir (desativar) um motivo de pausa.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.RESPOSTAS_TEMPLATES_VISUALIZAR,
+    group: "Respostas",
+    label: "Respostas — Templates (visualizar)",
+    description: "Ver os templates de mensagem cadastrados e seu status de aprovação na Meta (aba Templates).",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.RESPOSTAS_TEMPLATES_ADICIONAR,
+    group: "Respostas",
+    label: "Respostas — Templates (adicionar)",
+    description: "Cadastrar um novo template de mensagem e submetê-lo para aprovação da Meta.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.RESPOSTAS_TEMPLATES_EDITAR,
+    group: "Respostas",
+    label: "Respostas — Templates (editar)",
+    description: "Editar um template de mensagem existente.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.RESPOSTAS_TEMPLATES_EXCLUIR,
+    group: "Respostas",
+    label: "Respostas — Templates (excluir)",
+    description: "Excluir um template de mensagem.",
     editableRoles: ["AGENT", "MANAGER"],
     defaultAllowed: { AGENT: false, MANAGER: true },
   },

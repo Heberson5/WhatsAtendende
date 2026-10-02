@@ -11,6 +11,7 @@ import {
   type WhatsAppStatusSnapshot,
 } from "@whatsatendende/whatsapp";
 import { verifyWebhookSignature } from "../meta/meta.service";
+import * as messageTemplatesService from "../message-templates/message-templates.service";
 import { env } from "../../config/env";
 import { prisma } from "../../lib/prisma";
 import { logger } from "../../lib/logger";
@@ -1104,9 +1105,17 @@ export async function sendReaction(connectionId: string, contactPhone: string, p
   await getProvider(connectionId).sendReaction(toChatId(contactPhone), providerMessageId, emoji);
 }
 
+interface MessageTemplateStatusUpdateValue {
+  event: string;
+  message_template_id: string;
+  message_template_name?: string;
+  message_template_language?: string;
+  reason?: string;
+}
+
 interface CloudApiWebhookBody {
   object?: string;
-  entry?: { changes?: { field?: string; value?: CloudApiWebhookValue }[] }[];
+  entry?: { id?: string; changes?: { field?: string; value?: CloudApiWebhookValue | MessageTemplateStatusUpdateValue }[] }[];
 }
 
 /**
@@ -1114,36 +1123,60 @@ interface CloudApiWebhookBody {
  * processWebhookPayload as closely as the two APIs' shapes allow. One
  * physical webhook URL/route can serve every OFFICIAL_API connection,
  * however many different Meta Apps they were registered under: each
- * change's own value.metadata.phone_number_id picks out which connection
- * (and therefore which Meta App Secret to verify the signature against)
- * it belongs to — see WhatsAppConnection.appSecret's own doc comment for
- * why this can't be checked before parsing the body, the same way the
+ * change's own value.metadata.phone_number_id (or, for a template status
+ * event, the entry's own WABA id) picks out which connection — and
+ * therefore which Meta App Secret to verify the signature against — it
+ * belongs to. See WhatsAppConnection.appSecret's own doc comment for why
+ * this can't be checked before parsing the body, the same way the
  * verify-token handshake below also has to.
  */
 export async function verifyAndIngestOfficialWebhook(rawBody: Buffer, signatureHeader: string | undefined, body: CloudApiWebhookBody): Promise<void> {
   if (body.object !== "whatsapp_business_account") return;
   for (const entry of body.entry ?? []) {
     for (const change of entry.changes ?? []) {
-      const phoneNumberId = change.value?.metadata?.phone_number_id;
-      if (change.field !== "messages" || !phoneNumberId || !change.value) continue;
-      const connection = await prisma.whatsAppConnection.findFirst({
-        where: { phoneNumberId, connectionMode: "OFFICIAL_API" },
-        select: { id: true, appSecret: true },
-      });
-      if (!connection) {
-        logger.warn({ phoneNumberId }, "received a WhatsApp Cloud API webhook event for an unknown phoneNumberId");
-        continue;
+      if (change.field === "messages") {
+        const value = change.value as CloudApiWebhookValue;
+        const phoneNumberId = value?.metadata?.phone_number_id;
+        if (!phoneNumberId) continue;
+        const connection = await prisma.whatsAppConnection.findFirst({
+          where: { phoneNumberId, connectionMode: "OFFICIAL_API" },
+          select: { id: true, appSecret: true },
+        });
+        if (!connection) {
+          logger.warn({ phoneNumberId }, "received a WhatsApp Cloud API webhook event for an unknown phoneNumberId");
+          continue;
+        }
+        if (connection.appSecret && !verifyWebhookSignature(rawBody, signatureHeader, decryptSecret(connection.appSecret))) {
+          logger.warn({ connectionId: connection.id }, "rejected a WhatsApp Cloud API webhook event: missing or invalid X-Hub-Signature-256");
+          continue;
+        }
+        const provider = providers.get(connection.id);
+        if (!(provider instanceof CloudApiWhatsAppProvider)) {
+          logger.warn({ connectionId: connection.id }, "received a WhatsApp Cloud API webhook event for a connection with no cloud-api provider bootstrapped");
+          continue;
+        }
+        await provider.ingestWebhookChange(value);
+      } else if (change.field === "message_template_status_update") {
+        // Scoped by WABA (entry.id), not by phone number — several
+        // OFFICIAL_API connections can share one WABA. Any one of them
+        // registered under the same Meta App carries the right secret to
+        // verify this event's signature.
+        const wabaId = entry.id;
+        if (!wabaId) continue;
+        const connection = await prisma.whatsAppConnection.findFirst({
+          where: { wabaId, connectionMode: "OFFICIAL_API" },
+          select: { id: true, appSecret: true },
+        });
+        if (!connection) {
+          logger.warn({ wabaId }, "received a message_template_status_update for an unknown WABA");
+          continue;
+        }
+        if (connection.appSecret && !verifyWebhookSignature(rawBody, signatureHeader, decryptSecret(connection.appSecret))) {
+          logger.warn({ connectionId: connection.id }, "rejected a message_template_status_update event: missing or invalid X-Hub-Signature-256");
+          continue;
+        }
+        await messageTemplatesService.handleStatusWebhook(change.value as MessageTemplateStatusUpdateValue);
       }
-      if (connection.appSecret && !verifyWebhookSignature(rawBody, signatureHeader, decryptSecret(connection.appSecret))) {
-        logger.warn({ connectionId: connection.id }, "rejected a WhatsApp Cloud API webhook event: missing or invalid X-Hub-Signature-256");
-        continue;
-      }
-      const provider = providers.get(connection.id);
-      if (!(provider instanceof CloudApiWhatsAppProvider)) {
-        logger.warn({ connectionId: connection.id }, "received a WhatsApp Cloud API webhook event for a connection with no cloud-api provider bootstrapped");
-        continue;
-      }
-      await provider.ingestWebhookChange(change.value);
     }
   }
 }
