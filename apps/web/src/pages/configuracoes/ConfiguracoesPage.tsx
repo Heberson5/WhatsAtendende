@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import clsx from "clsx";
+import { Clock3, FileDown, KeyRound, Mail, MailPlus, Palette, ShieldCheck, CalendarDays, type LucideIcon } from "lucide-react";
 import { PERMISSION, type Permission } from "@whatsatendende/types";
 import { BrandingPanel } from "./BrandingPanel";
 import { AppInstallPanel } from "./AppInstallPanel";
@@ -13,15 +15,16 @@ import { useAuthStore } from "../../store/auth-store";
 
 type Tab = "branding" | "exportacoes" | "email" | "email-templates" | "feriados" | "fila" | "seguranca" | "permissoes";
 
-const TABS: { key: Tab; label: string }[] = [
-  { key: "branding", label: "Identidade visual" },
-  { key: "exportacoes", label: "Exportações" },
-  { key: "email", label: "E-mail" },
-  { key: "email-templates", label: "Modelos de e-mail" },
-  { key: "feriados", label: "Feriados" },
-  { key: "fila", label: "Fila" },
-  { key: "seguranca", label: "Segurança" },
-  { key: "permissoes", label: "Permissões" },
+// Grouped by subject in the left-hand section menu.
+const TABS: { key: Tab; label: string; group: string; icon: LucideIcon }[] = [
+  { key: "fila", label: "Fila", group: "Atendimento", icon: Clock3 },
+  { key: "feriados", label: "Feriados", group: "Atendimento", icon: CalendarDays },
+  { key: "branding", label: "Identidade visual", group: "Aparência", icon: Palette },
+  { key: "exportacoes", label: "Exportações", group: "Aparência", icon: FileDown },
+  { key: "email", label: "E-mail", group: "E-mail", icon: Mail },
+  { key: "email-templates", label: "Modelos de e-mail", group: "E-mail", icon: MailPlus },
+  { key: "seguranca", label: "Segurança", group: "Segurança", icon: ShieldCheck },
+  { key: "permissoes", label: "Permissões", group: "Segurança", icon: KeyRound },
 ];
 
 // Each sits behind its own finer permission on top of the CONFIGURACOES_GERENCIAR
@@ -41,7 +44,18 @@ const TAB_PERMISSION: Partial<Record<Tab, Permission>> = {
 };
 
 export default function ConfiguracoesPage() {
-  const [tab, setTab] = useState<Tab>("branding");
+  // Kept in the URL (?secao=) so a reload or a shared link opens the same section.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = (searchParams.get("secao") as Tab | null) ?? "branding";
+  const setTab = (next: Tab) =>
+    setSearchParams(
+      (prev) => {
+        const params = new URLSearchParams(prev);
+        params.set("secao", next);
+        return params;
+      },
+      { replace: true }
+    );
   const role = useAuthStore((s) => s.user?.role);
   const permissions = useAuthStore((s) => s.permissions);
   // Configurações itself can be reached by a MANAGER granted the
@@ -62,33 +76,52 @@ export default function ConfiguracoesPage() {
   // first tab that's actually visible instead of rendering nothing.
   const activeTab = visibleTabs.some((t) => t.key === tab) ? tab : visibleTabs[0]?.key;
 
-  return (
-    <div className="h-full overflow-auto p-3 sm:p-6">
-      <div className="shadow-soft mb-6 flex flex-wrap gap-1 rounded-card border border-border bg-surface p-1">
-        {visibleTabs.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`rounded-card px-4 py-2 text-sm font-medium ${activeTab === t.key ? "bg-primary text-primary-fg" : "text-muted hover:bg-surface-alt"}`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+  const groups = Array.from(new Set(visibleTabs.map((t) => t.group)));
 
-      {activeTab === "branding" && (
-        <div className="space-y-6">
-          <BrandingPanel />
-          <AppInstallPanel />
-        </div>
-      )}
-      {activeTab === "exportacoes" && <ExportacoesPanel />}
-      {activeTab === "email" && <EmailSettingsPanel />}
-      {activeTab === "email-templates" && <EmailTemplatesPanel />}
-      {activeTab === "feriados" && <FeriadosPanel />}
-      {activeTab === "fila" && <FilaSettingsPanel />}
-      {activeTab === "seguranca" && role === "ADMIN" && <SecuritySettingsPanel />}
-      {activeTab === "permissoes" && role === "ADMIN" && <PermissionsPanel />}
+  return (
+    <div className="flex h-full flex-col overflow-hidden md:flex-row">
+      <nav
+        aria-label="Seções de configurações"
+        className="flex shrink-0 gap-1 overflow-x-auto border-b border-border bg-surface p-2 md:w-56 md:flex-col md:overflow-y-auto md:border-b-0 md:border-r md:p-3"
+      >
+        {groups.map((group) => (
+          <div key={group} className="flex shrink-0 gap-1 md:block md:space-y-0.5">
+            <p className="hidden px-2.5 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted first:pt-1 md:block">{group}</p>
+            {visibleTabs
+              .filter((t) => t.group === group)
+              .map((t) => (
+                <button
+                  key={t.key}
+                  onClick={() => setTab(t.key)}
+                  aria-current={activeTab === t.key ? "page" : undefined}
+                  className={clsx(
+                    "focus-ring flex shrink-0 items-center gap-2.5 whitespace-nowrap rounded-lg px-2.5 py-2 text-[13px] md:w-full",
+                    activeTab === t.key ? "bg-primary/10 font-semibold text-primary" : "text-[var(--color-text)] hover:bg-surface-alt"
+                  )}
+                >
+                  <t.icon className="h-4 w-4 shrink-0" />
+                  {t.label}
+                </button>
+              ))}
+          </div>
+        ))}
+      </nav>
+
+      <div className="min-w-0 flex-1 overflow-auto bg-[var(--color-bg)] p-3 sm:p-6">
+        {activeTab === "branding" && (
+          <div className="space-y-6">
+            <BrandingPanel />
+            <AppInstallPanel />
+          </div>
+        )}
+        {activeTab === "exportacoes" && <ExportacoesPanel />}
+        {activeTab === "email" && <EmailSettingsPanel />}
+        {activeTab === "email-templates" && <EmailTemplatesPanel />}
+        {activeTab === "feriados" && <FeriadosPanel />}
+        {activeTab === "fila" && <FilaSettingsPanel />}
+        {activeTab === "seguranca" && role === "ADMIN" && <SecuritySettingsPanel />}
+        {activeTab === "permissoes" && role === "ADMIN" && <PermissionsPanel />}
+      </div>
     </div>
   );
 }

@@ -63,7 +63,7 @@ export function AppInstallPanel() {
         </p>
       </div>
 
-      <fieldset disabled={!canEditar} className="m-0 space-y-6 border-0 p-0">
+      <fieldset disabled={!canEditar} className="m-0 min-w-0 space-y-6 border-0 p-0">
       <div>
         <p className="mb-2 text-sm font-medium">Ícone do aplicativo</p>
         {branding?.appIconUrl && (
