@@ -210,6 +210,7 @@ export default function AtendimentoPage() {
                   conversation={c}
                   onAccept={() => acceptMutation.mutate(c.id)}
                   accepting={acceptMutation.isPending && acceptMutation.variables === c.id}
+                  agentPaused={user?.presence === "AWAY"}
                 />
               ))
             ) : (

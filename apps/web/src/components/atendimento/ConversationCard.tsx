@@ -27,6 +27,7 @@ export function ConversationCard({
   onSelect,
   onAccept,
   accepting,
+  agentPaused,
   transferredOutView,
 }: {
   conversation: ConversationListItemDTO;
@@ -34,6 +35,11 @@ export function ConversationCard({
   onSelect?: () => void;
   onAccept?: () => void;
   accepting?: boolean;
+  // See PROMPT: "quando estiver pausado, não permitirá aceitar novas
+  // conversas, só poderá responder as existentes" — mirrors the backend
+  // check in acceptConversation, disabled client-side first so the agent
+  // never has to find out by watching the click fail.
+  agentPaused?: boolean;
   // "Transferidas" tab: this agent's own transfer is the point of the
   // card, so the badge and timestamp read from conversation.transfer
   // (who *I* sent it to, and when) instead of the usual "who sent it to
@@ -129,11 +135,17 @@ export function ConversationCard({
               e.stopPropagation();
               onAccept();
             }}
-            disabled={accepting || connectionDisconnected}
-            title={connectionDisconnected ? "Conexão desconectada — não é possível aceitar conversas" : undefined}
+            disabled={accepting || connectionDisconnected || agentPaused}
+            title={
+              agentPaused
+                ? "Você está pausado — retome o atendimento para aceitar conversas"
+                : connectionDisconnected
+                  ? "Conexão desconectada — não é possível aceitar conversas"
+                  : undefined
+            }
             className="focus-ring mt-2 w-full rounded-card bg-primary py-1.5 text-xs font-semibold text-primary-fg disabled:opacity-60"
           >
-            {accepting ? "Aceitando..." : connectionDisconnected ? "Conexão desconectada" : "ACEITAR"}
+            {accepting ? "Aceitando..." : agentPaused ? "Você está pausado" : connectionDisconnected ? "Conexão desconectada" : "ACEITAR"}
           </button>
         )}
       </div>
