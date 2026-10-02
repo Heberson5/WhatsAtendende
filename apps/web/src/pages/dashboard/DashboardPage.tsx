@@ -1,13 +1,14 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { FileBarChart2, Inbox, MessageSquare, Timer, UserCheck, Users, Wifi } from "lucide-react";
+import { CheckCircle2, Clock, FileBarChart2, Inbox, MessageSquare, Timer, Users } from "lucide-react";
 import { PERMISSION, type PresenceByHourDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
 import { PeriodFilter, type PeriodValue } from "../../components/common/PeriodFilter";
 import { ConnectionFilter } from "../../components/common/ConnectionFilter";
-import { StatCard, formatMinutes } from "../../components/common/StatCard";
+import { StatCard, compareWithPrevious, formatMinutes } from "../../components/common/StatCard";
+import { AgentsTable, TeamNowCard, type TeamData } from "../../components/dashboard/TeamCards";
 import { DistributionChartCard } from "../../components/dashboard/DistributionChartCard";
 import { SeriesChartCard } from "../../components/dashboard/SeriesChartCard";
 import { WordCloudCard } from "../../components/dashboard/WordCloudCard";
@@ -28,6 +29,7 @@ interface DashboardData {
   timings: { avgAcceptMs: number | null; avgFirstResponseMs: number | null; avgHandlingMs: number | null; avgClosingMs: number | null };
   perAgent: { agentId: string; agentName: string; conversations: number; messagesSent: number; messagesReceived: number; avgHandlingMs: number | null }[];
   users: { online: number; active: number; total: number };
+  previous: { received: number; closed: number; messagesTotal: number; avgFirstResponseMs: number | null };
 }
 
 // Amber for "waiting" doesn't come from the brand (it's a status-severity
@@ -109,6 +111,18 @@ export default function DashboardPage() {
       ).data,
   });
 
+  const { data: team } = useQuery({
+    queryKey: ["dashboard-team", period, agentId],
+    queryFn: async () =>
+      (
+        await api.get<TeamData>("/dashboard/team", {
+          params: { period: period.period, from: period.from, to: period.to, agentId: agentId === "all" ? undefined : agentId },
+        })
+      ).data,
+    // "Equipe agora" is a live snapshot.
+    refetchInterval: 30_000,
+  });
+
   const { data: presenceByHour, isLoading: isPresenceByHourLoading } = useQuery({
     queryKey: ["dashboard-presence-by-hour", period, agentId],
     queryFn: async () =>
@@ -162,12 +176,23 @@ export default function DashboardPage() {
     }
   }
 
+  const periodLabel = { today: "hoje", yesterday: "ontem", last7days: "nos últimos 7 dias", month: "neste mês", lastMonth: "no mês anterior", custom: "no período" }[
+    period.period
+  ];
+
   return (
     <div className="h-full overflow-auto p-3 sm:p-6">
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <PeriodFilter value={period} onChange={setPeriod} />
-          <select value={agentId} onChange={(e) => setAgentId(e.target.value)} className="focus-ring rounded-card border border-border bg-surface px-3 py-2 text-sm">
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight">Visão geral</h2>
+          <p className="text-xs text-muted">
+            {connectionIds.length ? `${connectionIds.length} ${connectionIds.length === 1 ? "conexão" : "conexões"}` : "Todas as conexões"} ·{" "}
+            {agentId === "all" ? "todos os atendentes" : (agents?.find((a) => a.id === agentId)?.displayName ?? "1 atendente")}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <PeriodFilter value={period} onChange={setPeriod} segmented />
+          <select value={agentId} onChange={(e) => setAgentId(e.target.value)} className="focus-ring rounded-lg border border-border bg-surface px-3 py-1.5 text-[13px]">
             <option value="all">Todos os atendentes</option>
             {agents?.map((a) => (
               <option key={a.id} value={a.id}>
@@ -176,65 +201,90 @@ export default function DashboardPage() {
             ))}
           </select>
           <ConnectionFilter value={connectionIds} onChange={setConnectionIds} />
+          <button
+            onClick={handleExportPptx}
+            disabled={!data || exportingPptx}
+            className="focus-ring flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-[13px] font-medium hover:bg-surface-alt disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <FileBarChart2 className="h-4 w-4" /> {exportingPptx ? "Gerando..." : "Exportar PPT"}
+          </button>
         </div>
-        <button
-          onClick={handleExportPptx}
-          disabled={!data || exportingPptx}
-          className="focus-ring flex items-center gap-1.5 rounded-card bg-primary px-3 py-2 text-sm font-semibold text-primary-fg hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <FileBarChart2 className="h-4 w-4" /> {exportingPptx ? "Gerando..." : "Exportar PPT"}
-        </button>
       </div>
 
       {isLoading && <p className="text-sm text-muted">Carregando indicadores...</p>}
 
       {isError && (
-        <p className="text-sm text-red-600">
+        <p className="text-sm text-danger">
           Não foi possível carregar os indicadores: {getApiErrorMessage(error, "erro inesperado")}
         </p>
       )}
 
       {data && (
         <div className="space-y-8">
-          <section>
-            <h2 className="mb-3 text-sm font-semibold text-muted">Usuários</h2>
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
-              <StatCard
-                label="Online agora"
-                value={data.users.online}
-                icon={Wifi}
-                onClick={canOpenUsuarios ? () => navigate("/usuarios") : undefined}
-                goToLabel="Ver Usuários →"
-              />
-              <StatCard
-                label="Ativos"
-                value={data.users.active}
-                icon={UserCheck}
-                onClick={canOpenUsuarios ? () => navigate("/usuarios") : undefined}
-                goToLabel="Ver Usuários →"
-              />
-              <StatCard
-                label="Total"
-                value={data.users.total}
-                icon={Users}
-                onClick={canOpenUsuarios ? () => navigate("/usuarios") : undefined}
-                goToLabel="Ver Usuários →"
-              />
-            </div>
+          <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+            <StatCard
+              label="Conversas recebidas"
+              value={data.conversations.received.toLocaleString("pt-BR")}
+              icon={Inbox}
+              delta={compareWithPrevious(data.conversations.received, data.previous.received)}
+            />
+            <StatCard
+              label="Na fila agora"
+              value={data.conversations.waiting}
+              icon={Clock}
+              tone={data.conversations.waiting > 0 ? "alert" : undefined}
+              hint={data.conversations.waiting > 0 ? "aguardando um atendente" : "ninguém esperando"}
+              onClick={canOpenGestao ? () => goToGestao(["NEW", "WAITING"], false) : undefined}
+              goToLabel="Ver na Gestão →"
+            />
+            <StatCard
+              label="1ª resposta (média)"
+              value={formatMinutes(data.timings.avgFirstResponseMs)}
+              icon={Timer}
+              delta={compareWithPrevious(data.timings.avgFirstResponseMs, data.previous.avgFirstResponseMs, true)}
+            />
+            <StatCard
+              label="Encerradas"
+              value={data.conversations.closed.toLocaleString("pt-BR")}
+              icon={CheckCircle2}
+              delta={compareWithPrevious(data.conversations.closed, data.previous.closed)}
+              onClick={canOpenGestao ? () => goToGestao(["CLOSED"], true) : undefined}
+              goToLabel="Ver na Gestão →"
+            />
+            <StatCard
+              label="Mensagens"
+              value={data.messages.total.toLocaleString("pt-BR")}
+              icon={MessageSquare}
+              delta={compareWithPrevious(data.messages.total, data.previous.messagesTotal)}
+            />
+          </section>
+
+          <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
+            <TeamNowCard team={team} onOpenUsers={canOpenUsuarios ? () => navigate("/usuarios") : undefined} />
+            <PresenceByHourChart
+              data={presenceByHour}
+              isLoading={isPresenceByHourLoading}
+              isToday={period.period === "today"}
+              primaryColor={primaryColor}
+              secondaryColor={secondaryColor}
+              initialRange={
+                user?.presenceChartStartHour != null && user?.presenceChartEndHour != null
+                  ? { start: user.presenceChartStartHour, end: user.presenceChartEndHour }
+                  : null
+              }
+              onSaveDefaultRange={(range) => saveDefaultHourRangeMutation.mutate(range)}
+              onActiveRangeChange={setActiveHourRange}
+            />
           </section>
 
           <section>
-            <h2 className="mb-3 text-sm font-semibold text-muted">Conversas</h2>
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
-              <StatCard label="Recebidas" value={data.conversations.received} icon={Inbox} />
-              <StatCard label="Únicas" value={data.conversations.unique} icon={Users} />
-              <StatCard
-                label="Aguardando"
-                value={data.conversations.waiting}
-                icon={Timer}
-                onClick={canOpenGestao ? () => goToGestao(["NEW", "WAITING"], false) : undefined}
-                goToLabel="Ver na Gestão →"
-              />
+            <AgentsTable team={team} stats={data.perAgent} />
+          </section>
+
+          <section>
+            <h2 className="mb-3 text-sm font-semibold text-muted">Mais números {periodLabel}</h2>
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              <StatCard label="Contatos únicos" value={data.conversations.unique} icon={Users} />
               <StatCard
                 label="Em atendimento"
                 value={data.conversations.inProgress}
@@ -242,22 +292,8 @@ export default function DashboardPage() {
                 onClick={canOpenGestao ? () => goToGestao(["IN_PROGRESS", "TRANSFERRED"], true) : undefined}
                 goToLabel="Ver na Gestão →"
               />
-              <StatCard
-                label="Encerradas"
-                value={data.conversations.closed}
-                icon={Inbox}
-                onClick={canOpenGestao ? () => goToGestao(["CLOSED"], true) : undefined}
-                goToLabel="Ver na Gestão →"
-              />
-            </div>
-          </section>
-
-          <section>
-            <h2 className="mb-3 text-sm font-semibold text-muted">Mensagens</h2>
-            <div className="grid grid-cols-3 gap-4">
-              <StatCard label="Recebidas" value={data.messages.received} icon={MessageSquare} />
-              <StatCard label="Enviadas" value={data.messages.sent} icon={MessageSquare} />
-              <StatCard label="Total" value={data.messages.total} icon={MessageSquare} />
+              <StatCard label="Mensagens recebidas" value={data.messages.received.toLocaleString("pt-BR")} icon={MessageSquare} />
+              <StatCard label="Mensagens enviadas" value={data.messages.sent.toLocaleString("pt-BR")} icon={MessageSquare} />
             </div>
           </section>
 
@@ -325,22 +361,6 @@ export default function DashboardPage() {
             </div>
           </section>
 
-          <section>
-            <PresenceByHourChart
-              data={presenceByHour}
-              isLoading={isPresenceByHourLoading}
-              isToday={period.period === "today"}
-              primaryColor={primaryColor}
-              secondaryColor={secondaryColor}
-              initialRange={
-                user?.presenceChartStartHour != null && user?.presenceChartEndHour != null
-                  ? { start: user.presenceChartStartHour, end: user.presenceChartEndHour }
-                  : null
-              }
-              onSaveDefaultRange={(range) => saveDefaultHourRangeMutation.mutate(range)}
-              onActiveRangeChange={setActiveHourRange}
-            />
-          </section>
         </div>
       )}
     </div>

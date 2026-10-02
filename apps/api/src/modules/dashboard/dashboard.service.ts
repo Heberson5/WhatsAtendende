@@ -90,6 +90,14 @@ export async function getDashboard({ from, to, agentId, connectionIds }: Dashboa
 
   const perAgent = await getPerAgentBreakdown(from, to, connectionFilter);
   const users = await getUsersSummary();
+  // Same-length window right before this one, for the "vs período anterior" deltas.
+  const lengthMs = to.getTime() - from.getTime();
+  const previous = await getPeriodTotals({
+    from: new Date(from.getTime() - lengthMs - 1),
+    to: new Date(from.getTime() - 1),
+    agentId,
+    connectionIds,
+  });
 
   return {
     conversations: {
@@ -108,6 +116,106 @@ export async function getDashboard({ from, to, agentId, connectionIds }: Dashboa
     },
     perAgent,
     users,
+    previous,
+  };
+}
+
+/** The handful of headline numbers the Dashboard compares against the previous period. */
+async function getPeriodTotals({ from, to, agentId, connectionIds }: DashboardParams) {
+  const connectionFilter = connectionIds === undefined ? undefined : { in: connectionIds };
+  const conversationScope = {
+    ...(agentId ? { assignedAgentId: agentId } : {}),
+    ...(connectionFilter ? { whatsappConnectionId: connectionFilter } : {}),
+  };
+  const [conversations, messagesTotal] = await Promise.all([
+    prisma.conversation.findMany({
+      where: { createdAt: { gte: from, lte: to }, ...conversationScope },
+      select: { status: true, acceptedAt: true, firstResponseAt: true },
+    }),
+    prisma.message.count({ where: { createdAt: { gte: from, lte: to }, conversation: conversationScope } }),
+  ]);
+  return {
+    received: conversations.length,
+    closed: conversations.filter((c) => c.status === "CLOSED").length,
+    messagesTotal,
+    avgFirstResponseMs: avgMs(
+      conversations.filter((c) => c.acceptedAt && c.firstResponseAt).map((c) => c.firstResponseAt!.getTime() - c.acceptedAt!.getTime())
+    ),
+  };
+}
+
+/**
+ * "Equipe agora" + per-agent presence durations. `now` is a live snapshot of
+ * every active user (not scoped to the period); `agents` sums each AGENT's
+ * Online and Paused time inside the period from AgentStatusLog.
+ */
+export async function getTeam({ from, to, agentId }: { from: Date; to: Date; agentId?: string }) {
+  const now = new Date();
+  const [users, openPauses, agents, logs] = await Promise.all([
+    prisma.user.findMany({
+      where: { status: "ACTIVE" },
+      select: { id: true, displayName: true, photoUrl: true, presence: true, pauseReason: { select: { name: true } } },
+    }),
+    prisma.agentStatusLog.findMany({ where: { status: "AWAY", endedAt: null }, select: { userId: true, startedAt: true } }),
+    prisma.user.findMany({
+      where: { role: "AGENT", status: "ACTIVE", ...(agentId ? { id: agentId } : {}) },
+      select: { id: true, displayName: true, photoUrl: true, presence: true, pauseReason: { select: { name: true } } },
+      orderBy: { displayName: "asc" },
+    }),
+    prisma.agentStatusLog.findMany({
+      where: {
+        status: { in: ["ONLINE", "AWAY"] },
+        startedAt: { lt: to },
+        OR: [{ endedAt: null }, { endedAt: { gt: from } }],
+        user: { role: "AGENT", ...(agentId ? { id: agentId } : {}) },
+      },
+      select: { userId: true, status: true, startedAt: true, endedAt: true },
+    }),
+  ]);
+
+  const pausedSince = new Map<string, Date>();
+  for (const p of openPauses) {
+    const current = pausedSince.get(p.userId);
+    if (!current || p.startedAt < current) pausedSince.set(p.userId, p.startedAt);
+  }
+
+  const durations = new Map<string, { onlineMs: number; pausedMs: number }>();
+  const windowEnd = Math.min(to.getTime(), now.getTime());
+  for (const log of logs) {
+    const start = Math.max(log.startedAt.getTime(), from.getTime());
+    const end = Math.min((log.endedAt ?? now).getTime(), windowEnd);
+    if (end <= start) continue;
+    const entry = durations.get(log.userId) ?? { onlineMs: 0, pausedMs: 0 };
+    if (log.status === "ONLINE") entry.onlineMs += end - start;
+    else entry.pausedMs += end - start;
+    durations.set(log.userId, entry);
+  }
+
+  const paused = users.filter((u) => u.presence === "AWAY");
+  return {
+    now: {
+      online: users.filter((u) => u.presence === "ONLINE").length,
+      paused: paused.length,
+      offline: users.filter((u) => u.presence === "OFFLINE").length,
+      pausedUsers: paused
+        .map((u) => ({
+          userId: u.id,
+          name: u.displayName,
+          photoUrl: u.photoUrl,
+          reasonName: u.pauseReason?.name ?? null,
+          since: pausedSince.get(u.id)?.toISOString() ?? null,
+        }))
+        .sort((a, b) => (a.since ?? "").localeCompare(b.since ?? "")),
+    },
+    agents: agents.map((a) => ({
+      agentId: a.id,
+      agentName: a.displayName,
+      photoUrl: a.photoUrl,
+      presence: a.presence,
+      pauseReasonName: a.presence === "AWAY" ? (a.pauseReason?.name ?? null) : null,
+      onlineMs: durations.get(a.id)?.onlineMs ?? 0,
+      pausedMs: durations.get(a.id)?.pausedMs ?? 0,
+    })),
   };
 }
 

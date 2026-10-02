@@ -8,21 +8,39 @@ export interface PeriodValue {
   to?: string;
 }
 
-const OPTIONS: { value: PeriodKey; label: string }[] = [
-  { value: "today", label: "Hoje" },
-  { value: "yesterday", label: "Ontem" },
-  { value: "last7days", label: "Últimos 7 dias" },
-  { value: "month", label: "Este mês" },
-  { value: "lastMonth", label: "Mês anterior" },
-  { value: "custom", label: "Personalizado" },
+const OPTIONS: { value: PeriodKey; label: string; short: string }[] = [
+  { value: "today", label: "Hoje", short: "Hoje" },
+  { value: "yesterday", label: "Ontem", short: "Ontem" },
+  { value: "last7days", label: "Últimos 7 dias", short: "7 dias" },
+  { value: "month", label: "Este mês", short: "Este mês" },
+  { value: "lastMonth", label: "Mês anterior", short: "Mês anterior" },
+  { value: "custom", label: "Personalizado", short: "Personalizado" },
 ];
 
-export function PeriodFilter({ value, onChange }: { value: PeriodValue; onChange: (v: PeriodValue) => void }) {
+/** `segmented` shows every period as a button (Dashboard); the default is a compact select. */
+export function PeriodFilter({ value, onChange, segmented }: { value: PeriodValue; onChange: (v: PeriodValue) => void; segmented?: boolean }) {
   const [customFrom, setCustomFrom] = useState(value.from ?? "");
   const [customTo, setCustomTo] = useState(value.to ?? "");
 
   return (
     <div className="flex flex-wrap items-center gap-2">
+      {segmented ? (
+        <div className="inline-flex flex-wrap rounded-lg border border-border bg-surface p-[3px]" role="group" aria-label="Período">
+          {OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              aria-pressed={value.period === opt.value}
+              onClick={() => onChange(opt.value === "custom" ? { period: opt.value, from: customFrom, to: customTo } : { period: opt.value })}
+              className={`focus-ring rounded-md px-2.5 py-1 text-[13px] ${
+                value.period === opt.value ? "bg-[var(--color-text)] font-semibold text-surface" : "text-muted hover:text-[var(--color-text)]"
+              }`}
+            >
+              {opt.short}
+            </button>
+          ))}
+        </div>
+      ) : (
       <select
         value={value.period}
         onChange={(e) => {
@@ -42,6 +60,7 @@ export function PeriodFilter({ value, onChange }: { value: PeriodValue; onChange
           </option>
         ))}
       </select>
+      )}
 
       {value.period === "custom" && (
         <>

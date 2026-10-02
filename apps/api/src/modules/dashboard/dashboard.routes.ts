@@ -7,7 +7,7 @@ import { requirePermission } from "../../lib/permissions";
 import { resolvePeriod, optionalDateQueryParam } from "../../lib/period";
 import { parseListParam } from "../../lib/parse-list-param";
 import { resolveAllowedConnectionIds } from "../../lib/connection-access";
-import { getDashboard, getPresenceByHour, getWordCloud } from "./dashboard.service";
+import { getDashboard, getPresenceByHour, getTeam, getWordCloud } from "./dashboard.service";
 
 export const dashboardRouter = Router();
 dashboardRouter.use(requireAuth, requirePermission(PERMISSION.DASHBOARD_ACESSAR));
@@ -50,5 +50,14 @@ dashboardRouter.get(
     const { from, to } = resolvePeriod(query.period, query.from, query.to, query.tzOffsetMinutes);
     const data = await getPresenceByHour({ from, to, agentId: query.agentId, tzOffsetMinutes: query.tzOffsetMinutes });
     res.json(data);
+  })
+);
+
+dashboardRouter.get(
+  "/team",
+  asyncHandler(async (req, res) => {
+    const query = querySchema.parse(req.query);
+    const { from, to } = resolvePeriod(query.period, query.from, query.to, query.tzOffsetMinutes);
+    res.json(await getTeam({ from, to, agentId: query.agentId }));
   })
 );
