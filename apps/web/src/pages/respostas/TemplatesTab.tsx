@@ -77,7 +77,6 @@ export function TemplatesTab() {
             <tr>
               <th className="px-4 py-3">Nome</th>
               <th className="px-4 py-3">Categoria</th>
-              <th className="px-4 py-3">Idioma</th>
               <th className="px-4 py-3">Conexão</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3 text-right">Ações</th>
@@ -86,14 +85,14 @@ export function TemplatesTab() {
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-muted">
+                <td colSpan={5} className="px-4 py-8 text-center text-muted">
                   Carregando...
                 </td>
               </tr>
             )}
             {!isLoading && templates?.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-muted">
+                <td colSpan={5} className="px-4 py-8 text-center text-muted">
                   Nenhum template cadastrado ainda.
                 </td>
               </tr>
@@ -111,7 +110,6 @@ export function TemplatesTab() {
                 <td className="px-4 py-3">
                   <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${CATEGORY_COLOR[t.category]}`}>{CATEGORY_LABEL[t.category]}</span>
                 </td>
-                <td className="px-4 py-3 text-muted">{t.language}</td>
                 <td className="px-4 py-3 text-muted">{t.whatsappConnectionName}</td>
                 <td className="px-4 py-3">
                   <span
