@@ -30,6 +30,7 @@ import { metaRouter } from "./modules/meta/meta.routes";
 import { writingAssistRouter } from "./modules/writing-assist/writing-assist.routes";
 import { messageTemplatesRouter } from "./modules/message-templates/message-templates.routes";
 import { pauseReasonsRouter } from "./modules/pause-reasons/pause-reasons.routes";
+import { flowsRouter } from "./modules/flows/flows.routes";
 
 export function createApp() {
   const app = express();
@@ -136,6 +137,7 @@ export function createApp() {
   app.use("/api/meta", metaRouter);
   app.use("/api/writing-assist", writingAssistRouter);
   app.use("/api/pause-reasons", pauseReasonsRouter);
+  app.use("/api/flows", flowsRouter);
 
   app.use((req, res) => {
     res.status(404).json({ error: "NOT_FOUND", message: `Rota nao encontrada: ${req.method} ${req.path}` });

@@ -119,6 +119,10 @@ model User {
   presenceChartStartHour Int?
   presenceChartEndHour   Int?
 
+  // Flows this user authored — see Flow.createdByUserId. onDelete: SetNull
+  // there (not listed here) means a flow outlives its creator's account.
+  createdFlows Flow[]
+
   @@index([role])
   @@index([status])
   @@index([whatsappConnectionId])
@@ -289,6 +293,7 @@ model WhatsAppConnection {
   quickReplies     QuickReply[]
   managerGrants    ManagerConnectionAccess[]
   messageTemplates MessageTemplate[]
+  flowConnections  FlowConnection[]
 
   @@index([status])
 }
@@ -564,6 +569,7 @@ model Contact {
   lastInteractionAt    DateTime            @default(now())
 
   conversations Conversation[]
+  flowSessions  FlowSession[]
 
   @@unique([phone, whatsappConnectionId])
   @@unique([providerChatId, whatsappConnectionId])
@@ -955,4 +961,126 @@ model HolidaySyncCursor {
   syncedAt DateTime     @default(now())
 
   @@unique([scope, state, city, year])
+}
+
+// ---------------------------------------------------------------------------
+// Fluxo — visual chatbot flow builder (menu "Fluxo"). A Flow is a graph of
+// FlowNode/FlowEdge rows, linked to one or more WhatsApp Oficial connections
+// via FlowConnection, with `active` gating whether the engine (not yet
+// built — see PROMPT follow-ups) acts on it at all. See PROMPT: "um novo
+// menu chamado Fluxo... vários fluxos podendo ser vinculados a várias
+// conexões oficiais... função de ativar e desativar o fluxo".
+// ---------------------------------------------------------------------------
+
+enum FlowNodeType {
+  // Single entry point per flow, auto-created, never deleted by the UI —
+  // every other node is reachable only by tracing edges from this one.
+  START
+  TEXT_MESSAGE
+  // Branches into one outgoing edge per option — data.options:
+  // {id, label}[], each option's id doubling as its FlowEdge.sourceHandle.
+  MENU
+  // Hands the conversation to a human. data.assignedAgentIds: string[] —
+  // see PROMPT: "para quais atendentes serão designados para ser
+  // configurado no nó". Empty = any agent on the connection's queue, same
+  // as a normal inbound conversation.
+  TRANSFER_TO_AGENT
+  END
+}
+
+model Flow {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  // See PROMPT: "função de ativar e desativar o fluxo". Starts false so a
+  // half-built flow can be saved and iterated on without going live by
+  // accident.
+  active      Boolean  @default(false)
+
+  createdByUserId String?
+  createdBy       User?   @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  connections FlowConnection[]
+  nodes       FlowNode[]
+  edges       FlowEdge[]
+  sessions    FlowSession[]
+
+  @@index([createdByUserId])
+}
+
+// Many-to-many: see PROMPT: "vários fluxos podendo ser vinculados a várias
+// conexões oficiais" — a flow with no rows here is linked to nothing yet
+// (not "every connection"), mirroring how a brand-new flow starts inactive.
+model FlowConnection {
+  id                   String             @id @default(uuid())
+  flow                 Flow               @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  flowId               String
+  whatsappConnection   WhatsAppConnection @relation(fields: [whatsappConnectionId], references: [id], onDelete: Cascade)
+  whatsappConnectionId String
+
+  @@unique([flowId, whatsappConnectionId])
+  @@index([whatsappConnectionId])
+}
+
+model FlowNode {
+  id       String       @id @default(uuid())
+  flow     Flow         @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  flowId   String
+  type     FlowNodeType
+  // Canvas coordinates — purely a UI concern, never read by the engine.
+  positionX Float @default(0)
+  positionY Float @default(0)
+  // Node-type-specific config (text body, menu options, assigned agents,
+  // ...). Kept as JSON rather than one column per type since each type's
+  // shape is different and a new node type shouldn't need a migration.
+  data     Json         @default("{}")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  outgoingEdges FlowEdge[] @relation("FlowEdgeSource")
+  incomingEdges FlowEdge[] @relation("FlowEdgeTarget")
+
+  @@index([flowId])
+}
+
+model FlowEdge {
+  id     String @id @default(uuid())
+  flow   Flow   @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  flowId String
+
+  sourceNode   FlowNode @relation("FlowEdgeSource", fields: [sourceNodeId], references: [id], onDelete: Cascade)
+  sourceNodeId String
+  targetNode   FlowNode @relation("FlowEdgeTarget", fields: [targetNodeId], references: [id], onDelete: Cascade)
+  targetNodeId String
+
+  // Which output of the source node this edge leaves from — null for a
+  // node with a single outgoing path, a MENU option's id when branching.
+  sourceHandle String?
+
+  @@index([flowId])
+  @@index([sourceNodeId])
+  @@unique([sourceNodeId, sourceHandle])
+}
+
+// Per-contact runtime state while a flow is actively steering their
+// conversation — not read or written by anything yet (the execution
+// engine is a later phase), but modeled now alongside the rest of Fluxo so
+// that phase is additive instead of another schema change.
+model FlowSession {
+  id            String    @id @default(uuid())
+  flow          Flow      @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  flowId        String
+  contact       Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  contactId     String
+  currentNodeId String?
+  variables     Json      @default("{}")
+  startedAt     DateTime  @default(now())
+  completedAt   DateTime?
+
+  @@index([flowId])
+  @@index([contactId])
 }
