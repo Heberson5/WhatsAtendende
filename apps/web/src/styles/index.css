@@ -109,10 +109,24 @@
   color: var(--color-text);
 }
 
+/* The page itself never scrolls: inside the app only the lists/panels do
+   (each has its own overflow container). In the installed desktop app
+   (PWA), the window's height can round a few pixels differently from
+   100vh, which left the whole document scrollable — scrolling past the end
+   of a list then dragged the entire system along with it. #root is the one
+   scroll container for screens outside the app shell (login on a short
+   window), and overscroll-behavior stops the bounce/chaining to the page. */
 html,
-body,
+body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 #root {
   height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: none;
 }
 
 body {
