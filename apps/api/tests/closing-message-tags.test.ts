@@ -45,6 +45,7 @@ describe("the Encerramento closing message now substitutes {{atendente}}/{{atend
       text: "Obrigado, *{{cliente}}*! Você foi atendido por *{{atendente_nome}}* ({{atendente_cargo}}).",
       active: true,
       userIds: [ana.id],
+      connectionScope: { allConnections: true, connectionIds: [] },
     });
 
     const { conversation, contact } = await createWaitingConversation("5511990004321", created.body.id);

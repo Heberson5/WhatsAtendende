@@ -7,6 +7,7 @@ import { requireAuth } from "../../middleware/auth";
 import { isPermissionAllowed, requirePermission } from "../../lib/permissions";
 import { Errors } from "../../lib/http-error";
 import { writeAudit } from "../../lib/audit";
+import { connectionScopeSchema } from "../../lib/connection-scope";
 import { toAutoMessageTemplateDTO } from "./auto-message-templates.mapper";
 import * as service from "./auto-message-templates.service";
 
@@ -61,6 +62,7 @@ const bodySchema = z.object({
   name: z.string().min(1).max(120),
   text: z.string().min(1).max(4096),
   active: z.boolean(),
+  connectionScope: connectionScopeSchema,
 });
 
 autoMessageTemplatesRouter.post(
@@ -75,7 +77,7 @@ autoMessageTemplatesRouter.post(
       entity: "AutoMessageTemplate",
       entityId: row.id,
       ipAddress: req.ip ?? null,
-      metadata: { trigger: input.trigger, name: input.name, active: input.active },
+      metadata: { trigger: input.trigger, name: input.name, active: input.active, connectionScope: input.connectionScope },
     });
     res.status(201).json(toAutoMessageTemplateDTO(row));
   })

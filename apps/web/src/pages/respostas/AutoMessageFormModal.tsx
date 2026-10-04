@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { X } from "lucide-react";
 import type { AutoMessageTemplateDTO, AutoMessageTrigger } from "@whatsatendende/types";
 import { AutoMessagePreview } from "./AutoMessagePreview";
+import { ConnectionScopePicker, toConnectionScopeValue, type ConnectionScopeValue } from "./ConnectionScopePicker";
 import {
   fillAutoMessageTags,
   AGENT_EXAMPLE,
@@ -15,6 +16,7 @@ export interface AutoMessageFormValues {
   name: string;
   text: string;
   active: boolean;
+  connectionScope: ConnectionScopeValue;
 }
 
 // {{atendente}} kept for templates saved before the other two existed —
@@ -46,6 +48,7 @@ export function AutoMessageFormModal({
   const [name, setName] = useState(template?.name ?? "");
   const [text, setText] = useState(template?.text ?? "");
   const [active, setActive] = useState(template?.active ?? true);
+  const [connectionScope, setConnectionScope] = useState(toConnectionScopeValue(template?.connectionScope, true));
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [textareaEl, setTextareaEl] = useState<HTMLTextAreaElement | null>(null);
@@ -82,9 +85,13 @@ export function AutoMessageFormModal({
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    if (!connectionScope.allConnections && connectionScope.connectionIds.length === 0) {
+      setError("Escolha pelo menos uma conexão ou marque todas as conexões");
+      return;
+    }
     setLoading(true);
     try {
-      await onSubmit({ trigger, name, text, active });
+      await onSubmit({ trigger, name, text, active, connectionScope });
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao salvar mensagem automática");
@@ -149,6 +156,12 @@ export function AutoMessageFormModal({
           </div>
 
           <AutoMessagePreview senderName={senderExampleName} text={previewText} />
+
+          <ConnectionScopePicker
+            value={connectionScope}
+            onChange={setConnectionScope}
+            hint="Uma mensagem escolhida para a conexão tem prioridade sobre uma de todas as conexões."
+          />
 
           <label className="flex items-center justify-between rounded-card border border-border px-3 py-2">
             <span className="text-sm font-medium">Ativo</span>

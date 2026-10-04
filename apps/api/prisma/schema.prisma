@@ -295,7 +295,9 @@ model WhatsAppConnection {
   agents           User[]
   contacts         Contact[]
   conversations    Conversation[]
-  quickReplies     QuickReply[]
+  quickReplies     QuickReply[]              @relation("QuickReplyConnections")
+  autoMessages     AutoMessageTemplate[]     @relation("AutoMessageTemplateConnections")
+  closingMessages  ClosingMessage[]          @relation("ClosingMessageConnections")
   managerGrants    ManagerConnectionAccess[]
   messageTemplates MessageTemplate[]
   flowConnections  FlowConnection[]
@@ -333,18 +335,21 @@ model ManagerConnectionAccess {
 // connection (not global) so, e.g., "Vendas" and "Suporte" can each curate
 // their own set without stepping on each other's shortcuts.
 model QuickReply {
-  id                   String             @id @default(uuid())
-  name                 String
+  id             String               @id @default(uuid())
+  name           String
   // Stored without the leading "/" (e.g. "boasvindas", not "/boasvindas") —
   // the slash is purely a UI trigger, added back only when displayed.
-  shortcut             String
-  text                 String
-  whatsappConnection   WhatsAppConnection @relation(fields: [whatsappConnectionId], references: [id], onDelete: Cascade)
-  whatsappConnectionId String
-  createdAt            DateTime           @default(now())
-  updatedAt            DateTime           @updatedAt
+  shortcut       String
+  text           String
+  // Offered in every connection's "/" picker, or only in `connections`.
+  // A shortcut must be unique among the replies that can show up together
+  // in the same connection — enforced in quick-replies.service.ts.
+  allConnections Boolean              @default(false)
+  connections    WhatsAppConnection[] @relation("QuickReplyConnections")
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
 
-  @@unique([whatsappConnectionId, shortcut])
+  @@index([shortcut])
 }
 
 enum AutoMessageTrigger {
@@ -365,13 +370,17 @@ enum AutoMessageTrigger {
 // necessário e tenha disponível as tags" and "mensagem automática para
 // quando o atendente aceita a conversa".
 model AutoMessageTemplate {
-  id        String             @id @default(uuid())
-  trigger   AutoMessageTrigger
-  name      String
-  text      String
-  active    Boolean            @default(true)
-  createdAt DateTime           @default(now())
-  updatedAt DateTime           @updatedAt
+  id             String               @id @default(uuid())
+  trigger        AutoMessageTrigger
+  name           String
+  text           String
+  active         Boolean              @default(true)
+  // Sent for conversations of every connection, or only of `connections`.
+  // A connection-specific active template wins over an "all connections" one.
+  allConnections Boolean              @default(true)
+  connections    WhatsAppConnection[] @relation("AutoMessageTemplateConnections")
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
 
   @@index([trigger])
 }
@@ -383,15 +392,19 @@ model AutoMessageTemplate {
 // of the AGENT, not of which connection they happen to be on. See
 // conversations.routes.ts's close route for where this actually fires.
 model ClosingMessage {
-  id            String   @id @default(uuid())
-  name          String
-  text          String
+  id             String               @id @default(uuid())
+  name           String
+  text           String
   // Inactive = kept on file but never auto-sent, without losing its user
   // assignments (toggling it back on picks up exactly where it left off).
-  active        Boolean  @default(true)
-  assignedUsers User[]
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  active         Boolean              @default(true)
+  assignedUsers  User[]
+  // Only auto-sent when the closed conversation came from one of these
+  // connections (or from any, when allConnections).
+  allConnections Boolean              @default(true)
+  connections    WhatsAppConnection[] @relation("ClosingMessageConnections")
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
 }
 
 // ---------------------------------------------------------------------------

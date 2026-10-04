@@ -252,7 +252,7 @@ async function sendAutoMessage(
   },
   sender: { id: string; name: string }
 ): Promise<void> {
-  const template = await getActiveTemplateFor(trigger);
+  const template = await getActiveTemplateFor(trigger, conversation.whatsappConnectionId);
   if (!template) return;
   const templateAgent = conversation.assignedAgent;
   const text = renderAutoMessageTemplate(template.text, {
@@ -440,7 +440,7 @@ conversationsRouter.post(
     // or HANDLED_EXTERNALLY one, same as sendAutoMessage's own no-op
     // precedent.
     if (sendClosingMessage && ["IN_PROGRESS", "TRANSFERRED"].includes(existing.status)) {
-      const closingMessage = await getActiveClosingMessageForAgent(req.auth!.userId);
+      const closingMessage = await getActiveClosingMessageForAgent(req.auth!.userId, existing.whatsappConnectionId);
       if (closingMessage) {
         const closingAgent = await prisma.user.findUnique({ where: { id: req.auth!.userId }, select: { fullName: true } });
         const text = renderAutoMessageTemplate(closingMessage.text, {
@@ -513,7 +513,7 @@ conversationsRouter.post(
     // sender-name prefix) as anything an agent types. See PROMPT: "Lista
     // de quais usuários a mensagem será disparada automaticamente ao
     // clicar em encerrar."
-    const closingMessage = await getActiveClosingMessageForAgent(req.auth!.userId);
+    const closingMessage = await getActiveClosingMessageForAgent(req.auth!.userId, existing.whatsappConnectionId);
     if (closingMessage) {
       const closingAgent = await prisma.user.findUnique({ where: { id: req.auth!.userId }, select: { fullName: true } });
       const text = renderAutoMessageTemplate(closingMessage.text, {

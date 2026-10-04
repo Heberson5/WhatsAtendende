@@ -6,6 +6,7 @@ import { requireAuth } from "../../middleware/auth";
 import { requirePermission } from "../../lib/permissions";
 import { writeAudit } from "../../lib/audit";
 import { getConversationOrThrow, assertAgentCanAccessConversation } from "../conversations/conversations.service";
+import { connectionScopeSchema } from "../../lib/connection-scope";
 import { toQuickReplyDTO } from "./quick-replies.mapper";
 import * as service from "./quick-replies.service";
 
@@ -53,7 +54,7 @@ const createSchema = z.object({
     .max(60)
     .regex(/^\/?[a-zA-Z0-9_-]+$/, "O atalho só pode ter letras, números, hífen e underline"),
   text: z.string().min(1).max(4096),
-  whatsappConnectionId: z.string().uuid(),
+  connectionScope: connectionScopeSchema,
 });
 
 quickRepliesRouter.post(
@@ -69,7 +70,7 @@ quickRepliesRouter.post(
       entity: "QuickReply",
       entityId: quickReply.id,
       ipAddress: req.ip ?? null,
-      metadata: { name: input.name, shortcut: quickReply.shortcut, whatsappConnectionId: input.whatsappConnectionId },
+      metadata: { name: input.name, shortcut: quickReply.shortcut, connectionScope: input.connectionScope },
     });
     res.status(201).json(toQuickReplyDTO(quickReply));
   })

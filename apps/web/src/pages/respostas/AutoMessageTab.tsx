@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { PERMISSION, type AutoMessageTemplateDTO, type AutoMessageTrigger, type Permission } from "@whatsatendende/types";
 import { useAuthStore } from "../../store/auth-store";
 import { api, getApiErrorMessage } from "../../lib/api";
+import { describeConnectionScope } from "./ConnectionScopePicker";
 import { AutoMessageFormModal, type AutoMessageFormValues } from "./AutoMessageFormModal";
 
 const TRIGGER_PERMISSION: Record<AutoMessageTrigger, { adicionar: Permission; editar: Permission; excluir: Permission }> = {
@@ -94,6 +95,7 @@ export function AutoMessageTab({ trigger, description, emptyMessage }: { trigger
             <tr>
               <th className="px-4 py-3">Nome</th>
               <th className="px-4 py-3">Texto</th>
+              <th className="px-4 py-3">Conexões</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3 text-right">Ações</th>
             </tr>
@@ -101,14 +103,14 @@ export function AutoMessageTab({ trigger, description, emptyMessage }: { trigger
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-muted">
+                <td colSpan={5} className="px-4 py-8 text-center text-muted">
                   Carregando...
                 </td>
               </tr>
             )}
             {!isLoading && templates?.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-muted">
+                <td colSpan={5} className="px-4 py-8 text-center text-muted">
                   {emptyMessage}
                 </td>
               </tr>
@@ -118,6 +120,9 @@ export function AutoMessageTab({ trigger, description, emptyMessage }: { trigger
                 <td className="px-4 py-3 font-medium">{t.name}</td>
                 <td className="max-w-sm truncate px-4 py-3 text-muted" title={t.text}>
                   {t.text}
+                </td>
+                <td className="max-w-[14rem] truncate px-4 py-3 text-muted" title={describeConnectionScope(t.connectionScope)}>
+                  {describeConnectionScope(t.connectionScope)}
                 </td>
                 <td className="px-4 py-3">
                   <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${t.active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}`}>

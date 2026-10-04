@@ -5,6 +5,7 @@ import { asyncHandler } from "../../lib/async-handler";
 import { requireAuth } from "../../middleware/auth";
 import { requirePermission } from "../../lib/permissions";
 import { writeAudit } from "../../lib/audit";
+import { connectionScopeSchema } from "../../lib/connection-scope";
 import { toClosingMessageDTO } from "./closing-messages.mapper";
 import * as service from "./closing-messages.service";
 
@@ -29,6 +30,7 @@ const bodySchema = z.object({
   text: z.string().min(1).max(4096),
   active: z.boolean(),
   userIds: z.array(z.string().uuid()),
+  connectionScope: connectionScopeSchema,
 });
 
 closingMessagesRouter.post(
@@ -43,7 +45,7 @@ closingMessagesRouter.post(
       entity: "ClosingMessage",
       entityId: row.id,
       ipAddress: req.ip ?? null,
-      metadata: { name: input.name, active: input.active, userIds: input.userIds },
+      metadata: { name: input.name, active: input.active, userIds: input.userIds, connectionScope: input.connectionScope },
     });
     res.status(201).json(toClosingMessageDTO(row));
   })

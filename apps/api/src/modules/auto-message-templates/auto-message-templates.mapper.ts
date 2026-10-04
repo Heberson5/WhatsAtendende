@@ -1,13 +1,15 @@
 import type { AutoMessageTemplate } from "@prisma/client";
 import type { AutoMessageTemplateDTO } from "@whatsatendende/types";
+import { toConnectionScopeDTO } from "../../lib/connection-scope";
 
-export function toAutoMessageTemplateDTO(row: AutoMessageTemplate): AutoMessageTemplateDTO {
+export function toAutoMessageTemplateDTO(row: AutoMessageTemplate & { connections: { id: string; name: string }[] }): AutoMessageTemplateDTO {
   return {
     id: row.id,
     trigger: row.trigger,
     name: row.name,
     text: row.text,
     active: row.active,
+    connectionScope: toConnectionScopeDTO(row),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
