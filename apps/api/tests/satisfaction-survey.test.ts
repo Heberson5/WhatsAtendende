@@ -13,14 +13,9 @@ vi.mock("../src/modules/whatsapp/whatsapp.service", async (importOriginal) => {
   };
 });
 
-// Skip the "Desfazer" wait before sending — the survey goes out right away in these tests.
-vi.mock("../src/modules/satisfaction/satisfaction.service", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../src/modules/satisfaction/satisfaction.service")>();
-  return { ...actual, scheduleSatisfactionSurvey: (id: string) => void actual.sendSatisfactionSurvey(id) };
-});
-
+// Loaded before conversations.service so it binds to the mocked whatsapp.service (the modules import each other).
+import { captureSurveyAnswer, getSatisfactionSummary, parseSurveyScore, sendSatisfactionSurvey, updateSurveySettings } from "../src/modules/satisfaction/satisfaction.service";
 import { closeConversation } from "../src/modules/conversations/conversations.service";
-import { captureSurveyAnswer, getSatisfactionSummary, parseSurveyScore, updateSurveySettings } from "../src/modules/satisfaction/satisfaction.service";
 
 const QUESTION = "De 1 a 5, como foi o atendimento?";
 
@@ -60,7 +55,7 @@ describe("Pesquisa de satisfação", () => {
   it("fica desligada por padrão: encerrar não envia nada", async () => {
     const { conversation } = await attendedConversation("5511900000001");
     await closeConversation(conversation.id, agentId);
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await sendSatisfactionSurvey(conversation.id); // what the timer does after the "Desfazer" window
     expect(sent).toHaveLength(0);
     expect(await prisma.satisfactionSurvey.count()).toBe(0);
   });
@@ -69,7 +64,8 @@ describe("Pesquisa de satisfação", () => {
     await enable([connectionId]);
     const { contact, conversation } = await attendedConversation("5511900000002");
     await closeConversation(conversation.id, agentId);
-    await vi.waitFor(() => expect(sent.map((m) => m.text)).toEqual([QUESTION]));
+    await sendSatisfactionSurvey(conversation.id); // what the timer does after the "Desfazer" window
+    expect(sent.map((m) => m.text)).toEqual([QUESTION]);
 
     const captured = await captureSurveyAnswer(connectionId, contact, { body: "nota 4", providerMessageId: "wamid-1" });
     expect(captured).toBe(true);
@@ -89,7 +85,7 @@ describe("Pesquisa de satisfação", () => {
     await enable([other.id]);
     const { conversation } = await attendedConversation("5511900000003");
     await closeConversation(conversation.id, agentId);
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await sendSatisfactionSurvey(conversation.id); // what the timer does after the "Desfazer" window
     expect(sent).toHaveLength(0);
   });
 
@@ -97,7 +93,8 @@ describe("Pesquisa de satisfação", () => {
     await enable([connectionId]);
     const { contact, conversation } = await attendedConversation("5511900000004");
     await closeConversation(conversation.id, agentId);
-    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    await sendSatisfactionSurvey(conversation.id); // what the timer does after the "Desfazer" window
+    expect(sent).toHaveLength(1);
 
     expect(await captureSurveyAnswer(connectionId, contact, { body: "preciso de outra coisa", providerMessageId: "wamid-2" })).toBe(false);
     expect(await captureSurveyAnswer(connectionId, contact, { body: "5", providerMessageId: "wamid-3" })).toBe(false);

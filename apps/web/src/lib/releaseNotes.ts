@@ -15,7 +15,7 @@ import { PERMISSION, type Permission, type PermissionMap, type Role } from "@wha
 
 export type ReleaseNoteType = "novo" | "melhoria" | "correcao";
 
-export type ReleaseNoteArea = "geral" | "atendimento" | "gestao" | "dashboard" | "usuarios" | "respostas" | "fluxo" | "conexoes" | "configuracoes" | "landingPage" | "administracao";
+export type ReleaseNoteArea = "geral" | "atendimento" | "gestao" | "contatos" | "dashboard" | "usuarios" | "respostas" | "fluxo" | "conexoes" | "configuracoes" | "landingPage" | "administracao";
 
 export interface ReleaseNoteImage {
   file: string;
@@ -52,6 +52,7 @@ export const RELEASE_NOTE_AREAS: Record<ReleaseNoteArea, { label: string; requir
   geral: { label: "Geral", requires: [] },
   atendimento: { label: "Atendimento", requires: [PERMISSION.ATENDIMENTO_ACESSAR] },
   gestao: { label: "Gestão", requires: [PERMISSION.GESTAO_ACESSAR] },
+  contatos: { label: "Contatos", requires: [PERMISSION.CONTATOS_ACESSAR] },
   dashboard: { label: "Dashboard e Relatórios", requires: [PERMISSION.DASHBOARD_ACESSAR] },
   usuarios: { label: "Usuários", requires: [PERMISSION.USUARIOS_VISUALIZAR] },
   respostas: { label: "Respostas", requires: [PERMISSION.RESPOSTAS_RAPIDAS_GERENCIAR] },
@@ -63,6 +64,147 @@ export const RELEASE_NOTE_AREAS: Record<ReleaseNoteArea, { label: string; requir
 };
 
 export const RELEASES: Release[] = [
+  {
+    version: "2.1.0",
+    date: "04 out 2026",
+    name: "Automação e contatos",
+    summary:
+      "Os fluxos passam a conversar com os clientes de verdade, também no QR Code. Chegam a pesquisa de satisfação, a tela de Contatos, o envio de templates na conversa e o botão Desfazer. Nenhuma automação vem ligada: você decide o que ativar e em quais conexões.",
+    notes: [
+      {
+        type: "novo",
+        area: "fluxo",
+        title: "Os fluxos agora atendem os clientes",
+        text: "Um fluxo ativo responde sozinho quem escreve pela primeira vez: dá boas-vindas, mostra o menu, confere o horário e passa a conversa para a fila, para um atendente escolhido ou encerra. Funciona nas conexões da API Oficial e do QR Code. Nenhum fluxo vem ativado.",
+        steps: [
+          "Abra Fluxo e crie um fluxo (do zero ou a partir de um modelo).",
+          "Clique em Conexões e escolha em quais números ele vai funcionar.",
+          "Mude de Inativo para Ativo e clique em Salvar.",
+        ],
+        before: "Os fluxos podiam ser desenhados, mas ninguém recebia as mensagens.",
+        after: "Enquanto o fluxo conversa, a conversa aparece como “No fluxo” na Gestão e não entra na fila. Cada conexão pode ter um fluxo ativo por vez.",
+        where: "Menu Fluxo",
+      },
+      {
+        type: "novo",
+        area: "fluxo",
+        title: "Passo “Horário de atendimento”",
+        text: "Separa o caminho de quem escreve dentro e fora do horário. Escolha os dias e o horário de abertura e fechamento. Pela saída Aberto o cliente segue normalmente; pela saída Fechado você pode avisar que a empresa está fechada.",
+        where: "Fluxo › Adicionar passo › Controle",
+        images: [{ file: "fluxo-horario", caption: "Modelo “Fora do horário”: dentro do horário vai para um atendente, fora dele recebe um aviso antes." }],
+      },
+      {
+        type: "melhoria",
+        area: "fluxo",
+        title: "Menu com pergunta própria e respostas mais flexíveis",
+        text: "O menu ganhou um campo para a pergunta. O cliente pode responder com o número (“2”, “opção 2”) ou com o nome da opção. Depois de três respostas que o sistema não entende, a conversa vai para um atendente.",
+        where: "Fluxo › passo Menu de opções",
+      },
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "Enviar template aprovado de dentro da conversa",
+        text: "Nas conexões da API Oficial, passadas 24 horas da última mensagem do cliente o WhatsApp só aceita templates aprovados pela Meta. Agora a conversa avisa quando isso acontece e deixa enviar o template ali mesmo, preenchendo os campos e vendo como o cliente vai receber.",
+        steps: ["Abra a conversa e clique em “Enviar template” (ou na aba Template, ao lado de Responder).", "Escolha o template e preencha os campos.", "Clique em Enviar template."],
+        where: "Atendimento › conversa de uma conexão da API Oficial",
+        images: [{ file: "template-conversa", caption: "Escolhendo o template e vendo a prévia antes de enviar." }],
+      },
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "Desfazer ao encerrar",
+        text: "Encerrou sem querer? Por 10 segundos aparece o botão Desfazer e a conversa volta para você como estava. A pesquisa de satisfação, quando ligada, só é enviada depois desse tempo.",
+        images: [{ file: "desfazer", caption: "O aviso com o botão Desfazer, no canto inferior direito.", size: "small" }],
+      },
+      {
+        type: "novo",
+        area: "gestao",
+        title: "Desfazer ao enviar para a fila ou encerrar",
+        text: "Depois de enviar uma conversa para a fila ou encerrar, aparece o botão Desfazer por 10 segundos. A conversa volta para o mesmo atendente, desde que ninguém a tenha aceitado nesse meio-tempo.",
+        images: [{ file: "desfazer", caption: "Clique em Desfazer enquanto o aviso estiver na tela.", size: "small" }],
+      },
+      {
+        type: "melhoria",
+        area: "gestao",
+        title: "Notas internas e etiquetas na visualização da conversa",
+        text: "Ao visualizar uma conversa pela Gestão, aparecem as etiquetas do cliente no topo e as notas internas da equipe no meio das mensagens, no ponto em que foram escritas.",
+        where: "Gestão › Visualizar",
+        images: [{ file: "gestao-notas", caption: "Etiqueta do cliente no topo e nota interna no fim da conversa.", size: "small" }],
+      },
+      {
+        type: "novo",
+        area: "contatos",
+        title: "Tela de Contatos",
+        text: "Todos os clientes em um só lugar. Busque pelo nome ou telefone, filtre por etiqueta ou conexão e abra um contato para ver todas as conversas que ele teve, quem atendeu e a nota da pesquisa de satisfação.",
+        steps: ["Clique em Contatos no menu.", "Clique em um contato para abrir os detalhes.", "Em cada conversa do histórico, “Abrir” mostra a conversa completa na Gestão."],
+        where: "Menu Operação › Contatos",
+        images: [
+          { file: "contatos", caption: "Lista de contatos com busca e filtros." },
+          { file: "contato-detalhe", caption: "Detalhe do contato: nome, etiquetas e histórico.", size: "small" },
+        ],
+      },
+      {
+        type: "novo",
+        area: "contatos",
+        title: "Importar e exportar contatos em planilha",
+        text: "Importe uma planilha CSV com as colunas Nome, Telefone e Etiquetas. Telefones que já existem são atualizados, não duplicados, e as linhas com problema aparecem no fim. A exportação baixa a lista que está filtrada na tela, pronta para abrir no Excel.",
+        steps: ["Clique em Importar CSV, escolha a conexão e o arquivo e clique em Importar.", "Para exportar, filtre a lista se quiser e clique em Exportar CSV."],
+        where: "Contatos › Importar CSV / Exportar CSV",
+        requires: [PERMISSION.CONTATOS_IMPORTAR_EXPORTAR],
+        images: [{ file: "contatos-importar", caption: "Resultado da importação, com a linha que tinha telefone inválido.", size: "small" }],
+      },
+      {
+        type: "novo",
+        area: "contatos",
+        title: "Gerenciar etiquetas",
+        text: "Crie, renomeie, troque a cor ou exclua etiquetas e veja quantos contatos usam cada uma. Ao excluir, a etiqueta sai de todos os contatos.",
+        where: "Contatos › Etiquetas",
+        requires: [PERMISSION.CONTATOS_ETIQUETAS_GERENCIAR],
+        images: [{ file: "contatos-etiquetas", caption: "Cada etiqueta com sua cor e quantos contatos a usam.", size: "small" }],
+      },
+      {
+        type: "novo",
+        area: "respostas",
+        title: "Cada resposta e mensagem automática na conexão certa",
+        text: "Respostas rápidas, Aceite, Transferência e Encerramento podem valer para todas as conexões ou só para as escolhidas. Assim, cada número usa os próprios textos. Quando houver uma mensagem da própria conexão e uma de todas as conexões, vale a da conexão.",
+        before: "Cada resposta rápida pertencia a uma única conexão, e Aceite, Transferência e Encerramento valiam para todas.",
+        after: "Você escolhe “Todas as conexões” ou marca as conexões desejadas. O que já existia continua funcionando como antes.",
+        where: "Respostas › em cada cadastro, campo Conexões",
+        images: [{ file: "respostas-conexoes", caption: "Resposta rápida valendo só para a conexão Vendas.", size: "small" }],
+      },
+      {
+        type: "novo",
+        area: "respostas",
+        title: "Pesquisa de satisfação",
+        text: "Ao encerrar uma conversa atendida, o cliente recebe uma pergunta e responde com uma nota de 1 a 5. A nota fica guardada na conversa e não abre uma conversa nova. A pesquisa vem desligada: ligue e escolha as conexões quando quiser.",
+        steps: ["Abra Respostas › Pesquisa.", "Ligue “Enviar pesquisa ao encerrar” e escolha as conexões.", "Ajuste a pergunta e o agradecimento, se quiser, e salve."],
+        where: "Respostas › Pesquisa",
+        requires: [PERMISSION.RESPOSTAS_PESQUISA_VISUALIZAR],
+        images: [{ file: "pesquisa", caption: "Configuração da pesquisa, desligada como vem por padrão." }],
+      },
+      {
+        type: "novo",
+        area: "dashboard",
+        title: "Resultado da pesquisa de satisfação",
+        text: "O Dashboard mostra a nota média do período, quantos clientes responderam e quantas notas de cada valor. Em Relatórios › Por atendente aparecem as avaliações recebidas e a nota média de cada atendente.",
+        where: "Dashboard, ao lado das palavras mais usadas",
+        images: [{ file: "dashboard-satisfacao", caption: "Média, taxa de resposta e distribuição das notas.", size: "small" }],
+      },
+      {
+        type: "melhoria",
+        area: "configuracoes",
+        title: "Aviso de alterações não salvas em todas as abas",
+        text: "Sessão, Manutenção, E-mail, Modelos de e-mail, Exportações, Permissões e Aplicativo agora mostram a barra “Você tem alterações não salvas”, com Salvar e Descartar. Fechar a aba com algo pendente pede confirmação.",
+      },
+      {
+        type: "correcao",
+        area: "geral",
+        title: "Rolagem no aplicativo instalado no computador",
+        before: "No aplicativo instalado, rolar uma lista arrastava a tela inteira do sistema, sem parar.",
+        after: "Só a lista rola, como no navegador.",
+      },
+    ],
+  },
   {
     version: "2.0.0",
     date: "02 out 2026",
