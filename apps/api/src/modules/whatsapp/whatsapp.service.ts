@@ -23,6 +23,7 @@ import { realtimeEvents } from "../../realtime/realtime";
 import { writeAudit } from "../../lib/audit";
 import * as conversationsService from "../conversations/conversations.service";
 import * as messagesService from "../messages/messages.service";
+import * as satisfaction from "../satisfaction/satisfaction.service";
 import * as flowEngine from "../flows/flow-engine.service";
 import { toMessageDTO } from "../messages/messages.mapper";
 import { getManagerConnectionIds } from "../../lib/connection-access";
@@ -340,6 +341,9 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
           .then((photoUrl) => (photoUrl ? conversationsService.updateContactPhoto(contact.id, photoUrl) : undefined))
           .catch(() => undefined);
       }
+      // The customer answering the satisfaction survey of a closed conversation — recorded there, nothing new opens.
+      if (await satisfaction.captureSurveyAnswer(connectionId, contact, { body: event.body ?? null, providerMessageId: event.providerMessageId })) return;
+
       const { conversation, isNewConversation, autoAssignedAgentId, flowId } = await conversationsService.findOrOpenConversationForInboundMessage(
         connectionId,
         contact.id,

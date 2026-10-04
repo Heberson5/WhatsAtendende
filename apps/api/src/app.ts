@@ -24,6 +24,7 @@ import { permissionsRouter } from "./modules/permissions/permissions.routes";
 import { quickRepliesRouter } from "./modules/quick-replies/quick-replies.routes";
 import { closingMessagesRouter } from "./modules/closing-messages/closing-messages.routes";
 import { autoMessageTemplatesRouter } from "./modules/auto-message-templates/auto-message-templates.routes";
+import { satisfactionRouter } from "./modules/satisfaction/satisfaction.routes";
 import { notificationsRouter } from "./modules/notifications/notifications.routes";
 import { holidaysRouter } from "./modules/holidays/holidays.routes";
 import { metaRouter } from "./modules/meta/meta.routes";
@@ -135,6 +136,7 @@ export function createApp() {
   app.use("/api/quick-replies", quickRepliesRouter);
   app.use("/api/closing-messages", closingMessagesRouter);
   app.use("/api/auto-message-templates", autoMessageTemplatesRouter);
+  app.use("/api/satisfaction-survey", satisfactionRouter);
   app.use("/api/notifications", notificationsRouter);
   app.use("/api/holidays", holidaysRouter);
   app.use("/api/meta", metaRouter);

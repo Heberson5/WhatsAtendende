@@ -3,6 +3,7 @@ import ExcelJS from "exceljs";
 import PDFDocument from "pdfkit";
 import { imageSize } from "image-size";
 import { prisma } from "../../lib/prisma";
+import { getSatisfactionByAgent } from "../satisfaction/satisfaction.service";
 
 /** Same identity used across the app's other exports (PowerPoint) — see PROMPT: "o layout de exportação dos relatórios". */
 export interface ReportBranding {
@@ -100,6 +101,7 @@ export async function getAttendanceReport({ from, to, agentId, connectionIds, tz
 export async function getPerAgentReport({ from, to, connectionIds }: ReportParams) {
   const connectionFilter = connectionIds === undefined ? undefined : { in: connectionIds };
   const agents = await prisma.user.findMany({ where: { role: "AGENT" }, orderBy: { displayName: "asc" } });
+  const satisfaction = await getSatisfactionByAgent({ from, to, connectionIds });
 
   return Promise.all(
     agents.map(async (agent) => {
@@ -137,6 +139,8 @@ export async function getPerAgentReport({ from, to, connectionIds }: ReportParam
         "Tempo médio de atendimento (min)": avg(handlingDiffs),
         "Transferências recebidas": transfersReceived,
         "Transferências realizadas": transfersMade,
+        "Avaliações recebidas": satisfaction.get(agent.id)?.answered ?? 0,
+        "Satisfação média (1 a 5)": satisfaction.get(agent.id)?.average ?? "-",
       };
     })
   );

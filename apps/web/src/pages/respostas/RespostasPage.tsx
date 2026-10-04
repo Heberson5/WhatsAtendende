@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Slash, LogOut, ArrowRightLeft, UserCheck, PauseCircle, FileText } from "lucide-react";
+import { Slash, LogOut, ArrowRightLeft, UserCheck, PauseCircle, FileText, Star } from "lucide-react";
 import { PERMISSION, type Permission } from "@whatsatendende/types";
 import { useAuthStore } from "../../store/auth-store";
 import { RespostasRapidasTab } from "./RespostasRapidasTab";
@@ -7,8 +7,9 @@ import { EncerramentoTab } from "./EncerramentoTab";
 import { AutoMessageTab } from "./AutoMessageTab";
 import { MotivoPausaTab } from "./MotivoPausaTab";
 import { TemplatesTab } from "./TemplatesTab";
+import { PesquisaTab } from "./PesquisaTab";
 
-type Tab = "rapidas" | "encerramento" | "transferencia" | "aceite" | "motivo-pausa" | "templates";
+type Tab = "rapidas" | "encerramento" | "transferencia" | "aceite" | "motivo-pausa" | "templates" | "pesquisa";
 
 // Reaching /respostas at all already requires the RESPOSTAS_RAPIDAS_GERENCIAR
 // umbrella (see Sidebar's MENU_ITEMS) — each tab below additionally sits
@@ -22,6 +23,7 @@ const TAB_PERMISSION: Partial<Record<Tab, Permission>> = {
   aceite: PERMISSION.RESPOSTAS_ACEITE_VISUALIZAR,
   "motivo-pausa": PERMISSION.RESPOSTAS_MOTIVO_PAUSA_VISUALIZAR,
   templates: PERMISSION.RESPOSTAS_TEMPLATES_VISUALIZAR,
+  pesquisa: PERMISSION.RESPOSTAS_PESQUISA_VISUALIZAR,
 };
 
 const TABS: { key: Tab; label: string; icon: typeof Slash }[] = [
@@ -31,6 +33,7 @@ const TABS: { key: Tab; label: string; icon: typeof Slash }[] = [
   { key: "aceite", label: "Aceite", icon: UserCheck },
   { key: "motivo-pausa", label: "Motivo de Pausa", icon: PauseCircle },
   { key: "templates", label: "Templates", icon: FileText },
+  { key: "pesquisa", label: "Pesquisa", icon: Star },
 ];
 
 export default function RespostasPage() {
@@ -76,6 +79,7 @@ export default function RespostasPage() {
         )}
         {tab === "motivo-pausa" && <MotivoPausaTab />}
         {tab === "templates" && <TemplatesTab />}
+        {tab === "pesquisa" && <PesquisaTab />}
       </div>
     </div>
   );

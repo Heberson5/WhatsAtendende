@@ -393,6 +393,27 @@ export interface NotificationDTO {
 
 export type AutoMessageTrigger = "TRANSFER" | "ACCEPT";
 
+/** Pesquisa de satisfação — off until someone switches it on in Respostas › Pesquisa. */
+export interface SatisfactionSurveySettingsDTO {
+  enabled: boolean;
+  connectionScope: ConnectionScopeDTO;
+  /** Sent right after the conversation is closed; the customer answers with a number from 1 to 5. */
+  question: string;
+  /** Sent after a valid score. */
+  thanks: string;
+  /** How long after sending a reply still counts as the answer. */
+  answerWindowHours: number;
+}
+
+export interface SatisfactionSummaryDTO {
+  sent: number;
+  answered: number;
+  /** null while nobody answered in the period. */
+  average: number | null;
+  /** Answers per score — index 0 is score 1, index 4 is score 5. */
+  distribution: [number, number, number, number, number];
+}
+
 /** Customer-facing notice auto-sent by the system (not an agent) on TRANSFER/ACCEPT — supports {{atendente}}/{{cliente}} tags. See Respostas > Transferência/Aceite. */
 export interface AutoMessageTemplateDTO {
   id: string;
@@ -676,6 +697,8 @@ export const PERMISSION = {
   RESPOSTAS_TEMPLATES_ADICIONAR: "respostas_templates.adicionar",
   RESPOSTAS_TEMPLATES_EDITAR: "respostas_templates.editar",
   RESPOSTAS_TEMPLATES_EXCLUIR: "respostas_templates.excluir",
+  RESPOSTAS_PESQUISA_VISUALIZAR: "respostas_pesquisa.visualizar",
+  RESPOSTAS_PESQUISA_EDITAR: "respostas_pesquisa.editar",
   // Standalone top-level menu (not nested under CONFIGURACOES_GERENCIAR) —
   // see PROMPT: "planeje um novo menu chamado landing page". Single record
   // to edit (no list), so only visualizar/editar.
@@ -1124,6 +1147,22 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     group: "Respostas",
     label: "Respostas — Templates (excluir)",
     description: "Excluir um template de mensagem.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.RESPOSTAS_PESQUISA_VISUALIZAR,
+    group: "Respostas",
+    label: "Respostas — Pesquisa de satisfação (visualizar)",
+    description: "Ver a configuração da pesquisa de satisfação enviada ao encerrar (aba Pesquisa).",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.RESPOSTAS_PESQUISA_EDITAR,
+    group: "Respostas",
+    label: "Respostas — Pesquisa de satisfação (editar)",
+    description: "Ligar/desligar a pesquisa de satisfação, escolher as conexões e editar os textos.",
     editableRoles: ["AGENT", "MANAGER"],
     defaultAllowed: { AGENT: false, MANAGER: true },
   },

@@ -100,8 +100,9 @@ model User {
   // instead of blocking the delete. See PROMPT: "Um usuário não poderá
   // estar em mais de um, portanto, se habilitar o usuário no recente, irá
   // sair do anterior."
-  closingMessage   ClosingMessage? @relation(fields: [closingMessageId], references: [id], onDelete: SetNull)
-  closingMessageId String?
+  closingMessage      ClosingMessage?      @relation(fields: [closingMessageId], references: [id], onDelete: SetNull)
+  satisfactionSurveys SatisfactionSurvey[]
+  closingMessageId    String?
 
   // Set together with presence=AWAY when this agent pauses themselves from
   // the profile menu — both null again on resume. onDelete: Restrict so a
@@ -292,15 +293,16 @@ model WhatsAppConnection {
   createdAt          DateTime                 @default(now())
   updatedAt          DateTime                 @updatedAt
 
-  agents           User[]
-  contacts         Contact[]
-  conversations    Conversation[]
-  quickReplies     QuickReply[]              @relation("QuickReplyConnections")
-  autoMessages     AutoMessageTemplate[]     @relation("AutoMessageTemplateConnections")
-  closingMessages  ClosingMessage[]          @relation("ClosingMessageConnections")
-  managerGrants    ManagerConnectionAccess[]
-  messageTemplates MessageTemplate[]
-  flowConnections  FlowConnection[]
+  agents              User[]
+  contacts            Contact[]
+  conversations       Conversation[]
+  quickReplies        QuickReply[]              @relation("QuickReplyConnections")
+  autoMessages        AutoMessageTemplate[]     @relation("AutoMessageTemplateConnections")
+  closingMessages     ClosingMessage[]          @relation("ClosingMessageConnections")
+  managerGrants       ManagerConnectionAccess[]
+  messageTemplates    MessageTemplate[]
+  flowConnections     FlowConnection[]
+  satisfactionSurveys SatisfactionSurvey[]
 
   @@index([status])
 }
@@ -668,12 +670,13 @@ model Conversation {
   // service `acceptConversation`).
   version Int @default(0)
 
-  messages    Message[]
-  flowSession FlowSession?
-  notes       ConversationNote[]
-  assignments ConversationAssignment[]
-  transfers   ConversationTransfer[]
-  events      ConversationEvent[]
+  messages           Message[]
+  flowSession        FlowSession?
+  satisfactionSurvey SatisfactionSurvey?
+  notes              ConversationNote[]
+  assignments        ConversationAssignment[]
+  transfers          ConversationTransfer[]
+  events             ConversationEvent[]
 
   createdAt DateTime @default(now())
 
@@ -1154,4 +1157,27 @@ model ContactTag {
 
   @@id([contactId, tagId])
   @@index([tagId])
+}
+
+// Pesquisa de satisfação sent when a conversation is closed (only while the
+// survey is switched on in Respostas › Pesquisa, for the chosen connections).
+// The customer's next message, if it's a 1–5 score inside the answer window,
+// is recorded here instead of opening a new conversation.
+model SatisfactionSurvey {
+  id                   String             @id @default(uuid())
+  conversation         Conversation       @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversationId       String             @unique
+  contactId            String
+  whatsappConnection   WhatsAppConnection @relation(fields: [whatsappConnectionId], references: [id], onDelete: Cascade)
+  whatsappConnectionId String
+  // Who attended the conversation being rated.
+  agent                User?              @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  agentId              String?
+  score                Int?
+  sentAt               DateTime           @default(now())
+  expiresAt            DateTime
+  answeredAt           DateTime?
+
+  @@index([contactId, whatsappConnectionId, answeredAt])
+  @@index([sentAt])
 }

@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
+import { sendSatisfactionSurvey } from "../satisfaction/satisfaction.service";
 import { endFlowSession } from "../flows/flow-engine.service";
 import { Errors } from "../../lib/http-error";
 import { writeAudit } from "../../lib/audit";
@@ -1300,6 +1301,7 @@ export async function closeConversation(conversationId: string, agentId: string)
   if (result.count === 0) throw Errors.conflict("Nao foi possivel encerrar esta conversa");
 
   await prisma.conversationEvent.create({ data: { conversationId, type: "CLOSED", payload: { agentId } } });
+  void sendSatisfactionSurvey(conversationId);
   return getConversationOrThrow(conversationId);
 }
 
@@ -1325,6 +1327,7 @@ export async function closeConversationFromGestao(conversationId: string, initia
   await prisma.conversationEvent.create({
     data: { conversationId, type: "CLOSED", payload: { agentId: initiatedById, previousAgentId } },
   });
+  void sendSatisfactionSurvey(conversationId);
 
   return { conversation: await getConversationOrThrow(conversationId), previousAgentId };
 }
