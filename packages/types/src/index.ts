@@ -658,6 +658,10 @@ export const PERMISSION = {
   CONFIGURACOES_FILA_VISUALIZAR: "configuracoes.fila.visualizar",
   CONFIGURACOES_FILA_EDITAR: "configuracoes.fila.editar",
   AUDITORIA_ACESSAR: "auditoria.acessar",
+  CONTATOS_ACESSAR: "contatos.acessar",
+  CONTATOS_EDITAR: "contatos.editar",
+  CONTATOS_IMPORTAR_EXPORTAR: "contatos.importar_exportar",
+  CONTATOS_ETIQUETAS_GERENCIAR: "contatos.etiquetas_gerenciar",
   RESPOSTAS_RAPIDAS_GERENCIAR: "respostas_rapidas.gerenciar",
   // Each layered ON TOP of RESPOSTAS_RAPIDAS_GERENCIAR (need both) — see
   // that key's own doc comment. Respostas rápidas itself now also gets its
@@ -928,6 +932,38 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     group: "Configurações",
     label: "Configurações — Fila (editar)",
     description: "Alterar o intervalo do lembrete de conversas aguardando na fila.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.CONTATOS_ACESSAR,
+    group: "Contatos",
+    label: "Contatos — acessar",
+    description: "Abrir a tela de Contatos, buscar clientes e ver o histórico de conversas de cada um.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.CONTATOS_EDITAR,
+    group: "Contatos",
+    label: "Contatos — editar",
+    description: "Alterar o nome de um contato e as etiquetas dele.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.CONTATOS_IMPORTAR_EXPORTAR,
+    group: "Contatos",
+    label: "Contatos — importar e exportar",
+    description: "Importar contatos de uma planilha CSV e exportar a lista filtrada em CSV.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.CONTATOS_ETIQUETAS_GERENCIAR,
+    group: "Contatos",
+    label: "Contatos — gerenciar etiquetas",
+    description: "Renomear, mudar a cor e excluir etiquetas (a exclusão tira a etiqueta de todos os contatos).",
     editableRoles: ["AGENT", "MANAGER"],
     defaultAllowed: { AGENT: false, MANAGER: true },
   },
@@ -1287,6 +1323,42 @@ export interface TagDTO {
   id: string;
   name: string;
   color: string;
+}
+
+/** Etiqueta na tela de gestão de etiquetas — com quantos contatos a usam. */
+export interface ManagedTagDTO extends TagDTO {
+  contactCount: number;
+}
+
+export interface ContactListItemDTO {
+  id: string;
+  name: string | null;
+  /** Telefone (WhatsApp) — null para Instagram/Messenger. */
+  phone: string | null;
+  channel: Channel;
+  connectionName: string | null;
+  tags: TagDTO[];
+  conversationCount: number;
+  firstConversationAt: string;
+  lastInteractionAt: string;
+}
+
+export interface ContactDetailDTO extends ContactListItemDTO {
+  conversations: {
+    id: string;
+    status: ConversationStatus;
+    createdAt: string;
+    closedAt: string | null;
+    agentName: string | null;
+    messageCount: number;
+    satisfactionScore: number | null;
+  }[];
+}
+
+export interface ContactImportResultDTO {
+  created: number;
+  updated: number;
+  errors: { line: number; reason: string }[];
 }
 
 /** Internal note on a conversation — seen only by the team. */

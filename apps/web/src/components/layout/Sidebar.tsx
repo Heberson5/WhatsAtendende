@@ -18,6 +18,7 @@ import {
   Plug,
   Workflow,
   Sparkles,
+  Contact,
 } from "lucide-react";
 import { PERMISSION, type ConversationListItemDTO, type Permission } from "@whatsatendende/types";
 import { api } from "../../lib/api";
@@ -46,6 +47,7 @@ export interface MenuItem {
 export const MENU_ITEMS: MenuItem[] = [
   { to: "/atendimento", label: "Atendimento", icon: MessagesSquare, permission: PERMISSION.ATENDIMENTO_ACESSAR, group: "Operação" },
   { to: "/gestao", label: "Gestão", icon: Eye, permission: PERMISSION.GESTAO_ACESSAR, group: "Operação" },
+  { to: "/contatos", label: "Contatos", icon: Contact, permission: PERMISSION.CONTATOS_ACESSAR, group: "Operação" },
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, permission: PERMISSION.DASHBOARD_ACESSAR, group: "Análise" },
   { to: "/relatorios", label: "Relatórios", icon: FileBarChart, permission: PERMISSION.RELATORIOS_ACESSAR, group: "Análise" },
   { to: "/respostas", label: "Respostas", icon: Slash, permission: PERMISSION.RESPOSTAS_RAPIDAS_GERENCIAR, group: "Automação" },

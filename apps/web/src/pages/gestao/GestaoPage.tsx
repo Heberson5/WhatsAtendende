@@ -16,34 +16,13 @@ import { ReadOnlyConversationDrawer } from "../../components/gestao/ReadOnlyConv
 import { MergeConversationModal } from "../../components/gestao/MergeConversationModal";
 import { GestaoTransferModal } from "../../components/gestao/GestaoTransferModal";
 import { useNow } from "../../hooks/useNow";
+import { STATUS_COLOR, STATUS_LABEL } from "../../lib/conversationStatus";
 
 // Same "still active" scope the backend enforces (see
 // assignConversationFromGestao/returnConversationToQueue) — CLOSED/ABANDONED
 // are terminal, nothing to route there anymore.
 const ROUTABLE_STATUSES = new Set<ConversationStatus>(["IN_FLOW", "NEW", "WAITING", "IN_PROGRESS", "TRANSFERRED", "HANDLED_EXTERNALLY"]);
 const ALREADY_QUEUED_STATUSES = new Set<ConversationStatus>(["NEW", "WAITING"]);
-
-const STATUS_LABEL: Record<string, string> = {
-  IN_FLOW: "No fluxo",
-  NEW: "Nova",
-  WAITING: "Aguardando",
-  IN_PROGRESS: "Em atendimento",
-  TRANSFERRED: "Transferida",
-  CLOSED: "Encerrada",
-  ABANDONED: "Abandonada",
-  HANDLED_EXTERNALLY: "Atendido pelo celular",
-};
-
-const STATUS_COLOR: Record<string, string> = {
-  IN_FLOW: "bg-info-soft text-info",
-  NEW: "bg-warning-soft text-warning",
-  WAITING: "bg-warning-soft text-warning",
-  IN_PROGRESS: "bg-primary/15 text-primary",
-  TRANSFERRED: "bg-info-soft text-info",
-  CLOSED: "border border-border bg-surface-alt text-muted",
-  ABANDONED: "bg-danger-soft text-danger",
-  HANDLED_EXTERNALLY: "bg-secondary/40 text-[var(--color-text)]",
-};
 
 // Filter chips (each one a group of statuses), with live counts.
 const STATUS_CHIPS: { key: string; label: string; statuses: ConversationStatus[] }[] = [
