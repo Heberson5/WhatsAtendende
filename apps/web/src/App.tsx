@@ -12,6 +12,7 @@ import DashboardPage from "./pages/dashboard/DashboardPage";
 import RelatoriosPage from "./pages/relatorios/RelatoriosPage";
 import UsuariosPage from "./pages/usuarios/UsuariosPage";
 import RespostasPage from "./pages/respostas/RespostasPage";
+import ContatosPage from "./pages/contatos/ContatosPage";
 import ConexoesPage from "./pages/conexoes/ConexoesPage";
 import FluxoPage from "./pages/fluxo/FluxoPage";
 import FlowEditorPage from "./pages/fluxo/FlowEditorPage";
@@ -69,6 +70,9 @@ export default function App() {
 
           <Route element={<PermissionRoute permission={PERMISSION.GESTAO_ACESSAR} />}>
             <Route path="/gestao" element={<GestaoPage />} />
+          </Route>
+          <Route element={<PermissionRoute permission={PERMISSION.CONTATOS_ACESSAR} />}>
+            <Route path="/contatos" element={<ContatosPage />} />
           </Route>
           <Route element={<PermissionRoute permission={PERMISSION.DASHBOARD_ACESSAR} />}>
             <Route path="/dashboard" element={<DashboardPage />} />
