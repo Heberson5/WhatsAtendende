@@ -1,5 +1,5 @@
 import type { Prisma } from "@prisma/client";
-import type { SatisfactionSummaryDTO, SatisfactionSurveySettingsDTO } from "@whatsatendende/types";
+import { CONVERSATION_UNDO_WINDOW_MS, type SatisfactionSummaryDTO, type SatisfactionSurveySettingsDTO } from "@whatsatendende/types";
 import { prisma } from "../../lib/prisma";
 import { logger } from "../../lib/logger";
 import type { ConnectionScopeInput } from "../../lib/connection-scope";
@@ -92,7 +92,11 @@ async function sendSurveyText(conversation: { id: string; whatsappConnectionId: 
   realtimeEvents.newMessage(conversation.id, null);
 }
 
-/** Called right after a conversation is closed by a person (agent or Gestão). */
+/** Called when a person closes a conversation — waits out the "Desfazer" window, then sends only if it's still closed. */
+export function scheduleSatisfactionSurvey(conversationId: string): void {
+  setTimeout(() => void sendSatisfactionSurvey(conversationId), CONVERSATION_UNDO_WINDOW_MS).unref();
+}
+
 export async function sendSatisfactionSurvey(conversationId: string): Promise<void> {
   try {
     const settings = await getSurveySettings();

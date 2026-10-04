@@ -5,6 +5,7 @@ import { Send, Tag } from "lucide-react";
 import { PERMISSION } from "@whatsatendende/types";
 import { useAuthStore } from "../../store/auth-store";
 import { api, getApiErrorMessage } from "../../lib/api";
+import { UnsavedChangesBar } from "../../components/common/UnsavedChangesBar";
 
 type EmailTemplateType = "PASSWORD_RESET" | "USER_WELCOME" | "USER_DEACTIVATED" | "PASSWORD_CHANGED";
 
@@ -66,14 +67,24 @@ export function EmailTemplatesPanel() {
   const current = data?.templates[type];
   const hasButton = data?.hasButton[type] ?? false;
 
-  useEffect(() => {
+  function resetToSaved() {
     if (!current) return;
     setEnabled(current.enabled);
     setSubject(current.subject);
     setTitle(current.title);
     setBodyText(current.bodyText);
     setButtonText(current.buttonText);
-  }, [current, type]);
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(resetToSaved, [current, type]);
+
+  const dirty =
+    Boolean(current) &&
+    (enabled !== current!.enabled ||
+      subject !== current!.subject ||
+      title !== current!.title ||
+      bodyText !== current!.bodyText ||
+      buttonText !== current!.buttonText);
 
   const saveMutation = useMutation({
     mutationFn: () => api.patch(`/settings/email-templates/${type}`, { enabled, subject, title, bodyText, buttonText }),
@@ -244,6 +255,7 @@ export function EmailTemplatesPanel() {
           />
         </div>
       </div>
+      {canEditar && <UnsavedChangesBar dirty={dirty} saving={saveMutation.isPending} onSave={() => saveMutation.mutate()} onDiscard={resetToSaved} />}
     </div>
   );
 }

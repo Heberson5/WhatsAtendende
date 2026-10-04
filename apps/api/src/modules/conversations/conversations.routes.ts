@@ -469,6 +469,22 @@ conversationsRouter.post(
   })
 );
 
+// "Desfazer" after closing / returning to the queue — the service checks it's
+// the same person, within the undo window, with nothing changed since.
+conversationsRouter.post(
+  "/:id/undo",
+  asyncHandler(async (req, res) => {
+    const conversation = await service.undoLastConversationAction(req.params.id, req.auth!.userId);
+    await writeAudit({ userId: req.auth!.userId, action: "CONVERSATION_ACTION_UNDONE", entity: "Conversation", entityId: conversation.id, ipAddress: req.ip ?? null });
+    if (conversation.assignedAgentId) {
+      realtimeEvents.conversationAccepted(conversation.id, connectionIdOf(conversation), conversation.assignedAgentId);
+    } else {
+      realtimeEvents.newQueueConversation(connectionIdOf(conversation), conversation.id, conversation.contact.name ?? conversation.contact.phone ?? "Contato");
+    }
+    res.json(toConversationListItemDTO(conversation, true));
+  })
+);
+
 const mergeSchema = z.object({ intoConversationId: z.string().uuid() });
 conversationsRouter.post(
   "/:id/merge",

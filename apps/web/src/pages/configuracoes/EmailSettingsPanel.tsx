@@ -5,6 +5,7 @@ import { CheckCircle2, Send, XCircle } from "lucide-react";
 import { PERMISSION } from "@whatsatendende/types";
 import { useAuthStore } from "../../store/auth-store";
 import { api, getApiErrorMessage } from "../../lib/api";
+import { UnsavedChangesBar } from "../../components/common/UnsavedChangesBar";
 
 interface EmailSettings {
   host: string;
@@ -34,15 +35,28 @@ export function EmailSettingsPanel() {
   const [fromEmail, setFromEmail] = useState("");
   const [testTo, setTestTo] = useState("");
 
-  useEffect(() => {
+  function resetToSaved() {
     if (!data) return;
     setHost(data.host);
     setPort(data.port);
     setSecure(data.secure);
     setUsername(data.username ?? "");
+    setPassword("");
     setFromName(data.fromName);
     setFromEmail(data.fromEmail);
-  }, [data]);
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(resetToSaved, [data]);
+
+  const dirty =
+    Boolean(data) &&
+    (host !== data!.host ||
+      port !== data!.port ||
+      secure !== data!.secure ||
+      username !== (data!.username ?? "") ||
+      password !== "" ||
+      fromName !== data!.fromName ||
+      fromEmail !== data!.fromEmail);
 
   const saveMutation = useMutation({
     mutationFn: () =>
@@ -123,6 +137,7 @@ export function EmailSettingsPanel() {
           Salvar configuração
         </button>
       )}
+      {canEditar && <UnsavedChangesBar dirty={dirty} saving={saveMutation.isPending} onSave={() => saveMutation.mutate()} onDiscard={resetToSaved} />}
 
       {canEditar && (
         <div className="border-t border-border pt-4">

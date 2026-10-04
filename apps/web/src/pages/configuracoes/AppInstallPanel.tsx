@@ -1,9 +1,10 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { PERMISSION } from "@whatsatendende/types";
 import { useAuthStore } from "../../store/auth-store";
 import { api, getApiErrorMessage } from "../../lib/api";
+import { UnsavedChangesBar } from "../../components/common/UnsavedChangesBar";
 import { useBranding } from "../../hooks/useBranding";
 
 // Separate from the "Identidade visual" card above on purpose: the in-app
@@ -17,8 +18,14 @@ export function AppInstallPanel() {
   const { data: branding } = useBranding();
   const queryClient = useQueryClient();
   const canEditar = useAuthStore((s) => s.permissions?.[PERMISSION.CONFIGURACOES_IDENTIDADE_EDITAR]);
-  const [appName, setAppName] = useState(branding?.appName ?? branding?.companyName ?? "");
-  const [appVersion, setAppVersion] = useState(branding?.appVersion ?? "");
+  const savedName = branding?.appName ?? branding?.companyName ?? "";
+  const savedVersion = branding?.appVersion ?? "";
+  const [appName, setAppName] = useState(savedName);
+  const [appVersion, setAppVersion] = useState(savedVersion);
+  useEffect(() => {
+    setAppName(savedName);
+    setAppVersion(savedVersion);
+  }, [savedName, savedVersion]);
   const iconInputRef = useRef<HTMLInputElement>(null);
 
   const nameMutation = useMutation({
@@ -138,6 +145,20 @@ export function AppInstallPanel() {
         </button>
       </div>
       </fieldset>
+      {canEditar && branding && (
+        <UnsavedChangesBar
+          dirty={appName !== savedName || appVersion !== savedVersion}
+          saving={nameMutation.isPending || versionMutation.isPending}
+          onSave={() => {
+            if (appName !== savedName) nameMutation.mutate(appName);
+            if (appVersion !== savedVersion) versionMutation.mutate(appVersion);
+          }}
+          onDiscard={() => {
+            setAppName(savedName);
+            setAppVersion(savedVersion);
+          }}
+        />
+      )}
     </div>
   );
 }

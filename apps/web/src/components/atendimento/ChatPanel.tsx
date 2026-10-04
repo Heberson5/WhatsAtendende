@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { ArrowLeft, ArrowRightLeft, CheckCircle2, ChevronDown, ChevronUp, FileText, PanelRight, Paperclip, Phone, Search, StickyNote, X as CloseIcon } from "lucide-react";
 import clsx from "clsx";
 import { PERMISSION, type ConversationListItemDTO, type ConversationNoteDTO, type MessageDTO, type PaginatedResult, type QuickReplyDTO, type TemplateContextDTO } from "@whatsatendende/types";
+import { toastWithUndo } from "../../lib/undoToast";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { contactDisplayName } from "../../lib/contact-display";
 import { getSocket } from "../../lib/socket";
@@ -409,7 +410,7 @@ export function ChatPanel({
   const closeMutation = useMutation({
     mutationFn: () => api.post(`/conversations/${conversation.id}/close`),
     onSuccess: () => {
-      toast.success("Atendimento encerrado.");
+      toastWithUndo("Atendimento encerrado.", conversation.id, queryClient);
       onClosed();
     },
     onError: (err) => toast.error(getApiErrorMessage(err)),

@@ -38,6 +38,9 @@ export const CONVERSATION_STATUS = {
 } as const;
 export type ConversationStatus = (typeof CONVERSATION_STATUS)[keyof typeof CONVERSATION_STATUS];
 
+/** How long "Desfazer" stays available after closing or returning a conversation to the queue. */
+export const CONVERSATION_UNDO_WINDOW_MS = 10_000;
+
 export const MESSAGE_DIRECTION = {
   INBOUND: "INBOUND",
   OUTBOUND: "OUTBOUND",

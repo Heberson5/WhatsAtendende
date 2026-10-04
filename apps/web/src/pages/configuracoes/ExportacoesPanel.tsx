@@ -7,6 +7,7 @@ import { useAuthStore } from "../../store/auth-store";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { useExportBranding } from "../../hooks/useExportBranding";
 import { darken } from "../../lib/chart-theme";
+import { UnsavedChangesBar } from "../../components/common/UnsavedChangesBar";
 
 const SAMPLE_ROWS = [
   ["26/09 09:14", "Maria Cliente", "Ana", "Encerrada"],
@@ -179,6 +180,17 @@ export function ExportacoesPanel() {
           </div>
         </div>
       </div>
+      {canEditar && exportBranding && (
+        <UnsavedChangesBar
+          dirty={companyName !== exportBranding.companyName || primaryColor !== exportBranding.primaryColor}
+          saving={saveMutation.isPending}
+          onSave={() => saveMutation.mutate()}
+          onDiscard={() => {
+            setCompanyName(exportBranding.companyName);
+            setPrimaryColor(exportBranding.primaryColor);
+          }}
+        />
+      )}
     </div>
   );
 }
