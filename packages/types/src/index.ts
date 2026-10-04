@@ -237,6 +237,14 @@ export interface MessageTemplateDTO {
   updatedAt: string;
 }
 
+/** WhatsApp Oficial: whether a free-text reply still fits the 24h customer window, and the approved templates usable otherwise. */
+export interface TemplateContextDTO {
+  official: boolean;
+  windowOpen: boolean;
+  windowClosesAt: string | null;
+  templates: MessageTemplateDTO[];
+}
+
 export type FlowNodeType = "START" | "TEXT_MESSAGE" | "MENU" | "TRANSFER_TO_AGENT" | "BUSINESS_HOURS" | "END";
 
 /** Exits of a BUSINESS_HOURS node — used as its FlowEdgeDTO.sourceHandle values. */
