@@ -262,3 +262,41 @@ function mapMetaEventToStatus(event: string): "APPROVED" | "REJECTED" | "PAUSED"
       return null;
   }
 }
+
+// Meta lets a business message a customer freely only within 24h of the customer's last message.
+const CUSTOMER_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/** Highest {{n}} placeholder in a template text — how many parameters it needs. */
+export function templateParamCount(text: string | null): number {
+  return Math.max(0, ...[...(text ?? "").matchAll(/\{\{(\d+)\}\}/g)].map((m) => Number(m[1])));
+}
+
+function fill(text: string, params: string[]): string {
+  return text.replace(/\{\{(\d+)\}\}/g, (_, n: string) => params[Number(n) - 1] ?? "");
+}
+
+/** What the conversation shows for a sent template: header, body and footer with the parameters filled in. */
+export function renderTemplateText(template: { headerType: string; headerText: string | null; bodyText: string; footerText: string | null }, headerParams: string[], bodyParams: string[]): string {
+  const header = template.headerType === "TEXT" && template.headerText ? `*${fill(template.headerText, headerParams)}*` : null;
+  return [header, fill(template.bodyText, bodyParams), template.footerText ? `_${template.footerText}_` : null].filter(Boolean).join("\n\n");
+}
+
+/** Whether a free-text reply can still go out on the Cloud API, and which approved templates can be used instead. */
+export async function getTemplateContext(conversation: { contactId: string; whatsappConnectionId: string | null }) {
+  const connection = conversation.whatsappConnectionId
+    ? await prisma.whatsAppConnection.findUnique({ where: { id: conversation.whatsappConnectionId }, select: { connectionMode: true } })
+    : null;
+  if (connection?.connectionMode !== "OFFICIAL_API") return { official: false, windowOpen: true, windowClosesAt: null, templates: [] };
+  const lastInbound = await prisma.message.findFirst({
+    where: { direction: "INBOUND", conversation: { contactId: conversation.contactId, whatsappConnectionId: conversation.whatsappConnectionId } },
+    orderBy: { createdAt: "desc" },
+    select: { createdAt: true },
+  });
+  const closesAt = lastInbound ? new Date(lastInbound.createdAt.getTime() + CUSTOMER_WINDOW_MS) : null;
+  const templates = await prisma.messageTemplate.findMany({
+    where: { whatsappConnectionId: conversation.whatsappConnectionId!, status: "APPROVED" },
+    include: templateInclude,
+    orderBy: { name: "asc" },
+  });
+  return { official: true, windowOpen: Boolean(closesAt && closesAt > new Date()), windowClosesAt: closesAt?.toISOString() ?? null, templates };
+}

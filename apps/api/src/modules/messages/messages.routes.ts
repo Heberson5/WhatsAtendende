@@ -19,6 +19,8 @@ import * as service from "./messages.service";
 import { toMessageDTO } from "./messages.mapper";
 import * as whatsappService from "../whatsapp/whatsapp.service";
 import * as metaService from "../meta/meta.service";
+import * as templatesService from "../message-templates/message-templates.service";
+import { toMessageTemplateDTO } from "../message-templates/message-templates.mapper";
 import { realtimeEvents } from "../../realtime/realtime";
 import { assertAgentCanAccessConversation, assertAgentCanReadConversation, getConversationOrThrow } from "../conversations/conversations.service";
 
@@ -211,6 +213,72 @@ messagesRouter.post(
       entityId: message.id,
       ipAddress: req.ip ?? null,
       metadata: { conversationId: conversation.id, contactName: conversation.contact.name, contactPhone: conversation.contact.phone, text: body },
+    });
+    realtimeEvents.newMessage(conversation.id, req.auth!.userId);
+    res.status(201).json(dto);
+  })
+);
+
+// WhatsApp Oficial: whether the 24h customer window is still open and which
+// approved templates this conversation's connection can send.
+messagesRouter.get(
+  "/conversations/:conversationId/template-context",
+  requireAttendanceAccess,
+  asyncHandler(async (req, res) => {
+    const conversation = await getConversationOrThrow(req.params.conversationId);
+    if (req.auth!.role === "AGENT") await assertAgentCanReadConversation(conversation, req.auth!);
+    const context = await templatesService.getTemplateContext(conversation);
+    res.json({ ...context, templates: context.templates.map(toMessageTemplateDTO) });
+  })
+);
+
+const sendTemplateSchema = z.object({
+  templateId: z.string().uuid(),
+  headerParams: z.array(z.string().trim().min(1).max(60)).max(1).default([]),
+  bodyParams: z.array(z.string().trim().min(1).max(1024)).max(20).default([]),
+});
+messagesRouter.post(
+  "/conversations/:conversationId/template",
+  requireAttendanceAccess,
+  asyncHandler(async (req, res) => {
+    const conversation = await loadConversationForAgent(req.params.conversationId, req.auth!.userId);
+    const { templateId, headerParams, bodyParams } = sendTemplateSchema.parse(req.body);
+    const template = await templatesService.getTemplate(templateId);
+    if (template.status !== "APPROVED" || template.whatsappConnectionId !== conversation.whatsappConnectionId) {
+      throw Errors.badRequest("Este template não está aprovado para a conexão desta conversa");
+    }
+    if (headerParams.length !== templatesService.templateParamCount(template.headerType === "TEXT" ? template.headerText : null)) {
+      throw Errors.badRequest("Preencha todos os campos do cabeçalho do template");
+    }
+    if (bodyParams.length !== templatesService.templateParamCount(template.bodyText)) {
+      throw Errors.badRequest("Preencha todos os campos do texto do template");
+    }
+
+    const text = templatesService.renderTemplateText(template, headerParams, bodyParams);
+    const message = await service.createOutboundMessage({ conversationId: conversation.id, agentId: req.auth!.userId, type: "TEXT", body: text });
+    const headerMedia =
+      template.headerSampleStorageKey && template.headerSampleMimeType && ["IMAGE", "VIDEO", "DOCUMENT"].includes(template.headerType)
+        ? {
+            kind: template.headerType.toLowerCase() as "image" | "video" | "document",
+            buffer: fs.readFileSync(path.join(env.UPLOAD_DIR, template.headerSampleStorageKey)),
+            fileName: template.headerSampleFileName ?? "arquivo",
+            mimeType: template.headerSampleMimeType,
+          }
+        : undefined;
+    const dto = await whatsappService.sendOutboundTemplate(conversation.whatsappConnectionId!, message.id, conversation.contact.phone!, {
+      name: template.name,
+      language: template.language,
+      headerParams,
+      headerMedia,
+      bodyParams,
+    });
+    await writeAudit({
+      userId: req.auth!.userId,
+      action: "MESSAGE_TEMPLATE_SENT",
+      entity: "Message",
+      entityId: message.id,
+      ipAddress: req.ip ?? null,
+      metadata: { conversationId: conversation.id, template: template.name },
     });
     realtimeEvents.newMessage(conversation.id, req.auth!.userId);
     res.status(201).json(dto);

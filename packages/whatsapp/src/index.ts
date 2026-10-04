@@ -3,7 +3,7 @@ export { MockWhatsAppProvider } from "./MockWhatsAppProvider";
 export { BaileysWhatsAppProvider } from "./BaileysWhatsAppProvider";
 export type { BaileysProviderOptions } from "./BaileysWhatsAppProvider";
 export { CloudApiWhatsAppProvider } from "./CloudApiWhatsAppProvider";
-export type { CloudApiProviderOptions, CloudApiWebhookValue } from "./CloudApiWhatsAppProvider";
+export type { CloudApiProviderOptions, CloudApiWebhookValue, TemplateSendInput } from "./CloudApiWhatsAppProvider";
 
 import type { WhatsAppProvider } from "./types";
 import { MockWhatsAppProvider } from "./MockWhatsAppProvider";

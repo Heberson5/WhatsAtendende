@@ -24,6 +24,14 @@ export interface CloudApiProviderOptions {
 
 const DEFAULT_GRAPH_API_BASE_URL = "https://graph.facebook.com/v20.0";
 
+export interface TemplateSendInput {
+  name: string;
+  language: string;
+  headerParams: string[];
+  headerMedia?: { kind: "image" | "video" | "document"; buffer: Buffer; fileName: string; mimeType: string };
+  bodyParams: string[];
+}
+
 function digitsOnly(chatId: string): string {
   return chatId.replace(/\D/g, "");
 }
@@ -168,6 +176,35 @@ export class CloudApiWhatsAppProvider implements WhatsAppProvider {
       to: digitsOnly(chatId),
       type,
       [type]: mediaPayload,
+    });
+    return { providerMessageId: body.messages?.[0]?.id ?? randomUUID(), timestamp: new Date() };
+  }
+
+  /**
+   * A Meta-approved template — the only kind of message the Cloud API
+   * accepts once 24h have passed since the customer's last message.
+   * Parameters fill {{1}}, {{2}}... in order; a media header is uploaded
+   * first and referenced by id.
+   */
+  async sendTemplate(chatId: string, template: TemplateSendInput): Promise<SendResult> {
+    const components: Record<string, unknown>[] = [];
+    if (template.headerMedia) {
+      const kind = template.headerMedia.kind;
+      const mediaId = await this.uploadMedia(template.headerMedia.buffer, template.headerMedia.fileName, template.headerMedia.mimeType);
+      const media: Record<string, unknown> = { id: mediaId };
+      if (kind === "document") media.filename = template.headerMedia.fileName;
+      components.push({ type: "header", parameters: [{ type: kind, [kind]: media }] });
+    } else if (template.headerParams.length > 0) {
+      components.push({ type: "header", parameters: template.headerParams.map((text) => ({ type: "text", text })) });
+    }
+    if (template.bodyParams.length > 0) {
+      components.push({ type: "body", parameters: template.bodyParams.map((text) => ({ type: "text", text })) });
+    }
+    const body = await this.graphPost(`${this.phoneNumberId}/messages`, {
+      messaging_product: "whatsapp",
+      to: digitsOnly(chatId),
+      type: "template",
+      template: { name: template.name, language: { code: template.language }, components },
     });
     return { providerMessageId: body.messages?.[0]?.id ?? randomUUID(), timestamp: new Date() };
   }

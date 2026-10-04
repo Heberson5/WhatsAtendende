@@ -1,9 +1,9 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, ArrowRightLeft, CheckCircle2, ChevronDown, ChevronUp, PanelRight, Paperclip, Phone, Search, StickyNote, X as CloseIcon } from "lucide-react";
+import { ArrowLeft, ArrowRightLeft, CheckCircle2, ChevronDown, ChevronUp, FileText, PanelRight, Paperclip, Phone, Search, StickyNote, X as CloseIcon } from "lucide-react";
 import clsx from "clsx";
-import { PERMISSION, type ConversationListItemDTO, type ConversationNoteDTO, type MessageDTO, type PaginatedResult, type QuickReplyDTO } from "@whatsatendende/types";
+import { PERMISSION, type ConversationListItemDTO, type ConversationNoteDTO, type MessageDTO, type PaginatedResult, type QuickReplyDTO, type TemplateContextDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { contactDisplayName } from "../../lib/contact-display";
 import { getSocket } from "../../lib/socket";
@@ -11,6 +11,7 @@ import { useAuthStore } from "../../store/auth-store";
 import { MessageBubble } from "./MessageBubble";
 import { Composer, type ComposerHandle } from "./Composer";
 import { TransferModal } from "./TransferModal";
+import { SendTemplateModal } from "./SendTemplateModal";
 import { TransferNoteCard } from "./TransferNoteCard";
 
 async function fetchMessages(conversationId: string, cursor?: string) {
@@ -141,6 +142,18 @@ export function ChatPanel({
     queryFn: async () => (await api.get<QuickReplyDTO[]>(`/quick-replies/conversation/${conversation.id}`)).data,
     staleTime: 60_000,
   });
+
+  // WhatsApp Oficial only: after 24h without a customer message, Meta accepts
+  // nothing but an approved template — the composer swaps for that button.
+  const templateContextQuery = useQuery({
+    queryKey: ["template-context", conversation.id],
+    queryFn: async () => (await api.get<TemplateContextDTO>(`/messages/conversations/${conversation.id}/template-context`)).data,
+    enabled: conversation.channel === "WHATSAPP",
+    refetchInterval: 60_000,
+  });
+  const templateContext = templateContextQuery.data;
+  const windowClosed = Boolean(templateContext?.official && !templateContext.windowOpen);
+  const [templateOpen, setTemplateOpen] = useState(false);
 
   useEffect(() => {
     nearBottomRef.current = true;
@@ -671,6 +684,15 @@ export function ChatPanel({
             {tab.label}
           </button>
         ))}
+        {templateContext?.official && composerMode === "reply" && !windowClosed && (
+          <button
+            type="button"
+            onClick={() => setTemplateOpen(true)}
+            className="focus-ring -mb-px flex items-center gap-1 border-b-2 border-transparent pb-1.5 font-medium text-muted hover:text-[var(--color-text)]"
+          >
+            <FileText className="h-3.5 w-3.5" /> Template
+          </button>
+        )}
         {composerMode === "reply" && quickRepliesQuery.data && quickRepliesQuery.data.length > 0 && (
           <div className="ml-auto hidden min-w-0 items-center gap-1.5 overflow-hidden pb-1.5 lg:flex">
             {quickRepliesQuery.data.slice(0, 4).map((reply) => (
@@ -719,6 +741,20 @@ export function ChatPanel({
             <StickyNote className="h-4 w-4" /> {createNoteMutation.isPending ? "Salvando..." : "Salvar nota"}
           </button>
         </form>
+      ) : windowClosed ? (
+        <div className="flex flex-col gap-2 bg-surface px-4 pb-3 pt-2 sm:flex-row sm:items-center">
+          <p className="flex-1 text-xs text-muted">
+            Já se passaram 24 horas desde a última mensagem do cliente. Pela regra do WhatsApp Oficial, agora só é possível enviar um template aprovado. Quando o cliente responder, a conversa volta ao normal.
+          </p>
+          <button
+            type="button"
+            disabled={connectionDisconnected}
+            onClick={() => setTemplateOpen(true)}
+            className="focus-ring flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-fg disabled:opacity-50"
+          >
+            <FileText className="h-4 w-4" /> Enviar template
+          </button>
+        </div>
       ) : (
       <Composer
         ref={composerRef}
@@ -739,6 +775,18 @@ export function ChatPanel({
           await sendLocationMutation.mutateAsync({ latitude: lat, longitude: lng });
         }}
       />
+      )}
+
+      {templateOpen && templateContext && (
+        <SendTemplateModal
+          conversationId={conversation.id}
+          templates={templateContext.templates}
+          onClose={() => setTemplateOpen(false)}
+          onSent={() => {
+            setTemplateOpen(false);
+            queryClient.invalidateQueries({ queryKey: ["template-context", conversation.id] });
+          }}
+        />
       )}
 
       {transferOpen && (

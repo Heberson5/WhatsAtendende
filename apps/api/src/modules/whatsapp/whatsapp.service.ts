@@ -7,6 +7,7 @@ import {
   type CloudApiWebhookValue,
   type InboundMessageEvent,
   type SendResult,
+  type TemplateSendInput,
   type WhatsAppProvider,
   type WhatsAppStatusSnapshot,
 } from "@whatsatendende/whatsapp";
@@ -1083,6 +1084,13 @@ export async function sendOutboundText(
 /** A message written by the system itself (Fluxo, pesquisa de satisfação) — sent as-is, without the "*Nome:*" agent prefix. */
 export async function sendAutomatedText(connectionId: string, messageId: string, contactPhone: string, text: string) {
   return sendWithTimeoutGuard(messageId, "text", () => getProvider(connectionId).sendText(toChatId(contactPhone), text, {}));
+}
+
+/** Sends a Meta-approved template — only possible on an OFFICIAL_API connection (Cloud API). */
+export async function sendOutboundTemplate(connectionId: string, messageId: string, contactPhone: string, template: TemplateSendInput) {
+  const provider = providers.get(connectionId);
+  if (!(provider instanceof CloudApiWhatsAppProvider)) throw Errors.badRequest("Templates só podem ser enviados por uma conexão da API Oficial");
+  return sendWithTimeoutGuard(messageId, "template", () => provider.sendTemplate(toChatId(contactPhone), template));
 }
 
 export async function sendOutboundFile(
