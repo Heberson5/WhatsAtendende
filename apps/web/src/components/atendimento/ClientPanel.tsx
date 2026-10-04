@@ -10,6 +10,7 @@ import { api, getApiErrorMessage } from "../../lib/api";
 import { contactDisplayName } from "../../lib/contact-display";
 
 const STATUS_LABEL: Record<string, string> = {
+  IN_FLOW: "No fluxo",
   NEW: "Nova",
   WAITING: "Na fila",
   IN_PROGRESS: "Em atendimento",

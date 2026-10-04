@@ -44,12 +44,26 @@ describe("Fluxo — see PROMPT: \"um novo menu chamado Fluxo... função de ativ
     expect(detail.body.nodes[0].type).toBe("START");
   });
 
-  it("refuses to link a flow to a QRCODE connection", async () => {
+  it("links a flow to a QR Code connection too (menus are plain numbered text)", async () => {
     const token = await loginAs("admin@test.dev");
     const qr = await createTestConnection("Suporte QR");
 
     const res = await request(app).post("/api/flows").set("Authorization", `Bearer ${token}`).send({ name: "Teste", connectionIds: [qr.id] });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(201);
+    expect(res.body.connectionNames).toEqual(["Suporte QR"]);
+  });
+
+  it("refuses a second active flow on the same connection", async () => {
+    const token = await loginAs("admin@test.dev");
+    const qr = await createTestConnection("Suporte QR");
+    const auth = { Authorization: `Bearer ${token}` };
+    const first = await request(app).post("/api/flows").set(auth).send({ name: "Boas-vindas", template: "welcome", connectionIds: [qr.id] });
+    const second = await request(app).post("/api/flows").set(auth).send({ name: "Outro", template: "welcome", connectionIds: [qr.id] });
+
+    expect((await request(app).patch(`/api/flows/${first.body.id}`).set(auth).send({ active: true })).status).toBe(200);
+    const refused = await request(app).patch(`/api/flows/${second.body.id}`).set(auth).send({ active: true });
+    expect(refused.status).toBe(409);
+    expect(refused.body.message).toMatch(/já tem o fluxo “Boas-vindas” ativo/);
   });
 
   it("refuses to activate an incomplete flow, and activates/deactivates a complete one", async () => {
@@ -57,7 +71,7 @@ describe("Fluxo — see PROMPT: \"um novo menu chamado Fluxo... função de ativ
     const blank = await request(app).post("/api/flows").set("Authorization", `Bearer ${token}`).send({ name: "Fluxo A" });
     expect(blank.body.active).toBe(false);
     expect(blank.body.issues.map((i: { message: string }) => i.message)).toEqual(
-      expect.arrayContaining(["Vincule pelo menos uma conexão WhatsApp Oficial", "O Início não leva a nenhum passo"])
+      expect.arrayContaining(["Vincule pelo menos uma conexão", "O Início não leva a nenhum passo"])
     );
 
     const refused = await request(app).patch(`/api/flows/${blank.body.id}`).set("Authorization", `Bearer ${token}`).send({ active: true });
@@ -90,8 +104,8 @@ describe("Fluxo — see PROMPT: \"um novo menu chamado Fluxo... função de ativ
     const source = await request(app).post("/api/flows").set("Authorization", `Bearer ${token}`).send({ name: "Fora do horário", template: "after-hours" });
     const copy = await request(app).post(`/api/flows/${source.body.id}/duplicate`).set("Authorization", `Bearer ${token}`);
     expect(copy.status).toBe(201);
-    expect(copy.body).toMatchObject({ name: "Fora do horário (cópia)", active: false, nodeCount: 3 });
-    expect(copy.body.preview.edges).toHaveLength(2);
+    expect(copy.body).toMatchObject({ name: "Fora do horário (cópia)", active: false, nodeCount: 5 });
+    expect(copy.body.preview.edges).toHaveLength(4);
   });
 
   it("saves a graph with a TRANSFER_TO_AGENT node carrying the assigned agent ids", async () => {

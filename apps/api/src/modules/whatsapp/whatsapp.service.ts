@@ -22,6 +22,7 @@ import { realtimeEvents } from "../../realtime/realtime";
 import { writeAudit } from "../../lib/audit";
 import * as conversationsService from "../conversations/conversations.service";
 import * as messagesService from "../messages/messages.service";
+import * as flowEngine from "../flows/flow-engine.service";
 import { toMessageDTO } from "../messages/messages.mapper";
 import { getManagerConnectionIds } from "../../lib/connection-access";
 import { createNotification } from "../notifications/notifications.service";
@@ -338,7 +339,7 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
           .then((photoUrl) => (photoUrl ? conversationsService.updateContactPhoto(contact.id, photoUrl) : undefined))
           .catch(() => undefined);
       }
-      const { conversation, isNewConversation, autoAssignedAgentId } = await conversationsService.findOrOpenConversationForInboundMessage(
+      const { conversation, isNewConversation, autoAssignedAgentId, flowId } = await conversationsService.findOrOpenConversationForInboundMessage(
         connectionId,
         contact.id,
         event.body
@@ -360,6 +361,14 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
       });
 
       await addAttachmentsFromEvent(message.id, event);
+
+      // An active Fluxo is still talking to this customer — the engine
+      // answers, and only hands the conversation to people when it's done.
+      if (conversation.status === "IN_FLOW") {
+        realtimeEvents.newMessage(conversation.id, null);
+        await flowEngine.handleInboundForFlow(conversation.id, flowId, event.body ?? null);
+        return;
+      }
 
       // This whole handler only ever runs for a WhatsApp event (see
       // provider.onMessage above) — contact.phone is always set here.
@@ -1069,6 +1078,11 @@ export async function sendOutboundText(
       replyToText,
     })
   );
+}
+
+/** A message written by the system itself (Fluxo, pesquisa de satisfação) — sent as-is, without the "*Nome:*" agent prefix. */
+export async function sendAutomatedText(connectionId: string, messageId: string, contactPhone: string, text: string) {
+  return sendWithTimeoutGuard(messageId, "text", () => getProvider(connectionId).sendText(toChatId(contactPhone), text, {}));
 }
 
 export async function sendOutboundFile(

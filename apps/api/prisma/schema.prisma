@@ -118,8 +118,8 @@ model User {
   // chart, saved via the gear icon's "Definir como padrão" checkbox — both
   // null means "show every hour", same as never having opened the gear menu.
   // See PROMPT: "podendo marcar como padrão também".
-  presenceChartStartHour Int?
-  presenceChartEndHour   Int?
+  presenceChartStartHour  Int?
+  presenceChartEndHour    Int?
   // Newest Notas de versão release this user has opened (or dismissed in the
   // "O que há de novo" popup) — drives the "Novo" badge in the sidebar.
   releaseNotesSeenVersion String?
@@ -231,15 +231,15 @@ enum WhatsAppConnectionMode {
 // (see apps/api/src/modules/whatsapp/whatsapp.service.ts) so they connect,
 // disconnect, and hold their own QR code independently of one another.
 model WhatsAppConnection {
-  id              String                   @id @default(uuid())
-  name            String                   @unique
+  id                 String                   @id @default(uuid())
+  name               String                   @unique
   // Distinguishes this connection's conversations at a glance — every
   // conversation card is tinted with its originating connection's color, so
   // an agent can tell them apart even after a cross-connection transfer.
-  color           String                   @default("#0097B4")
-  connectionMode  WhatsAppConnectionMode   @default(QRCODE)
-  status          WhatsAppConnectionStatus @default(DISCONNECTED)
-  connectedNumber String?
+  color              String                   @default("#0097B4")
+  connectionMode     WhatsAppConnectionMode   @default(QRCODE)
+  status             WhatsAppConnectionStatus @default(DISCONNECTED)
+  connectedNumber    String?
   // The phone number this connection was FIRST successfully linked to — set
   // once and kept forever after, unlike connectedNumber (which clears on
   // every disconnect, even a transient one). Lets a later reconnect/re-pair
@@ -249,9 +249,9 @@ model WhatsAppConnection {
   // estava antes". QRCODE only — an OFFICIAL_API connection's number comes
   // from Meta's own API (displayPhoneNumber below), never from a pairing
   // handshake, so it can never drift the way a QR-linked session could.
-  linkedNumber    String?
-  lastConnectedAt DateTime?
-  lastQrAt        DateTime?
+  linkedNumber       String?
+  lastConnectedAt    DateTime?
+  lastQrAt           DateTime?
   // --- OFFICIAL_API only (all null for a QRCODE connection) ---
   // Meta Cloud API identifiers for this WABA's phone number — see
   // developers.facebook.com/docs/whatsapp/cloud-api/get-started.
@@ -287,10 +287,10 @@ model WhatsAppConnection {
   // it automatically, with no ManagerConnectionAccess grant needed. Null
   // for a connection created before this field existed, or created
   // directly by an ADMIN with no meaningful "owner" concept for it.
-  createdByUser   User?                    @relation("ConnectionCreatedBy", fields: [createdByUserId], references: [id])
-  createdByUserId String?
-  createdAt       DateTime                 @default(now())
-  updatedAt       DateTime                 @updatedAt
+  createdByUser      User?                    @relation("ConnectionCreatedBy", fields: [createdByUserId], references: [id])
+  createdByUserId    String?
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
 
   agents           User[]
   contacts         Contact[]
@@ -434,7 +434,7 @@ enum MessageTemplateStatus {
 }
 
 model MessageTemplate {
-  id       String                    @id @default(uuid())
+  id       String                  @id @default(uuid())
   // Meta's own naming rule: lowercase snake_case, unique per (WABA, language).
   name     String
   category MessageTemplateCategory
@@ -443,9 +443,9 @@ model MessageTemplate {
   // in the cadastro form.
   language String
 
-  headerType MessageTemplateHeaderType @default(NONE)
+  headerType             MessageTemplateHeaderType @default(NONE)
   // HEADER text — only meaningful when headerType = TEXT.
-  headerText String?
+  headerText             String?
   // The sample media Meta's review team needs when headerType is IMAGE/
   // VIDEO/DOCUMENT — same storage pattern as MessageAttachment
   // (fs-backed, see env.UPLOAD_DIR). Uploaded to Meta's Resumable Upload
@@ -463,17 +463,17 @@ model MessageTemplate {
   // [{"type":"QUICK_REPLY","text":"Confirmar"},{"type":"URL","text":"Ver pedido","url":"https://..."}]
   // — kept as a single JSON blob rather than a child table since it's
   // always read/written as one unit (never queried by button content).
-  buttons Json?
+  buttons    Json?
 
   whatsappConnection   WhatsAppConnection @relation(fields: [whatsappConnectionId], references: [id], onDelete: Cascade)
   whatsappConnectionId String
 
-  status         MessageTemplateStatus @default(DRAFT)
+  status          MessageTemplateStatus @default(DRAFT)
   rejectionReason String?
   // Meta's own template id, assigned on successful submission — the
   // message_template_status_update webhook event carries this, not the
   // name, so status updates are matched by it. Null until first submitted.
-  metaTemplateId String? @unique
+  metaTemplateId  String?               @unique
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -584,6 +584,9 @@ model Contact {
 }
 
 enum ConversationStatus {
+  // An active Fluxo is talking to the customer (welcome, menu...) before
+  // any human — stays out of the queue until the flow hands it over.
+  IN_FLOW
   NEW
   WAITING
   IN_PROGRESS
@@ -640,7 +643,7 @@ model Conversation {
   // transferred it if this passes with no login in between.
   pendingTransferDeadline DateTime?
 
-  lastMessageAt        DateTime @default(now())
+  lastMessageAt        DateTime  @default(now())
   lastMessageDirection String?
   // When the customer's oldest still-unanswered message arrived — set on
   // the first INBOUND message after an agent reply, cleared on the next
@@ -653,6 +656,7 @@ model Conversation {
   version Int @default(0)
 
   messages    Message[]
+  flowSession FlowSession?
   notes       ConversationNote[]
   assignments ConversationAssignment[]
   transfers   ConversationTransfer[]
@@ -757,6 +761,9 @@ model Message {
   providerMessageId String?          @unique
   senderAgent       User?            @relation("SentByAgent", fields: [senderAgentId], references: [id])
   senderAgentId     String?
+  // Sent by the system itself, not a person: "FLOW" (Fluxo) or "SURVEY"
+  // (pesquisa de satisfação). Shown with that label instead of an agent's name.
+  automatedBy       String?
   replyToMessage    Message?         @relation("MessageReplies", fields: [replyToMessageId], references: [id])
   replyToMessageId  String?
   replies           Message[]        @relation("MessageReplies")
@@ -996,17 +1003,20 @@ enum FlowNodeType {
   // configurado no nó". Empty = any agent on the connection's queue, same
   // as a normal inbound conversation.
   TRANSFER_TO_AGENT
+  // Branches on whether "now" is inside the hours set on the node —
+  // sourceHandle "open" or "closed".
+  BUSINESS_HOURS
   END
 }
 
 model Flow {
-  id          String   @id @default(uuid())
+  id          String  @id @default(uuid())
   name        String
   description String?
   // See PROMPT: "função de ativar e desativar o fluxo". Starts false so a
   // half-built flow can be saved and iterated on without going live by
   // accident.
-  active      Boolean  @default(false)
+  active      Boolean @default(false)
 
   createdByUserId String?
   createdBy       User?   @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
@@ -1037,17 +1047,17 @@ model FlowConnection {
 }
 
 model FlowNode {
-  id       String       @id @default(uuid())
-  flow     Flow         @relation(fields: [flowId], references: [id], onDelete: Cascade)
-  flowId   String
-  type     FlowNodeType
+  id        String       @id @default(uuid())
+  flow      Flow         @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  flowId    String
+  type      FlowNodeType
   // Canvas coordinates — purely a UI concern, never read by the engine.
-  positionX Float @default(0)
-  positionY Float @default(0)
+  positionX Float        @default(0)
+  positionY Float        @default(0)
   // Node-type-specific config (text body, menu options, assigned agents,
   // ...). Kept as JSON rather than one column per type since each type's
   // shape is different and a new node type shouldn't need a migration.
-  data     Json         @default("{}")
+  data      Json         @default("{}")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1072,25 +1082,27 @@ model FlowEdge {
   // node with a single outgoing path, a MENU option's id when branching.
   sourceHandle String?
 
+  @@unique([sourceNodeId, sourceHandle])
   @@index([flowId])
   @@index([sourceNodeId])
-  @@unique([sourceNodeId, sourceHandle])
 }
 
-// Per-contact runtime state while a flow is actively steering their
-// conversation — not read or written by anything yet (the execution
-// engine is a later phase), but modeled now alongside the rest of Fluxo so
-// that phase is additive instead of another schema change.
+// Runtime state of a flow steering one conversation (see
+// flow-engine.service.ts): which node is waiting for the customer's answer
+// and how many invalid answers they gave to it.
 model FlowSession {
-  id            String    @id @default(uuid())
-  flow          Flow      @relation(fields: [flowId], references: [id], onDelete: Cascade)
-  flowId        String
-  contact       Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  contactId     String
-  currentNodeId String?
-  variables     Json      @default("{}")
-  startedAt     DateTime  @default(now())
-  completedAt   DateTime?
+  id              String        @id @default(uuid())
+  flow            Flow          @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  flowId          String
+  contact         Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  contactId       String
+  conversation    Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversationId  String?       @unique
+  currentNodeId   String?
+  invalidAttempts Int           @default(0)
+  variables       Json          @default("{}")
+  startedAt       DateTime      @default(now())
+  completedAt     DateTime?
 
   @@index([flowId])
   @@index([contactId])
@@ -1119,13 +1131,13 @@ model Tag {
 }
 
 model ContactTag {
-  contact     Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  contactId   String
-  tag         Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
-  tagId       String
-  addedBy     User?    @relation(fields: [addedById], references: [id], onDelete: SetNull)
-  addedById   String?
-  createdAt   DateTime @default(now())
+  contact   Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  contactId String
+  tag       Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  tagId     String
+  addedBy   User?    @relation(fields: [addedById], references: [id], onDelete: SetNull)
+  addedById String?
+  createdAt DateTime @default(now())
 
   @@id([contactId, tagId])
   @@index([tagId])
