@@ -13,6 +13,12 @@ vi.mock("../src/modules/whatsapp/whatsapp.service", async (importOriginal) => {
   };
 });
 
+// Skip the "Desfazer" wait before sending — the survey goes out right away in these tests.
+vi.mock("../src/modules/satisfaction/satisfaction.service", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/modules/satisfaction/satisfaction.service")>();
+  return { ...actual, scheduleSatisfactionSurvey: (id: string) => void actual.sendSatisfactionSurvey(id) };
+});
+
 import { closeConversation } from "../src/modules/conversations/conversations.service";
 import { captureSurveyAnswer, getSatisfactionSummary, parseSurveyScore, updateSurveySettings } from "../src/modules/satisfaction/satisfaction.service";
 

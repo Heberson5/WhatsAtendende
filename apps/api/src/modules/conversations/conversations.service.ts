@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
+import { CONVERSATION_UNDO_WINDOW_MS } from "@whatsatendende/types";
 import { prisma } from "../../lib/prisma";
-import { sendSatisfactionSurvey } from "../satisfaction/satisfaction.service";
+import { scheduleSatisfactionSurvey } from "../satisfaction/satisfaction.service";
 import { endFlowSession } from "../flows/flow-engine.service";
 import { Errors } from "../../lib/http-error";
 import { writeAudit } from "../../lib/audit";
@@ -1287,21 +1288,22 @@ export async function returnConversationToQueue(conversationId: string, initiate
   });
 
   await prisma.conversationEvent.create({
-    data: { conversationId, type: "RETURNED_TO_QUEUE", payload: { previousAgentId, initiatedById } },
+    data: { conversationId, type: "RETURNED_TO_QUEUE", payload: { previousAgentId, initiatedById, previousStatus: existing.status } },
   });
 
   return { conversation: await getConversationOrThrow(conversationId), previousAgentId };
 }
 
 export async function closeConversation(conversationId: string, agentId: string) {
+  const previous = await prisma.conversation.findUnique({ where: { id: conversationId }, select: { status: true } });
   const result = await prisma.conversation.updateMany({
     where: { id: conversationId, assignedAgentId: agentId, status: { in: ["IN_PROGRESS", "TRANSFERRED"] } },
     data: { status: "CLOSED", closedAt: new Date(), closedByUserId: agentId, pendingTransferDeadline: null },
   });
   if (result.count === 0) throw Errors.conflict("Nao foi possivel encerrar esta conversa");
 
-  await prisma.conversationEvent.create({ data: { conversationId, type: "CLOSED", payload: { agentId } } });
-  void sendSatisfactionSurvey(conversationId);
+  await prisma.conversationEvent.create({ data: { conversationId, type: "CLOSED", payload: { agentId, previousStatus: previous?.status } } });
+  scheduleSatisfactionSurvey(conversationId);
   return getConversationOrThrow(conversationId);
 }
 
@@ -1325,11 +1327,56 @@ export async function closeConversationFromGestao(conversationId: string, initia
   });
 
   await prisma.conversationEvent.create({
-    data: { conversationId, type: "CLOSED", payload: { agentId: initiatedById, previousAgentId } },
+    data: { conversationId, type: "CLOSED", payload: { agentId: initiatedById, previousAgentId, previousStatus: existing.status } },
   });
-  void sendSatisfactionSurvey(conversationId);
+  scheduleSatisfactionSurvey(conversationId);
 
   return { conversation: await getConversationOrThrow(conversationId), previousAgentId };
+}
+
+// Slack for the request travelling while the "Desfazer" toast was still up.
+const UNDO_GRACE_MS = 5_000;
+const REOPENABLE_STATUSES: ConversationStatus[] = ["IN_PROGRESS", "TRANSFERRED"];
+
+/**
+ * "Desfazer" right after closing or returning a conversation to the queue:
+ * reverts the conversation's latest event, only for whoever did it, only
+ * within the undo window, and only while nothing else happened since (no
+ * one accepted it from the queue, the customer didn't start a new one).
+ */
+export async function undoLastConversationAction(conversationId: string, userId: string) {
+  const conversation = await getConversationOrThrow(conversationId);
+  const event = await prisma.conversationEvent.findFirst({ where: { conversationId }, orderBy: { createdAt: "desc" } });
+  const payload = (event?.payload ?? {}) as { agentId?: string; initiatedById?: string; previousAgentId?: string | null; previousStatus?: ConversationStatus };
+  const actorId = event?.type === "CLOSED" ? payload.agentId : event?.type === "RETURNED_TO_QUEUE" ? payload.initiatedById : undefined;
+  const tooLate = !event || Date.now() - event.createdAt.getTime() > CONVERSATION_UNDO_WINDOW_MS + UNDO_GRACE_MS;
+  if (!event || actorId !== userId || tooLate) throw Errors.conflict("Não é mais possível desfazer esta ação");
+
+  let restoredStatus: ConversationStatus;
+  if (event.type === "CLOSED") {
+    if (conversation.status !== "CLOSED") throw Errors.conflict("Não é mais possível desfazer esta ação");
+    const newer = await prisma.conversation.count({ where: { contactId: conversation.contactId, createdAt: { gt: conversation.createdAt } } });
+    if (newer > 0) throw Errors.conflict("O cliente já iniciou outra conversa");
+    restoredStatus =
+      conversation.assignedAgentId && payload.previousStatus && REOPENABLE_STATUSES.includes(payload.previousStatus)
+        ? payload.previousStatus
+        : conversation.assignedAgentId
+          ? "IN_PROGRESS"
+          : "NEW";
+    await prisma.conversation.update({ where: { id: conversationId }, data: { status: restoredStatus, closedAt: null, closedByUserId: null } });
+    await prisma.satisfactionSurvey.deleteMany({ where: { conversationId, answeredAt: null } });
+  } else {
+    if (!payload.previousAgentId) throw Errors.conflict("A conversa não tinha atendente para quem voltar");
+    if (conversation.status !== "WAITING" || conversation.assignedAgentId) throw Errors.conflict("A conversa já foi aceita por outra pessoa");
+    restoredStatus = payload.previousStatus && REOPENABLE_STATUSES.includes(payload.previousStatus) ? payload.previousStatus : "IN_PROGRESS";
+    const now = new Date();
+    await prisma.conversation.update({
+      where: { id: conversationId },
+      data: { status: restoredStatus, assignedAgentId: payload.previousAgentId, acceptedAt: now },
+    });
+  }
+  await prisma.conversationEvent.create({ data: { conversationId, type: "ACTION_UNDONE", payload: { undone: event.type, by: userId } } });
+  return getConversationOrThrow(conversationId);
 }
 
 /**

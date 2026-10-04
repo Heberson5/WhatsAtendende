@@ -17,6 +17,7 @@ import { MergeConversationModal } from "../../components/gestao/MergeConversatio
 import { GestaoTransferModal } from "../../components/gestao/GestaoTransferModal";
 import { useNow } from "../../hooks/useNow";
 import { STATUS_COLOR, STATUS_LABEL } from "../../lib/conversationStatus";
+import { toastWithUndo } from "../../lib/undoToast";
 
 // Same "still active" scope the backend enforces (see
 // assignConversationFromGestao/returnConversationToQueue) — CLOSED/ABANDONED
@@ -115,8 +116,8 @@ export default function GestaoPage() {
 
   const returnToQueueMutation = useMutation({
     mutationFn: (conversationId: string) => api.post(`/conversations/${conversationId}/gestao-return-to-queue`),
-    onSuccess: () => {
-      toast.success("Conversa enviada para a fila.");
+    onSuccess: (_res, conversationId) => {
+      toastWithUndo("Conversa enviada para a fila.", conversationId, queryClient);
       queryClient.invalidateQueries({ queryKey: ["oversight"] });
     },
     onError: (err) => toast.error(getApiErrorMessage(err)),
@@ -125,8 +126,8 @@ export default function GestaoPage() {
   const closeMutation = useMutation({
     mutationFn: ({ conversationId, sendClosingMessage }: { conversationId: string; sendClosingMessage: boolean }) =>
       api.post(`/conversations/${conversationId}/gestao-close`, { sendClosingMessage }),
-    onSuccess: () => {
-      toast.success("Atendimento encerrado.");
+    onSuccess: (_res, { conversationId }) => {
+      toastWithUndo("Atendimento encerrado.", conversationId, queryClient);
       queryClient.invalidateQueries({ queryKey: ["oversight"] });
       setClosing(null);
     },

@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { ShieldCheck } from "lucide-react";
 import type { Permission, PermissionDefinition, Role } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
+import { UnsavedChangesBar } from "../../components/common/UnsavedChangesBar";
 import { useAuthStore } from "../../store/auth-store";
 
 interface PermissionsResponse {
@@ -137,8 +138,8 @@ export function PermissionsPanel() {
         >
           Salvar alterações
         </button>
-        {dirty && !saveMutation.isPending && <span className="text-xs text-muted">Há alterações não salvas.</span>}
       </div>
+      <UnsavedChangesBar dirty={dirty} saving={saveMutation.isPending} onSave={() => saveMutation.mutate()} onDiscard={() => data && setDraft(data.matrix)} />
     </div>
   );
 }

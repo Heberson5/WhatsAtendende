@@ -1,12 +1,14 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { X, Phone } from "lucide-react";
-import type { ConversationListItemDTO, MessageDTO, PaginatedResult } from "@whatsatendende/types";
+import type { ContactPanelDTO, ConversationListItemDTO, ConversationNoteDTO, MessageDTO, PaginatedResult } from "@whatsatendende/types";
 import { api } from "../../lib/api";
 import { contactDisplayName } from "../../lib/contact-display";
 import { getSocket } from "../../lib/socket";
 import { MessageBubble } from "../atendimento/MessageBubble";
 import { TransferNoteCard } from "../atendimento/TransferNoteCard";
+import { InternalNoteCard } from "../atendimento/ChatPanel";
+import { TagChip } from "../../pages/contatos/contactFormat";
 
 async function fetchMessages(conversationId: string, cursor?: string) {
   const res = await api.get<PaginatedResult<MessageDTO>>(`/messages/conversations/${conversationId}`, {
@@ -54,6 +56,15 @@ export function ReadOnlyConversationDrawer({
     queryKey: ["oversight-messages", conversation.id],
     queryFn: () => fetchMessages(conversation.id),
   });
+  // Internal notes and the customer's tags — read-only here, same data the agent sees.
+  const notesQuery = useQuery({
+    queryKey: ["notes", conversation.id],
+    queryFn: async () => (await api.get<ConversationNoteDTO[]>(`/conversations/${conversation.id}/notes`)).data,
+  });
+  const panelQuery = useQuery({
+    queryKey: ["contact-panel", conversation.id],
+    queryFn: async () => (await api.get<ContactPanelDTO>(`/conversations/${conversation.id}/contact-panel`)).data,
+  });
 
   // Upserts page 1 into whatever's already loaded instead of replacing it
   // outright — same merge ChatPanel uses for its own live updates, needed
@@ -87,6 +98,7 @@ export function ReadOnlyConversationDrawer({
     const onLiveUpdate = (payload: { conversationId: string }) => {
       if (payload.conversationId !== conversation.id) return;
       queryClient.invalidateQueries({ queryKey: ["oversight-messages", conversation.id] });
+      queryClient.invalidateQueries({ queryKey: ["notes", conversation.id] });
     };
     socket.on("message:new", onLiveUpdate);
     socket.on("message:status", onLiveUpdate);
@@ -178,6 +190,14 @@ export function ReadOnlyConversationDrawer({
           </button>
         </div>
 
+        {(panelQuery.data?.tags.length ?? 0) > 0 && (
+          <div className="flex flex-wrap items-center gap-1 border-b border-border px-4 py-2" aria-label="Etiquetas do cliente">
+            {panelQuery.data!.tags.map((t) => (
+              <TagChip key={t.id} tag={t} />
+            ))}
+          </div>
+        )}
+
         <div ref={scrollContainerRef} className="flex-1 overflow-y-auto bg-[var(--color-bg)] px-4 py-4">
           {(isLoading || cursor) && <p className="text-center text-sm text-muted">Carregando histórico...</p>}
           <div ref={contentRef} className="space-y-3">
@@ -187,11 +207,21 @@ export function ReadOnlyConversationDrawer({
               // not as a static banner above the whole thread.
               const transferAt = conversation.transfer?.note ? new Date(conversation.transfer.at).getTime() : null;
               let noteInserted = false;
+              // Internal notes sit in the timeline right where they were written.
+              const pendingNotes = [...(notesQuery.data ?? [])];
+              const takeNotesUpTo = (at: number) => {
+                const due: ConversationNoteDTO[] = [];
+                while (pendingNotes.length && new Date(pendingNotes[0].createdAt).getTime() <= at) due.push(pendingNotes.shift()!);
+                return due;
+              };
               const rendered = messages.map((m) => {
                 const insertNoteHere = transferAt !== null && !noteInserted && new Date(m.createdAt).getTime() >= transferAt;
                 if (insertNoteHere) noteInserted = true;
                 return (
                   <Fragment key={m.id}>
+                    {takeNotesUpTo(new Date(m.createdAt).getTime()).map((note) => (
+                      <InternalNoteCard key={note.id} note={note} />
+                    ))}
                     {insertNoteHere && <TransferNoteCard transfer={conversation.transfer!} />}
                     <MessageBubble
                       message={m}
@@ -204,6 +234,7 @@ export function ReadOnlyConversationDrawer({
                 );
               });
               if (transferAt !== null && !noteInserted) rendered.push(<TransferNoteCard key="transfer-note" transfer={conversation.transfer!} />);
+              for (const note of pendingNotes) rendered.push(<InternalNoteCard key={note.id} note={note} />);
               return rendered;
             })()}
           </div>
