@@ -13,9 +13,10 @@ vi.mock("../src/modules/whatsapp/whatsapp.service", async (importOriginal) => {
   };
 });
 
+// Loaded before conversations.service so it binds to the mocked whatsapp.service (the modules import each other).
+import { handleInboundForFlow, isWithinBusinessHours, matchMenuOption } from "../src/modules/flows/flow-engine.service";
 import * as conversationsService from "../src/modules/conversations/conversations.service";
 import * as flowsService from "../src/modules/flows/flows.service";
-import { handleInboundForFlow, isWithinBusinessHours, matchMenuOption } from "../src/modules/flows/flow-engine.service";
 
 
 describe("Fluxo: motor de execução", () => {

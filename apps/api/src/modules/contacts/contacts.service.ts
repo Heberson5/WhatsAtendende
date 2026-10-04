@@ -143,7 +143,7 @@ export async function exportContactsCsv(filters: ContactFilters): Promise<string
       .map(csvEscape)
       .join(";");
   });
-  return "﻿" + [header.join(";"), ...lines].join("\r\n");
+  return "\uFEFF" + [header.join(";"), ...lines].join("\r\n");
 }
 
 /** Splits one CSV line on `delimiter`, honoring "quoted, values" and "" escapes. */
@@ -175,7 +175,7 @@ export function normalizeImportPhone(raw: string): string | null {
   return digits.length >= 12 && digits.length <= 15 ? digits : null;
 }
 
-const normalizeHeader = (h: string) => h.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+const normalizeHeader = (h: string) => h.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
 
 /**
  * Columns (any order, header row required): Nome, Telefone, Etiquetas
@@ -184,7 +184,7 @@ const normalizeHeader = (h: string) => h.normalize("NFD").replace(/[̀-ͯ]/g, ""
  * are skipped and reported back.
  */
 export async function importContactsCsv(csv: string, whatsappConnectionId: string, userId: string): Promise<ContactImportResultDTO> {
-  const lines = csv.replace(/^﻿/, "").split(/\r?\n/).filter((l) => l.trim() !== "");
+  const lines = csv.replace(/^\uFEFF/, "").split(/\r?\n/).filter((l) => l.trim() !== "");
   if (lines.length < 2) throw Errors.badRequest("A planilha precisa ter o cabeçalho e pelo menos um contato");
   if (lines.length - 1 > IMPORT_MAX_ROWS) throw Errors.badRequest(`Importe no máximo ${IMPORT_MAX_ROWS} contatos por vez`);
 
