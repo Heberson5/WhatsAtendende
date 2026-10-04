@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { PERMISSION, type ClosingMessageDTO } from "@whatsatendende/types";
 import { useAuthStore } from "../../store/auth-store";
 import { api, getApiErrorMessage } from "../../lib/api";
+import { describeConnectionScope } from "./ConnectionScopePicker";
 import { EncerramentoFormModal, type EncerramentoFormValues } from "./EncerramentoFormModal";
 
 /** Cadastro de mensagens de encerramento automático — ver PROMPT: "Encerramento, o cadastro deverá ser similar com a resposta rápida, mas com alguns diferenciais." */
@@ -83,6 +84,7 @@ export function EncerramentoTab() {
               <th className="px-4 py-3">Nome</th>
               <th className="px-4 py-3">Texto</th>
               <th className="px-4 py-3">Usuários</th>
+              <th className="px-4 py-3">Conexões</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3 text-right">Ações</th>
             </tr>
@@ -90,14 +92,14 @@ export function EncerramentoTab() {
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-muted">
+                <td colSpan={6} className="px-4 py-8 text-center text-muted">
                   Carregando...
                 </td>
               </tr>
             )}
             {!isLoading && closingMessages?.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-muted">
+                <td colSpan={6} className="px-4 py-8 text-center text-muted">
                   Nenhum encerramento cadastrado ainda.
                 </td>
               </tr>
@@ -110,6 +112,9 @@ export function EncerramentoTab() {
                 </td>
                 <td className="px-4 py-3 text-muted">
                   {cm.assignedUsers.length === 0 ? "-" : cm.assignedUsers.map((u) => u.displayName).join(", ")}
+                </td>
+                <td className="max-w-[14rem] truncate px-4 py-3 text-muted" title={describeConnectionScope(cm.connectionScope)}>
+                  {describeConnectionScope(cm.connectionScope)}
                 </td>
                 <td className="px-4 py-3">
                   <span

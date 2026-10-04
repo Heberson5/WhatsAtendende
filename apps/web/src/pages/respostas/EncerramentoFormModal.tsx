@@ -4,6 +4,7 @@ import { X, AlertTriangle } from "lucide-react";
 import type { ClosingMessageDTO } from "@whatsatendende/types";
 import { api } from "../../lib/api";
 import { AutoMessagePreview } from "./AutoMessagePreview";
+import { ConnectionScopePicker, toConnectionScopeValue, type ConnectionScopeValue } from "./ConnectionScopePicker";
 import { fillAutoMessageTags, AGENT_EXAMPLE, CLIENT_EXAMPLE_NAME } from "../../lib/auto-message-tags";
 
 // {{atendente}} kept for parity with Transferência/Aceite — see PROMPT:
@@ -20,6 +21,7 @@ export interface EncerramentoFormValues {
   text: string;
   active: boolean;
   userIds: string[];
+  connectionScope: ConnectionScopeValue;
 }
 
 interface AssignableUser {
@@ -53,6 +55,7 @@ export function EncerramentoFormModal({
     text: closingMessage?.text ?? "",
     active: closingMessage?.active ?? true,
     userIds: closingMessage?.assignedUsers.map((u) => u.id) ?? [],
+    connectionScope: toConnectionScopeValue(closingMessage?.connectionScope, true),
   });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -102,6 +105,10 @@ export function EncerramentoFormModal({
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    if (!values.connectionScope.allConnections && values.connectionScope.connectionIds.length === 0) {
+      setError("Escolha pelo menos uma conexão ou marque todas as conexões");
+      return;
+    }
     setLoading(true);
     try {
       await onSubmit(values);
@@ -174,6 +181,12 @@ export function EncerramentoFormModal({
               className="h-4 w-4 accent-primary"
             />
           </label>
+
+          <ConnectionScopePicker
+            value={values.connectionScope}
+            onChange={(connectionScope) => setValues((v) => ({ ...v, connectionScope }))}
+            hint="Só é enviada ao encerrar conversas dessas conexões."
+          />
 
           <div>
             <span className="mb-1 block text-sm font-medium">Usuários</span>

@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { PERMISSION, type QuickReplyDTO } from "@whatsatendende/types";
 import { useAuthStore } from "../../store/auth-store";
 import { api, getApiErrorMessage } from "../../lib/api";
+import { describeConnectionScope } from "./ConnectionScopePicker";
 import { QuickReplyFormModal, type QuickReplyFormValues } from "./QuickReplyFormModal";
 
 export function RespostasRapidasTab() {
@@ -63,7 +64,7 @@ export function RespostasRapidasTab() {
     <div className="flex h-full flex-col overflow-hidden">
       <div className="mb-4 flex items-center justify-between">
         <p className="text-sm text-muted">
-          Textos prontos que o atendente insere na conversa digitando "/" seguido do atalho. Cada resposta só aparece para quem atende pela conexão selecionada.
+          Textos prontos que o atendente insere na conversa digitando "/" seguido do atalho. Cada resposta aparece só nas conversas das conexões escolhidas (ou em todas).
         </p>
         {canAdicionar && (
           <button
@@ -81,7 +82,7 @@ export function RespostasRapidasTab() {
             <tr>
               <th className="px-4 py-3">Nome</th>
               <th className="px-4 py-3">Atalho</th>
-              <th className="px-4 py-3">Conexão</th>
+              <th className="px-4 py-3">Conexões</th>
               <th className="px-4 py-3">Texto</th>
               <th className="px-4 py-3 text-right">Ações</th>
             </tr>
@@ -107,7 +108,9 @@ export function RespostasRapidasTab() {
                 <td className="px-4 py-3">
                   <code className="rounded bg-surface-alt px-1.5 py-0.5 text-xs">/{qr.shortcut}</code>
                 </td>
-                <td className="px-4 py-3 text-muted">{qr.whatsappConnectionName}</td>
+                <td className="max-w-[14rem] truncate px-4 py-3 text-muted" title={describeConnectionScope(qr.connectionScope)}>
+                  {describeConnectionScope(qr.connectionScope)}
+                </td>
                 <td className="max-w-xs truncate px-4 py-3 text-muted" title={qr.text}>
                   {qr.text}
                 </td>

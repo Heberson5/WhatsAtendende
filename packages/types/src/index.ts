@@ -190,10 +190,16 @@ export interface QuickReplyDTO {
   /** Without the leading "/" — see the QuickReply Prisma model comment. */
   shortcut: string;
   text: string;
-  whatsappConnectionId: string;
-  whatsappConnectionName: string;
+  /** Which WhatsApp connections a reply, automatic message or closing message applies to. */
+  connectionScope: ConnectionScopeDTO;
   createdAt: string;
   updatedAt: string;
+}
+
+/** "Todas as conexões" or an explicit list — shared by respostas rápidas, Transferência/Aceite and Encerramento. */
+export interface ConnectionScopeDTO {
+  allConnections: boolean;
+  connections: { id: string; name: string }[];
 }
 
 export interface ClosingMessageDTO {
@@ -203,6 +209,7 @@ export interface ClosingMessageDTO {
   active: boolean;
   /** Users who get this message auto-sent when they click Encerrar — a user appears in at most one ClosingMessage's list at a time. */
   assignedUsers: { id: string; displayName: string }[];
+  connectionScope: ConnectionScopeDTO;
   createdAt: string;
   updatedAt: string;
 }
@@ -393,6 +400,7 @@ export interface AutoMessageTemplateDTO {
   name: string;
   text: string;
   active: boolean;
+  connectionScope: ConnectionScopeDTO;
   createdAt: string;
   updatedAt: string;
 }

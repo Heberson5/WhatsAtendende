@@ -1,7 +1,11 @@
 import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
+import { assertScopeConnectionsExist, scopeData, withScopeConnections, type ConnectionScopeInput } from "../../lib/connection-scope";
 
-const withAssignedUsers = { assignedUsers: { select: { id: true, displayName: true }, orderBy: { displayName: "asc" as const } } } as const;
+const withAssignedUsers = {
+  assignedUsers: { select: { id: true, displayName: true }, orderBy: { displayName: "asc" as const } },
+  ...withScopeConnections,
+} as const;
 
 export async function listClosingMessages() {
   return prisma.closingMessage.findMany({ orderBy: { name: "asc" }, include: withAssignedUsers });
@@ -33,6 +37,7 @@ export interface ClosingMessageInput {
   text: string;
   active: boolean;
   userIds: string[];
+  connectionScope: ConnectionScopeInput;
 }
 
 async function assertUsersExist(userIds: string[]) {
@@ -43,7 +48,8 @@ async function assertUsersExist(userIds: string[]) {
 
 export async function createClosingMessage(input: ClosingMessageInput) {
   await assertUsersExist(input.userIds);
-  const row = await prisma.closingMessage.create({ data: { name: input.name, text: input.text, active: input.active } });
+  await assertScopeConnectionsExist(input.connectionScope);
+  const row = await prisma.closingMessage.create({ data: { name: input.name, text: input.text, active: input.active, ...scopeData(input.connectionScope, "connect") } });
   await syncAssignedUsers(row.id, input.userIds);
   return getClosingMessage(row.id);
 }
@@ -51,9 +57,10 @@ export async function createClosingMessage(input: ClosingMessageInput) {
 export async function updateClosingMessage(id: string, input: Partial<ClosingMessageInput>) {
   await getClosingMessage(id);
   if (input.userIds) await assertUsersExist(input.userIds);
+  if (input.connectionScope) await assertScopeConnectionsExist(input.connectionScope);
   await prisma.closingMessage.update({
     where: { id },
-    data: { name: input.name, text: input.text, active: input.active },
+    data: { name: input.name, text: input.text, active: input.active, ...(input.connectionScope && scopeData(input.connectionScope, "set")) },
   });
   if (input.userIds) await syncAssignedUsers(id, input.userIds);
   return getClosingMessage(id);
@@ -64,9 +71,11 @@ export async function deleteClosingMessage(id: string) {
   await prisma.closingMessage.delete({ where: { id } });
 }
 
-/** The message to auto-send when this user clicks Encerrar — null if they have none assigned, or theirs is inactive. */
-export async function getActiveClosingMessageForAgent(agentId: string) {
-  const user = await prisma.user.findUnique({ where: { id: agentId }, select: { closingMessage: true } });
-  if (!user?.closingMessage || !user.closingMessage.active) return null;
-  return user.closingMessage;
+/** The message to auto-send when this user closes a conversation of this connection — null if they have none assigned, theirs is inactive or doesn't cover the connection. */
+export async function getActiveClosingMessageForAgent(agentId: string, whatsappConnectionId: string | null) {
+  const user = await prisma.user.findUnique({ where: { id: agentId }, select: { closingMessage: { include: { connections: { select: { id: true } } } } } });
+  const message = user?.closingMessage;
+  if (!message || !message.active) return null;
+  if (!message.allConnections && !message.connections.some((c) => c.id === whatsappConnectionId)) return null;
+  return message;
 }
