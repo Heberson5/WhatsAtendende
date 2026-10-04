@@ -23,6 +23,9 @@ export type AgentPresence = (typeof AGENT_PRESENCE)[keyof typeof AGENT_PRESENCE]
 
 // Conversation state machine — see docs/business-rules.md for transitions.
 export const CONVERSATION_STATUS = {
+  // An active Fluxo is talking to the customer before any human — kept out
+  // of the queue until the flow hands the conversation over.
+  IN_FLOW: "IN_FLOW",
   NEW: "NEW",
   WAITING: "WAITING",
   IN_PROGRESS: "IN_PROGRESS",
@@ -234,7 +237,27 @@ export interface MessageTemplateDTO {
   updatedAt: string;
 }
 
-export type FlowNodeType = "START" | "TEXT_MESSAGE" | "MENU" | "TRANSFER_TO_AGENT" | "END";
+export type FlowNodeType = "START" | "TEXT_MESSAGE" | "MENU" | "TRANSFER_TO_AGENT" | "BUSINESS_HOURS" | "END";
+
+/** Exits of a BUSINESS_HOURS node — used as its FlowEdgeDTO.sourceHandle values. */
+export const FLOW_HOURS_OPEN = "open";
+export const FLOW_HOURS_CLOSED = "closed";
+
+/** BUSINESS_HOURS config: weekdays (0 = domingo) and the HH:mm window, in the editor's own UTC offset (minutes, as Date.getTimezoneOffset reports it). */
+export interface FlowBusinessHoursData {
+  days: number[];
+  start: string;
+  end: string;
+  tzOffsetMinutes: number;
+}
+
+export const FLOW_MENU_DEFAULT_PROMPT = "Escolha uma opção respondendo com o número:";
+
+/** Exactly what the customer receives for a MENU node — shared by the engine and the editor's WhatsApp preview. */
+export function renderFlowMenuText(data: { prompt?: string; options: FlowMenuOption[] }): string {
+  const prompt = data.prompt?.trim() || FLOW_MENU_DEFAULT_PROMPT;
+  return [prompt, ...data.options.map((o, i) => `${i + 1}. ${o.label}`)].join("\n");
+}
 
 /** One option of a MENU node — its `id` doubles as the FlowEdgeDTO.sourceHandle the chosen branch leaves from. */
 export interface FlowMenuOption {
@@ -250,7 +273,8 @@ export interface FlowMenuOption {
  */
 export type FlowNodeData =
   | { text?: string } // TEXT_MESSAGE
-  | { options: FlowMenuOption[] } // MENU
+  | { options: FlowMenuOption[]; prompt?: string } // MENU — prompt defaults to FLOW_MENU_DEFAULT_PROMPT
+  | FlowBusinessHoursData // BUSINESS_HOURS
   | { assignedAgentIds: string[]; mode?: "any" | "selected" } // TRANSFER_TO_AGENT — "selected" restricts to assignedAgentIds
   | Record<string, never>; // START / END — no config
 
@@ -299,7 +323,7 @@ export interface FlowIssue {
  */
 export function validateFlowGraph(input: { nodes: FlowNodeDTO[]; edges: Pick<FlowEdgeDTO, "sourceNodeId" | "sourceHandle">[]; connectionCount: number }): FlowIssue[] {
   const issues: FlowIssue[] = [];
-  if (input.connectionCount === 0) issues.push({ nodeId: null, message: "Vincule pelo menos uma conexão WhatsApp Oficial" });
+  if (input.connectionCount === 0) issues.push({ nodeId: null, message: "Vincule pelo menos uma conexão" });
   const hasExit = (nodeId: string, handle: string | null) =>
     input.edges.some((e) => e.sourceNodeId === nodeId && (e.sourceHandle ?? null) === handle);
   for (const node of input.nodes) {
@@ -316,6 +340,13 @@ export function validateFlowGraph(input: { nodes: FlowNodeDTO[]; edges: Pick<Flo
         if (!option.label.trim()) issues.push({ nodeId: node.id, message: "Opção do menu sem nome" });
         else if (!hasExit(node.id, option.id)) issues.push({ nodeId: node.id, message: `Opção “${option.label}” sem destino` });
       }
+    }
+    if (node.type === "BUSINESS_HOURS") {
+      const data = node.data as Partial<FlowBusinessHoursData>;
+      if (!data.days?.length) issues.push({ nodeId: node.id, message: "Horário sem dias da semana" });
+      if (!data.start || !data.end || data.start >= data.end) issues.push({ nodeId: node.id, message: "Horário de início deve ser antes do fim" });
+      if (!hasExit(node.id, FLOW_HOURS_OPEN)) issues.push({ nodeId: node.id, message: "Horário sem destino para “Aberto”" });
+      if (!hasExit(node.id, FLOW_HOURS_CLOSED)) issues.push({ nodeId: node.id, message: "Horário sem destino para “Fechado”" });
     }
     if (node.type === "TRANSFER_TO_AGENT") {
       const data = node.data as { assignedAgentIds?: string[]; mode?: "any" | "selected" };

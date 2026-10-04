@@ -20,7 +20,7 @@ const patchSchema = metaSchema.partial().extend({ active: z.boolean().optional()
 
 const nodeSchema = z.object({
   id: z.string().min(1),
-  type: z.enum(["START", "TEXT_MESSAGE", "MENU", "TRANSFER_TO_AGENT", "END"]),
+  type: z.enum(["START", "TEXT_MESSAGE", "MENU", "TRANSFER_TO_AGENT", "BUSINESS_HOURS", "END"]),
   positionX: z.number(),
   positionY: z.number(),
   data: z.record(z.unknown()).optional(),

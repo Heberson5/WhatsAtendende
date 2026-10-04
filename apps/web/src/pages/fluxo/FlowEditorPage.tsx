@@ -30,6 +30,11 @@ import {
   type FlowNodeData,
   type FlowNodeDTO,
   type FlowNodeType,
+  type FlowBusinessHoursData,
+  FLOW_HOURS_CLOSED,
+  FLOW_HOURS_OPEN,
+  FLOW_MENU_DEFAULT_PROMPT,
+  renderFlowMenuText,
 } from "@whatsatendende/types";
 import { useAuthStore } from "../../store/auth-store";
 import { api, getApiErrorMessage } from "../../lib/api";
@@ -68,7 +73,17 @@ const PALETTE: { category: string; items: { type: FlowNodeType; defaultData: Flo
     ],
   },
   { category: "Atendimento", items: [{ type: "TRANSFER_TO_AGENT", defaultData: { assignedAgentIds: [], mode: "any" }, hint: "Passa para um atendente" }] },
-  { category: "Controle", items: [{ type: "END", defaultData: {}, hint: "Encerra o fluxo" }] },
+  {
+    category: "Controle",
+    items: [
+      {
+        type: "BUSINESS_HOURS",
+        defaultData: { days: [1, 2, 3, 4, 5], start: "08:00", end: "18:00", tzOffsetMinutes: new Date().getTimezoneOffset() },
+        hint: "Separa dentro e fora do horário",
+      },
+      { type: "END", defaultData: {}, hint: "Encerra a conversa" },
+    ],
+  },
 ];
 const COMING_SOON = [
   { label: "Imagem", icon: Image },
@@ -101,7 +116,11 @@ function nodePreview(node: FlowNodeDTO, agentsById: Map<string, AgentOption>): s
     return names.length ? names.join(", ") : "Nenhum atendente selecionado";
   }
   if (node.type === "START") return "Primeira mensagem do cliente";
-  return "Devolve para o atendimento normal";
+  if (node.type === "BUSINESS_HOURS") {
+    const data = node.data as FlowBusinessHoursData;
+    return `${describeDays(data.days ?? [])} · ${data.start}–${data.end}`;
+  }
+  return "Encerra a conversa";
 }
 
 /** Where a node's outputs leave from, in world coordinates relative to the node. */
@@ -111,7 +130,23 @@ function outputAnchors(node: FlowNodeDTO): { handle: string | null; label?: stri
     // Matches the option rows drawn in the node: 8px top padding, 22px rows, 4px gap.
     return menuOptions(node).map((o, i) => ({ handle: o.id, label: o.label, dy: HEADER_HEIGHT + 8 + i * 26 + 11 }));
   }
+  if (node.type === "BUSINESS_HOURS") {
+    return [
+      { handle: FLOW_HOURS_OPEN, label: "Aberto", dy: HEADER_HEIGHT + 8 + 11 },
+      { handle: FLOW_HOURS_CLOSED, label: "Fechado", dy: HEADER_HEIGHT + 8 + 26 + 11 },
+    ];
+  }
   return [{ handle: null, dy: HEADER_HEIGHT / 2 }];
+}
+
+const WEEKDAY_SHORT = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+
+function describeDays(days: number[]): string {
+  const sorted = [...days].sort();
+  if (sorted.length === 7) return "Todos os dias";
+  if (sorted.join() === "1,2,3,4,5") return "Seg–Sex";
+  if (sorted.join() === "1,2,3,4,5,6") return "Seg–Sáb";
+  return sorted.map((d) => WEEKDAY_SHORT[d]).join(", ") || "Nenhum dia";
 }
 
 export default function FlowEditorPage() {
@@ -160,7 +195,7 @@ export default function FlowEditorPage() {
     queryKey: ["whatsapp-connections"],
     queryFn: async () => (await api.get<OfficialConnectionOption[]>("/whatsapp/connections")).data,
   });
-  const officialConnections = connections?.filter((c) => c.connectionMode === "OFFICIAL_API") ?? [];
+  const allConnections = connections ?? [];
 
   const { data: agents } = useQuery({
     queryKey: ["agents-transfer-targets-all"],
@@ -607,14 +642,14 @@ export default function FlowEditorPage() {
             {connectionsOpen && (
               <div className="absolute right-0 top-10 z-30 w-64 rounded-card border border-border bg-surface p-2 shadow-elevated">
                 <div className="mb-1.5 flex items-center justify-between px-1">
-                  <p className="text-xs font-medium text-muted">Conexões WhatsApp Oficial</p>
+                  <p className="text-xs font-medium text-muted">Conexões que usam este fluxo</p>
                   <button onClick={() => setConnectionsOpen(false)} className="rounded p-0.5 text-muted hover:bg-surface-alt" aria-label="Fechar">
                     <X className="h-3.5 w-3.5" />
                   </button>
                 </div>
-                {officialConnections.length === 0 && <p className="px-1 text-xs text-muted">Nenhuma conexão WhatsApp Oficial cadastrada.</p>}
+                {allConnections.length === 0 && <p className="px-1 text-xs text-muted">Nenhuma conexão WhatsApp cadastrada.</p>}
                 <div className="max-h-48 overflow-y-auto">
-                  {officialConnections.map((c) => {
+                  {allConnections.map((c) => {
                     const checked = flow.connectionIds.includes(c.id);
                     return (
                       <label key={c.id} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-surface-alt">
@@ -628,7 +663,8 @@ export default function FlowEditorPage() {
                           }}
                           className="h-4 w-4 accent-[var(--color-primary)]"
                         />
-                        {c.name}
+                        <span className="min-w-0 flex-1 truncate">{c.name}</span>
+                        <span className="shrink-0 text-[10px] text-muted">{c.connectionMode === "OFFICIAL_API" ? "Oficial" : "QR Code"}</span>
                       </label>
                     );
                   })}
@@ -890,11 +926,15 @@ export default function FlowEditorPage() {
                   </div>
                   {preview && <p className="line-clamp-2 px-3 py-2 text-xs text-muted">{preview}</p>}
 
-                  {node.type === "MENU" && outputs.length > 0 && (
+                  {(node.type === "MENU" || node.type === "BUSINESS_HOURS") && outputs.length > 0 && (
                     <div className="space-y-1 px-3 pb-2 pt-2">
                       {outputs.map((out, i) => (
                         <div key={out.handle} className="flex h-[22px] items-center gap-1.5 rounded-md bg-surface-alt px-2 text-[11px]">
-                          <span className="font-semibold text-muted">{i + 1}</span>
+                          {node.type === "MENU" ? (
+                            <span className="font-semibold text-muted">{i + 1}</span>
+                          ) : (
+                            <span className={clsx("h-2 w-2 rounded-full", out.handle === FLOW_HOURS_OPEN ? "bg-green-500" : "bg-gray-400")} />
+                          )}
                           <span className="truncate">{out.label || <em className="text-muted">sem nome</em>}</span>
                         </div>
                       ))}
@@ -1065,11 +1105,28 @@ function NodeInspector({
 
         {node.type === "MENU" && (
           <>
-            <MenuOptionsEditor disabled={disabled} options={menuOptions(node)} onChange={(options) => onChange({ options }, "options")} />
-            {menuOptions(node).length > 0 && (
-              <WhatsAppPreview
-                text={["Escolha uma opção:", ...menuOptions(node).map((o, i) => `${i + 1}. ${o.label || "…"}`)].join("\n")}
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-muted">Pergunta</span>
+              <input
+                disabled={disabled}
+                value={(node.data as { prompt?: string }).prompt ?? ""}
+                onChange={(e) => onChange({ ...(node.data as { options: { id: string; label: string }[] }), prompt: e.target.value }, "prompt")}
+                placeholder={FLOW_MENU_DEFAULT_PROMPT}
+                maxLength={300}
+                className="focus-ring w-full rounded-lg border border-border bg-surface px-2.5 py-1.5 text-sm"
               />
+            </label>
+            <MenuOptionsEditor disabled={disabled} options={menuOptions(node)} onChange={(options) => onChange({ ...(node.data as object), options }, "options")} />
+            {menuOptions(node).length > 0 && (
+              <>
+                <p className="text-xs text-muted">O cliente responde com o número ou com o nome da opção. Depois de 3 respostas que não batem com nenhuma opção, a conversa vai para a fila.</p>
+                <WhatsAppPreview
+                  text={renderFlowMenuText({
+                    prompt: (node.data as { prompt?: string }).prompt,
+                    options: menuOptions(node).map((o) => ({ ...o, label: o.label || "…" })),
+                  }).replaceAll("{{cliente}}", "Carlos")}
+                />
+              </>
             )}
           </>
         )}
@@ -1087,7 +1144,7 @@ function NodeInspector({
                   {(
                     [
                       { value: "any", label: "Qualquer atendente disponível", hint: "Vai para a fila da conexão" },
-                      { value: "selected", label: "Somente os atendentes selecionados", hint: "Só eles recebem esta conversa" },
+                      { value: "selected", label: "Somente os atendentes selecionados", hint: "Vai direto para o selecionado online menos ocupado; se nenhum estiver online, vai para a fila" },
                     ] as const
                   ).map((opt) => (
                     <label
@@ -1149,9 +1206,58 @@ function NodeInspector({
             );
           })()}
 
+        {node.type === "BUSINESS_HOURS" &&
+          (() => {
+            const data = node.data as FlowBusinessHoursData;
+            const days = data.days ?? [];
+            const set = (patch: Partial<FlowBusinessHoursData>, field: string) =>
+              onChange({ ...data, ...patch, tzOffsetMinutes: new Date().getTimezoneOffset() }, field);
+            return (
+              <div className="space-y-3">
+                <p className="text-xs text-muted">
+                  Dentro do horário, o cliente segue pela saída <strong className="text-success">Aberto</strong>; fora dele, pela saída <strong>Fechado</strong>. O horário usado é o do seu computador.
+                </p>
+                <div>
+                  <span className="mb-1.5 block text-xs font-medium text-muted">Dias de atendimento</span>
+                  <div className="flex flex-wrap gap-1">
+                    {WEEKDAY_SHORT.map((label, day) => {
+                      const on = days.includes(day);
+                      return (
+                        <button
+                          key={label}
+                          type="button"
+                          disabled={disabled}
+                          aria-pressed={on}
+                          onClick={() => set({ days: on ? days.filter((d) => d !== day) : [...days, day].sort() }, "days")}
+                          className={clsx("focus-ring rounded-lg border px-2.5 py-1 text-xs font-medium", on ? "border-primary bg-primary/10 text-primary" : "border-border text-muted")}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {(["start", "end"] as const).map((key) => (
+                    <label key={key} className="block">
+                      <span className="mb-1 block text-xs font-medium text-muted">{key === "start" ? "Abre às" : "Fecha às"}</span>
+                      <input
+                        type="time"
+                        disabled={disabled}
+                        value={data[key]}
+                        onChange={(e) => set({ [key]: e.target.value }, key)}
+                        className="focus-ring w-full rounded-lg border border-border bg-surface px-2.5 py-1.5 text-sm"
+                      />
+                    </label>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
         {(node.type === "START" || node.type === "END") && (
           <p className="text-sm text-muted">
-            {node.type === "START" ? "Ponto de entrada do fluxo — toda conversa nova começa por aqui. Ligue-o ao primeiro passo." : "Encerra o fluxo e devolve a conversa para o atendimento normal."}
+            {node.type === "START" ? "Ponto de entrada do fluxo — toda conversa nova começa por aqui. Ligue-o ao primeiro passo." : "Encerra a conversa sem passar por um atendente. Use depois de uma mensagem final; para levar o cliente até a equipe, use Transferir."}
           </p>
         )}
       </div>

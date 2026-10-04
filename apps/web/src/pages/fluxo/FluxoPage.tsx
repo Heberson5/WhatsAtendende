@@ -192,7 +192,7 @@ export default function FluxoPage() {
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold tracking-tight">Fluxo</h1>
-          <p className="text-sm text-muted">Atendimento automático vinculado às suas conexões WhatsApp Oficial.</p>
+          <p className="text-sm text-muted">Atendimento automático das suas conexões de WhatsApp (QR Code ou API Oficial). Nenhum fluxo funciona até você ativá-lo.</p>
         </div>
         {canAdicionar && (
           <button

@@ -1,6 +1,9 @@
 import type { Message, MessageAttachment, MessageReaction, User } from "@prisma/client";
 import type { MessageDTO } from "@whatsatendende/types";
 
+// Messages the system sent on its own show who "wrote" them instead of an agent name.
+const AUTOMATED_SENDER_LABEL: Record<string, string> = { FLOW: "Fluxo automático", SURVEY: "Pesquisa de satisfação" };
+
 type MessageWithRelations = Message & {
   senderAgent: User | null;
   attachments: MessageAttachment[];
@@ -19,7 +22,7 @@ export function toMessageDTO(message: MessageWithRelations): MessageDTO {
     type: message.type,
     status: message.status,
     body: message.body,
-    senderAgentDisplayName: message.senderAgent?.displayName ?? null,
+    senderAgentDisplayName: message.senderAgent?.displayName ?? AUTOMATED_SENDER_LABEL[message.automatedBy ?? ""] ?? null,
     createdAt: message.createdAt.toISOString(),
     deliveredAt: message.deliveredAt ? message.deliveredAt.toISOString() : null,
     readAt: message.readAt ? message.readAt.toISOString() : null,

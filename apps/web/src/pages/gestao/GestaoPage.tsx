@@ -20,10 +20,11 @@ import { useNow } from "../../hooks/useNow";
 // Same "still active" scope the backend enforces (see
 // assignConversationFromGestao/returnConversationToQueue) — CLOSED/ABANDONED
 // are terminal, nothing to route there anymore.
-const ROUTABLE_STATUSES = new Set<ConversationStatus>(["NEW", "WAITING", "IN_PROGRESS", "TRANSFERRED", "HANDLED_EXTERNALLY"]);
+const ROUTABLE_STATUSES = new Set<ConversationStatus>(["IN_FLOW", "NEW", "WAITING", "IN_PROGRESS", "TRANSFERRED", "HANDLED_EXTERNALLY"]);
 const ALREADY_QUEUED_STATUSES = new Set<ConversationStatus>(["NEW", "WAITING"]);
 
 const STATUS_LABEL: Record<string, string> = {
+  IN_FLOW: "No fluxo",
   NEW: "Nova",
   WAITING: "Aguardando",
   IN_PROGRESS: "Em atendimento",
@@ -34,6 +35,7 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 const STATUS_COLOR: Record<string, string> = {
+  IN_FLOW: "bg-info-soft text-info",
   NEW: "bg-warning-soft text-warning",
   WAITING: "bg-warning-soft text-warning",
   IN_PROGRESS: "bg-primary/15 text-primary",
@@ -45,6 +47,7 @@ const STATUS_COLOR: Record<string, string> = {
 
 // Filter chips (each one a group of statuses), with live counts.
 const STATUS_CHIPS: { key: string; label: string; statuses: ConversationStatus[] }[] = [
+  { key: "flow", label: "No fluxo", statuses: ["IN_FLOW"] },
   { key: "queue", label: "Na fila", statuses: ["NEW", "WAITING"] },
   { key: "inProgress", label: "Em atendimento", statuses: ["IN_PROGRESS", "TRANSFERRED"] },
   { key: "external", label: "Pelo celular", statuses: ["HANDLED_EXTERNALLY"] },

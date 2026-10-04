@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
+import { endFlowSession } from "../flows/flow-engine.service";
 import { Errors } from "../../lib/http-error";
 import { writeAudit } from "../../lib/audit";
 import { realtimeEvents } from "../../realtime/realtime";
@@ -397,7 +398,7 @@ export async function getOldestMessageAnchor(
  */
 export async function findActiveConversationForContact(contactId: string) {
   return prisma.conversation.findFirst({
-    where: { contactId, status: { in: ["NEW", "WAITING", "IN_PROGRESS", "TRANSFERRED", "HANDLED_EXTERNALLY"] } },
+    where: { contactId, status: { in: ["IN_FLOW", "NEW", "WAITING", "IN_PROGRESS", "TRANSFERRED", "HANDLED_EXTERNALLY"] } },
     orderBy: { createdAt: "desc" },
   });
 }
@@ -534,7 +535,7 @@ export async function findOrOpenConversationForInboundMessage(
   const connectionField = channel === "WHATSAPP" ? { whatsappConnectionId: connectionId } : { metaConnectionId: connectionId };
   const active = await findActiveConversationForContact(contactId);
   if (active && active.status !== "HANDLED_EXTERNALLY") {
-    return { conversation: active, isNewConversation: false, autoAssignedAgentId: null as string | null };
+    return { conversation: active, isNewConversation: false, autoAssignedAgentId: null as string | null, flowId: null as string | null };
   }
 
   // Only bypasses the queue when the mentioned agent is actually ONLINE
@@ -560,6 +561,13 @@ export async function findOrOpenConversationForInboundMessage(
   // id is kept for the audit trail below.
   const previousConversationId = active?.id ?? null;
 
+  // An active Fluxo on this connection talks to the customer first (see
+  // flow-engine.service.ts) — unless they asked for an online agent by name.
+  const flowId =
+    !mentionedAgent && channel === "WHATSAPP"
+      ? ((await prisma.flowConnection.findFirst({ where: { whatsappConnectionId: connectionId, flow: { active: true } }, select: { flowId: true } }))?.flowId ?? null)
+      : null;
+
   const conversation = await prisma.conversation.create({
     data: mentionedAgent
       ? {
@@ -572,7 +580,7 @@ export async function findOrOpenConversationForInboundMessage(
           acceptedAt: now,
           lastMessageAt: now,
         }
-      : { contactId, channel, ...connectionField, status: "NEW", enteredQueueAt: now, lastMessageAt: now },
+      : { contactId, channel, ...connectionField, status: flowId ? "IN_FLOW" : "NEW", enteredQueueAt: now, lastMessageAt: now },
   });
 
   const createdPayload = previousConversationId
@@ -594,7 +602,7 @@ export async function findOrOpenConversationForInboundMessage(
     });
   }
 
-  return { conversation, isNewConversation: true, autoAssignedAgentId: mentionedAgent?.id ?? null };
+  return { conversation, isNewConversation: true, autoAssignedAgentId: mentionedAgent?.id ?? null, flowId };
 }
 
 /**
@@ -625,7 +633,8 @@ export async function findOrOpenConversationForInboundMessage(
 export async function findOrOpenConversationForDeviceSentMessage(connectionId: string, contactId: string) {
   const active = await findActiveConversationForContact(contactId);
   if (active) {
-    if (active.status === "NEW" || active.status === "WAITING") {
+    if (active.status === "NEW" || active.status === "WAITING" || active.status === "IN_FLOW") {
+      if (active.status === "IN_FLOW") await endFlowSession(active.id);
       const conversation = await prisma.conversation.update({
         where: { id: active.id },
         data: { status: "HANDLED_EXTERNALLY", assignedAgentReadAt: new Date() },
@@ -1005,7 +1014,7 @@ async function foldActiveConversationDuplicates(contactId: string): Promise<void
   // included so a stray duplicate left over from before that fix (or from
   // any other race) still gets folded away instead of lingering forever.
   const actives = await prisma.conversation.findMany({
-    where: { contactId, status: { in: ["NEW", "WAITING", "IN_PROGRESS", "TRANSFERRED", "HANDLED_EXTERNALLY"] } },
+    where: { contactId, status: { in: ["IN_FLOW", "NEW", "WAITING", "IN_PROGRESS", "TRANSFERRED", "HANDLED_EXTERNALLY"] } },
   });
   if (actives.length < 2) return;
 
@@ -1175,7 +1184,7 @@ export async function transferConversation(
 // ABANDONED are terminal on purpose (see that function's own doc comment)
 // and stay out of Gestão's reach here too; a genuinely new conversation for
 // that contact is what picks the thread back up from those.
-const GESTAO_TRANSFERABLE_STATUSES: ConversationStatus[] = ["NEW", "WAITING", "IN_PROGRESS", "TRANSFERRED", "HANDLED_EXTERNALLY"];
+const GESTAO_TRANSFERABLE_STATUSES: ConversationStatus[] = ["IN_FLOW", "NEW", "WAITING", "IN_PROGRESS", "TRANSFERRED", "HANDLED_EXTERNALLY"];
 
 /**
  * Gestão (MANAGER/ADMIN) directly assigning or reassigning a conversation to
@@ -1201,6 +1210,7 @@ export async function assignConversationFromGestao(conversationId: string, toAge
     throw Errors.badRequest("Atendente de destino invalido");
   }
 
+  if (existing.status === "IN_FLOW") await endFlowSession(conversationId);
   const previousAgentId = existing.assignedAgentId;
   const pendingTransferDeadline = target.presence === "ONLINE" ? null : new Date(Date.now() + TRANSFER_OFFLINE_GRACE_MS);
 
@@ -1260,6 +1270,7 @@ export async function returnConversationToQueue(conversationId: string, initiate
     throw Errors.badRequest("Esta conversa nao pode ser enviada para a fila neste status");
   }
 
+  if (existing.status === "IN_FLOW") await endFlowSession(conversationId);
   const previousAgentId = existing.assignedAgentId;
 
   await prisma.conversation.update({
@@ -1303,6 +1314,7 @@ export async function closeConversationFromGestao(conversationId: string, initia
   if (!GESTAO_TRANSFERABLE_STATUSES.includes(existing.status)) {
     throw Errors.badRequest("Esta conversa nao pode ser encerrada neste status");
   }
+  if (existing.status === "IN_FLOW") await endFlowSession(conversationId);
   const previousAgentId = existing.assignedAgentId;
 
   await prisma.conversation.update({

@@ -160,7 +160,7 @@ const oversightQuerySchema = z.object({
   // Repeated query param (?connectionId=a&connectionId=b) or comma-separated; empty/absent = all connections.
   connectionId: z.union([z.string(), z.array(z.string())]).optional(),
 });
-const OVERSIGHT_STATUSES = new Set(["NEW", "WAITING", "IN_PROGRESS", "TRANSFERRED", "CLOSED", "ABANDONED", "HANDLED_EXTERNALLY"]);
+const OVERSIGHT_STATUSES = new Set(["IN_FLOW", "NEW", "WAITING", "IN_PROGRESS", "TRANSFERRED", "CLOSED", "ABANDONED", "HANDLED_EXTERNALLY"]);
 conversationsRouter.get(
   "/oversight",
   requirePermission(PERMISSION.GESTAO_ACESSAR),

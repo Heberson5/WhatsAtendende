@@ -1,11 +1,12 @@
 import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
-import { validateFlowGraph } from "@whatsatendende/types";
+import type { FlowNodeType } from "@prisma/client";
+import { FLOW_HOURS_CLOSED, FLOW_HOURS_OPEN, validateFlowGraph } from "@whatsatendende/types";
 import { FLOW_DETAIL_INCLUDE, FLOW_LIST_INCLUDE, toFlowEdgeDTO, toFlowNodeDTO } from "./flows.mapper";
 
 export type FlowTemplate = "welcome" | "after-hours";
 
-type TemplateNode = { key: string; type: "START" | "TEXT_MESSAGE" | "MENU" | "TRANSFER_TO_AGENT" | "END"; x: number; y: number; data: object };
+type TemplateNode = { key: string; type: FlowNodeType; x: number; y: number; data: object };
 type TemplateEdge = { from: string; to: string; handle?: string };
 
 // Ready-made starting points offered on Fluxo's empty state.
@@ -30,18 +31,23 @@ const TEMPLATES: Record<FlowTemplate, { nodes: TemplateNode[]; edges: TemplateEd
   "after-hours": {
     nodes: [
       { key: "start", type: "START", x: 60, y: 200, data: {} },
+      // Mon–Fri 08:00–18:00, Brasília (UTC-3 → getTimezoneOffset() = 180).
+      { key: "hours", type: "BUSINESS_HOURS", x: 300, y: 190, data: { days: [1, 2, 3, 4, 5], start: "08:00", end: "18:00", tzOffsetMinutes: 180 } },
+      { key: "queue", type: "TRANSFER_TO_AGENT", x: 620, y: 80, data: { assignedAgentIds: [], mode: "any" } },
       {
         key: "closed",
         type: "TEXT_MESSAGE",
-        x: 320,
-        y: 200,
+        x: 620,
+        y: 300,
         data: { text: "Olá, {{cliente}}! No momento estamos fora do horário de atendimento. Sua mensagem foi registrada e responderemos assim que voltarmos." },
       },
-      { key: "end", type: "END", x: 620, y: 200, data: {} },
+      { key: "later", type: "TRANSFER_TO_AGENT", x: 920, y: 300, data: { assignedAgentIds: [], mode: "any" } },
     ],
     edges: [
-      { from: "start", to: "closed" },
-      { from: "closed", to: "end" },
+      { from: "start", to: "hours" },
+      { from: "hours", to: "queue", handle: FLOW_HOURS_OPEN },
+      { from: "hours", to: "closed", handle: FLOW_HOURS_CLOSED },
+      { from: "closed", to: "later" },
     ],
   },
 };
@@ -61,15 +67,21 @@ export interface FlowMetaInput {
   connectionIds?: string[];
 }
 
-async function assertOfficialConnections(connectionIds: string[]): Promise<void> {
+async function assertConnectionsExist(connectionIds: string[]): Promise<void> {
   if (connectionIds.length === 0) return;
-  const rows = await prisma.whatsAppConnection.findMany({
-    where: { id: { in: connectionIds } },
-    select: { id: true, connectionMode: true },
+  const count = await prisma.whatsAppConnection.count({ where: { id: { in: connectionIds } } });
+  if (count !== connectionIds.length) throw Errors.badRequest("Uma ou mais conexoes informadas nao existem");
+}
+
+/** Each connection runs at most one flow at a time — otherwise which one answers a new conversation would be arbitrary. */
+async function assertNoOtherActiveFlow(flowId: string, connectionIds: string[]): Promise<void> {
+  if (connectionIds.length === 0) return;
+  const clash = await prisma.flowConnection.findFirst({
+    where: { whatsappConnectionId: { in: connectionIds }, flowId: { not: flowId }, flow: { active: true } },
+    select: { flow: { select: { name: true } }, whatsappConnection: { select: { name: true } } },
   });
-  if (rows.length !== connectionIds.length) throw Errors.badRequest("Uma ou mais conexoes informadas nao existem");
-  if (rows.some((r) => r.connectionMode !== "OFFICIAL_API")) {
-    throw Errors.badRequest("Fluxos so podem ser vinculados a conexoes WhatsApp Oficial");
+  if (clash) {
+    throw Errors.conflict(`A conexão “${clash.whatsappConnection.name}” já tem o fluxo “${clash.flow.name}” ativo. Desative-o antes de ativar este.`);
   }
 }
 
@@ -86,7 +98,7 @@ export async function getFlowDetail(id: string) {
 /** A brand-new flow always starts with a single START node — the canvas's one fixed entry point, see FlowNodeType.START. */
 export async function createFlow(input: FlowMetaInput & { template?: FlowTemplate }, createdByUserId: string) {
   const connectionIds = input.connectionIds ?? [];
-  await assertOfficialConnections(connectionIds);
+  await assertConnectionsExist(connectionIds);
 
   const flow = await prisma.flow.create({
     data: {
@@ -133,10 +145,12 @@ export async function updateFlowMeta(id: string, input: Partial<FlowMetaInput> &
   const existing = await prisma.flow.findUnique({ where: { id }, include: { nodes: true, edges: true, connections: true } });
   if (!existing) throw Errors.notFound("Fluxo nao encontrado");
 
-  if (input.connectionIds) await assertOfficialConnections(input.connectionIds);
+  if (input.connectionIds) await assertConnectionsExist(input.connectionIds);
   const willBeActive = input.active ?? existing.active;
   if (willBeActive && (input.active === true || input.connectionIds)) {
-    assertActivatable(existing.nodes.map(toFlowNodeDTO), existing.edges.map(toFlowEdgeDTO), (input.connectionIds ?? existing.connections).length);
+    const connectionIds = input.connectionIds ?? existing.connections.map((c) => c.whatsappConnectionId);
+    assertActivatable(existing.nodes.map(toFlowNodeDTO), existing.edges.map(toFlowEdgeDTO), connectionIds.length);
+    await assertNoOtherActiveFlow(id, connectionIds);
   }
 
   await prisma.$transaction(async (tx) => {
@@ -168,7 +182,7 @@ export async function deleteFlow(id: string): Promise<void> {
 
 export interface FlowGraphNodeInput {
   id: string; // client-assigned — a real UUID for an existing node, any unique string for a new one
-  type: "START" | "TEXT_MESSAGE" | "MENU" | "TRANSFER_TO_AGENT" | "END";
+  type: FlowNodeType;
   positionX: number;
   positionY: number;
   data?: Record<string, unknown>;
@@ -185,8 +199,9 @@ export interface FlowGraphEdgeInput {
  * correct way to persist what a visual canvas editor holds client-side,
  * rather than diffing adds/moves/deletes against the previous graph. Every
  * save gets fresh node/edge ids; nothing downstream depends on a node's id
- * staying stable across saves yet (the execution engine, which will care
- * about FlowSession.currentNodeId, is a later phase — see PROMPT follow-ups).
+ * staying stable across saves — a customer waiting on a menu of an active
+ * flow that gets re-saved is simply handed to the queue by the engine
+ * (see flow-engine.service.ts) when their answer arrives.
  */
 export async function saveFlowGraph(flowId: string, nodes: FlowGraphNodeInput[], edges: FlowGraphEdgeInput[]) {
   const existing = await prisma.flow.findUnique({ where: { id: flowId }, select: { id: true, active: true, _count: { select: { connections: true } } } });

@@ -32,7 +32,7 @@ export function FlowFormModal({
     queryKey: ["whatsapp-connections"],
     queryFn: async () => (await api.get<OfficialConnectionOption[]>("/whatsapp/connections")).data,
   });
-  const officialConnections = connections?.filter((c) => c.connectionMode === "OFFICIAL_API") ?? [];
+  const allConnections = connections ?? [];
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -92,14 +92,15 @@ export function FlowFormModal({
           </label>
 
           <div>
-            <span className="mb-1.5 block text-sm font-medium">Conexões WhatsApp Oficial</span>
-            <p className="mb-1.5 text-xs text-muted">O fluxo só responde automaticamente nas conexões marcadas aqui. Pode ficar sem nenhuma por enquanto.</p>
+            <span className="mb-1.5 block text-sm font-medium">Conexões que usam este fluxo</span>
+            <p className="mb-1.5 text-xs text-muted">O fluxo só responde nas conexões marcadas aqui, e só depois de ativado. Cada conexão pode ter um fluxo ativo por vez.</p>
             <div className="max-h-40 overflow-y-auto rounded-card border border-border">
-              {officialConnections.length === 0 && <p className="p-3 text-center text-xs text-muted">Nenhuma conexão WhatsApp Oficial cadastrada ainda.</p>}
-              {officialConnections.map((c) => (
+              {allConnections.length === 0 && <p className="p-3 text-center text-xs text-muted">Nenhuma conexão WhatsApp cadastrada ainda.</p>}
+              {allConnections.map((c) => (
                 <label key={c.id} className="flex w-full items-center gap-2 border-b border-border px-3 py-2 text-sm last:border-b-0 hover:bg-surface-alt">
                   <input type="checkbox" checked={connectionIds.includes(c.id)} onChange={() => toggleConnection(c.id)} className="h-4 w-4 accent-primary" />
-                  {c.name}
+                  <span className="min-w-0 flex-1 truncate">{c.name}</span>
+                  <span className="shrink-0 text-[11px] text-muted">{c.connectionMode === "OFFICIAL_API" ? "Oficial" : "QR Code"}</span>
                 </label>
               ))}
             </div>
