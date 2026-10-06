@@ -354,7 +354,7 @@ export default function AtendimentoPage() {
             onToggleClientPanel={toggleClientPanel}
           />
         ) : watchingConversation ? (
-          <ReadOnlyConversationDrawer variant="inline" conversation={watchingConversation} onClose={() => setWatchingConversation(null)} />
+          <ReadOnlyConversationDrawer key={watchingConversation.id} variant="inline" conversation={watchingConversation} onClose={() => setWatchingConversation(null)} />
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-muted">
             <MessagesSquare className="h-10 w-10 opacity-30" />
