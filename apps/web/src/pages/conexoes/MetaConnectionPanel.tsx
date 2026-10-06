@@ -119,6 +119,7 @@ export function MetaConnectionPanel({ channel }: { channel: "INSTAGRAM" | "MESSE
             <span className="mb-1 block text-sm font-medium">App Secret {settings?.hasAppSecret && <span className="text-muted">(já configurado)</span>}</span>
             <input
               type="password"
+              autoComplete="new-password"
               value={appSecret}
               onChange={(e) => setAppSecret(e.target.value)}
               placeholder={settings?.hasAppSecret ? "•••••••• (deixe em branco para manter)" : ""}
@@ -129,6 +130,7 @@ export function MetaConnectionPanel({ channel }: { channel: "INSTAGRAM" | "MESSE
             <span className="mb-1 block text-sm font-medium">{tokenLabel} {hasToken && <span className="text-muted">(já configurado)</span>}</span>
             <input
               type="password"
+              autoComplete="new-password"
               value={accessToken}
               onChange={(e) => setAccessToken(e.target.value)}
               placeholder={hasToken ? "•••••••• (deixe em branco para manter)" : ""}

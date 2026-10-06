@@ -364,6 +364,7 @@ function OfficialFieldset({
         <span className="mb-1 block text-xs font-medium">Token de acesso {hasAccessToken && <span className="text-muted">(já configurado)</span>}</span>
         <input
           type="password"
+          autoComplete="new-password"
           value={values.accessToken}
           onChange={(e) => onChange({ ...values, accessToken: e.target.value })}
           placeholder={hasAccessToken ? "•••••••• (deixe em branco para manter)" : ""}
@@ -376,6 +377,7 @@ function OfficialFieldset({
         </span>
         <input
           type="password"
+          autoComplete="new-password"
           value={values.appSecret}
           onChange={(e) => onChange({ ...values, appSecret: e.target.value })}
           placeholder={hasAppSecret ? "•••••••• (deixe em branco para manter)" : ""}
