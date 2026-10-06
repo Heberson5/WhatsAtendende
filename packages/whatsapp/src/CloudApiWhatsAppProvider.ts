@@ -277,6 +277,10 @@ export class CloudApiWhatsAppProvider implements WhatsAppProvider {
     return [];
   }
 
+  async syncContacts(): Promise<{ count: number }> {
+    return { count: 0 };
+  }
+
   // No generic "is this number on WhatsApp" check on the Cloud API either
   // — the only way to know is to actually message it.
   async lookupNumber(): Promise<{ phone: string } | null> {

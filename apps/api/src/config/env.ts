@@ -24,6 +24,9 @@ const schema = z.object({
   // Composer's writing-suggestion chip. Best-effort only — a down/slow
   // instance degrades to no suggestions, never blocks sending.
   LANGUAGETOOL_URL: z.string().default("http://localhost:8010"),
+  // Minutes the business is behind UTC (what JS getTimezoneOffset() reports; 240 = UTC-4,
+  // Tangará da Serra) — for jobs that run at a local time, like Monday 00:00.
+  BUSINESS_TZ_OFFSET_MINUTES: z.coerce.number().default(240),
   UPLOAD_DIR: z.string().default("./uploads"),
   UPLOAD_MAX_SIZE_MB: z.coerce.number().default(25),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60_000),

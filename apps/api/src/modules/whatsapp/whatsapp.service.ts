@@ -719,6 +719,8 @@ export interface ConnectionSummaryDTO {
   // number is accepted (there's nothing to conflict with). QRCODE only.
   linkedNumber: string | null;
   lastConnectedAt: string | null;
+  // Last time the phone's address book was loaded into Nova conversa — null if never.
+  contactsSyncedAt: string | null;
   agentCount: number;
   createdByUserId: string | null;
   createdByUserName: string | null;
@@ -749,6 +751,7 @@ function toConnectionSummary(row: {
   connectedNumber: string | null;
   linkedNumber: string | null;
   lastConnectedAt: Date | null;
+  contactsSyncedAt: Date | null;
   _count: { agents: number };
   createdByUser: { id: string; displayName: string } | null;
   phoneNumberId: string | null;
@@ -771,6 +774,7 @@ function toConnectionSummary(row: {
     connectedNumber: runtime?.connectedNumber ?? row.connectedNumber,
     linkedNumber: row.linkedNumber,
     lastConnectedAt: (runtime?.lastConnectedAt ?? row.lastConnectedAt)?.toISOString?.() ?? null,
+    contactsSyncedAt: row.contactsSyncedAt?.toISOString() ?? null,
     agentCount: row._count.agents,
     createdByUserId: row.createdByUser?.id ?? null,
     createdByUserName: row.createdByUser?.displayName ?? null,
@@ -985,9 +989,61 @@ export async function disconnect(connectionId: string) {
   await getProvider(connectionId).disconnect();
 }
 
-/** Contacts saved on the linked phone — powers "start a new conversation" in Atendimento. */
-export async function listContacts(connectionId: string) {
-  return getProvider(connectionId).listContacts();
+export interface DeviceContact {
+  phone: string;
+  name: string | null;
+  photoUrl: string | null;
+}
+
+/**
+ * What "Nova conversa" offers: the phone's address book (as of its last
+ * sync) plus everyone who already talked to this connection, so a customer
+ * can always be found by name or number even when they aren't saved on the
+ * phone. Numbers are real phone numbers only — never opaque WhatsApp ids.
+ */
+export async function listContacts(connectionId: string): Promise<DeviceContact[]> {
+  const [addressBook, known] = await Promise.all([
+    getProvider(connectionId).listContacts(),
+    prisma.contact.findMany({
+      where: { whatsappConnectionId: connectionId, channel: "WHATSAPP", phone: { not: null } },
+      select: { phone: true, name: true, photoUrl: true, providerChatId: true },
+    }),
+  ]);
+  const byPhone = new Map<string, DeviceContact>();
+  for (const c of known) {
+    const opaque = Boolean(c.providerChatId?.endsWith("@lid") && c.phone === c.providerChatId.split("@")[0]);
+    if (c.phone && !opaque) byPhone.set(c.phone, { phone: c.phone, name: c.name, photoUrl: c.photoUrl });
+  }
+  // The name saved on the phone wins over whatever the customer calls themselves.
+  for (const c of addressBook) byPhone.set(c.phone, { phone: c.phone, name: c.name ?? byPhone.get(c.phone)?.name ?? null, photoUrl: c.photoUrl ?? byPhone.get(c.phone)?.photoUrl ?? null });
+  return Array.from(byPhone.values()).sort((a, b) => (a.name ?? a.phone).localeCompare(b.name ?? b.phone, "pt-BR"));
+}
+
+/** Syncs every connected QR Code connection whose address book was last loaded before `slotStart`. */
+export async function syncDueDeviceContacts(slotStart: Date): Promise<void> {
+  const due = await prisma.whatsAppConnection.findMany({
+    where: { connectionMode: "QRCODE", OR: [{ contactsSyncedAt: null }, { contactsSyncedAt: { lt: slotStart } }] },
+    select: { id: true },
+  });
+  for (const { id } of due) {
+    if (providers.get(id)?.getStatus().state !== "CONNECTED") continue;
+    try {
+      const { count } = await syncDeviceContacts(id);
+      logger.info({ connectionId: id, count }, "loaded the phone address book");
+    } catch (err) {
+      logger.error({ err, connectionId: id }, "failed to load the phone address book");
+    }
+  }
+}
+
+/** Loads the phone's whole address book into this connection's contact list — also run weekly, see lib/contacts-sync.ts. */
+export async function syncDeviceContacts(connectionId: string): Promise<{ count: number; syncedAt: Date }> {
+  const provider = getProvider(connectionId);
+  if (provider.getStatus().state !== "CONNECTED") throw Errors.badRequest("A conexão precisa estar conectada para carregar os contatos");
+  const { count } = await provider.syncContacts();
+  const syncedAt = new Date();
+  await prisma.whatsAppConnection.update({ where: { id: connectionId }, data: { contactsSyncedAt: syncedAt } });
+  return { count, syncedAt };
 }
 
 /**

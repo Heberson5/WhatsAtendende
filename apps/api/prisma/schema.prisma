@@ -252,6 +252,9 @@ model WhatsAppConnection {
   // handshake, so it can never drift the way a QR-linked session could.
   linkedNumber       String?
   lastConnectedAt    DateTime?
+  // When the phone's address book was last loaded into "Nova conversa" —
+  // weekly (Monday 00:00) or by an admin; see contacts-sync.ts.
+  contactsSyncedAt   DateTime?
   lastQrAt           DateTime?
   // --- OFFICIAL_API only (all null for a QRCODE connection) ---
   // Meta Cloud API identifiers for this WABA's phone number — see

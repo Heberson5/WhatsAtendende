@@ -4,6 +4,7 @@ import { Search, UserPlus, X, CheckCircle2, XCircle, Loader2 } from "lucide-reac
 import { toast } from "sonner";
 import type { ConversationListItemDTO, WhatsAppDeviceContactDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
+import { formatPhone } from "../../lib/format-phone";
 
 interface ConnectionOption {
   id: string;
@@ -68,7 +69,9 @@ export function NovaConversaModal({
   const filtered = (contacts ?? []).filter((c) => {
     const q = search.trim().toLowerCase();
     if (!q) return true;
-    return (c.name ?? "").toLowerCase().includes(q) || c.phone.includes(q);
+    // Numbers are searched by digits, so "(11) 98765" and "11987" both match.
+    const digits = q.replace(/\D/g, "");
+    return (c.name ?? "").toLowerCase().includes(q) || (digits.length > 0 && c.phone.includes(digits));
   });
 
   return (
@@ -130,7 +133,7 @@ export function NovaConversaModal({
               {!connectionId && <p className="py-8 text-center text-sm text-muted">Selecione uma conexão para ver os contatos.</p>}
               {connectionId && isLoading && <p className="py-8 text-center text-sm text-muted">Carregando contatos...</p>}
               {connectionId && !isLoading && filtered.length === 0 && (
-                <p className="py-8 text-center text-sm text-muted">Nenhum contato encontrado. A conexão precisa estar conectada.</p>
+                <p className="py-8 text-center text-sm text-muted">Nenhum contato encontrado. Se o número não está salvo, use a aba “Novo número”.</p>
               )}
               {filtered.map((c) => (
                 <button
@@ -143,8 +146,8 @@ export function NovaConversaModal({
                     {(c.name ?? c.phone).slice(0, 2).toUpperCase()}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{c.name ?? c.phone}</p>
-                    <p className="text-xs text-muted">{c.phone}</p>
+                    <p className="truncate text-sm font-medium">{c.name ?? formatPhone(c.phone)}</p>
+                    {c.name && <p className="text-xs tabular-nums text-muted">{formatPhone(c.phone)}</p>}
                   </div>
                 </button>
               ))}

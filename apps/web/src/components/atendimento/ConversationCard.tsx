@@ -4,6 +4,7 @@ import { ptBR } from "date-fns/locale";
 import { Facebook, Instagram, type LucideIcon } from "lucide-react";
 import type { Channel, ConversationListItemDTO } from "@whatsatendende/types";
 import { contactDisplayName } from "../../lib/contact-display";
+import { formatPhone } from "../../lib/format-phone";
 import { useNow } from "../../hooks/useNow";
 
 // Customer waiting this long for a reply gets the "sem resposta" warning;
@@ -120,13 +121,12 @@ export function ConversationCard({
           </span>
         </div>
 
+        {showPhoneSubtitle && <p className="truncate text-[11.5px] tabular-nums text-muted">{formatPhone(conversation.contact.phone!)}</p>}
         {conversation.lastMessagePreview ? (
           <p className={clsx("truncate text-xs", conversation.unreadCount > 0 ? "font-medium text-[var(--color-text)]" : "text-muted")}>
             {conversation.lastMessagePreview}
           </p>
-        ) : showPhoneSubtitle ? (
-          <p className="truncate text-xs text-muted">{conversation.contact.phone}</p>
-        ) : (
+        ) : showPhoneSubtitle ? null : (
           <p className="text-xs text-muted">{onAccept ? "Nova conversa" : "Em atendimento"}</p>
         )}
 

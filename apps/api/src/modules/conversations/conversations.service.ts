@@ -1072,6 +1072,24 @@ export async function assertAgentCanReadConversation(
 }
 
 /**
+ * Files in a conversation's history. The message list shows every message of
+ * the contact (earlier conversations included — see listMessages), so an
+ * agent who can read any conversation of this contact must also be able to
+ * open the files in that history, even when they belong to an older
+ * conversation that someone else attended.
+ */
+export async function assertAgentCanReadContactHistory(contactId: string, auth: { userId: string; role: Role }): Promise<void> {
+  const readable = await prisma.conversation.findFirst({
+    where: {
+      contactId,
+      OR: [{ assignedAgentId: auth.userId }, { transfers: { some: { fromAgentId: auth.userId } } }],
+    },
+    select: { id: true },
+  });
+  if (!readable) throw Errors.forbidden("Esta conversa pertence a outro atendente");
+}
+
+/**
  * Atomic accept. Two agents clicking ACCEPT at the same time must never
  * both win: the single UPDATE below is executed as one statement with a
  * WHERE clause that only matches while the conversation is still

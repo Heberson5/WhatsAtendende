@@ -252,6 +252,26 @@ whatsappRouter.get(
   })
 );
 
+// Loads the phone's address book on demand — it also runs by itself every
+// Monday 00:00 (lib/contacts-sync.ts), this is the admin's manual trigger.
+whatsappRouter.post(
+  "/connections/:id/sync-contacts",
+  requirePermission(PERMISSION.CONEXOES_GERENCIAR),
+  requirePermission(PERMISSION.CONEXOES_WHATSAPP_EDITAR),
+  asyncHandler(async (req, res) => {
+    const result = await service.syncDeviceContacts(req.params.id);
+    await writeAudit({
+      userId: req.auth!.userId,
+      action: "WHATSAPP_CONTACTS_SYNCED",
+      entity: "WhatsAppConnection",
+      entityId: req.params.id,
+      ipAddress: req.ip ?? null,
+      metadata: { count: result.count },
+    });
+    res.json({ count: result.count, syncedAt: result.syncedAt.toISOString() });
+  })
+);
+
 const lookupNumberSchema = z.object({ phone: z.string().min(8) });
 
 // One-off "does this number exist on WhatsApp" check for the "Novo número"
