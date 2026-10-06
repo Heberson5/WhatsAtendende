@@ -217,6 +217,14 @@ export interface WhatsAppProvider {
   listContacts(): Promise<ContactInfo[]>;
 
   /**
+   * Re-reads the whole address book of the linked phone into what
+   * listContacts returns. Meant to run rarely (weekly, or on an admin's
+   * request) — between runs the list stays as it was. Cloud API has no
+   * address book, so there it just reports 0.
+   */
+  syncContacts(): Promise<{ count: number }>;
+
+  /**
    * Checks whether a single phone number is registered on WhatsApp — one
    * bounded server query (the same lookup WhatsApp Web's own "start new
    * chat by number" uses), never the linked phone's address book. Safe to

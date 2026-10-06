@@ -22,7 +22,7 @@ import * as metaService from "../meta/meta.service";
 import * as templatesService from "../message-templates/message-templates.service";
 import { toMessageTemplateDTO } from "../message-templates/message-templates.mapper";
 import { realtimeEvents } from "../../realtime/realtime";
-import { assertAgentCanAccessConversation, assertAgentCanReadConversation, getConversationOrThrow } from "../conversations/conversations.service";
+import { assertAgentCanAccessConversation, assertAgentCanReadContactHistory, assertAgentCanReadConversation, getConversationOrThrow } from "../conversations/conversations.service";
 
 export const messagesRouter = Router();
 
@@ -64,7 +64,7 @@ messagesRouter.get(
     });
     if (!attachment) throw Errors.notFound();
     if (req.auth!.role === "AGENT") {
-      assertAgentCanAccessConversation(attachment.message.conversation, req.auth!);
+      await assertAgentCanReadContactHistory(attachment.message.conversation.contactId, req.auth!);
     }
     if (!attachment.storageKey) throw Errors.notFound("Arquivo sem conteudo binario (ex.: localizacao/vcard)");
     const filePath = path.join(env.UPLOAD_DIR, attachment.storageKey);

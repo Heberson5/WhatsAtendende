@@ -143,9 +143,11 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
 
   private loadContactsCache() {
     try {
-      const raw = fs.readFileSync(this.contactsCachePath, "utf-8");
-      const entries = JSON.parse(raw) as ContactInfo[];
-      for (const c of entries) this.contacts.set(c.phone, c);
+      const raw = JSON.parse(fs.readFileSync(this.contactsCachePath, "utf-8")) as ContactInfo[] | { contacts: ContactInfo[] };
+      // The older format (a bare array) mixed in opaque @lid ids as if they were
+      // phone numbers and can't be told apart — dropped; the next sync rebuilds it cleanly.
+      if (Array.isArray(raw)) return;
+      for (const c of raw.contacts) this.contacts.set(c.phone, c);
     } catch {
       // No cache yet (first run for this connection) or a corrupt/unreadable
       // file — starts empty, same as before this cache existed.
@@ -155,10 +157,36 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
   private persistContactsCache() {
     try {
       fs.mkdirSync(path.dirname(this.contactsCachePath), { recursive: true });
-      fs.writeFileSync(this.contactsCachePath, JSON.stringify(Array.from(this.contacts.values())));
+      fs.writeFileSync(this.contactsCachePath, JSON.stringify({ contacts: Array.from(this.contacts.values()) }));
     } catch (err) {
       this.logger.error({ err }, "failed to persist WhatsApp contacts cache to disk");
     }
+  }
+
+  // The address book (listContacts) only changes while a sync is running —
+  // weekly, or when an admin asks (see syncContacts). Outside of that, contact
+  // events still heal names/numbers on existing conversations but never
+  // reshape the list agents browse in Nova conversa.
+  private addressBookSyncing = false;
+
+  /**
+   * Re-downloads the phone's whole address book from WhatsApp's app-state
+   * sync (the "contact" collection, from version 0) — otherwise contacts only
+   * trickle in one by one as they happen to change. Resolves once the batch
+   * has been applied.
+   */
+  async syncContacts(): Promise<{ count: number }> {
+    const socket = this.requireSocket();
+    this.addressBookSyncing = true;
+    try {
+      await socket.resyncAppState(["critical_unblock_low"], true);
+      // Baileys flushes the buffered contacts.upsert events right as the resync ends.
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    } finally {
+      this.addressBookSyncing = false;
+    }
+    this.persistContactsCache();
+    return { count: this.contacts.size };
   }
 
   async connect(connectOptions?: ConnectOptions): Promise<void> {
@@ -831,13 +859,16 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
     this.emitter.emit("connection", status);
   }
 
-  private upsertContacts(contacts: Array<{ id?: string; jid?: string; name?: string | null; notify?: string | null; imgUrl?: string | null }>) {
+  private upsertContacts(contacts: Array<{ id?: string; jid?: string; lid?: string; name?: string | null; notify?: string | null; imgUrl?: string | null }>) {
     for (const c of contacts) {
       if (!c.id || isNonCustomerChat(c.id)) continue;
       // `id` is `@lid` (an opaque privacy identifier, not a phone number)
       // for a growing share of contacts — Baileys separately hands back the
       // real phone-number JID as `jid` whenever it knows it.
       const phone = (c.jid ?? c.id).split("@")[0];
+      // An @lid with no known phone number can't be started from the address
+      // book and would show up as a long meaningless "number" — never listed.
+      const hasRealNumber = !(c.id.endsWith("@lid") && !c.jid);
       const existing = this.contacts.get(phone);
       // `c.name` is specifically "the name you have saved on your WA" (the
       // linked phone's own address book) — distinct from `c.notify`, which
@@ -845,11 +876,19 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
       // The saved name is the one an agent actually recognizes, so it's
       // preferred here for the address-book cache too.
       const savedName = c.name ?? null;
-      this.contacts.set(phone, {
-        phone,
-        name: savedName ?? c.notify ?? existing?.name ?? null,
-        photoUrl: (c.imgUrl && c.imgUrl !== "changed" ? c.imgUrl : existing?.photoUrl) ?? null,
-      });
+      if (hasRealNumber && this.addressBookSyncing) {
+        this.contacts.set(phone, {
+          phone,
+          name: savedName ?? c.notify ?? existing?.name ?? null,
+          photoUrl: (c.imgUrl && c.imgUrl !== "changed" ? c.imgUrl : existing?.photoUrl) ?? null,
+        });
+      }
+      // The address book entry itself carries the @lid <-> phone pairing
+      // (contactAction.lidJid) — this is what lets a customer who only ever
+      // appeared as an opaque @lid finally get their real number.
+      if (hasRealNumber && c.lid && c.lid !== c.id) {
+        this.emitter.emit("chatIdentityResolved", { chatId: c.lid, phone, name: savedName } satisfies ChatIdentityResolvedEvent);
+      }
       // The phone's address-book sync (contacts.upsert/contacts.update) is a
       // second, independent source for the exact same @lid<->real-phone
       // pairing that chats.update's pnJid resolves — and one that tends to
@@ -874,7 +913,7 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
         this.emitter.emit("chatIdentityResolved", { chatId: c.id, phone, name: savedName } satisfies ChatIdentityResolvedEvent);
       }
     }
-    this.persistContactsCache();
+    if (this.addressBookSyncing) this.persistContactsCache();
   }
 
   private async handleIncomingMessage(message: WAMessage): Promise<void> {

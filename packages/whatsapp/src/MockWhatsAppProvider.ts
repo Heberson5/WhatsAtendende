@@ -184,6 +184,10 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
     return DEVICE_CONTACTS.map((c) => ({ phone: c.phone, name: c.name, photoUrl: null }));
   }
 
+  async syncContacts(): Promise<{ count: number }> {
+    return { count: this.status.state === "CONNECTED" ? DEVICE_CONTACTS.length : 0 };
+  }
+
   // No real WhatsApp servers to query in dev — simulates the same
   // exists/doesn't-exist judgment call by phone-number length (a normal
   // number, DDI+DDD+subscriber, lands in the 10-13 digit range) instead of

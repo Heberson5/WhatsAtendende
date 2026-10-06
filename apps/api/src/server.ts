@@ -5,6 +5,7 @@ import { initWhatsAppConnections, shutdownAllConnections } from "./modules/whats
 import { revertExpiredTransfers } from "./modules/conversations/conversations.service";
 import { runHolidaySyncIfDue } from "./modules/holidays/holidays.service";
 import { sendQueueRemindersIfDue } from "./lib/queue-reminder";
+import { syncContactsIfDue } from "./lib/contacts-sync";
 import { env } from "./config/env";
 import { logger } from "./lib/logger";
 import { prisma } from "./lib/prisma";
@@ -21,6 +22,9 @@ const HOLIDAY_SYNC_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 // is just how often it's cheap to check whether it's due yet. See PROMPT:
 // "notificações a cada um minuto quando tem conversas na fila".
 const QUEUE_REMINDER_CHECK_INTERVAL_MS = 60 * 1000;
+
+// Looks for connections that missed the Monday 00:00 address-book load (or never had one).
+const CONTACTS_SYNC_CHECK_INTERVAL_MS = 10 * 60 * 1000;
 
 async function main() {
   // Presence is otherwise only ever kept correct by live socket connections
@@ -56,6 +60,11 @@ async function main() {
   }, QUEUE_REMINDER_CHECK_INTERVAL_MS);
   queueReminderTimer.unref();
 
+  const contactsSyncTimer = setInterval(() => {
+    syncContactsIfDue().catch((err) => logger.error({ err }, "failed to run the weekly address book sync"));
+  }, CONTACTS_SYNC_CHECK_INTERVAL_MS);
+  contactsSyncTimer.unref();
+
   httpServer.listen(env.PORT, () => {
     logger.info(`API listening on port ${env.PORT} (env=${env.NODE_ENV}, whatsapp=${env.WHATSAPP_PROVIDER})`);
   });
@@ -65,6 +74,7 @@ async function main() {
     clearInterval(transferSweepTimer);
     clearInterval(holidaySyncTimer);
     clearInterval(queueReminderTimer);
+    clearInterval(contactsSyncTimer);
     httpServer.close();
     // Every deploy sends this signal to the outgoing container — ending
     // each WhatsApp connection's socket cleanly here (rather than letting

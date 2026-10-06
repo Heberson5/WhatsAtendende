@@ -7,6 +7,7 @@ import { PERMISSION, type ConversationListItemDTO, type ConversationNoteDTO, typ
 import { toastWithUndo } from "../../lib/undoToast";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { contactDisplayName } from "../../lib/contact-display";
+import { formatPhone } from "../../lib/format-phone";
 import { getSocket } from "../../lib/socket";
 import { useAuthStore } from "../../store/auth-store";
 import { MessageBubble } from "./MessageBubble";
@@ -492,7 +493,7 @@ export function ChatPanel({
             <p className="truncate text-sm font-semibold">{displayName}</p>
             {conversation.contact.phone && (
               <p className="flex items-center gap-1 text-xs text-muted">
-                <Phone className="h-3 w-3" /> {conversation.contact.phone}
+                <Phone className="h-3 w-3" /> {formatPhone(conversation.contact.phone)}
               </p>
             )}
           </div>

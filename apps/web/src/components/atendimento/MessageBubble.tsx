@@ -4,9 +4,11 @@ import { ptBR } from "date-fns/locale";
 import { Calendar, Check, CheckCheck, Clock, ExternalLink, FileText, ListChecks, MapPin, MessageCircle, ReplyIcon, Smile, Trash2, User } from "lucide-react";
 import type { MessageDTO, MessageAttachmentDTO } from "@whatsatendende/types";
 import { useState } from "react";
-import { renderWhatsAppFormatting } from "../../lib/whatsappFormatting";
+import { firstUrl, renderWhatsAppFormatting } from "../../lib/whatsappFormatting";
 import { withAuthToken } from "../../lib/api";
 import { MediaLightbox, type LightboxMedia } from "./MediaLightbox";
+import { DocumentAttachment } from "./DocumentPreview";
+import { LinkPreviewCard } from "./LinkPreviewCard";
 
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
@@ -19,12 +21,6 @@ function StatusIcon({ status }: { status: MessageDTO["status"] }) {
   // so it stays visible against whatever primary color is configured.
   if (status === "READ") return <CheckCheck className="h-3.5 w-3.5" style={{ color: "var(--color-read-receipt)" }} />;
   return <span className="text-red-400">!</span>;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function vcardName(vcard: string | undefined, fallback: string): string {
@@ -199,17 +195,7 @@ function Attachment({
       </div>
     );
   }
-  return (
-    <a href={withAuthToken(att.url)} target="_blank" rel="noreferrer" className="flex items-center gap-2 rounded border border-black/10 bg-black/5 px-3 py-2 hover:bg-black/10">
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-black/10">
-        <FileText className="h-4 w-4" />
-      </span>
-      <div className="min-w-0">
-        <p className="truncate text-sm font-medium">{att.fileName}</p>
-        <p className="text-xs opacity-75">{formatBytes(att.sizeBytes)}</p>
-      </div>
-    </a>
-  );
+  return <DocumentAttachment att={att} />;
 }
 
 export function MessageBubble({
@@ -309,6 +295,12 @@ export function MessageBubble({
           </div>
         </a>
       )}
+
+      {/* A link WhatsApp didn't attach a card to (typed by an agent here, or sent without one) still gets a preview, fetched by the server. */}
+      {!message.linkPreview && message.body && !message.attachments.length && (() => {
+        const url = firstUrl(message.body);
+        return url ? <LinkPreviewCard url={url} /> : null;
+      })()}
 
       {message.body && <p className="whitespace-pre-wrap break-words">{renderWhatsAppFormatting(message.body)}</p>}
 

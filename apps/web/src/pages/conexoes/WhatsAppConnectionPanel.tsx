@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { CheckCircle2, MessageCircle, Pencil, Plug, PlugZap, Plus, RefreshCw, Trash2, Users, X } from "lucide-react";
+import { BookUser, CheckCircle2, MessageCircle, Pencil, Plug, PlugZap, Plus, RefreshCw, Trash2, Users, X } from "lucide-react";
 import { toast } from "sonner";
 import { PERMISSION, type ConversationListItemDTO } from "@whatsatendende/types";
 import { useAuthStore } from "../../store/auth-store";
@@ -19,6 +19,7 @@ interface ConnectionSummary {
   connectedNumber: string | null;
   linkedNumber: string | null;
   lastConnectedAt: string | null;
+  contactsSyncedAt: string | null;
   agentCount: number;
 }
 
@@ -128,6 +129,15 @@ export function WhatsAppConnectionPanel() {
   const disconnectMutation = useMutation({
     mutationFn: (id: string) => api.post(`/whatsapp/connections/${id}/disconnect`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["whatsapp-connections"] }),
+  });
+  const syncContactsMutation = useMutation({
+    mutationFn: async (id: string) => (await api.post<{ count: number }>(`/whatsapp/connections/${id}/sync-contacts`)).data,
+    onSuccess: ({ count }) => {
+      toast.success(`${count} ${count === 1 ? "contato carregado" : "contatos carregados"} do celular.`);
+      queryClient.invalidateQueries({ queryKey: ["whatsapp-connections"] });
+      queryClient.invalidateQueries({ queryKey: ["whatsapp-contacts"] });
+    },
+    onError: (err) => toast.error(getApiErrorMessage(err)),
   });
   const reconnectMutation = useMutation({
     mutationFn: (id: string) => api.post(`/whatsapp/connections/${id}/reconnect`),
@@ -311,6 +321,25 @@ export function WhatsAppConnectionPanel() {
                       <p className="text-xs opacity-80">Desde {format(new Date(connection.lastConnectedAt), "dd/MM/yyyy HH:mm")}</p>
                     )}
                   </div>
+                </div>
+                <div className="rounded-card border border-border px-3 py-2.5">
+                  <p className="text-sm font-medium">Contatos salvos no celular</p>
+                  <p className="text-xs text-muted">
+                    {connection.contactsSyncedAt
+                      ? `Última carga em ${format(new Date(connection.contactsSyncedAt), "dd/MM/yyyy HH:mm")}.`
+                      : "Ainda não foram carregados."}{" "}
+                    Carregam sozinhos toda segunda-feira à meia-noite; use o botão para carregar agora.
+                  </p>
+                  {canEditar && (
+                    <button
+                      onClick={() => syncContactsMutation.mutate(connection.id)}
+                      disabled={syncContactsMutation.isPending}
+                      className="focus-ring mt-2 flex items-center gap-1.5 rounded-card border border-border px-3 py-1.5 text-sm font-medium hover:bg-surface-alt disabled:opacity-60"
+                    >
+                      <BookUser className="h-4 w-4" />
+                      {syncContactsMutation.isPending && syncContactsMutation.variables === connection.id ? "Carregando..." : "Carregar contatos agora"}
+                    </button>
+                  )}
                 </div>
                 {canEditar && (
                   <div className="flex gap-2">

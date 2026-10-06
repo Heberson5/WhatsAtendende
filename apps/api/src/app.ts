@@ -26,6 +26,7 @@ import { closingMessagesRouter } from "./modules/closing-messages/closing-messag
 import { autoMessageTemplatesRouter } from "./modules/auto-message-templates/auto-message-templates.routes";
 import { satisfactionRouter } from "./modules/satisfaction/satisfaction.routes";
 import { contactsRouter } from "./modules/contacts/contacts.routes";
+import { linkPreviewRouter } from "./modules/link-preview/link-preview.routes";
 import { notificationsRouter } from "./modules/notifications/notifications.routes";
 import { holidaysRouter } from "./modules/holidays/holidays.routes";
 import { metaRouter } from "./modules/meta/meta.routes";
@@ -126,6 +127,7 @@ export function createApp() {
   app.use("/api/conversations", clientPanelRouter);
   app.use("/api/tags", tagsRouter);
   app.use("/api/contacts", contactsRouter);
+  app.use("/api/link-preview", linkPreviewRouter);
   app.use("/api/messages", messagesRouter);
   app.use("/api/dashboard", dashboardRouter);
   app.use("/api/reports", reportsRouter);

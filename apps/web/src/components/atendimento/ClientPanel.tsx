@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import type { ContactPanelDTO, ConversationListItemDTO, TagDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { contactDisplayName } from "../../lib/contact-display";
+import { formatPhone } from "../../lib/format-phone";
 
 const STATUS_LABEL: Record<string, string> = {
   IN_FLOW: "No fluxo",
@@ -163,7 +164,7 @@ export function ClientPanel({
         <div className="flex flex-col items-center text-center">
           <Avatar conversation={conversation} size="lg" />
           <p className="mt-2 max-w-full truncate text-[15px] font-semibold">{name}</p>
-          {conversation.contact.phone && <p className="text-xs text-muted">{conversation.contact.phone}</p>}
+          {conversation.contact.phone && <p className="text-xs tabular-nums text-muted">{formatPhone(conversation.contact.phone)}</p>}
         </div>
 
         <Section title="Conversa atual">

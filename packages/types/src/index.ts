@@ -1328,6 +1328,15 @@ export interface TagDTO {
   color: string;
 }
 
+/** Card shown under a link in a message — see GET /link-preview. */
+export interface LinkPreviewDTO {
+  title: string;
+  description: string | null;
+  url: string;
+  /** Data URL of the page's picture, when it has a small enough one. */
+  thumbnailUrl: string | null;
+}
+
 /** Etiqueta na tela de gestão de etiquetas — com quantos contatos a usam. */
 export interface ManagedTagDTO extends TagDTO {
   contactCount: number;

@@ -1,12 +1,12 @@
 import type { ContactListItemDTO, TagDTO } from "@whatsatendende/types";
+import { formatPhone } from "../../lib/format-phone";
 
 const CHANNEL_LABEL: Record<string, string> = { INSTAGRAM: "Instagram", MESSENGER: "Messenger" };
 
 /** "+55 11 98765-4321" for a WhatsApp number; the channel name for Instagram/Messenger (no phone there). */
 export function formatContactPhone(contact: Pick<ContactListItemDTO, "phone" | "channel">): string {
   if (!contact.phone) return CHANNEL_LABEL[contact.channel] ?? "-";
-  const m = /^55(\d{2})(\d{4,5})(\d{4})$/.exec(contact.phone);
-  return m ? `+55 ${m[1]} ${m[2]}-${m[3]}` : `+${contact.phone}`;
+  return formatPhone(contact.phone);
 }
 
 export function TagChip({ tag }: { tag: TagDTO }) {

@@ -65,6 +65,63 @@ export const RELEASE_NOTE_AREAS: Record<ReleaseNoteArea, { label: string; requir
 
 export const RELEASES: Release[] = [
   {
+    version: "2.1.1",
+    date: "06 out 2026",
+    name: "Conversas e contatos",
+    summary: "Arquivos de conversas antigas voltam a abrir, mensagens ganham prévia de links, PDF e Word, o número do cliente aparece em mais lugares e os contatos do celular passam a carregar toda semana.",
+    notes: [
+      {
+        type: "correcao",
+        area: "atendimento",
+        title: "Arquivos de conversas antigas voltam a abrir",
+        before: "Ao iniciar uma nova conversa com um número que já tinha histórico, os textos e imagens antigos apareciam, mas os arquivos não abriam.",
+        after: "O histórico do cliente aparece completo, com imagens, vídeos, áudios e documentos, mesmo que tenham sido enviados em um atendimento anterior feito por outra pessoa.",
+      },
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "Prévia de links, PDF e Word nas mensagens",
+        text: "Um link na mensagem mostra um cartão com título, descrição e imagem do site. PDF e Word aparecem com a primeira página, o número de páginas e o tamanho. Clique no documento para ler o conteúdo sem sair da conversa.",
+        steps: ["Clique no cartão do PDF ou do Word.", "Role para ler o documento inteiro.", "Use o botão de baixar, no canto superior direito, para guardar o arquivo. Esc fecha."],
+        where: "Atendimento e Gestão, dentro da conversa",
+        images: [
+          { file: "previews-conversa", caption: "Um PDF, um documento do Word e um link com seus cartões de prévia.", size: "small" },
+          { file: "visualizador-pdf", caption: "O PDF aberto para leitura dentro do sistema." },
+        ],
+      },
+      {
+        type: "melhoria",
+        area: "atendimento",
+        title: "Número do cliente sempre visível",
+        text: "O número aparece formatado (por exemplo +55 11 98765-4321) na lista de conversas, no topo da conversa e no painel do cliente. Na Nova conversa, a busca acha o contato pelo nome ou pelo número, digitado como você quiser.",
+        where: "Atendimento › Nova conversa",
+        images: [{ file: "nova-conversa-numeros", caption: "Contatos com nome e número, e busca por “(11) 9”.", size: "small" }],
+      },
+      {
+        type: "melhoria",
+        area: "atendimento",
+        title: "Nova conversa traz também quem já falou com a empresa",
+        text: "A lista junta os contatos salvos no celular com os clientes que já conversaram com a conexão. Identificações internas do WhatsApp que não são um telefone deixam de aparecer como se fossem um número.",
+      },
+      {
+        type: "novo",
+        area: "conexoes",
+        title: "Contatos do celular carregam toda semana",
+        text: "Os contatos salvos no celular são carregados por completo uma vez por semana, na segunda-feira à meia-noite, e não mais aos poucos. O administrador pode carregar na hora, em Conexões. A tela mostra quando foi a última carga.",
+        steps: ["Abra Conexões › WhatsApp.", "No cartão da conexão conectada, clique em “Carregar contatos agora”."],
+        where: "Conexões › WhatsApp",
+        images: [{ file: "conexoes-contatos", caption: "Data da última carga e botão para carregar agora.", size: "small" }],
+      },
+      {
+        type: "correcao",
+        area: "geral",
+        title: "Cadastros não vêm mais com o e-mail do administrador",
+        before: "Ao cadastrar um usuário ou preencher outros campos de e-mail e senha, o navegador colocava o e-mail e a senha do administrador.",
+        after: "Os campos abrem em branco, prontos para serem preenchidos. Se o seu navegador ainda preencher, apague a senha salva deste sistema nas configurações dele.",
+      },
+    ],
+  },
+  {
     version: "2.1.0",
     date: "04 out 2026",
     name: "Automação e contatos",
