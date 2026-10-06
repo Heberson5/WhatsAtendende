@@ -427,7 +427,7 @@ export default function GestaoPage() {
         Mostrando {visible.length} de {conversations?.length ?? 0} {conversations?.length === 1 ? "conversa" : "conversas"}
       </p>
 
-      {selected && <ReadOnlyConversationDrawer conversation={selected} onClose={() => setSelected(null)} />}
+      {selected && <ReadOnlyConversationDrawer key={selected.id} conversation={selected} onClose={() => setSelected(null)} />}
 
       {merging && (
         <MergeConversationModal

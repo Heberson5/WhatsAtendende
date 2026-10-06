@@ -5,6 +5,7 @@ import type { ContactPanelDTO, ConversationListItemDTO, ConversationNoteDTO, Mes
 import { api } from "../../lib/api";
 import { contactDisplayName } from "../../lib/contact-display";
 import { getSocket } from "../../lib/socket";
+import { useJumpToMessage } from "../../hooks/useJumpToMessage";
 import { MessageBubble } from "../atendimento/MessageBubble";
 import { TransferNoteCard } from "../atendimento/TransferNoteCard";
 import { InternalNoteCard } from "../atendimento/ChatPanel";
@@ -49,6 +50,7 @@ export function ReadOnlyConversationDrawer({
   // older page loads in while they're scrolled up reading history, fighting
   // the loadOlder-style scroll-position restore in the [cursor] effect.
   const nearBottomRef = useRef(true);
+  const { jumpToMessage, flashedId } = useJumpToMessage(contentRef);
 
   const queryClient = useQueryClient();
 
@@ -223,13 +225,17 @@ export function ReadOnlyConversationDrawer({
                       <InternalNoteCard key={note.id} note={note} />
                     ))}
                     {insertNoteHere && <TransferNoteCard transfer={conversation.transfer!} />}
-                    <MessageBubble
-                      message={m}
-                      readOnly
-                      onReply={() => undefined}
-                      onReact={() => undefined}
-                      repliedMessage={m.replyToMessageId ? messageById.get(m.replyToMessageId) : undefined}
-                    />
+                    <div data-message-id={m.id}>
+                      <MessageBubble
+                        message={m}
+                        readOnly
+                        highlighted={flashedId === m.id}
+                        onJumpToMessage={jumpToMessage}
+                        onReply={() => undefined}
+                        onReact={() => undefined}
+                        repliedMessage={m.replyToMessageId ? messageById.get(m.replyToMessageId) : undefined}
+                      />
+                    </div>
                   </Fragment>
                 );
               });

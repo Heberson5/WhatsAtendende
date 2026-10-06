@@ -8,6 +8,7 @@ import { toastWithUndo } from "../../lib/undoToast";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { contactDisplayName } from "../../lib/contact-display";
 import { formatPhone } from "../../lib/format-phone";
+import { useJumpToMessage } from "../../hooks/useJumpToMessage";
 import { getSocket } from "../../lib/socket";
 import { useAuthStore } from "../../store/auth-store";
 import { MessageBubble } from "./MessageBubble";
@@ -76,6 +77,7 @@ export function ChatPanel({
   // growth) — observed below so ANY change to its height re-triggers the
   // stick-to-bottom check, not just a new message arriving.
   const contentRef = useRef<HTMLDivElement>(null);
+  const { jumpToMessage, flashedId } = useJumpToMessage(contentRef);
   // Updated live on scroll, not recomputed after each render — checking
   // scroll position only after new (taller) content has already painted
   // would misjudge "was near the bottom" by however tall the new message
@@ -629,6 +631,7 @@ export function ChatPanel({
                   ))}
                   {insertNoteHere && <TransferNoteCard transfer={conversation.transfer!} />}
                   <div
+                    data-message-id={message.id}
                     ref={(el) => {
                       if (el) messageElementsRef.current.set(message.id, el);
                       else messageElementsRef.current.delete(message.id);
@@ -637,12 +640,13 @@ export function ChatPanel({
                     <MessageBubble
                       message={message}
                       repliedMessage={message.replyToMessageId ? messageById.get(message.replyToMessageId) : undefined}
+                      onJumpToMessage={jumpToMessage}
                       onReply={setReplyTo}
                       onReact={(m, emoji) => reactMutation.mutate({ messageId: m.id, emoji })}
                       canDelete={isAdmin}
                       onDelete={(m) => deleteMessageMutation.mutate(m.id)}
                       onStartConversation={onConversationStarted ? (phone, name) => startConversationMutation.mutate({ phone, name }) : undefined}
-                      highlighted={searchOpen && searchMatches[matchIndex]?.id === message.id}
+                      highlighted={flashedId === message.id || (searchOpen && searchMatches[matchIndex]?.id === message.id)}
                     />
                   </div>
                 </Fragment>

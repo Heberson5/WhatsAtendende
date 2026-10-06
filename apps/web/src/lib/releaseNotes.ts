@@ -68,8 +68,23 @@ export const RELEASES: Release[] = [
     version: "2.1.1",
     date: "06 out 2026",
     name: "Conversas e contatos",
-    summary: "Arquivos de conversas antigas voltam a abrir, mensagens ganham prévia de links, PDF e Word, o número do cliente aparece em mais lugares e os contatos do celular passam a carregar toda semana.",
+    summary: "Arquivos de conversas antigas voltam a abrir, mensagens ganham prévia de links, PDF e Word, o número do cliente aparece em mais lugares e os contatos do celular passam a carregar toda semana. Ao tocar numa resposta, a conversa vai até a mensagem original.",
     notes: [
+      {
+        type: "melhoria",
+        area: "atendimento",
+        title: "Clique na resposta para ir à mensagem original",
+        text: "Quando uma mensagem responde a outra, clicar no trecho citado leva direto até a mensagem original, que fica destacada por alguns segundos. Funciona na conversa, na visualização das transferidas e na Gestão.",
+        where: "Dentro de qualquer conversa, no trecho citado de uma resposta",
+      },
+      {
+        type: "correcao",
+        area: "atendimento",
+        title: "Transferidas: cada conversa abre o seu próprio histórico",
+        before: "Ao clicar em outra conversa na aba Transf., o histórico da primeira continuava na tela, misturado com o da nova.",
+        after: "Cada conversa mostra só as suas mensagens, e as notas e etiquetas acompanham a conversa escolhida.",
+        where: "Atendimento › Transf.",
+      },
       {
         type: "correcao",
         area: "atendimento",

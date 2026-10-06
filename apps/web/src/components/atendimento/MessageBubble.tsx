@@ -205,6 +205,7 @@ export function MessageBubble({
   onDelete,
   onStartConversation,
   repliedMessage,
+  onJumpToMessage,
   readOnly,
   canDelete,
   highlighted,
@@ -216,6 +217,8 @@ export function MessageBubble({
   /** Starts a new conversation with a phone number found inside a received vCard attachment. Omitted in read-only views (Gestão). */
   onStartConversation?: (phone: string, name: string) => void;
   repliedMessage?: MessageDTO;
+  /** Clicking the quote of a reply goes to the message it answers. */
+  onJumpToMessage?: (messageId: string) => void;
   /** Gestão's oversight view: same bubble rendering as Atendimento, but no reply/react — gestores only watch. */
   readOnly?: boolean;
   /** ADMIN-only "excluir mensagem" affordance — local to this app, never touches WhatsApp. */
@@ -245,10 +248,16 @@ export function MessageBubble({
       )}
 
       {repliedMessage && (
-        <div className="mb-1.5 rounded border-l-2 border-secondary bg-black/10 px-2 py-1 text-xs opacity-90">
+        <button
+          type="button"
+          onClick={() => onJumpToMessage?.(repliedMessage.id)}
+          disabled={!onJumpToMessage}
+          title={onJumpToMessage ? "Ir para a mensagem respondida" : undefined}
+          className="focus-ring mb-1.5 block w-full rounded border-s-2 border-secondary bg-black/10 px-2 py-1 text-start text-xs opacity-90 enabled:cursor-pointer enabled:hover:bg-black/15"
+        >
           <p className="font-semibold">{repliedMessage.senderAgentDisplayName ?? "Cliente"}</p>
           <p className="truncate">{repliedMessage.body ?? "Anexo"}</p>
-        </div>
+        </button>
       )}
 
       {/*
