@@ -209,7 +209,7 @@ export function UserFormModal({
             <input required value={values.displayName} onChange={(e) => setValues((v) => ({ ...v, displayName: e.target.value }))} className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm" />
           </Field>
           <Field label="E-mail">
-            <input required type="email" value={values.email} onChange={(e) => setValues((v) => ({ ...v, email: e.target.value }))} className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm" />
+            <input required type="email" autoComplete="off" value={values.email} onChange={(e) => setValues((v) => ({ ...v, email: e.target.value }))} className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm" />
           </Field>
           <Field label="Perfil">
             <select
@@ -272,10 +272,10 @@ export function UserFormModal({
                 </p>
               )}
               <Field label="Senha">
-                <input required type="password" minLength={8} value={values.password} onChange={(e) => setValues((v) => ({ ...v, password: e.target.value }))} className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm" />
+                <input required type="password" autoComplete="new-password" minLength={8} value={values.password} onChange={(e) => setValues((v) => ({ ...v, password: e.target.value }))} className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm" />
               </Field>
               <Field label="Confirmar senha">
-                <input required type="password" minLength={8} value={values.confirmPassword} onChange={(e) => setValues((v) => ({ ...v, confirmPassword: e.target.value }))} className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm" />
+                <input required type="password" autoComplete="new-password" minLength={8} value={values.confirmPassword} onChange={(e) => setValues((v) => ({ ...v, confirmPassword: e.target.value }))} className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm" />
               </Field>
             </>
           )}
@@ -300,6 +300,7 @@ export function UserFormModal({
                     <input
                       required
                       type="password"
+                      autoComplete="new-password"
                       minLength={8}
                       value={values.password}
                       onChange={(e) => setValues((v) => ({ ...v, password: e.target.value }))}
@@ -310,6 +311,7 @@ export function UserFormModal({
                     <input
                       required
                       type="password"
+                      autoComplete="new-password"
                       minLength={8}
                       value={values.confirmPassword}
                       onChange={(e) => setValues((v) => ({ ...v, confirmPassword: e.target.value }))}

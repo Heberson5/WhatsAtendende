@@ -124,7 +124,7 @@ export function EmailSettingsPanel() {
         </label>
         <label className="block">
           <span className="mb-1 block text-sm font-medium">E-mail do remetente</span>
-          <input type="email" value={fromEmail} onChange={(e) => setFromEmail(e.target.value)} placeholder="atendimento@suaempresa.com" className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm" />
+          <input type="email" autoComplete="off" value={fromEmail} onChange={(e) => setFromEmail(e.target.value)} placeholder="atendimento@suaempresa.com" className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm" />
         </label>
       </div>
 
@@ -145,6 +145,7 @@ export function EmailSettingsPanel() {
           <div className="flex gap-2">
             <input
               type="email"
+              autoComplete="off"
               value={testTo}
               onChange={(e) => setTestTo(e.target.value)}
               placeholder="seuemail@empresa.com"

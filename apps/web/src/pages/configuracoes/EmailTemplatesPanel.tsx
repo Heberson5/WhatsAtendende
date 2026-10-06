@@ -229,6 +229,7 @@ export function EmailTemplatesPanel() {
               </button>
               <input
                 type="email"
+                autoComplete="off"
                 value={testTo}
                 onChange={(e) => setTestTo(e.target.value)}
                 placeholder="Enviar teste para..."
