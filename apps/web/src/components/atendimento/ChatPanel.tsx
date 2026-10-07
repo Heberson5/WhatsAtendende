@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ArrowLeft, ArrowRightLeft, CheckCircle2, ChevronDown, ChevronUp, FileText, PanelRight, Paperclip, Phone, Search, StickyNote, X as CloseIcon } from "lucide-react";
@@ -16,6 +16,7 @@ import { Composer, type ComposerHandle } from "./Composer";
 import { TransferModal } from "./TransferModal";
 import { SendTemplateModal } from "./SendTemplateModal";
 import { TransferNoteCard } from "./TransferNoteCard";
+import { TimelineByDay, type TimelineEntry } from "./TimelineByDay";
 
 async function fetchMessages(conversationId: string, cursor?: string) {
   // 100 (the API's own max) rather than a smaller page, since every page
@@ -457,6 +458,61 @@ export function ChatPanel({
     if (files.length > 0) composerRef.current?.addFiles(files);
   }
 
+  // The thread as one chronological list — messages, internal notes and the
+  // transfer note — which TimelineByDay then splits by day.
+  // The transfer note renders once, right between the last message sent
+  // before the transfer and the first one after it — not as a static banner
+  // above the whole thread. See TransferNoteCard.
+  const transferAt = conversation.transfer?.note ? new Date(conversation.transfer.at).getTime() : null;
+  let noteInserted = false;
+  // Internal notes sit in the timeline right where they were written.
+  const pendingNotes = [...(notesQuery.data ?? [])];
+  const takeNotesUpTo = (at: number) => {
+    const due: ConversationNoteDTO[] = [];
+    while (pendingNotes.length && new Date(pendingNotes[0].createdAt).getTime() <= at) due.push(pendingNotes.shift()!);
+    return due;
+  };
+  const timeline: TimelineEntry[] = [];
+  const addNote = (note: ConversationNoteDTO) =>
+    timeline.push({ key: `note-${note.id}`, at: new Date(note.createdAt).getTime(), node: <InternalNoteCard note={note} /> });
+  const addTransferNote = () =>
+    timeline.push({ key: "transfer-note", at: new Date(conversation.transfer!.at).getTime(), node: <TransferNoteCard transfer={conversation.transfer!} /> });
+  for (const message of messages) {
+    const at = new Date(message.createdAt).getTime();
+    const insertNoteHere = transferAt !== null && !noteInserted && at >= transferAt;
+    if (insertNoteHere) noteInserted = true;
+    takeNotesUpTo(at).forEach(addNote);
+    if (insertNoteHere) addTransferNote();
+    timeline.push({
+      key: message.id,
+      at,
+      node: (
+        <div
+          data-message-id={message.id}
+          ref={(el) => {
+            if (el) messageElementsRef.current.set(message.id, el);
+            else messageElementsRef.current.delete(message.id);
+          }}
+        >
+          <MessageBubble
+            message={message}
+            repliedMessage={message.replyToMessageId ? messageById.get(message.replyToMessageId) : undefined}
+            onJumpToMessage={jumpToMessage}
+            onReply={setReplyTo}
+            onReact={(m, emoji) => reactMutation.mutate({ messageId: m.id, emoji })}
+            canDelete={isAdmin}
+            onDelete={(m) => deleteMessageMutation.mutate(m.id)}
+            onStartConversation={onConversationStarted ? (phone, name) => startConversationMutation.mutate({ phone, name }) : undefined}
+            highlighted={flashedId === message.id || (searchOpen && searchMatches[matchIndex]?.id === message.id)}
+          />
+        </div>
+      ),
+    });
+  }
+  // No message on/after the transfer yet (nobody's replied since) — the note still belongs at the end, not nowhere.
+  if (transferAt !== null && !noteInserted) addTransferNote();
+  pendingNotes.forEach(addNote);
+
   return (
     <div
       className="relative flex h-full flex-col"
@@ -607,56 +663,7 @@ export function ChatPanel({
           </div>
         )}
         <div ref={contentRef} className="space-y-3">
-          {(() => {
-            // The transfer note renders once, right between the last message
-            // sent before the transfer and the first one after it — not as a
-            // static banner above the whole thread. See TransferNoteCard.
-            const transferAt = conversation.transfer?.note ? new Date(conversation.transfer.at).getTime() : null;
-            let noteInserted = false;
-            // Internal notes sit in the timeline right where they were written.
-            const pendingNotes = [...(notesQuery.data ?? [])];
-            const takeNotesUpTo = (at: number) => {
-              const due: ConversationNoteDTO[] = [];
-              while (pendingNotes.length && new Date(pendingNotes[0].createdAt).getTime() <= at) due.push(pendingNotes.shift()!);
-              return due;
-            };
-            const rendered = messages.map((message) => {
-              const insertNoteHere = transferAt !== null && !noteInserted && new Date(message.createdAt).getTime() >= transferAt;
-              if (insertNoteHere) noteInserted = true;
-              const notesHere = takeNotesUpTo(new Date(message.createdAt).getTime());
-              return (
-                <Fragment key={message.id}>
-                  {notesHere.map((note) => (
-                    <InternalNoteCard key={note.id} note={note} />
-                  ))}
-                  {insertNoteHere && <TransferNoteCard transfer={conversation.transfer!} />}
-                  <div
-                    data-message-id={message.id}
-                    ref={(el) => {
-                      if (el) messageElementsRef.current.set(message.id, el);
-                      else messageElementsRef.current.delete(message.id);
-                    }}
-                  >
-                    <MessageBubble
-                      message={message}
-                      repliedMessage={message.replyToMessageId ? messageById.get(message.replyToMessageId) : undefined}
-                      onJumpToMessage={jumpToMessage}
-                      onReply={setReplyTo}
-                      onReact={(m, emoji) => reactMutation.mutate({ messageId: m.id, emoji })}
-                      canDelete={isAdmin}
-                      onDelete={(m) => deleteMessageMutation.mutate(m.id)}
-                      onStartConversation={onConversationStarted ? (phone, name) => startConversationMutation.mutate({ phone, name }) : undefined}
-                      highlighted={flashedId === message.id || (searchOpen && searchMatches[matchIndex]?.id === message.id)}
-                    />
-                  </div>
-                </Fragment>
-              );
-            });
-            // No message on/after the transfer yet (nobody's replied since) — the note still belongs at the end, not nowhere.
-            if (transferAt !== null && !noteInserted) rendered.push(<TransferNoteCard key="transfer-note" transfer={conversation.transfer!} />);
-            for (const note of pendingNotes) rendered.push(<InternalNoteCard key={note.id} note={note} />);
-            return rendered;
-          })()}
+          <TimelineByDay entries={timeline} />
         </div>
       </div>
 
