@@ -1162,25 +1162,40 @@ model ContactTag {
   @@index([tagId])
 }
 
+// One NPS question the survey has asked (nota de 0 a 10). Editing the question
+// text in Respostas › Pesquisa starts a new row, so the Dashboard keeps one NPS
+// per question and the answers to an older wording stay in the history.
+model SatisfactionQuestion {
+  id        String               @id @default(uuid())
+  text      String
+  createdAt DateTime             @default(now())
+  surveys   SatisfactionSurvey[]
+}
+
 // Pesquisa de satisfação sent when a conversation is closed (only while the
 // survey is switched on in Respostas › Pesquisa, for the chosen connections).
-// The customer's next message, if it's a 1–5 score inside the answer window,
+// The customer's next message, if it's a 0–10 score inside the answer window,
 // is recorded here instead of opening a new conversation.
 model SatisfactionSurvey {
-  id                   String             @id @default(uuid())
-  conversation         Conversation       @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  conversationId       String             @unique
+  id                   String                @id @default(uuid())
+  conversation         Conversation          @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversationId       String                @unique
   contactId            String
-  whatsappConnection   WhatsAppConnection @relation(fields: [whatsappConnectionId], references: [id], onDelete: Cascade)
+  whatsappConnection   WhatsAppConnection    @relation(fields: [whatsappConnectionId], references: [id], onDelete: Cascade)
   whatsappConnectionId String
   // Who attended the conversation being rated.
-  agent                User?              @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  agent                User?                 @relation(fields: [agentId], references: [id], onDelete: SetNull)
   agentId              String?
+  // The question that was asked. Null only on surveys sent before the NPS
+  // (0–10) scale existed — those scores are on the old 1–5 scale.
+  question             SatisfactionQuestion? @relation(fields: [questionId], references: [id], onDelete: SetNull)
+  questionId           String?
   score                Int?
-  sentAt               DateTime           @default(now())
+  sentAt               DateTime              @default(now())
   expiresAt            DateTime
   answeredAt           DateTime?
 
   @@index([contactId, whatsappConnectionId, answeredAt])
   @@index([sentAt])
+  @@index([questionId])
 }

@@ -84,7 +84,7 @@ export async function getContactDetail(id: string, connectionIds: string[] | und
       createdAt: true,
       closedAt: true,
       assignedAgent: { select: { displayName: true } },
-      satisfactionSurvey: { select: { score: true } },
+      satisfactionSurvey: { select: { score: true, questionId: true } },
       _count: { select: { messages: true } },
     },
   });
@@ -98,6 +98,8 @@ export async function getContactDetail(id: string, connectionIds: string[] | und
       agentName: c.assignedAgent?.displayName ?? null,
       messageCount: c._count.messages,
       satisfactionScore: c.satisfactionSurvey?.score ?? null,
+      // Surveys without a question were answered on the old 1–5 scale.
+      satisfactionScoreMax: c.satisfactionSurvey?.score == null ? null : c.satisfactionSurvey.questionId ? 10 : 5,
     })),
   };
 }

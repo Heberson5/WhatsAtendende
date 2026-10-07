@@ -20,6 +20,7 @@ import { syncReadReceiptToDevice, requestOlderHistory, sendOutboundText } from "
 import { sendMetaMessage } from "../meta/meta.service";
 import { createOutboundMessage, createSystemOutboundMessage } from "../messages/messages.service";
 import { getActiveClosingMessageForAgent } from "../closing-messages/closing-messages.service";
+import { willSendSurveyOnClose, type HeldClosingMessage } from "../satisfaction/satisfaction.service";
 import { getActiveTemplateFor, renderAutoMessageTemplate, ROLE_LABEL } from "../auto-message-templates/auto-message-templates.service";
 import { createNotification } from "../notifications/notifications.service";
 import { toNotificationDTO } from "../notifications/notifications.mapper";
@@ -439,6 +440,11 @@ conversationsRouter.post(
     // one (IN_PROGRESS/TRANSFERRED) — silently skipped for a still-unclaimed
     // or HANDLED_EXTERNALLY one, same as sendAutoMessage's own no-op
     // precedent.
+    //
+    // When the satisfaction survey follows this close, the closing message is
+    // not sent here: it waits out the "Desfazer" window with the survey and
+    // goes out right before it (see scheduleCloseFollowUp).
+    let heldClosingMessage: HeldClosingMessage | undefined;
     if (sendClosingMessage && ["IN_PROGRESS", "TRANSFERRED"].includes(existing.status)) {
       const closingMessage = await getActiveClosingMessageForAgent(req.auth!.userId, existing.whatsappConnectionId);
       if (closingMessage) {
@@ -449,13 +455,17 @@ conversationsRouter.post(
           atendenteCargo: ROLE_LABEL[req.auth!.role],
           cliente: existing.contact.name ?? existing.contact.phone ?? "",
         });
-        const outboundMessage = await createSystemOutboundMessage({ conversationId: existing.id, type: "TEXT", body: text, agentId: req.auth!.userId });
-        await sendOutboundTextViaChannel(existing, outboundMessage.id, text, req.auth!.displayName);
-        realtimeEvents.newMessage(existing.id, existing.assignedAgentId);
+        if (await willSendSurveyOnClose(existing.id)) {
+          heldClosingMessage = { text, senderId: req.auth!.userId, senderDisplayName: req.auth!.displayName };
+        } else {
+          const outboundMessage = await createSystemOutboundMessage({ conversationId: existing.id, type: "TEXT", body: text, agentId: req.auth!.userId });
+          await sendOutboundTextViaChannel(existing, outboundMessage.id, text, req.auth!.displayName);
+          realtimeEvents.newMessage(existing.id, existing.assignedAgentId);
+        }
       }
     }
 
-    const { conversation, previousAgentId } = await service.closeConversationFromGestao(req.params.id, req.auth!.userId);
+    const { conversation, previousAgentId } = await service.closeConversationFromGestao(req.params.id, req.auth!.userId, heldClosingMessage);
     await writeAudit({
       userId: req.auth!.userId,
       action: "CONVERSATION_CLOSED_BY_MANAGER",
@@ -529,6 +539,12 @@ conversationsRouter.post(
     // sender-name prefix) as anything an agent types. See PROMPT: "Lista
     // de quais usuários a mensagem será disparada automaticamente ao
     // clicar em encerrar."
+    //
+    // Exception: when the satisfaction survey follows this close, the message
+    // waits out the "Desfazer" window instead (the 10 s the survey already
+    // waits) and, if the agent didn't undo, goes out right before the survey —
+    // see scheduleCloseFollowUp.
+    let heldClosingMessage: HeldClosingMessage | undefined;
     const closingMessage = await getActiveClosingMessageForAgent(req.auth!.userId, existing.whatsappConnectionId);
     if (closingMessage) {
       const closingAgent = await prisma.user.findUnique({ where: { id: req.auth!.userId }, select: { fullName: true } });
@@ -538,17 +554,21 @@ conversationsRouter.post(
         atendenteCargo: ROLE_LABEL[req.auth!.role],
         cliente: existing.contact.name ?? existing.contact.phone ?? "",
       });
-      const outboundMessage = await createOutboundMessage({
-        conversationId: existing.id,
-        agentId: req.auth!.userId,
-        type: "TEXT",
-        body: text,
-      });
-      await sendOutboundTextViaChannel(existing, outboundMessage.id, text, req.auth!.displayName);
-      realtimeEvents.newMessage(existing.id, req.auth!.userId);
+      if (await willSendSurveyOnClose(existing.id)) {
+        heldClosingMessage = { text, senderId: req.auth!.userId, senderDisplayName: req.auth!.displayName };
+      } else {
+        const outboundMessage = await createOutboundMessage({
+          conversationId: existing.id,
+          agentId: req.auth!.userId,
+          type: "TEXT",
+          body: text,
+        });
+        await sendOutboundTextViaChannel(existing, outboundMessage.id, text, req.auth!.displayName);
+        realtimeEvents.newMessage(existing.id, req.auth!.userId);
+      }
     }
 
-    const conversation = await service.closeConversation(req.params.id, req.auth!.userId);
+    const conversation = await service.closeConversation(req.params.id, req.auth!.userId, heldClosingMessage);
     await writeAudit({ userId: req.auth!.userId, action: "CONVERSATION_CLOSED", entity: "Conversation", entityId: conversation.id, ipAddress: req.ip ?? null });
     realtimeEvents.conversationClosed(conversation.id, req.auth!.userId);
     res.json(toConversationListItemDTO(conversation, true));

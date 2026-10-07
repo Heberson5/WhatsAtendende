@@ -2,7 +2,7 @@ import { Prisma } from "@prisma/client";
 import { CONVERSATION_UNDO_WINDOW_MS } from "@whatsatendende/types";
 import { prisma } from "../../lib/prisma";
 import { endFlowSession } from "../flows/flow-engine.service";
-import { scheduleSatisfactionSurvey } from "../satisfaction/satisfaction.service";
+import { scheduleCloseFollowUp, type HeldClosingMessage } from "../satisfaction/satisfaction.service";
 import { Errors } from "../../lib/http-error";
 import { writeAudit } from "../../lib/audit";
 import { realtimeEvents } from "../../realtime/realtime";
@@ -1312,7 +1312,12 @@ export async function returnConversationToQueue(conversationId: string, initiate
   return { conversation: await getConversationOrThrow(conversationId), previousAgentId };
 }
 
-export async function closeConversation(conversationId: string, agentId: string) {
+/**
+ * `closingMessage` is the agent's closing message when the survey follows this
+ * close: it isn't sent now, it waits out the "Desfazer" window and goes out
+ * right before the survey (see scheduleCloseFollowUp).
+ */
+export async function closeConversation(conversationId: string, agentId: string, closingMessage?: HeldClosingMessage) {
   const previous = await prisma.conversation.findUnique({ where: { id: conversationId }, select: { status: true } });
   const result = await prisma.conversation.updateMany({
     where: { id: conversationId, assignedAgentId: agentId, status: { in: ["IN_PROGRESS", "TRANSFERRED"] } },
@@ -1321,7 +1326,7 @@ export async function closeConversation(conversationId: string, agentId: string)
   if (result.count === 0) throw Errors.conflict("Nao foi possivel encerrar esta conversa");
 
   await prisma.conversationEvent.create({ data: { conversationId, type: "CLOSED", payload: { agentId, previousStatus: previous?.status } } });
-  scheduleSatisfactionSurvey(conversationId);
+  scheduleCloseFollowUp(conversationId, closingMessage);
   return getConversationOrThrow(conversationId);
 }
 
@@ -1331,7 +1336,7 @@ export async function closeConversation(conversationId: string, agentId: string)
  * requires ownership). See PROMPT: "Acrescente em gestão o botão de
  * encerrar".
  */
-export async function closeConversationFromGestao(conversationId: string, initiatedById: string) {
+export async function closeConversationFromGestao(conversationId: string, initiatedById: string, closingMessage?: HeldClosingMessage) {
   const existing = await getConversationOrThrow(conversationId);
   if (!GESTAO_TRANSFERABLE_STATUSES.includes(existing.status)) {
     throw Errors.badRequest("Esta conversa nao pode ser encerrada neste status");
@@ -1347,7 +1352,7 @@ export async function closeConversationFromGestao(conversationId: string, initia
   await prisma.conversationEvent.create({
     data: { conversationId, type: "CLOSED", payload: { agentId: initiatedById, previousAgentId, previousStatus: existing.status } },
   });
-  scheduleSatisfactionSurvey(conversationId);
+  scheduleCloseFollowUp(conversationId, closingMessage);
 
   return { conversation: await getConversationOrThrow(conversationId), previousAgentId };
 }
@@ -1375,6 +1380,8 @@ export async function undoLastConversationAction(conversationId: string, userId:
     if (conversation.status !== "CLOSED") throw Errors.conflict("Não é mais possível desfazer esta ação");
     const newer = await prisma.conversation.count({ where: { contactId: conversation.contactId, createdAt: { gt: conversation.createdAt } } });
     if (newer > 0) throw Errors.conflict("O cliente já iniciou outra conversa");
+    // The closing message and the survey are already on their way to the customer — too late to take it back.
+    if ((await prisma.satisfactionSurvey.count({ where: { conversationId } })) > 0) throw Errors.conflict("Não é mais possível desfazer esta ação");
     restoredStatus =
       conversation.assignedAgentId && payload.previousStatus && REOPENABLE_STATUSES.includes(payload.previousStatus)
         ? payload.previousStatus
@@ -1382,7 +1389,6 @@ export async function undoLastConversationAction(conversationId: string, userId:
           ? "IN_PROGRESS"
           : "NEW";
     await prisma.conversation.update({ where: { id: conversationId }, data: { status: restoredStatus, closedAt: null, closedByUserId: null } });
-    await prisma.satisfactionSurvey.deleteMany({ where: { conversationId, answeredAt: null } });
   } else {
     if (!payload.previousAgentId) throw Errors.conflict("A conversa não tinha atendente para quem voltar");
     if (conversation.status !== "WAITING" || conversation.assignedAgentId) throw Errors.conflict("A conversa já foi aceita por outra pessoa");

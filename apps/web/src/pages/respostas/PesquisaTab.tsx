@@ -36,7 +36,7 @@ function toForm(dto: SatisfactionSurveySettingsDTO): FormValues {
   };
 }
 
-/** Pesquisa de satisfação sent when a conversation is closed — off until someone switches it on here. */
+/** Pesquisa de satisfação (NPS, nota de 0 a 10) sent when a conversation is closed — off until someone switches it on here. */
 export function PesquisaTab() {
   const queryClient = useQueryClient();
   const canEditar = useAuthStore(
@@ -96,9 +96,16 @@ export function PesquisaTab() {
       <div className="max-w-2xl space-y-5 py-2">
         <p className="text-sm text-muted">
           Ao encerrar uma conversa atendida, o cliente recebe a pergunta abaixo
-          e responde com uma nota de 1 a 5. A nota fica registrada na própria
-          conversa e aparece no Dashboard e em Relatórios › Por atendente. Na
-          API Oficial, só é enviada se o cliente escreveu nas últimas 24 horas.
+          e responde com uma nota de 0 a 10. A nota fica registrada na própria
+          conversa e alimenta o NPS: o Dashboard mostra o NPS de cada pergunta e
+          Relatórios › Por atendente traz o de cada pessoa. Na API Oficial, só é
+          enviada se o cliente escreveu nas últimas 24 horas.
+        </p>
+        <p className="text-sm text-muted">
+          A pesquisa só sai depois dos 10 segundos do botão Desfazer. Se o
+          atendente tiver uma mensagem de encerramento (Respostas ›
+          Encerramento), ela espera esse mesmo tempo e é enviada logo antes da
+          pergunta. Se ele desfazer o encerramento, nada é enviado.
         </p>
 
         <fieldset
@@ -144,6 +151,11 @@ export function PesquisaTab() {
               maxLength={1024}
               className="focus-ring w-full resize-none rounded-card border border-border bg-transparent px-3 py-2 text-sm"
             />
+            <span className="mt-1 block text-xs text-muted">
+              {values.question.trim() !== saved.question
+                ? "Ao salvar, este texto passa a ser uma nova pergunta no Dashboard. O NPS da anterior continua no histórico."
+                : "Peça uma nota de 0 a 10. Ao mudar o texto, a pergunta anterior continua no histórico do Dashboard, com o NPS dela."}
+            </span>
           </label>
 
           <label className="block">
