@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { X, Phone } from "lucide-react";
 import type { ContactPanelDTO, ConversationListItemDTO, ConversationNoteDTO, MessageDTO, PaginatedResult } from "@whatsatendende/types";
@@ -8,6 +8,7 @@ import { getSocket } from "../../lib/socket";
 import { useJumpToMessage } from "../../hooks/useJumpToMessage";
 import { MessageBubble } from "../atendimento/MessageBubble";
 import { TransferNoteCard } from "../atendimento/TransferNoteCard";
+import { TimelineByDay, type TimelineEntry } from "../atendimento/TimelineByDay";
 import { InternalNoteCard } from "../atendimento/ChatPanel";
 import { TagChip } from "../../pages/contatos/contactFormat";
 
@@ -164,6 +165,50 @@ export function ReadOnlyConversationDrawer({
   const displayName = contactDisplayName(conversation.contact, conversation.channel);
   const messageById = new Map(messages.map((m) => [m.id, m]));
 
+  // Same inline placement as ChatPanel — the transfer note sits between the
+  // last message before it and the first one after, not as a static banner
+  // above the whole thread. Internal notes sit in the timeline right where
+  // they were written. TimelineByDay then splits the list by day.
+  const transferAt = conversation.transfer?.note ? new Date(conversation.transfer.at).getTime() : null;
+  let noteInserted = false;
+  const pendingNotes = [...(notesQuery.data ?? [])];
+  const takeNotesUpTo = (at: number) => {
+    const due: ConversationNoteDTO[] = [];
+    while (pendingNotes.length && new Date(pendingNotes[0].createdAt).getTime() <= at) due.push(pendingNotes.shift()!);
+    return due;
+  };
+  const timeline: TimelineEntry[] = [];
+  const addNote = (note: ConversationNoteDTO) =>
+    timeline.push({ key: `note-${note.id}`, at: new Date(note.createdAt).getTime(), node: <InternalNoteCard note={note} /> });
+  const addTransferNote = () =>
+    timeline.push({ key: "transfer-note", at: new Date(conversation.transfer!.at).getTime(), node: <TransferNoteCard transfer={conversation.transfer!} /> });
+  for (const m of messages) {
+    const at = new Date(m.createdAt).getTime();
+    const insertNoteHere = transferAt !== null && !noteInserted && at >= transferAt;
+    if (insertNoteHere) noteInserted = true;
+    takeNotesUpTo(at).forEach(addNote);
+    if (insertNoteHere) addTransferNote();
+    timeline.push({
+      key: m.id,
+      at,
+      node: (
+        <div data-message-id={m.id}>
+          <MessageBubble
+            message={m}
+            readOnly
+            highlighted={flashedId === m.id}
+            onJumpToMessage={jumpToMessage}
+            onReply={() => undefined}
+            onReact={() => undefined}
+            repliedMessage={m.replyToMessageId ? messageById.get(m.replyToMessageId) : undefined}
+          />
+        </div>
+      ),
+    });
+  }
+  if (transferAt !== null && !noteInserted) addTransferNote();
+  pendingNotes.forEach(addNote);
+
   const content = (
     <div className={variant === "drawer" ? "flex h-full w-full max-w-lg flex-col bg-surface shadow-elevated" : "flex h-full w-full flex-col bg-surface"}>
         <div className="flex items-center justify-between gap-2 border-b border-border bg-surface px-4 py-3">
@@ -203,46 +248,7 @@ export function ReadOnlyConversationDrawer({
         <div ref={scrollContainerRef} className="flex-1 overflow-y-auto bg-[var(--color-bg)] px-4 py-4">
           {(isLoading || cursor) && <p className="text-center text-sm text-muted">Carregando histórico...</p>}
           <div ref={contentRef} className="space-y-3">
-            {(() => {
-              // Same inline placement as ChatPanel — the transfer note sits
-              // between the last message before it and the first one after,
-              // not as a static banner above the whole thread.
-              const transferAt = conversation.transfer?.note ? new Date(conversation.transfer.at).getTime() : null;
-              let noteInserted = false;
-              // Internal notes sit in the timeline right where they were written.
-              const pendingNotes = [...(notesQuery.data ?? [])];
-              const takeNotesUpTo = (at: number) => {
-                const due: ConversationNoteDTO[] = [];
-                while (pendingNotes.length && new Date(pendingNotes[0].createdAt).getTime() <= at) due.push(pendingNotes.shift()!);
-                return due;
-              };
-              const rendered = messages.map((m) => {
-                const insertNoteHere = transferAt !== null && !noteInserted && new Date(m.createdAt).getTime() >= transferAt;
-                if (insertNoteHere) noteInserted = true;
-                return (
-                  <Fragment key={m.id}>
-                    {takeNotesUpTo(new Date(m.createdAt).getTime()).map((note) => (
-                      <InternalNoteCard key={note.id} note={note} />
-                    ))}
-                    {insertNoteHere && <TransferNoteCard transfer={conversation.transfer!} />}
-                    <div data-message-id={m.id}>
-                      <MessageBubble
-                        message={m}
-                        readOnly
-                        highlighted={flashedId === m.id}
-                        onJumpToMessage={jumpToMessage}
-                        onReply={() => undefined}
-                        onReact={() => undefined}
-                        repliedMessage={m.replyToMessageId ? messageById.get(m.replyToMessageId) : undefined}
-                      />
-                    </div>
-                  </Fragment>
-                );
-              });
-              if (transferAt !== null && !noteInserted) rendered.push(<TransferNoteCard key="transfer-note" transfer={conversation.transfer!} />);
-              for (const note of pendingNotes) rendered.push(<InternalNoteCard key={note.id} note={note} />);
-              return rendered;
-            })()}
+            <TimelineByDay entries={timeline} />
           </div>
         </div>
 

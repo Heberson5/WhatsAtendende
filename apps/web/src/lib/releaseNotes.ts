@@ -65,6 +65,30 @@ export const RELEASE_NOTE_AREAS: Record<ReleaseNoteArea, { label: string; requir
 
 export const RELEASES: Release[] = [
   {
+    version: "2.1.3",
+    date: "07 out 2026",
+    name: "Cortes de data na conversa",
+    summary: "A conversa passa a separar as mensagens por dia, como no WhatsApp Web: Hoje, Ontem, o dia da semana ou a data. O dia fica fixo no topo enquanto você rola o histórico.",
+    notes: [
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "Cortes de data dentro da conversa",
+        text: "As mensagens agora vêm separadas por dia, como no WhatsApp Web. O corte mostra “Hoje”, “Ontem”, o nome do dia da semana (até 6 dias atrás) ou a data completa para o que é mais antigo. Ao rolar o histórico, o dia que você está lendo fica fixo no topo da conversa, até chegar o corte do dia seguinte. Notas internas e observações de transferência entram no dia em que foram escritas.",
+        before: "As mensagens de dias diferentes apareciam seguidas, sem nada marcando a virada do dia.",
+        after: "Cada dia tem o seu corte, e o dia acompanha a rolagem.",
+        where: "Atendimento › dentro de qualquer conversa, inclusive na aba Transf.",
+      },
+      {
+        type: "novo",
+        area: "gestao",
+        title: "Cortes de data ao visualizar uma conversa",
+        text: "Ao visualizar uma conversa pela Gestão, as mensagens também aparecem separadas por dia, com o dia fixo no topo ao rolar.",
+        where: "Gestão › Visualizar",
+      },
+    ],
+  },
+  {
     version: "2.1.2",
     date: "07 out 2026",
     name: "Pesquisa de satisfação com NPS",
