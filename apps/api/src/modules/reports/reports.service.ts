@@ -140,7 +140,7 @@ export async function getPerAgentReport({ from, to, connectionIds }: ReportParam
         "Transferências recebidas": transfersReceived,
         "Transferências realizadas": transfersMade,
         "Avaliações recebidas": satisfaction.get(agent.id)?.answered ?? 0,
-        "Satisfação média (1 a 5)": satisfaction.get(agent.id)?.average ?? "-",
+        "NPS (-100 a 100)": satisfaction.get(agent.id)?.nps ?? "-",
       };
     })
   );

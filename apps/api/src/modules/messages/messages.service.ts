@@ -87,6 +87,8 @@ export interface CreateSystemOutboundMessageInput {
   type: MessageType;
   body?: string | null;
   agentId?: string | null;
+  /** The closing message held back until the "Desfazer" window is over is sent to an already-closed conversation. */
+  allowClosed?: boolean;
 }
 
 /**
@@ -105,7 +107,8 @@ export interface CreateSystemOutboundMessageInput {
 export async function createSystemOutboundMessage(input: CreateSystemOutboundMessageInput) {
   const conversation = await prisma.conversation.findUnique({ where: { id: input.conversationId } });
   if (!conversation) throw Errors.notFound("Conversa nao encontrada");
-  if (!["IN_PROGRESS", "TRANSFERRED"].includes(conversation.status)) {
+  const allowedStatuses = input.allowClosed ? ["IN_PROGRESS", "TRANSFERRED", "CLOSED"] : ["IN_PROGRESS", "TRANSFERRED"];
+  if (!allowedStatuses.includes(conversation.status)) {
     throw Errors.badRequest("Conversa nao esta em atendimento");
   }
 

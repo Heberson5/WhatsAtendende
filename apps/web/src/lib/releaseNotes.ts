@@ -65,6 +65,49 @@ export const RELEASE_NOTE_AREAS: Record<ReleaseNoteArea, { label: string; requir
 
 export const RELEASES: Release[] = [
   {
+    version: "2.1.2",
+    date: "07 out 2026",
+    name: "Pesquisa de satisfação com NPS",
+    summary: "A pesquisa de satisfação passa a pedir uma nota de 0 a 10 e o Dashboard mostra o NPS de cada pergunta. Quando a pesquisa está ligada, a mensagem de encerramento espera os 10 segundos do Desfazer e sai logo antes da pergunta.",
+    notes: [
+      {
+        type: "melhoria",
+        area: "respostas",
+        title: "Pesquisa de satisfação agora é NPS, com nota de 0 a 10",
+        text: "O cliente responde com uma nota de 0 a 10, e é com ela que o NPS é calculado. Notas 9 e 10 são de promotores, 7 e 8 de neutros e de 0 a 6 de detratores. Ao salvar um texto diferente de pergunta, ele passa a ser uma nova pergunta: a anterior continua no histórico, com o NPS dela.",
+        before: "O cliente dava uma nota de 1 a 5 e o sistema mostrava só a média.",
+        after: "O cliente dá uma nota de 0 a 10 e o sistema calcula o NPS de cada pergunta.",
+        steps: ["Abra Respostas › Pesquisa.", "Escreva a pergunta pedindo uma nota de 0 a 10 e salve.", "Para usar outra pergunta, troque o texto e salve. A pergunta anterior continua no Dashboard."],
+        where: "Respostas › Pesquisa",
+        requires: [PERMISSION.RESPOSTAS_PESQUISA_VISUALIZAR],
+      },
+      {
+        type: "melhoria",
+        area: "respostas",
+        title: "Pesquisas ligadas antes desta versão foram desligadas",
+        text: "Como a nota mudou de 1 a 5 para 0 a 10, uma pesquisa que já estava ligada foi desligada para você revisar a pergunta, que ainda pedia de 1 a 5. Confira o texto, ligue de novo e salve. As notas de 1 a 5 já recebidas continuam no Dashboard, em separado, sem NPS.",
+        where: "Respostas › Pesquisa",
+        requires: [PERMISSION.RESPOSTAS_PESQUISA_EDITAR],
+      },
+      {
+        type: "novo",
+        area: "dashboard",
+        title: "NPS de cada pergunta no Dashboard",
+        text: "O cartão da pesquisa mostra o NPS da pergunta em uso, quantos responderam e quantos foram promotores, neutros e detratores. As perguntas anteriores ficam logo abaixo, cada uma com o próprio NPS. Em Relatórios › Por atendente, a coluna de satisfação agora traz o NPS de cada atendente.",
+        where: "Dashboard, ao lado das palavras mais usadas",
+      },
+      {
+        type: "melhoria",
+        area: "atendimento",
+        title: "Mensagem de encerramento espera o Desfazer quando há pesquisa",
+        text: "Se a pesquisa de satisfação vai ser enviada, a mensagem de encerramento não sai na hora: ela espera os 10 segundos do botão Desfazer e, se o encerramento não for desfeito, é enviada logo antes da pergunta. Se você desfizer, o cliente não recebe nenhuma das duas. Passados os 10 segundos não dá mais para desfazer.",
+        before: "A mensagem de encerramento era enviada no clique, mesmo que você desfizesse o encerramento em seguida.",
+        after: "A mensagem de encerramento e a pesquisa saem juntas, depois dos 10 segundos. Sem pesquisa, a mensagem de encerramento continua saindo na hora.",
+        where: "Ao clicar em Encerrar, em Atendimento e na Gestão",
+      },
+    ],
+  },
+  {
     version: "2.1.1",
     date: "06 out 2026",
     name: "Conversas e contatos",

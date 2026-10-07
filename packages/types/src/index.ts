@@ -396,11 +396,15 @@ export interface NotificationDTO {
 
 export type AutoMessageTrigger = "TRANSFER" | "ACCEPT";
 
-/** Pesquisa de satisfação — off until someone switches it on in Respostas › Pesquisa. */
+/** Pesquisa de satisfação (NPS) — off until someone switches it on in Respostas › Pesquisa. */
 export interface SatisfactionSurveySettingsDTO {
   enabled: boolean;
   connectionScope: ConnectionScopeDTO;
-  /** Sent right after the conversation is closed; the customer answers with a number from 1 to 5. */
+  /**
+   * Sent after the conversation is closed (and the "Desfazer" window has passed);
+   * the customer answers with a number from 0 to 10. Saving a different text
+   * starts a new question — the previous one stays in the Dashboard history.
+   */
   question: string;
   /** Sent after a valid score. */
   thanks: string;
@@ -408,13 +412,33 @@ export interface SatisfactionSurveySettingsDTO {
   answerWindowHours: number;
 }
 
-export interface SatisfactionSummaryDTO {
+/** NPS of one survey question: 9–10 promoters, 7–8 passives, 0–6 detractors. */
+export interface SatisfactionQuestionSummaryDTO {
+  /** null → surveys sent before the 0–10 scale existed (the old nota de 1 a 5). */
+  questionId: string | null;
+  question: string;
+  /** The question currently set in Respostas › Pesquisa. */
+  current: boolean;
+  /** 10 for the NPS scale, 5 for those old surveys. */
+  scaleMax: 5 | 10;
   sent: number;
   answered: number;
   /** null while nobody answered in the period. */
   average: number | null;
-  /** Answers per score — index 0 is score 1, index 4 is score 5. */
-  distribution: [number, number, number, number, number];
+  /** Answers per score — index is the score (0 to 10). */
+  distribution: number[];
+  promoters: number;
+  passives: number;
+  detractors: number;
+  /** (promoters − detractors) ÷ answered × 100, rounded. null without answers, and for the old 1–5 scale. */
+  nps: number | null;
+}
+
+export interface SatisfactionSummaryDTO {
+  sent: number;
+  answered: number;
+  /** One entry per question that was sent in the period — the current one first, then older ones, newest first. */
+  questions: SatisfactionQuestionSummaryDTO[];
 }
 
 /** Customer-facing notice auto-sent by the system (not an agent) on TRANSFER/ACCEPT — supports {{atendente}}/{{cliente}} tags. See Respostas > Transferência/Aceite. */
@@ -1364,6 +1388,8 @@ export interface ContactDetailDTO extends ContactListItemDTO {
     agentName: string | null;
     messageCount: number;
     satisfactionScore: number | null;
+    /** Top of the scale the score was given on — 10 (NPS), or 5 for surveys from before it. null without a score. */
+    satisfactionScoreMax: 5 | 10 | null;
   }[];
 }
 

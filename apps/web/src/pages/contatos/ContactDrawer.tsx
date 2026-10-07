@@ -128,6 +128,7 @@ export function ContactDrawer({ contactId, tags, onClose }: { contactId: string;
                     {c.satisfactionScore !== null && (
                       <span className="flex items-center gap-0.5 text-xs font-semibold tabular-nums" title="Nota da pesquisa de satisfação">
                         <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" /> {c.satisfactionScore}
+                        <span className="font-normal text-muted">/{c.satisfactionScoreMax}</span>
                       </span>
                     )}
                     <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_COLOR[c.status]}`}>{STATUS_LABEL[c.status]}</span>
