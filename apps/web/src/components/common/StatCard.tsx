@@ -1,24 +1,9 @@
 import clsx from "clsx";
 import { ArrowDownRight, ArrowUpRight, type LucideIcon } from "lucide-react";
+import type { StatDelta } from "../../lib/dashboardMetrics";
 
-export interface StatDelta {
-  text: string;
-  /** Whether the change is good news (green) or bad (red) — "fewer minutes" can be good. */
-  good: boolean;
-  up: boolean;
-}
-
-/**
- * "12% vs período anterior". Null when there's nothing meaningful to compare
- * (no previous data at all). `lowerIsBetter` flips the color for times.
- */
-export function compareWithPrevious(current: number | null, previous: number | null, lowerIsBetter = false): StatDelta | null {
-  if (current === null || previous === null || previous === 0) return null;
-  const change = (current - previous) / previous;
-  if (Math.abs(change) < 0.005) return { text: "igual ao período anterior", good: true, up: false };
-  const up = change > 0;
-  return { text: `${Math.round(Math.abs(change) * 100)}% vs período anterior`, good: lowerIsBetter ? !up : up, up };
-}
+// Kept in lib/dashboardMetrics (no React) so the PowerPoint presentation shares them; re-exported for the screens.
+export { compareWithPrevious, formatMinutes, type StatDelta } from "../../lib/dashboardMetrics";
 
 /**
  * `onClick` + `goToLabel` turn the card into a shortcut (e.g. Dashboard's
@@ -78,13 +63,4 @@ export function StatCard({
       {hint && <p className={clsx("mt-1 text-xs", tone === "alert" ? "font-medium text-warning" : "text-muted")}>{hint}</p>}
     </div>
   );
-}
-
-export function formatMinutes(ms: number | null): string {
-  if (ms === null) return "-";
-  const minutes = Math.round(ms / 60000);
-  if (minutes < 60) return `${minutes} min`;
-  const hours = Math.floor(minutes / 60);
-  const remainder = minutes % 60;
-  return `${hours}h ${remainder}min`;
 }

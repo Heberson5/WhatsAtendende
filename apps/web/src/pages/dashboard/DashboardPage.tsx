@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { CheckCircle2, Clock, FileBarChart2, Inbox, MessageSquare, Timer, Users } from "lucide-react";
+import { CheckCircle2, Clock, Inbox, MessageSquare, Presentation, Timer, Users } from "lucide-react";
+import { toast } from "sonner";
 import { PERMISSION, type PresenceByHourDTO, type SatisfactionSummaryDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
@@ -50,6 +51,8 @@ export default function DashboardPage() {
   const updatePresenceChartHours = useAuthStore((s) => s.updatePresenceChartHours);
   const canOpenGestao = permissions?.[PERMISSION.GESTAO_ACESSAR];
   const canOpenUsuarios = permissions?.[PERMISSION.USUARIOS_VISUALIZAR];
+  // The presentation is for the board: managers and administrators make it, even where agents were given the Dashboard.
+  const canExportPresentation = user?.role === "ADMIN" || user?.role === "MANAGER";
 
   // "Aguardando" never carries the dashboard's period filter — the count
   // itself isn't period-scoped server-side (it's "right now", same as
@@ -78,6 +81,12 @@ export default function DashboardPage() {
   const { data: agents } = useQuery({
     queryKey: ["agents"],
     queryFn: async () => (await api.get<AgentOption[]>("/agents")).data,
+  });
+
+  // Same list (and cache) as the connection filter — for the names on the presentation's cover.
+  const { data: connections } = useQuery({
+    queryKey: ["whatsapp-connections"],
+    queryFn: async () => (await api.get<{ id: string; name: string }[]>("/whatsapp/connections")).data,
   });
 
   const { data, isLoading, isError, error } = useQuery({
@@ -167,27 +176,34 @@ export default function DashboardPage() {
     onSuccess: (_res, range) => updatePresenceChartHours(range?.start ?? null, range?.end ?? null),
   });
 
-  // Native, editable PowerPoint charts (not screenshots) built straight from
-  // the same data already loaded here — see PROMPT: "forma de exportar em
-  // Power Point bem formatado para ser apresentável à diretoria".
+  // The board presentation (see lib/dashboardPresentation.ts): the same numbers already loaded here,
+  // as native and editable PowerPoint slides — see PROMPT: "forma de exportar em Power Point bem
+  // formatado para ser apresentável à diretoria".
   async function handleExportPptx() {
     if (!data) return;
     setExportingPptx(true);
     try {
+      const selectedNames = connectionIds.map((id) => connections?.find((c) => c.id === id)?.name).filter((n): n is string => Boolean(n));
+      const connectionsText =
+        connectionIds.length === 0
+          ? "Todas as conexões"
+          : selectedNames.length === connectionIds.length && selectedNames.length <= 3
+            ? `${selectedNames.length === 1 ? "Conexão" : "Conexões"}: ${selectedNames.join(", ")}`
+            : `${connectionIds.length} conexões`;
+      const agentText = agentId === "all" ? "todos os atendentes" : `atendente: ${agents?.find((a) => a.id === agentId)?.displayName ?? "1 atendente"}`;
       await exportDashboardPptx({
         data,
         period,
         branding: exportBranding ?? null,
-        statusColors,
-        messageColors,
-        agentSeriesColors,
+        scopeLabel: `${connectionsText} · ${agentText}`,
+        satisfaction: satisfaction ?? null,
+        team: team ?? null,
         wordCloud: wordCloud ?? [],
-        presenceByHour,
+        presenceByHour: presenceByHour ?? null,
         presenceHourRange: activeHourRange,
-        presenceIsToday: period.period === "today",
-        primaryColor,
-        secondaryColor,
       });
+    } catch (err) {
+      toast.error(`Não foi possível gerar a apresentação: ${getApiErrorMessage(err, "erro inesperado")}`);
     } finally {
       setExportingPptx(false);
     }
@@ -218,13 +234,16 @@ export default function DashboardPage() {
             ))}
           </select>
           <ConnectionFilter value={connectionIds} onChange={setConnectionIds} />
-          <button
-            onClick={handleExportPptx}
-            disabled={!data || exportingPptx}
-            className="focus-ring flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-[13px] font-medium hover:bg-surface-alt disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <FileBarChart2 className="h-4 w-4" /> {exportingPptx ? "Gerando..." : "Exportar PPT"}
-          </button>
+          {canExportPresentation && (
+            <button
+              onClick={handleExportPptx}
+              disabled={!data || exportingPptx}
+              title="Baixa uma apresentação de PowerPoint com os números e gráficos deste Dashboard, para a diretoria"
+              className="focus-ring flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-[13px] font-medium hover:bg-surface-alt disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Presentation className="h-4 w-4" /> {exportingPptx ? "Gerando apresentação..." : "Apresentação (PPT)"}
+            </button>
+          )}
         </div>
       </div>
 

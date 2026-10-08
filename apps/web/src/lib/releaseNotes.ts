@@ -5,7 +5,8 @@ import { PERMISSION, type Permission, type PermissionMap, type Role } from "@wha
  * using the system (not developers). Each note belongs to an area of the
  * app and is only shown to users who can open that area, using the same
  * permissions that gate the sidebar menu, so nobody reads about screens
- * they can't use.
+ * they can't use. A note about something only some roles get (a button
+ * only managers see, say) also lists those roles.
  *
  * Adding a release: put it at the top of RELEASES. Screenshots live in
  * public/notas-de-versao/ (webp, taken with demo data — never real
@@ -35,6 +36,8 @@ export interface ReleaseNote {
   images?: ReleaseNoteImage[];
   // Extra permissions on top of the area's own (e.g. a specific tab).
   requires?: Permission[];
+  // Only these roles read the note, whatever their permissions.
+  roles?: Role[];
 }
 
 export interface Release {
@@ -64,6 +67,43 @@ export const RELEASE_NOTE_AREAS: Record<ReleaseNoteArea, { label: string; requir
 };
 
 export const RELEASES: Release[] = [
+  {
+    version: "2.2.0",
+    date: "08 out 2026",
+    name: "Apresentação do Dashboard para a diretoria",
+    summary: "O Dashboard ganhou uma apresentação de PowerPoint pronta para reuniões com a diretoria, executivos e gestão, com o logo e a cor da empresa. Disponível para gestores e administradores.",
+    notes: [
+      {
+        type: "novo",
+        area: "dashboard",
+        title: "Apresentação de PowerPoint para a diretoria",
+        text: "O botão Apresentação (PPT), no alto do Dashboard, baixa uma apresentação com os mesmos números da tela, no período, nas conexões e no atendente escolhidos nos filtros. Os slides seguem esta ordem: capa; o período em resumo, com os destaques em frases curtas; os indicadores, com a comparação com o período anterior; conversas e mensagens do período; os tempos médios da jornada do cliente, da fila ao encerramento; o NPS da pesquisa de satisfação; conversas, mensagens e desempenho de cada atendente; a equipe ao longo do dia; as palavras que os clientes mais usam; um glossário de como ler os indicadores; e o encerramento. O que não teve movimento no período fica de fora — sem pesquisa respondida, por exemplo, não há slide de NPS — e, com uma equipe grande, a tabela de atendentes continua no slide seguinte. Os gráficos são do próprio PowerPoint, então dá para mudar números, cores e textos, e cada slide traz notas para quem vai apresentar. O logo, o nome e a cor são os de Configurações › Exportações. Só gestores e administradores veem o botão; atendentes com acesso ao Dashboard continuam vendo os números na tela.",
+        before: "O botão Exportar PPT gerava slides simples, um gráfico por página, e aparecia para todos que acessam o Dashboard.",
+        after: "Uma apresentação no visual do Dashboard — capa, resumo, indicadores, jornada do cliente, NPS e equipe —, para gestores e administradores.",
+        steps: [
+          "No Dashboard, escolha o período, o atendente e as conexões nos filtros.",
+          "Clique em Apresentação (PPT) {1}. O arquivo é baixado em alguns segundos.",
+          "Abra no PowerPoint. As notas para quem apresenta ficam abaixo de cada slide.",
+        ],
+        where: "Dashboard › Apresentação (PPT), ao lado dos filtros",
+        roles: ["ADMIN", "MANAGER"],
+        images: [
+          { file: "dashboard-apresentacao", caption: "{1} Apresentação (PPT), ao lado dos filtros do Dashboard" },
+          { file: "apresentacao-slides-1", caption: "Capa, o período em resumo, indicadores e tempos médios da jornada do cliente (dados de exemplo)." },
+          { file: "apresentacao-slides-2", caption: "NPS, conversas por atendente, equipe ao longo do dia e o que os clientes mais falam (dados de exemplo)." },
+        ],
+      },
+      {
+        type: "melhoria",
+        area: "configuracoes",
+        title: "Prévia da nova capa em Exportações",
+        text: "A prévia da apresentação em Configurações › Exportações mostra a capa nova: o fundo escuro na cor da empresa, o logo em destaque e o período do relatório. Trocar a cor ou o nome atualiza a prévia na hora, antes de salvar.",
+        where: "Configurações › Exportações",
+        requires: [PERMISSION.CONFIGURACOES_IDENTIDADE_VISUALIZAR],
+        roles: ["ADMIN", "MANAGER"],
+      },
+    ],
+  },
   {
     version: "2.1.9",
     date: "08 out 2026",
@@ -1293,6 +1333,7 @@ export const RELEASE_NOTE_IMAGE_BASE = "/notas-de-versao/";
 
 function canSeeNote(note: ReleaseNote, role: Role, permissions: PermissionMap): boolean {
   const area = RELEASE_NOTE_AREAS[note.area];
+  if (note.roles && !note.roles.includes(role)) return false;
   if (area.adminOnly) return role === "ADMIN";
   return [...area.requires, ...(note.requires ?? [])].every((p) => permissions[p]);
 }
