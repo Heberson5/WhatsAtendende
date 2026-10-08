@@ -64,6 +64,12 @@ services:
       WEB_APP_URL: ${WEB_APP_URL:-http://localhost:8080}
       LANGUAGETOOL_URL: http://languagetool:8010
       UPLOAD_DIR: /data/uploads
+      # Largest single file an agent can attach in Atendimento (video, photo,
+      # PDF, audio) — the API answers "Arquivo muito grande" above it. Set
+      # UPLOAD_MAX_SIZE_MB in .env to change it; nginx.conf lets up to 100 MB
+      # through to the API, so keep it at or below that. The whole file is
+      # held in memory while it is sent, so a small VPS wants this modest.
+      UPLOAD_MAX_SIZE_MB: ${UPLOAD_MAX_SIZE_MB:-25}
       # Left false (the default) on purpose: this stack still publishes the
       # api container's port directly (see `ports` below), so a client could
       # reach it without going through the nginx container and spoof

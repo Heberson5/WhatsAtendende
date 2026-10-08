@@ -65,6 +65,23 @@ export const RELEASE_NOTE_AREAS: Record<ReleaseNoteArea, { label: string; requir
 
 export const RELEASES: Release[] = [
   {
+    version: "2.1.5",
+    date: "08 out 2026",
+    name: "Envio de arquivos maiores",
+    summary: "Vídeos, fotos, PDFs e áudios acima de 1 MB voltam a ser enviados em Atendimento, até o limite de 25 MB por arquivo.",
+    notes: [
+      {
+        type: "correcao",
+        area: "atendimento",
+        title: "Vídeos e arquivos maiores que 1 MB eram recusados",
+        text: "O servidor barrava qualquer envio acima de 1 MB: o vídeo dava erro e o mesmo acontecia com fotos, PDFs e áudios um pouco maiores. Agora o limite é de 25 MB por arquivo. Acima disso, a mensagem “Arquivo muito grande” aparece e o arquivo continua na tela para ser trocado.",
+        before: "Um vídeo (ou qualquer arquivo acima de 1 MB) dava erro ao enviar.",
+        after: "O arquivo é enviado normalmente, até 25 MB.",
+        where: "Atendimento › Anexar (clipe) na conversa",
+      },
+    ],
+  },
+  {
     version: "2.1.4",
     date: "08 out 2026",
     name: "Números de telefone completos",
