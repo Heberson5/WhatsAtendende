@@ -1,5 +1,5 @@
 import { Prisma } from "@prisma/client";
-import { CONVERSATION_UNDO_WINDOW_MS } from "@whatsatendende/types";
+import { CONVERSATION_UNDO_WINDOW_MS, brazilianPhoneVariants } from "@whatsatendende/types";
 import { prisma } from "../../lib/prisma";
 import { endFlowSession } from "../flows/flow-engine.service";
 import { scheduleCloseFollowUp, type HeldClosingMessage } from "../satisfaction/satisfaction.service";
@@ -712,20 +712,51 @@ export async function listQueue(whatsappConnectionIds?: string[]) {
 }
 
 /**
+ * The same customer can already be saved under the other form of a Brazilian
+ * mobile — with or without the 9 — and contacts are told apart by the exact
+ * number. Starting a conversation under the form not yet saved would create a
+ * second contact (and a second history) for the same person, so the existing
+ * one is reused. When WhatsApp just confirmed `phone` as the number the account
+ * really has, the saved contact is moved to it too, so messages go to the right
+ * address from now on.
+ */
+async function phoneOfExistingContact(connectionId: string, phone: string, confirmedOnWhatsApp: boolean): Promise<string> {
+  const variants = brazilianPhoneVariants(phone);
+  if (variants.length === 1) return phone;
+  const saved = await prisma.contact.findMany({ where: { whatsappConnectionId: connectionId, phone: { in: variants } } });
+  if (saved.length === 0 || saved.some((c) => c.phone === phone)) return phone;
+  const other = saved[0];
+  if (!confirmedOnWhatsApp) return other.phone ?? phone;
+  try {
+    await prisma.contact.update({ where: { id: other.id }, data: { phone } });
+    return phone;
+  } catch {
+    return other.phone ?? phone; // lost a race for the same number — keep what is saved rather than fail the start
+  }
+}
+
+/**
  * Agent/manager/admin-initiated conversation, from a contact picked out of
  * the connection's device address book — see PROMPT: "adicionar uma nova
  * conversa através dos contatos salvos no celular de cada instância".
  * Unlike an inbound message, this skips the queue entirely: the initiator
  * is assigning the conversation to themselves from the moment it exists.
  */
-export async function startConversation(connectionId: string, phone: string, name: string | null, initiatorId: string) {
+export async function startConversation(
+  connectionId: string,
+  phone: string,
+  name: string | null,
+  initiatorId: string,
+  opts?: { confirmedOnWhatsApp?: boolean }
+) {
   const normalizedPhone = phone.replace(/\D/g, "");
   if (!normalizedPhone) throw Errors.badRequest("Numero de telefone invalido");
 
   // `name` is picked straight from the device address book (see
   // NovaConversaModal) — authoritative over whatever pushName a prior
   // inbound message might have left on an already-existing contact.
-  const contact = await findOrCreateContact(connectionId, normalizedPhone, name, undefined, { preferIncomingName: true });
+  const contactPhone = await phoneOfExistingContact(connectionId, normalizedPhone, opts?.confirmedOnWhatsApp ?? false);
+  const contact = await findOrCreateContact(connectionId, contactPhone, name, undefined, { preferIncomingName: true });
 
   const active = await prisma.conversation.findFirst({
     where: { contactId: contact.id, status: { in: ["NEW", "WAITING", "IN_PROGRESS", "TRANSFERRED"] } },

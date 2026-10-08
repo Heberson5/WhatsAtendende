@@ -1,8 +1,10 @@
 import type { Prisma } from "@prisma/client";
-import type { ContactDetailDTO, ContactImportResultDTO, ContactListItemDTO, ManagedTagDTO, TagDTO } from "@whatsatendende/types";
+import { DEFAULT_PHONE_SETTINGS, brazilianPhoneVariants, normalizeTypedPhone } from "@whatsatendende/types";
+import type { ContactDetailDTO, ContactImportResultDTO, ContactListItemDTO, ManagedTagDTO, PhoneSettingsDTO, TagDTO } from "@whatsatendende/types";
 import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
 import { findOrCreateTag, toTagDTO } from "../client-panel/client-panel.service";
+import { getPhoneSettings } from "../phone-numbers/phone-settings.service";
 
 /**
  * Tela de Contatos: search, tags, history, CSV import/export — plus the
@@ -18,9 +20,6 @@ export interface ContactFilters {
 }
 
 const IMPORT_MAX_ROWS = 5000;
-// Brazilian numbers typed without the country code (DDD + number).
-const BR_LOCAL_LENGTHS = [10, 11];
-const BR_COUNTRY_CODE = "55";
 
 const listInclude = {
   whatsappConnection: { select: { name: true } },
@@ -171,10 +170,15 @@ function splitCsvLine(line: string, delimiter: string): string[] {
   return out;
 }
 
-export function normalizeImportPhone(raw: string): string | null {
-  const digits = raw.replace(/\D/g, "");
-  if (BR_LOCAL_LENGTHS.includes(digits.length)) return BR_COUNTRY_CODE + digits;
-  return digits.length >= 12 && digits.length <= 15 ? digits : null;
+/**
+ * A phone from the spreadsheet, as the number to save: Configurações › Números
+ * de telefone applies (DDI padrão, 9 a mais), like a number typed in Nova
+ * conversa. There is no WhatsApp to ask here, so a Brazilian mobile is saved in
+ * the form its DDD usually has (see normalizeTypedPhone).
+ */
+export function normalizeImportPhone(raw: string, settings: PhoneSettingsDTO = DEFAULT_PHONE_SETTINGS): string | null {
+  const { phone } = normalizeTypedPhone(raw, settings);
+  return phone.length >= 12 && phone.length <= 15 ? phone : null;
 }
 
 const normalizeHeader = (h: string) => h.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
@@ -197,9 +201,10 @@ export async function importContactsCsv(csv: string, whatsappConnectionId: strin
 
   const result: ContactImportResultDTO = { created: 0, updated: 0, errors: [] };
   const tagCache = new Map<string, TagDTO>();
+  const phoneSettings = await getPhoneSettings();
   for (let i = 1; i < lines.length; i++) {
     const cells = splitCsvLine(lines[i], delimiter);
-    const phone = normalizeImportPhone(cells[col.phone] ?? "");
+    const phone = normalizeImportPhone(cells[col.phone] ?? "", phoneSettings);
     if (!phone) {
       result.errors.push({ line: i + 1, reason: `Telefone inválido: "${cells[col.phone] ?? ""}"` });
       continue;
@@ -207,7 +212,9 @@ export async function importContactsCsv(csv: string, whatsappConnectionId: strin
     const name = col.name === -1 ? "" : (cells[col.name] ?? "").slice(0, 120);
     const tagNames = col.tags === -1 ? [] : (cells[col.tags] ?? "").split(",").map((t) => t.trim().slice(0, 40)).filter(Boolean);
 
-    const existing = await prisma.contact.findUnique({ where: { phone_whatsappConnectionId: { phone, whatsappConnectionId } } });
+    // The same customer saved under the other form of a mobile (with/without the 9) is the same contact.
+    const saved = await prisma.contact.findMany({ where: { whatsappConnectionId, phone: { in: brazilianPhoneVariants(phone) } } });
+    const existing = saved.find((c) => c.phone === phone) ?? saved[0] ?? null;
     const contact = existing
       ? await prisma.contact.update({ where: { id: existing.id }, data: name ? { name } : {} })
       : await prisma.contact.create({ data: { channel: "WHATSAPP", phone, whatsappConnectionId, name: name || null } });

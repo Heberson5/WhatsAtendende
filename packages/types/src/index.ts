@@ -1,6 +1,8 @@
 // Shared types/DTOs used by both apps/api and apps/web.
 // Keep this package framework-agnostic (no Express/React/Prisma imports).
 
+export * from "./phone";
+
 export const ROLE = {
   ADMIN: "ADMIN",
   MANAGER: "MANAGER",
@@ -684,6 +686,10 @@ export const PERMISSION = {
   // so only visualizar/editar — same pattern as Identidade visual/E-mail.
   CONFIGURACOES_FILA_VISUALIZAR: "configuracoes.fila.visualizar",
   CONFIGURACOES_FILA_EDITAR: "configuracoes.fila.editar",
+  // Single record (how a typed phone number is completed), so only
+  // visualizar/editar — same pattern as Fila.
+  CONFIGURACOES_TELEFONE_VISUALIZAR: "configuracoes.telefone.visualizar",
+  CONFIGURACOES_TELEFONE_EDITAR: "configuracoes.telefone.editar",
   AUDITORIA_ACESSAR: "auditoria.acessar",
   CONTATOS_ACESSAR: "contatos.acessar",
   CONTATOS_EDITAR: "contatos.editar",
@@ -959,6 +965,22 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     group: "Configurações",
     label: "Configurações — Fila (editar)",
     description: "Alterar o intervalo do lembrete de conversas aguardando na fila.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.CONFIGURACOES_TELEFONE_VISUALIZAR,
+    group: "Configurações",
+    label: "Configurações — Números de telefone (visualizar)",
+    description: "Ver como um número digitado à mão é completado: DDI padrão e correção do 9 a mais.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.CONFIGURACOES_TELEFONE_EDITAR,
+    group: "Configurações",
+    label: "Configurações — Números de telefone (editar)",
+    description: "Ligar ou desligar o DDI padrão e a correção do 9 a mais, e trocar o DDI padrão.",
     editableRoles: ["AGENT", "MANAGER"],
     defaultAllowed: { AGENT: false, MANAGER: true },
   },

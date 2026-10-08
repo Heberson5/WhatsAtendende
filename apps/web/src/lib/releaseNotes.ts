@@ -65,6 +65,40 @@ export const RELEASE_NOTE_AREAS: Record<ReleaseNoteArea, { label: string; requir
 
 export const RELEASES: Release[] = [
   {
+    version: "2.1.4",
+    date: "08 out 2026",
+    name: "Números de telefone completos",
+    summary: "Ao iniciar uma conversa por um número digitado, o sistema acrescenta o DDI padrão (55) e corrige o dígito 9 a mais dos celulares. Tudo pode ser ajustado em Configurações › Números de telefone.",
+    notes: [
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "Nova conversa completa o número sozinha",
+        text: "No “Novo número”, não precisa mais digitar o DDI: sem ele, o sistema usa +55. Se o celular vier com o 9 a mais (DDD + 9 + 8 números, como 65 99928-6623), o 9 é descartado, porque é assim que o WhatsApp costuma registrar a conta (65 9928-6623). O sistema confere no WhatsApp: tenta sem o 9 e, se não achar, tenta com o 9. Antes de iniciar, a tela mostra o número que será usado. Se o cliente já estiver salvo com a outra forma do número, o contato dele é reaproveitado, sem duplicar.",
+        before: "Era preciso digitar o número completo, com DDI e DDD, e um 9 a mais podia gerar um segundo contato para o mesmo cliente.",
+        after: "Basta digitar o DDD e o número; o sistema completa e evita o contato duplicado.",
+        steps: ["Em Atendimento, clique em “Nova conversa” e abra “Novo número”.", "Digite o número do jeito que tiver, com ou sem DDI, com ou sem o 9 a mais.", "Confira o “Será usado” e clique em Iniciar conversa."],
+        where: "Atendimento › Nova conversa › Novo número",
+      },
+      {
+        type: "novo",
+        area: "configuracoes",
+        title: "Configurações › Números de telefone",
+        text: "Ligue ou desligue o DDI padrão e a correção do 9 a mais, e troque o DDI padrão se precisar. Um campo de teste mostra como um número será usado. Nos DDDs em que o WhatsApp mantém o 9 (11 a 19, 21, 22, 24, 27 e 28), o número é mantido como foi digitado.",
+        where: "Configurações › Atendimento › Números de telefone",
+        requires: [PERMISSION.CONFIGURACOES_TELEFONE_VISUALIZAR],
+      },
+      {
+        type: "melhoria",
+        area: "contatos",
+        title: "Importação de contatos usa as mesmas regras de número",
+        text: "Na importação por planilha, o DDI padrão é acrescentado e o 9 a mais é corrigido como em Nova conversa. Um cliente que já está salvo com a outra forma do número é atualizado, não duplicado.",
+        where: "Contatos › Importar CSV",
+        requires: [PERMISSION.CONTATOS_IMPORTAR_EXPORTAR],
+      },
+    ],
+  },
+  {
     version: "2.1.3",
     date: "07 out 2026",
     name: "Cortes de data na conversa",

@@ -3,13 +3,14 @@ import { z } from "zod";
 import { asyncHandler } from "../../lib/async-handler";
 import { requireAuth, requireRole } from "../../middleware/auth";
 import { requirePermission } from "../../lib/permissions";
-import { PERMISSION } from "@whatsatendende/types";
+import { PERMISSION, type PhoneLookupDTO } from "@whatsatendende/types";
 import { writeAudit } from "../../lib/audit";
 import { logger } from "../../lib/logger";
 import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
 import { canManagerAccessConnection } from "../../lib/connection-access";
 import * as service from "./whatsapp.service";
+import { resolveTypedNumber } from "../phone-numbers/resolve-number.service";
 
 export const whatsappRouter = Router();
 
@@ -285,7 +286,9 @@ whatsappRouter.get(
       if (agent?.whatsappConnectionId !== req.params.id) throw Errors.forbidden("Voce so pode usar a sua propria conexao");
     }
     const { phone } = lookupNumberSchema.parse(req.query);
-    const result = await service.lookupNumber(req.params.id, phone.replace(/\D/g, ""));
-    res.json({ exists: result !== null, phone: result?.phone ?? null });
+    // The typed number goes through Configurações › Números de telefone (DDI padrão, 9 a mais) before it is
+    // asked about; what comes back is the number WhatsApp itself knows, which is what the conversation will use.
+    const result = await resolveTypedNumber(req.params.id, phone);
+    res.json({ exists: result.exists, phone: result.exists ? result.phone : null, normalizedPhone: result.normalized } satisfies PhoneLookupDTO);
   })
 );
