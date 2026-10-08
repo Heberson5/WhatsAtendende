@@ -1,12 +1,29 @@
-import { useEffect, useRef, useState } from "react";
-import { Download, FileText, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Download, FileText, Printer, X } from "lucide-react";
+import { toast } from "sonner";
 import type { MessageAttachmentDTO } from "@whatsatendende/types";
 import { withAuthToken } from "../../lib/api";
+import { decodeText } from "../../lib/textDecode";
+import {
+  buildPdfPrintHtml,
+  buildTextPrintHtml,
+  buildWordPrintHtml,
+  canPrintHere,
+  printHtml,
+  PRINT_PDF_MAX_PAGES,
+  renderPdfPagesToImages,
+  type PdfDocumentLike,
+} from "../../lib/printDocument";
 
-type DocumentKind = "pdf" | "docx" | "doc" | "other";
+type DocumentKind = "pdf" | "docx" | "doc" | "text" | "other";
 
 // Bigger files still open normally — they just don't get a thumbnail drawn in the chat.
 const MAX_PREVIEW_BYTES = 15 * 1024 * 1024;
+// A text is read whole into the page, so it gets a lower limit; a bigger one is a plain download card.
+const MAX_TEXT_BYTES = 2 * 1024 * 1024;
+// The card shows the first lines of a text, in a small monospace font.
+const TEXT_THUMBNAIL_LINES = 12;
+const TEXT_THUMBNAIL_COLUMNS = 48;
 const THUMBNAIL_WIDTH = 220;
 // Width of a Word page (A4 at 96 dpi). The thumbnail shows only its left part,
 // scaled down, so the text stays readable.
@@ -17,6 +34,7 @@ const KIND_STYLE: Record<DocumentKind, { label: string; badge: string }> = {
   pdf: { label: "PDF", badge: "bg-red-600 text-white" },
   docx: { label: "Word", badge: "bg-blue-600 text-white" },
   doc: { label: "Word", badge: "bg-blue-600 text-white" },
+  text: { label: "TXT", badge: "bg-slate-600 text-white" },
   other: { label: "", badge: "bg-black/10" },
 };
 
@@ -25,6 +43,7 @@ export function documentKind(att: Pick<MessageAttachmentDTO, "mimeType" | "fileN
   if (att.mimeType === "application/pdf" || name.endsWith(".pdf")) return "pdf";
   if (att.mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || name.endsWith(".docx")) return "docx";
   if (att.mimeType === "application/msword" || name.endsWith(".doc")) return "doc";
+  if (att.mimeType === "text/plain" || name.endsWith(".txt")) return "text";
   return "other";
 }
 
@@ -32,6 +51,17 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// One import shared by every Word thumbnail and viewer (and by both runs of an effect — see WordThumbnail); a failed
+// load is forgotten so the next attempt tries again.
+let docxPreviewModule: Promise<typeof import("docx-preview")> | null = null;
+function loadDocxPreview() {
+  docxPreviewModule ??= import("docx-preview").catch((error) => {
+    docxPreviewModule = null;
+    throw error;
+  });
+  return docxPreviewModule;
 }
 
 async function loadBytes(url: string): Promise<ArrayBuffer> {
@@ -95,13 +125,22 @@ function PdfThumbnail({ url, onPages }: { url: string; onPages: (pages: number) 
 }
 
 const VIEWER_PAGE_WIDTH = 900;
-// A very long PDF is drawn up to here; the download button gets the rest.
-const VIEWER_MAX_PAGES = 100;
+// A very long PDF is drawn up to here (and printed up to here); the download button gets the rest.
+const VIEWER_MAX_PAGES = PRINT_PDF_MAX_PAGES;
+
+/** What the viewer hands to the Imprimir button once the document is loaded. */
+type PrintSource = { kind: "pdf"; pdf: PdfDocumentLike } | { kind: "docx"; rendered: HTMLElement } | { kind: "text"; text: string };
+
+interface ViewerContentProps {
+  url: string;
+  onReady: (source: PrintSource) => void;
+  onError: () => void;
+}
 
 /** Every page of a PDF drawn one after another, so the viewer looks the same in any browser or in the installed app. */
-function PdfPages({ url }: { url: string }) {
+function PdfPages({ url, onReady, onError }: ViewerContentProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [state, setState] = useState<{ pages: number; error: boolean }>({ pages: 0, error: false });
+  const [pages, setPages] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -112,7 +151,8 @@ function PdfPages({ url }: { url: string }) {
         const pdf = await pdfjs.getDocument({ data: await loadBytes(url) }).promise;
         const container = containerRef.current;
         if (!container || cancelled) return;
-        setState({ pages: pdf.numPages, error: false });
+        setPages(pdf.numPages);
+        onReady({ kind: "pdf", pdf: pdf as unknown as PdfDocumentLike });
         const ratio = window.devicePixelRatio || 1;
         for (let n = 1; n <= Math.min(pdf.numPages, VIEWER_MAX_PAGES) && !cancelled; n++) {
           const page = await pdf.getPage(n);
@@ -129,7 +169,7 @@ function PdfPages({ url }: { url: string }) {
           if (context) await page.render({ canvas, canvasContext: context, viewport }).promise;
         }
       } catch {
-        if (!cancelled) setState({ pages: 0, error: true });
+        if (!cancelled) onError();
       }
     })();
     const container = containerRef.current;
@@ -137,12 +177,12 @@ function PdfPages({ url }: { url: string }) {
       cancelled = true;
       container?.replaceChildren();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url]);
 
   return (
     <>
-      {state.error && <p className="mt-10 text-center text-sm text-white/80">Não foi possível mostrar este PDF. Use o botão de baixar.</p>}
-      {state.pages > VIEWER_MAX_PAGES && <p className="mb-3 text-center text-xs text-white/70">Mostrando as primeiras {VIEWER_MAX_PAGES} páginas de {state.pages}. Baixe o arquivo para ver tudo.</p>}
+      {pages > VIEWER_MAX_PAGES && <p className="mb-3 text-center text-xs text-white/70">Mostrando as primeiras {VIEWER_MAX_PAGES} páginas de {pages}. Baixe o arquivo para ver tudo.</p>}
       <div ref={containerRef} />
     </>
   );
@@ -157,11 +197,14 @@ function WordThumbnail({ url }: { url: string }) {
     let cancelled = false;
     (async () => {
       try {
-        const { renderAsync } = await import("docx-preview");
-        const container = containerRef.current;
-        if (!container) return;
-        await renderAsync(await loadBytes(url), container, undefined, { inWrapper: false, breakPages: true, ignoreLastRenderedPageBreak: true });
-        if (cancelled) container.replaceChildren();
+        const { renderAsync } = await loadDocxPreview();
+        // Drawn in a scratch element and moved into the card only if this run is still the current one. The app runs
+        // inside React.StrictMode, which mounts every effect twice (the file was downloaded twice, in the production
+        // build too); drawing straight into the card let the first run wipe what the second had drawn — about one
+        // thumbnail in six came out empty.
+        const scratch = document.createElement("div");
+        await renderAsync(await loadBytes(url), scratch, undefined, { inWrapper: false, breakPages: true, ignoreLastRenderedPageBreak: true, useBase64URL: true });
+        if (!cancelled) containerRef.current?.replaceChildren(...scratch.childNodes);
       } catch {
         if (!cancelled) setFailed(true);
       }
@@ -179,41 +222,169 @@ function WordThumbnail({ url }: { url: string }) {
   );
 }
 
-/** Full-size viewer — the browser's own PDF viewer, or the Word document rendered in place. */
-function DocumentViewer({ att, kind, onClose }: { att: MessageAttachmentDTO; kind: DocumentKind; onClose: () => void }) {
-  const wordRef = useRef<HTMLDivElement>(null);
-  const [error, setError] = useState(false);
+/** A Word document rendered in place. Pictures are `data:` addresses — the production policy blocks the `blob:` ones docx-preview makes by default. */
+function WordPages({ url, onReady, onError }: ViewerContentProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  useEffect(() => {
-    if (kind !== "docx") return;
     let cancelled = false;
     (async () => {
       try {
-        const { renderAsync } = await import("docx-preview");
-        const container = wordRef.current;
-        if (!container) return;
-        await renderAsync(await loadBytes(att.url), container);
-        if (cancelled) container.replaceChildren();
+        const { renderAsync } = await loadDocxPreview();
+        // Same as the thumbnail: only the current run puts its result in the viewer.
+        const scratch = document.createElement("div");
+        await renderAsync(await loadBytes(url), scratch, undefined, { useBase64URL: true });
+        const container = containerRef.current;
+        if (cancelled || !container) return;
+        container.replaceChildren(...scratch.childNodes);
+        onReady({ kind: "docx", rendered: container });
       } catch {
-        if (!cancelled) setError(true);
+        if (!cancelled) onError();
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [att.url, kind]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [url]);
+
+  return <div ref={containerRef} className="mx-auto w-fit max-w-full overflow-auto rounded bg-white text-black" />;
+}
+
+/** A .txt shown as a sheet of monospace text. */
+function TextSheet({ url, onReady, onError }: ViewerContentProps) {
+  const [text, setText] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const decoded = decodeText(await loadBytes(url)).text;
+        if (cancelled) return;
+        setText(decoded);
+        onReady({ kind: "text", text: decoded });
+      } catch {
+        if (!cancelled) onError();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [url]);
+
+  if (text === null) return null;
+  return (
+    <pre className="mx-auto w-full max-w-[900px] whitespace-pre-wrap break-words rounded bg-white p-6 font-mono text-sm leading-relaxed text-black shadow">
+      {text || <span className="text-black/50">(arquivo vazio)</span>}
+    </pre>
+  );
+}
+
+/** The first lines of a .txt, small, inside the card. Nothing is drawn if the file can't be read. */
+function TextThumbnail({ url }: { url: string }) {
+  const [preview, setPreview] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadBytes(url)
+      .then((bytes) => {
+        if (cancelled) return;
+        const lines = decodeText(bytes).text.split("\n").slice(0, TEXT_THUMBNAIL_LINES);
+        setPreview(lines.map((line) => line.slice(0, TEXT_THUMBNAIL_COLUMNS)).join("\n"));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [url]);
+
+  if (preview === null) return null;
+  return (
+    <pre className="h-[150px] overflow-hidden whitespace-pre-wrap break-words bg-white p-2 font-mono text-[9px] leading-snug text-black" aria-hidden="true">
+      {preview}
+    </pre>
+  );
+}
+
+const ERROR_TEXT: Record<DocumentKind, string> = {
+  pdf: "Não foi possível mostrar este PDF. Use o botão de baixar.",
+  docx: "Não foi possível mostrar este documento. Use o botão de baixar.",
+  doc: "Não foi possível mostrar este documento. Use o botão de baixar.",
+  text: "Não foi possível mostrar este arquivo. Use o botão de baixar.",
+  other: "Não foi possível mostrar este arquivo. Use o botão de baixar.",
+};
+
+async function buildPrintHtmlFor(title: string, source: PrintSource, isCancelled: () => boolean): Promise<string> {
+  if (source.kind === "text") return buildTextPrintHtml(title, source.text);
+  if (source.kind === "docx") return buildWordPrintHtml(title, source.rendered);
+  return buildPdfPrintHtml(title, await renderPdfPagesToImages(source.pdf, { maxPages: VIEWER_MAX_PAGES, isCancelled }));
+}
+
+/** Full-size viewer — the PDF pages, the Word document or the text, drawn in place, with Imprimir (computer only), Baixar and Fechar. */
+function DocumentViewer({ att, kind, onClose }: { att: MessageAttachmentDTO; kind: DocumentKind; onClose: () => void }) {
+  const [source, setSource] = useState<PrintSource | null>(null);
+  const [error, setError] = useState(false);
+  const [printing, setPrinting] = useState(false);
+  // Decided once, when the viewer opens: a phone has no mouse and only gets the download button.
+  const printAvailable = useMemo(() => canPrintHere(), []);
+  const closedRef = useRef(false);
+
+  useEffect(() => {
+    closedRef.current = false;
+    return () => {
+      closedRef.current = true;
+    };
+  }, []);
+
+  const print = useCallback(async () => {
+    if (!source || printing) return;
+    setPrinting(true);
+    try {
+      const html = await buildPrintHtmlFor(att.fileName, source, () => closedRef.current);
+      if (!closedRef.current) await printHtml(html);
+    } catch {
+      toast.error("Não foi possível preparar a impressão. Use o botão de baixar.");
+    } finally {
+      setPrinting(false);
+    }
+  }, [att.fileName, printing, source]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "p") {
+        // Left alone, the browser would print the whole app that is behind the viewer.
+        e.preventDefault();
+        if (printAvailable) void print();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose, print, printAvailable]);
+
+  const content = { url: att.url, onReady: setSource, onError: () => setError(true) };
 
   return (
     <div className="fixed inset-0 z-[60] flex flex-col bg-black/90" onClick={onClose} role="dialog" aria-modal="true" aria-label={att.fileName}>
       <div className="flex items-center justify-between gap-3 px-4 py-3 text-white" onClick={(e) => e.stopPropagation()}>
         <p className="min-w-0 truncate text-sm">{att.fileName}</p>
         <div className="flex shrink-0 items-center gap-2">
+          {printAvailable && (
+            <button
+              type="button"
+              onClick={() => void print()}
+              disabled={!source || printing}
+              className="focus-ring inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-sm hover:bg-white/10 disabled:opacity-50"
+              aria-label="Imprimir"
+              aria-busy={printing}
+              title="Imprimir (Ctrl+P)"
+            >
+              <Printer className="h-4 w-4" />
+              <span>{printing ? "Preparando..." : "Imprimir"}</span>
+            </button>
+          )}
           <a href={withAuthToken(att.url)} download={att.fileName} className="focus-ring rounded-full p-2 hover:bg-white/10" aria-label="Baixar">
             <Download className="h-4 w-4" />
           </a>
@@ -223,25 +394,26 @@ function DocumentViewer({ att, kind, onClose }: { att: MessageAttachmentDTO; kin
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-auto px-4 pb-4" onClick={(e) => e.stopPropagation()}>
-        {kind === "pdf" ? (
-          <PdfPages url={att.url} />
-        ) : error ? (
-          <p className="mt-10 text-center text-sm text-white/80">Não foi possível mostrar este documento. Use o botão de baixar.</p>
+        {error ? (
+          <p className="mt-10 text-center text-sm text-white/80">{ERROR_TEXT[kind]}</p>
         ) : (
-          <div ref={wordRef} className="mx-auto w-fit max-w-full overflow-auto rounded bg-white text-black" />
+          <>
+            {!source && <p className="mt-10 text-center text-sm text-white/70">Carregando...</p>}
+            {kind === "pdf" ? <PdfPages {...content} /> : kind === "text" ? <TextSheet {...content} /> : <WordPages {...content} />}
+          </>
         )}
       </div>
     </div>
   );
 }
 
-/** A document in a message: PDFs and Word files get a preview of the first page and open in a viewer; anything else is a plain download card. */
+/** A document in a message: PDFs, Word files and texts (.txt) get a preview and open in a viewer; anything else is a plain download card. */
 export function DocumentAttachment({ att }: { att: MessageAttachmentDTO }) {
   const kind = documentKind(att);
   const [open, setOpen] = useState(false);
   const [pages, setPages] = useState<number | null>(null);
   const [cardRef, inView] = useInView<HTMLButtonElement>();
-  const previewable = (kind === "pdf" || kind === "docx") && att.sizeBytes <= MAX_PREVIEW_BYTES;
+  const previewable = ((kind === "pdf" || kind === "docx") && att.sizeBytes <= MAX_PREVIEW_BYTES) || (kind === "text" && att.sizeBytes <= MAX_TEXT_BYTES);
   const style = KIND_STYLE[kind];
 
   const details = (
@@ -279,7 +451,7 @@ export function DocumentAttachment({ att }: { att: MessageAttachmentDTO }) {
       >
         {inView && (
           <div className="max-h-[150px] overflow-hidden border-b border-black/10">
-            {kind === "pdf" ? <PdfThumbnail url={att.url} onPages={setPages} /> : <WordThumbnail url={att.url} />}
+            {kind === "pdf" ? <PdfThumbnail url={att.url} onPages={setPages} /> : kind === "text" ? <TextThumbnail url={att.url} /> : <WordThumbnail url={att.url} />}
           </div>
         )}
         {details}

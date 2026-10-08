@@ -65,6 +65,56 @@ export const RELEASE_NOTE_AREAS: Record<ReleaseNoteArea, { label: string; requir
 
 export const RELEASES: Release[] = [
   {
+    version: "2.1.9",
+    date: "08 out 2026",
+    name: "Abrir e imprimir arquivos",
+    summary: "PDF, Word e Bloco de Notas (.txt) abrem dentro do sistema, sem baixar, e podem ser impressos pelo computador. Os PDFs voltam a aparecer, o envio de .txt deixa de dar erro e a página Notas de versão abre ao recarregar.",
+    notes: [
+      {
+        type: "melhoria",
+        area: "atendimento",
+        title: "Abrir PDF, Word e Bloco de Notas sem baixar, e imprimir",
+        text: "Os arquivos PDF, Word (.docx) e Bloco de Notas (.txt) da conversa abrem dentro do sistema ao clicar no cartão. O cartão mostra uma prévia: a primeira página do PDF e do Word, ou as primeiras linhas do Bloco de Notas. No visualizador há o botão Imprimir, que também responde ao Ctrl+P (⌘P no Mac): sai só o documento, não a tela do sistema. O PDF imprime uma página por folha, o Word mantém o tamanho da página e as imagens do documento, e o Bloco de Notas quebra as linhas longas para caber na folha. No celular e no tablet o botão Imprimir não aparece: lá só dá para baixar. PDFs com mais de 100 páginas mostram e imprimem as 100 primeiras (baixe para ver tudo); textos acima de 2 MB, Word antigo (.doc) e outros tipos de arquivo continuam só para baixar.",
+        before: "O Bloco de Notas só podia ser baixado, e o PDF e o Word abriam na tela mas não tinham como imprimir.",
+        after: "PDF, Word e Bloco de Notas abrem na tela, e no computador têm o botão Imprimir (Ctrl+P).",
+        steps: ["Clique no cartão do arquivo, na conversa.", "Para imprimir, clique em Imprimir {1} (ou use Ctrl+P) e escolha a impressora.", "Para guardar uma cópia, clique em Baixar {2}. Fechar {3}, ou a tecla Esc, volta para a conversa."],
+        where: "Atendimento e Gestão, dentro da conversa",
+        images: [
+          { file: "arquivos-cartoes", caption: "Os cartões de um PDF, de um Word e de um Bloco de Notas na conversa.", size: "small" },
+          { file: "arquivos-visualizador", caption: "{1} Imprimir {2} Baixar {3} Fechar" },
+          { file: "arquivos-bloco-de-notas", caption: "{1} Imprimir: o Bloco de Notas aberto no sistema" },
+        ],
+      },
+      {
+        type: "correcao",
+        area: "atendimento",
+        title: "PDFs ficavam em branco no sistema publicado",
+        text: "Num servidor com a configuração padrão do sistema, o leitor de PDF não funcionava: a miniatura no cartão não aparecia e, ao clicar, o visualizador mostrava “Não foi possível mostrar este PDF”. O arquivo que o leitor usa era entregue ao navegador com o tipo errado, e o navegador se recusa a executá-lo assim. Agora o PDF aparece na miniatura e no visualizador.",
+        before: "O PDF não aparecia na miniatura nem no visualizador.",
+        after: "O PDF aparece, com a contagem de páginas no cartão.",
+        where: "Atendimento e Gestão, dentro da conversa",
+      },
+      {
+        type: "correcao",
+        area: "atendimento",
+        title: "Enviar um arquivo .txt dava “Erro interno do servidor”",
+        text: "Ao anexar um arquivo de Bloco de Notas (.txt), o envio falhava com “Erro interno do servidor”. Agora ele é enviado como qualquer documento. Tipos de arquivo que o sistema não aceita (como .csv) passam a mostrar a mensagem “Tipo de arquivo não permitido”, com a lista do que pode ser enviado.",
+        before: "O envio de um .txt falhava com erro interno.",
+        after: "O .txt é enviado; um tipo não aceito mostra uma mensagem clara.",
+        where: "Atendimento › Anexar (clipe) na conversa",
+      },
+      {
+        type: "correcao",
+        area: "geral",
+        title: "Notas de versão abre também ao recarregar a página",
+        text: "No servidor publicado, recarregar a página de Notas de versão (F5) ou abrir um link direto para ela mostrava “403 Forbidden”, porque o nome da página era igual ao da pasta com as imagens das notas. Pelo menu funcionava; agora funciona de qualquer jeito.",
+        before: "Recarregar Notas de versão mostrava “403 Forbidden”.",
+        after: "A página abre normalmente, por menu, por link ou ao recarregar.",
+        where: "Menu › Notas de versão",
+      },
+    ],
+  },
+  {
     version: "2.1.8",
     date: "08 out 2026",
     name: "Encerramento depois da nota",

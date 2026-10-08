@@ -19,6 +19,15 @@ export default defineConfig({
     commonjsOptions: {
       include: [/packages\/types\/dist/, /node_modules/],
     },
+    rollupOptions: {
+      output: {
+        // pdf.js's worker is a ".mjs" file, and nginx's stock mime.types (the nginx:1.27 image's included) has no
+        // entry for that extension — it was served as octet-stream, and a browser refuses to run a module script
+        // that isn't JavaScript, so PDFs never drew (thumbnail and viewer both stayed empty). A ".js" name gets
+        // application/javascript from any server.
+        assetFileNames: (asset) => ((asset.names ?? [asset.name ?? ""]).some((name) => name.endsWith(".mjs")) ? "assets/[name]-[hash].js" : "assets/[name]-[hash][extname]"),
+      },
+    },
   },
   server: {
     port: 5173,
