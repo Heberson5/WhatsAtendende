@@ -100,6 +100,8 @@ const ALLOWED_MIME_TYPES = new Set([
   // see the /conversations/:conversationId/audio route below.
   "audio/mp4",
   "application/pdf",
+  // Bloco de Notas (.txt) — o visualizador do sistema abre e imprime. Outros textos (.csv, .html...) continuam de fora.
+  "text/plain",
   "application/msword",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "application/vnd.ms-excel",
@@ -116,7 +118,8 @@ const upload = multer({
   limits: { fileSize: env.UPLOAD_MAX_SIZE_MB * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     if (!ALLOWED_MIME_TYPES.has(file.mimetype)) {
-      return cb(new Error("Tipo de arquivo nao permitido"));
+      // A plain Error here became a 500 "Erro interno do servidor"; this is the customer-facing reason.
+      return cb(Errors.badRequest("Tipo de arquivo não permitido. Envie imagem, vídeo, áudio, PDF, Word, Excel, PowerPoint, Bloco de Notas (.txt) ou .zip."));
     }
     cb(null, true);
   },

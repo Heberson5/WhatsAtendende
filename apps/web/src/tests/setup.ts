@@ -1,7 +1,8 @@
 import "@testing-library/jest-dom/vitest";
 
 // jsdom has no matchMedia; useTheme reads it to resolve the "AUTO" theme.
-if (!window.matchMedia) {
+// (A few tests run in the node environment, where there is no window at all.)
+if (typeof window !== "undefined" && !window.matchMedia) {
   window.matchMedia = (query: string) =>
     ({
       matches: false,
