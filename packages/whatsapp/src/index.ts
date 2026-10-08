@@ -4,6 +4,8 @@ export { BaileysWhatsAppProvider } from "./BaileysWhatsAppProvider";
 export type { BaileysProviderOptions } from "./BaileysWhatsAppProvider";
 export { deliveryEventFromBaileysUpdate } from "./delivery-status";
 export type { BaileysMessageUpdate } from "./delivery-status";
+export { reactionEventFromBaileys } from "./reaction-event";
+export type { BaileysReactionEntry } from "./reaction-event";
 export { CloudApiWhatsAppProvider } from "./CloudApiWhatsAppProvider";
 export type { CloudApiProviderOptions, CloudApiWebhookValue, TemplateSendInput } from "./CloudApiWhatsAppProvider";
 

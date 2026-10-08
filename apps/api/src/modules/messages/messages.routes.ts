@@ -14,6 +14,7 @@ import { Errors } from "../../lib/http-error";
 import { env } from "../../config/env";
 import { prisma } from "../../lib/prisma";
 import { writeAudit } from "../../lib/audit";
+import { logger } from "../../lib/logger";
 import { transcodeToOggOpus } from "../../lib/audio-transcode";
 import * as service from "./messages.service";
 import { toMessageDTO } from "./messages.mapper";
@@ -448,7 +449,10 @@ messagesRouter.post(
     // mirrored back to Instagram/Messenger yet (see assertWhatsAppChannel's
     // doc comment).
     if (message.providerMessageId && conversation.channel === "WHATSAPP") {
-      await whatsappService.sendReaction(conversation.whatsappConnectionId!, conversation.contact.phone!, message.providerMessageId, emoji).catch(() => undefined);
+      // A reaction to something WE sent has to say so — WhatsApp finds the target by its key.
+      await whatsappService
+        .sendReaction(conversation.whatsappConnectionId!, conversation.contact.phone!, message.providerMessageId, emoji, message.direction === "OUTBOUND")
+        .catch((err) => logger.warn({ err, messageId: message.id }, "failed to send a reaction to WhatsApp"));
     }
     realtimeEvents.messageStatusChanged(conversation.id, conversation.assignedAgentId);
     res.json(toMessageDTO(updated));

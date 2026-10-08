@@ -58,6 +58,8 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
   readonly sentAudios: { chatId: string; mimeType: string; sizeBytes: number }[] = [];
   /** Test helper: every markRead call, exactly as this "reached WhatsApp". */
   readonly readReceiptsSent: { chatId: string; providerMessageIds: string[] }[] = [];
+  /** Test helper: every reaction this provider was asked to send. */
+  readonly reactionsSent: { chatId: string; providerMessageId: string; emoji: string | null; targetFromMe: boolean }[] = [];
 
   async connect(options?: ConnectOptions): Promise<void> {
     // qrCodeDataUrl/pairingCode cleared here (not carried forward from the
@@ -140,8 +142,9 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
     return { providerMessageId: randomUUID(), timestamp: new Date() };
   }
 
-  async sendReaction(): Promise<void> {
+  async sendReaction(chatId: string, providerMessageId: string, emoji: string | null, options?: { targetFromMe?: boolean }): Promise<void> {
     this.ensureConnected();
+    this.reactionsSent.push({ chatId, providerMessageId, emoji, targetFromMe: Boolean(options?.targetFromMe) });
   }
 
   async markRead(chatId: string, providerMessageIds: string[]): Promise<void> {
@@ -226,6 +229,11 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
 
   onChatIdentityResolved(listener: (event: ChatIdentityResolvedEvent) => void): void {
     this.emitter.on("chatIdentityResolved", listener);
+  }
+
+  /** Test helper: force a reaction event (fromMe = the echo of a reaction this app sent, or one made on the linked phone). */
+  simulateReaction(event: Omit<ReactionEvent, "timestamp" | "fromPhone"> & { fromPhone?: string }): void {
+    this.emitter.emit("reaction", { fromPhone: event.chatId.split("@")[0], ...event, timestamp: new Date() } satisfies ReactionEvent);
   }
 
   /** Test helper: force a delivery event (e.g. FAILED, which Baileys sends when WhatsApp's server rejects a message) for a message already sent. */

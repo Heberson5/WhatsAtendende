@@ -28,6 +28,7 @@ import type {
   WhatsAppStatusSnapshot,
 } from "./types";
 import { deliveryEventFromBaileysUpdate } from "./delivery-status";
+import { reactionEventFromBaileys } from "./reaction-event";
 
 export interface BaileysProviderOptions {
   /** Directory where Baileys persists the multi-device auth/session state. */
@@ -555,15 +556,7 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
       });
 
       socket.ev.on("messages.reaction", (reactions) => {
-        for (const r of reactions) {
-          this.emitter.emit("reaction", {
-            providerMessageId: r.key.id ?? "",
-            chatId: r.key.remoteJid ?? "",
-            emoji: r.reaction.text || null,
-            fromPhone: (r.reaction.key?.remoteJid ?? "").split("@")[0],
-            timestamp: new Date(),
-          } satisfies ReactionEvent);
-        }
+        for (const r of reactions) this.emitter.emit("reaction", reactionEventFromBaileys(r));
       });
     } catch (err) {
       // A failure before the socket even got a chance to try connecting
@@ -743,10 +736,12 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
     return { providerMessageId: sent?.key.id ?? "", timestamp: new Date() };
   }
 
-  async sendReaction(chatId: string, providerMessageId: string, emoji: string | null): Promise<void> {
+  async sendReaction(chatId: string, providerMessageId: string, emoji: string | null, options?: { targetFromMe?: boolean }): Promise<void> {
     const socket = this.requireSocket();
+    // The key names the message being reacted to, and Baileys sends it as is:
+    // a message WE sent has to say fromMe, or WhatsApp looks for it among the customer's.
     const sent = await socket.sendMessage(chatId, {
-      react: { text: emoji ?? "", key: { id: providerMessageId, remoteJid: chatId, fromMe: false } },
+      react: { text: emoji ?? "", key: { id: providerMessageId, remoteJid: chatId, fromMe: Boolean(options?.targetFromMe) } },
     });
     this.cacheSentMessage(sent);
   }

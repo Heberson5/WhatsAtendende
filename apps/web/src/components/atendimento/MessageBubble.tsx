@@ -9,6 +9,7 @@ import { withAuthToken } from "../../lib/api";
 import { MediaLightbox, type LightboxMedia } from "./MediaLightbox";
 import { DocumentAttachment } from "./DocumentPreview";
 import { LinkPreviewCard } from "./LinkPreviewCard";
+import { groupReactions } from "../../lib/reactions";
 
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
@@ -319,10 +320,11 @@ export function MessageBubble({
       </div>
 
       {message.reactions.length > 0 && (
-        <div className="absolute -bottom-3 right-2 flex gap-0.5 rounded-full border border-border bg-surface px-1.5 py-0.5 text-xs shadow">
-          {message.reactions.map((r) => (
-            <span key={r.id} title={r.userDisplayName}>
-              {r.emoji}
+        <div className="absolute -bottom-3 right-2 flex gap-1 rounded-full border border-border bg-surface px-1.5 py-0.5 text-xs shadow">
+          {groupReactions(message.reactions).map((group) => (
+            <span key={group.emoji} title={group.names.join(", ")} data-testid="reaction-chip">
+              {group.emoji}
+              {group.count > 1 && <span className="ml-0.5 text-[10px] font-medium opacity-75">{group.count}</span>}
             </span>
           ))}
         </div>

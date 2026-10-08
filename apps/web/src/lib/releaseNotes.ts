@@ -65,6 +65,23 @@ export const RELEASE_NOTE_AREAS: Record<ReleaseNoteArea, { label: string; requir
 
 export const RELEASES: Release[] = [
   {
+    version: "2.1.7",
+    date: "08 out 2026",
+    name: "Conversas e Gestão mais corretas",
+    summary: "As reações aparecem uma vez só.",
+    notes: [
+      {
+        type: "correcao",
+        area: "atendimento",
+        title: "Reações aparecem uma vez só",
+        text: "Ao reagir a uma mensagem, a reação aparecia duas vezes — a sua e uma cópia como se fosse do cliente — e a reação verdadeira do cliente podia sumir. Agora cada reação aparece uma vez. Quando duas pessoas usam o mesmo emoji, ele aparece com o número ao lado (👍 2) e, ao passar o mouse, mostra quem reagiu. As cópias repetidas que o sistema tinha criado em conversas antigas também foram limpas.",
+        before: "A reação do atendente aparecia duas vezes na mensagem, e a do cliente podia desaparecer.",
+        after: "Cada reação aparece uma vez; o mesmo emoji de duas pessoas vira “👍 2”.",
+        where: "Atendimento e Gestão, dentro da conversa",
+      },
+    ],
+  },
+  {
     version: "2.1.6",
     date: "08 out 2026",
     name: "Mensagem recusada pelo WhatsApp aparece como falha",

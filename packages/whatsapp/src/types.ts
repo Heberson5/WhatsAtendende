@@ -88,6 +88,13 @@ export interface ReactionEvent {
   chatId: string;
   emoji: string | null; // null = reaction removed
   fromPhone: string;
+  /**
+   * The reaction was made by OUR account, not the customer: Baileys echoes
+   * everything this app sends (including the reactions an agent clicks here)
+   * and also reports the ones made on the linked phone. Absent/false = the
+   * customer's own reaction.
+   */
+  fromMe?: boolean;
   timestamp: Date;
 }
 
@@ -248,7 +255,13 @@ export interface WhatsAppProvider {
   sendAudio(chatId: string, buffer: Buffer, mimeType: string): Promise<SendResult>;
   sendLocation(chatId: string, latitude: number, longitude: number): Promise<SendResult>;
   sendContact(chatId: string, vcard: string, displayName: string): Promise<SendResult>;
-  sendReaction(chatId: string, providerMessageId: string, emoji: string | null): Promise<void>;
+  /**
+   * `options.targetFromMe`: the message being reacted to was sent by us (an
+   * outbound message), not by the customer — WhatsApp identifies the target by
+   * its key, and that key must say who wrote it. Providers that address the
+   * message by id alone (Cloud API) ignore it.
+   */
+  sendReaction(chatId: string, providerMessageId: string, emoji: string | null, options?: { targetFromMe?: boolean }): Promise<void>;
 
   /**
    * Sends WhatsApp read receipts for the given inbound messages — the same
