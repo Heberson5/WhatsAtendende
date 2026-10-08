@@ -326,19 +326,44 @@ export async function addAttachment(
 }
 
 export async function toggleReaction(messageId: string, userId: string, emoji: string | null) {
-  const existing = await prisma.messageReaction.findFirst({ where: { messageId, userId, fromCustomer: false } });
+  const mine = { messageId, userId, fromCustomer: false };
 
   if (!emoji) {
-    if (existing) await prisma.messageReaction.delete({ where: { id: existing.id } });
+    await prisma.messageReaction.deleteMany({ where: mine });
     return prisma.message.findUniqueOrThrow({ where: { id: messageId }, include: messageInclude });
   }
 
-  if (existing) {
-    await prisma.messageReaction.update({ where: { id: existing.id }, data: { emoji } });
-  } else {
-    await prisma.messageReaction.create({ data: { messageId, userId, emoji, fromCustomer: false } });
+  // One row per agent per message (the unique key) — set in one statement so a double click can't leave two.
+  try {
+    await prisma.messageReaction.upsert({
+      where: { messageId_userId_fromCustomer: mine },
+      update: { emoji },
+      create: { ...mine, emoji },
+    });
+  } catch (err) {
+    // Two requests created it at the same moment: the second just updates the row the first made.
+    if ((err as { code?: string }).code !== "P2002") throw err;
+    await prisma.messageReaction.updateMany({ where: mine, data: { emoji } });
   }
   return prisma.message.findUniqueOrThrow({ where: { id: messageId }, include: messageInclude });
+}
+
+/**
+ * The customer's reaction to a message (null = they took it back): replaces the
+ * one they had, so a message never carries two from the same customer.
+ *
+ * Their rows have no user (userId is NULL), which the table's unique key can't
+ * police — NULLs never compare equal in Postgres — so this is serialized per
+ * message instead. Delete-then-create on its own is not atomic: the same event
+ * arriving twice at once, or a reaction changed twice inside one Baileys batch,
+ * both deleted nothing and both created, leaving two.
+ */
+export async function setCustomerReaction(messageId: string, emoji: string | null): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('message-reaction'), hashtext(${messageId}))`;
+    await tx.messageReaction.deleteMany({ where: { messageId, fromCustomer: true } });
+    if (emoji) await tx.messageReaction.create({ data: { messageId, emoji, fromCustomer: true } });
+  });
 }
 
 export async function getMessageWithConversation(messageId: string) {

@@ -256,6 +256,19 @@ function rebootstrapConnection(row: ConnectionRow): WhatsAppProvider {
   return bootstrapConnection(row);
 }
 
+// Customer reactions waiting their turn, one chain per WhatsApp message id.
+const reactionQueues = new Map<string, Promise<void>>();
+
+/** Runs `task` after every earlier task queued under the same key (the task handles its own errors). */
+function runInOrder(queues: Map<string, Promise<void>>, key: string, task: () => Promise<void>): Promise<void> {
+  const next = (queues.get(key) ?? Promise.resolve()).then(task);
+  queues.set(key, next);
+  void next.finally(() => {
+    if (queues.get(key) === next) queues.delete(key);
+  });
+  return next;
+}
+
 function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
   provider.onConnectionUpdate(async (status) => {
     try {
@@ -684,19 +697,28 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
   });
 
   provider.onReaction(async (event) => {
-    const message = await prisma.message.findUnique({
-      where: { providerMessageId: event.providerMessageId },
-      include: { conversation: { select: { assignedAgentId: true } } },
+    // A reaction made by OUR account is never the customer's: Baileys echoes
+    // every reaction an agent clicks in this app (the agent's own reaction is
+    // already stored — recording the echo too showed it twice, "Ana" plus a
+    // phantom "Cliente", and wiped out whatever the customer had reacted),
+    // and a reaction made on the linked phone arrives the same way.
+    if (event.fromMe) return;
+    // In arrival order per message — a customer who changes their reaction twice
+    // inside one Baileys batch must end up with the LAST one, not whichever
+    // database round-trip happens to finish first.
+    await runInOrder(reactionQueues, event.providerMessageId, async () => {
+      try {
+        const message = await prisma.message.findUnique({
+          where: { providerMessageId: event.providerMessageId },
+          include: { conversation: { select: { assignedAgentId: true } } },
+        });
+        if (!message) return;
+        await messagesService.setCustomerReaction(message.id, event.emoji);
+        realtimeEvents.messageStatusChanged(message.conversationId, message.conversation.assignedAgentId);
+      } catch (err) {
+        logger.error({ err, connectionId, providerMessageId: event.providerMessageId }, "failed to record a customer reaction");
+      }
     });
-    if (!message) return;
-    // Customer reactions have userId=NULL, so a compound-unique upsert
-    // can't target them reliably (NULLs never compare equal in Postgres) —
-    // replace-by-delete instead.
-    await prisma.messageReaction.deleteMany({ where: { messageId: message.id, fromCustomer: true } });
-    if (event.emoji) {
-      await prisma.messageReaction.create({ data: { messageId: message.id, emoji: event.emoji, fromCustomer: true } });
-    }
-    realtimeEvents.messageStatusChanged(message.conversationId, message.conversation.assignedAgentId);
   });
 }
 
@@ -1192,8 +1214,9 @@ export async function sendOutboundLocation(connectionId: string, messageId: stri
   return sendWithTimeoutGuard(messageId, "location", () => getProvider(connectionId).sendLocation(toChatId(contactPhone), lat, lng));
 }
 
-export async function sendReaction(connectionId: string, contactPhone: string, providerMessageId: string, emoji: string | null) {
-  await getProvider(connectionId).sendReaction(toChatId(contactPhone), providerMessageId, emoji);
+/** `targetFromMe`: the message being reacted to is one WE sent (WhatsApp needs to know whose message the reaction is about). */
+export async function sendReaction(connectionId: string, contactPhone: string, providerMessageId: string, emoji: string | null, targetFromMe = false) {
+  await getProvider(connectionId).sendReaction(toChatId(contactPhone), providerMessageId, emoji, { targetFromMe });
 }
 
 interface MessageTemplateStatusUpdateValue {
