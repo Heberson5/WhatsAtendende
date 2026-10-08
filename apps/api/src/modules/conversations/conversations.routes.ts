@@ -463,8 +463,8 @@ conversationsRouter.post(
     // precedent.
     //
     // When the satisfaction survey follows this close, the closing message is
-    // not sent here: it waits out the "Desfazer" window with the survey and
-    // goes out right before it (see scheduleCloseFollowUp).
+    // not sent here: the survey keeps it and sends it after the customer's
+    // score, or when the wait runs out (see scheduleCloseFollowUp).
     let heldClosingMessage: HeldClosingMessage | undefined;
     if (sendClosingMessage && ["IN_PROGRESS", "TRANSFERRED"].includes(existing.status)) {
       const closingMessage = await getActiveClosingMessageForAgent(req.auth!.userId, existing.whatsappConnectionId);
@@ -562,9 +562,9 @@ conversationsRouter.post(
     // clicar em encerrar."
     //
     // Exception: when the satisfaction survey follows this close, the message
-    // waits out the "Desfazer" window instead (the 10 s the survey already
-    // waits) and, if the agent didn't undo, goes out right before the survey —
-    // see scheduleCloseFollowUp.
+    // is held instead: it is kept on the survey and goes out 10 s after the
+    // customer's score (or when the configured wait runs out), unless the
+    // agent undoes the close — see scheduleCloseFollowUp.
     let heldClosingMessage: HeldClosingMessage | undefined;
     const closingMessage = await getActiveClosingMessageForAgent(req.auth!.userId, existing.whatsappConnectionId);
     if (closingMessage) {

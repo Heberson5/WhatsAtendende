@@ -1195,7 +1195,22 @@ model SatisfactionSurvey {
   expiresAt            DateTime
   answeredAt           DateTime?
 
+  // The agent's closing message while it waits for the customer's score — kept here
+  // (already rendered, with who it goes out as) rather than in a timer, so the wait
+  // survives a restart. It goes out 10 s after the score, or at closingDueAt if the
+  // customer never answers; a message from the customer that wants to keep talking
+  // cancels it. closingDueAt also marks how long a "thanks" from the customer is
+  // still treated as part of the wait (it is set even when there is no message to send).
+  closingText          String?
+  closingSenderId      String?
+  closingSenderName    String?
+  closingDueAt         DateTime?
+  // Set once it was sent or dropped; closingOutcome says which (SENT, FAILED, CANCELED_*).
+  closingResolvedAt    DateTime?
+  closingOutcome       String?
+
   @@index([contactId, whatsappConnectionId, answeredAt])
   @@index([sentAt])
   @@index([questionId])
+  @@index([closingDueAt])
 }

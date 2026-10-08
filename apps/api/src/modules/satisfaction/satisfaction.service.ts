@@ -6,14 +6,22 @@ import type { ConnectionScopeInput } from "../../lib/connection-scope";
 import { realtimeEvents } from "../../realtime/realtime";
 import * as whatsappService from "../whatsapp/whatsapp.service";
 import { createSystemOutboundMessage } from "../messages/messages.service";
+import { isGratitudeMessage } from "./gratitude";
 
 /**
  * Pesquisa de satisfação (NPS). Off by default: nothing is ever sent until
  * someone switches it on (and picks the connections) in Respostas › Pesquisa.
  * When on, closing an attended WhatsApp conversation sends the question once
- * the "Desfazer" window has passed — right after the closing message, which
- * waits for that same window; the customer's next message, if it's a 0–10
+ * the "Desfazer" window has passed; the customer's next message, if it's a 0–10
  * score, is recorded on that closed conversation instead of opening a new one.
+ *
+ * The agent's closing message does not go out with the question: it is kept on
+ * the survey row and goes out 10 seconds after the score — or, if the customer
+ * never answers, after the configured wait (30 minutes by default). While it
+ * waits, a plain "obrigado" from the customer changes nothing (the deadline
+ * stays), but anything else means they want to talk: the closing message is
+ * dropped and the message opens a new conversation. A sweep (see
+ * processDueClosingMessages) sends what is due, so the wait survives a restart.
  *
  * Every question text is its own row (SatisfactionQuestion): changing the text
  * starts a new question, and the Dashboard keeps one NPS per question.
@@ -22,6 +30,9 @@ import { createSystemOutboundMessage } from "../messages/messages.service";
 const SETTINGS_KEY = "satisfactionSurvey";
 // The API Oficial only delivers free text within 24h of the customer's last message.
 const OFFICIAL_FREE_TEXT_WINDOW_MS = 24 * 60 * 60 * 1000;
+// The closing message follows the customer's score by this long.
+const CLOSING_AFTER_ANSWER_MS = 10_000;
+export const DEFAULT_CLOSING_WAIT_MINUTES = 30;
 // A score answer is short ("10", "nota 9", "7 pontos") — anything longer is a new subject.
 const MAX_SCORE_ANSWER_LENGTH = 20;
 const MAX_SCORE = 10;
@@ -40,6 +51,8 @@ export interface SurveySettings {
   questionId: string | null;
   thanks: string;
   answerWindowHours: number;
+  /** How long after the question the closing message goes out if the customer never answers. */
+  closingWaitMinutes: number;
 }
 
 const DEFAULT_SETTINGS: SurveySettings = {
@@ -50,6 +63,7 @@ const DEFAULT_SETTINGS: SurveySettings = {
   questionId: null,
   thanks: "Obrigado pela sua avaliação!",
   answerWindowHours: 24,
+  closingWaitMinutes: DEFAULT_CLOSING_WAIT_MINUTES,
 };
 
 export async function getSurveySettings(): Promise<SurveySettings> {
@@ -67,6 +81,7 @@ export async function toSurveySettingsDTO(settings: SurveySettings): Promise<Sat
     question: settings.question,
     thanks: settings.thanks,
     answerWindowHours: settings.answerWindowHours,
+    closingWaitMinutes: settings.closingWaitMinutes,
   };
 }
 
@@ -83,6 +98,7 @@ export async function updateSurveySettings(input: {
   question: string;
   thanks: string;
   answerWindowHours: number;
+  closingWaitMinutes: number;
 }): Promise<SurveySettings> {
   const value: SurveySettings = {
     enabled: input.enabled,
@@ -92,6 +108,7 @@ export async function updateSurveySettings(input: {
     questionId: await resolveQuestionId(input.question),
     thanks: input.thanks,
     answerWindowHours: input.answerWindowHours,
+    closingWaitMinutes: input.closingWaitMinutes,
   };
   const json = value as unknown as Prisma.InputJsonValue;
   await prisma.systemSetting.upsert({ where: { key: SETTINGS_KEY }, update: { value: json }, create: { key: SETTINGS_KEY, value: json } });
@@ -123,6 +140,7 @@ const surveyConversationSelect = {
   whatsappConnectionId: true,
   assignedAgentId: true,
   contactId: true,
+  closedAt: true,
   contact: { select: { phone: true } },
   whatsappConnection: { select: { connectionMode: true } },
   satisfactionSurvey: { select: { id: true } },
@@ -149,8 +167,8 @@ async function isSurveyDue(conversation: SurveyConversation, settings: SurveySet
 
 /**
  * Asked before closing: when the survey will follow this close, the agent's
- * closing message is held back until the "Desfazer" window is over (it goes out
- * just before the survey) instead of being sent at once.
+ * closing message is held back (it goes out once the customer has answered, or
+ * when the wait runs out) instead of being sent at once.
  */
 export async function willSendSurveyOnClose(conversationId: string): Promise<boolean> {
   const settings = await getSurveySettings();
@@ -168,11 +186,16 @@ export interface HeldClosingMessage {
 
 /**
  * Called when a person closes a conversation — waits out the "Desfazer" window,
- * then sends the held closing message (if any) and the survey, only if the
- * conversation is still closed.
+ * then sends the survey question (and, if the survey no longer applies, the held
+ * closing message), only if the conversation is still closed.
  */
 export function scheduleCloseFollowUp(conversationId: string, closingMessage?: HeldClosingMessage): void {
   setTimeout(() => void sendCloseFollowUp(conversationId, closingMessage), CONVERSATION_UNDO_WINDOW_MS).unref();
+}
+
+/** Whether a conversation with this customer was started after `since` — it owns the chat from then on. */
+async function hasConversationSince(contactId: string, since: Date): Promise<boolean> {
+  return (await prisma.conversation.count({ where: { contactId, createdAt: { gt: since } } })) > 0;
 }
 
 async function sendHeldClosingMessage(conversation: SurveyConversation, closing: HeldClosingMessage): Promise<void> {
@@ -187,45 +210,154 @@ export async function sendCloseFollowUp(conversationId: string, closingMessage?:
     const conversation = await prisma.conversation.findUnique({ where: { id: conversationId }, select: surveyConversationSelect });
     // Undone (or otherwise reopened) during the "Desfazer" window — nothing goes out.
     if (!conversation || conversation.status !== "CLOSED") return;
+    // Closed, undone and closed again inside the window leaves two timers behind — the first one already did this.
+    if (conversation.satisfactionSurvey) return;
+    // The customer wrote again during the window: that new conversation owns the chat, and neither the question nor a goodbye fits it.
+    if (conversation.closedAt && (await hasConversationSince(conversation.contactId, conversation.closedAt))) return;
 
     const settings = await getSurveySettings();
-    const surveyDue = await isSurveyDue(conversation, settings);
-    // Recorded before anything is sent, so a late "Desfazer" can no longer take the conversation back.
-    const now = new Date();
-    if (surveyDue) {
-      await prisma.satisfactionSurvey.create({
-        data: {
-          conversationId,
-          contactId: conversation.contactId,
-          whatsappConnectionId: conversation.whatsappConnectionId!,
-          agentId: conversation.assignedAgentId,
-          questionId: settings.questionId ?? (await resolveQuestionId(settings.question)),
-          sentAt: now,
-          expiresAt: new Date(now.getTime() + settings.answerWindowHours * 60 * 60 * 1000),
-        },
-      });
+    if (!(await isSurveyDue(conversation, settings))) {
+      // The survey was switched off (or stopped applying) during the window — nothing to wait for, the closing message goes out now.
+      if (closingMessage) {
+        try {
+          await sendHeldClosingMessage(conversation, closingMessage);
+        } catch (err) {
+          logger.error({ err, conversationId }, "failed to send held closing message");
+        }
+      }
+      return;
     }
 
-    if (closingMessage) {
-      try {
-        await sendHeldClosingMessage(conversation, closingMessage);
-      } catch (err) {
-        logger.error({ err, conversationId }, "failed to send held closing message");
-      }
-    }
-    if (surveyDue) {
-      await sendSurveyText({ id: conversationId, whatsappConnectionId: conversation.whatsappConnectionId! }, conversation.contact.phone!, settings.question);
-    }
+    // Recorded before anything is sent, so a late "Desfazer" can no longer take the conversation back.
+    const now = new Date();
+    const waitMinutes = Math.min(settings.closingWaitMinutes, settings.answerWindowHours * 60);
+    await prisma.satisfactionSurvey.create({
+      data: {
+        conversationId,
+        contactId: conversation.contactId,
+        whatsappConnectionId: conversation.whatsappConnectionId!,
+        agentId: conversation.assignedAgentId,
+        questionId: settings.questionId ?? (await resolveQuestionId(settings.question)),
+        sentAt: now,
+        expiresAt: new Date(now.getTime() + settings.answerWindowHours * 60 * 60 * 1000),
+        // Even with no closing message to send, this is how long a "obrigado" from the customer still counts as part of the wait.
+        closingDueAt: new Date(now.getTime() + waitMinutes * 60 * 1000),
+        ...(closingMessage && { closingText: closingMessage.text, closingSenderId: closingMessage.senderId, closingSenderName: closingMessage.senderDisplayName }),
+      },
+    });
+    await sendSurveyText({ id: conversationId, whatsappConnectionId: conversation.whatsappConnectionId! }, conversation.contact.phone!, settings.question);
   } catch (err) {
     logger.error({ err, conversationId }, "failed to send closing follow-up");
   }
 }
 
+// What happened to a survey's closing message — SENDING is only the moment between claiming it and finishing.
+const CLOSING_SENDING = "SENDING";
+const CLOSING_SENT = "SENT";
+const CLOSING_FAILED = "FAILED";
+const CLOSING_CANCELED_CUSTOMER_WROTE = "CANCELED_CUSTOMER_WROTE";
+const CLOSING_CANCELED_NEWER_CONVERSATION = "CANCELED_NEWER_CONVERSATION";
+const CLOSING_CANCELED_NOT_CLOSED = "CANCELED_NOT_CLOSED";
+
 /**
- * Inbound hook: records a 0–10 answer to this contact's pending survey on this
- * connection. Returns true when the message was the answer (stored on the
- * closed conversation — no new conversation opens). Any other message ends
- * the survey unanswered and follows the normal path.
+ * Sends the closing message kept on this survey, once, if it is due and still fits.
+ * It is claimed first (an atomic update), so two sweeps — or two API instances —
+ * never both send it; then it is dropped if the conversation is no longer closed
+ * or the customer already has a newer one. Returns what became of it, or null when
+ * it was not this call's to send.
+ */
+async function deliverClosingMessage(surveyId: string, now: Date): Promise<string | null> {
+  const claimed = await prisma.satisfactionSurvey.updateMany({
+    where: { id: surveyId, closingText: { not: null }, closingResolvedAt: null, closingDueAt: { lte: now } },
+    data: { closingResolvedAt: now, closingOutcome: CLOSING_SENDING },
+  });
+  if (claimed.count === 0) return null;
+
+  const finish = async (outcome: string) => {
+    await prisma.satisfactionSurvey.update({ where: { id: surveyId }, data: { closingOutcome: outcome } });
+    return outcome;
+  };
+
+  try {
+    const survey = await prisma.satisfactionSurvey.findUniqueOrThrow({
+      where: { id: surveyId },
+      select: {
+        contactId: true,
+        sentAt: true,
+        closingText: true,
+        closingSenderId: true,
+        closingSenderName: true,
+        conversation: { select: { id: true, status: true, whatsappConnectionId: true, assignedAgentId: true, contact: { select: { phone: true } } } },
+      },
+    });
+    const { conversation } = survey;
+    if (conversation.status !== "CLOSED") return await finish(CLOSING_CANCELED_NOT_CLOSED);
+    if (await hasConversationSince(survey.contactId, survey.sentAt)) return await finish(CLOSING_CANCELED_NEWER_CONVERSATION);
+    if (!survey.closingText || !conversation.whatsappConnectionId || !conversation.contact.phone) return await finish(CLOSING_FAILED);
+
+    // The agent may have been removed since the conversation was closed — the message still goes out, just without their name on the row.
+    const sender = survey.closingSenderId ? await prisma.user.findUnique({ where: { id: survey.closingSenderId }, select: { id: true } }) : null;
+    const message = await createSystemOutboundMessage({ conversationId: conversation.id, type: "TEXT", body: survey.closingText, agentId: sender?.id, allowClosed: true });
+    const sent = await whatsappService.sendOutboundText(
+      conversation.whatsappConnectionId,
+      message.id,
+      conversation.contact.phone,
+      survey.closingText,
+      survey.closingSenderName ?? "Atendimento"
+    );
+    realtimeEvents.newMessage(conversation.id, conversation.assignedAgentId);
+    return await finish(sent?.status === "FAILED" ? CLOSING_FAILED : CLOSING_SENT);
+  } catch (err) {
+    logger.error({ err, surveyId }, "failed to send the closing message");
+    await finish(CLOSING_FAILED).catch(() => undefined);
+    return CLOSING_FAILED;
+  }
+}
+
+/**
+ * Sends every closing message whose wait is over. Run every few seconds by the server; returns how many went out.
+ * A connection that is not up (right after a restart, or while it is being re-linked) is left for the next round
+ * rather than failing the message for good.
+ */
+export async function processDueClosingMessages(now = new Date()): Promise<number> {
+  const due = await prisma.satisfactionSurvey.findMany({
+    where: { closingText: { not: null }, closingResolvedAt: null, closingDueAt: { lte: now }, whatsappConnection: { status: "CONNECTED" } },
+    select: { id: true },
+    orderBy: { closingDueAt: "asc" },
+    take: 50,
+  });
+  let sent = 0;
+  for (const { id } of due) {
+    if ((await deliverClosingMessage(id, now)) === CLOSING_SENT) sent += 1;
+  }
+  return sent;
+}
+
+/** The customer's message is part of the survey exchange: it stays on the closed conversation, no new one opens. */
+async function keepOnClosedConversation(conversationId: string, message: { body: string | null; providerMessageId: string }): Promise<void> {
+  // skipDuplicates: the same WhatsApp message delivered twice is already stored.
+  const { count } = await prisma.message.createMany({
+    data: [{ conversationId, direction: "INBOUND", type: "TEXT", status: "DELIVERED", body: message.body, providerMessageId: message.providerMessageId }],
+    skipDuplicates: true,
+  });
+  if (count > 0) realtimeEvents.newMessage(conversationId, null);
+}
+
+/**
+ * Inbound hook for a customer who has a survey in progress on this connection.
+ * Returns true when the message belongs to the survey exchange (it is stored on
+ * the closed conversation and no new conversation opens), false when it should
+ * follow the normal path.
+ *
+ *  - A 0–10 score is recorded; the thanks goes out at once and the held closing
+ *    message 10 seconds later.
+ *  - While the survey waits (for the score, or for the closing message), a plain
+ *    "obrigado" is kept and changes nothing — the deadline stays where it was.
+ *  - Anything else means the customer wants to talk: the survey ends, the held
+ *    closing message is dropped, and the message opens a new conversation.
+ *
+ * `body` is the text of a text message — null for anything else (a picture, an
+ * audio...), which is never a score or a thank-you.
  */
 export async function captureSurveyAnswer(
   connectionId: string,
@@ -235,34 +367,65 @@ export async function captureSurveyAnswer(
   const now = new Date();
   // questionId is null only on surveys from the old 1–5 scale, which no longer take answers.
   const survey = await prisma.satisfactionSurvey.findFirst({
-    where: { contactId: contact.id, whatsappConnectionId: connectionId, answeredAt: null, expiresAt: { gt: now }, questionId: { not: null } },
+    where: {
+      contactId: contact.id,
+      whatsappConnectionId: connectionId,
+      questionId: { not: null },
+      OR: [
+        { answeredAt: null, expiresAt: { gt: now } }, // still taking the score
+        { closingText: { not: null }, closingResolvedAt: null }, // the closing message is still on its way
+      ],
+    },
     orderBy: { sentAt: "desc" },
+    include: { conversation: { select: { status: true } } },
   });
   if (!survey) return false;
-  // Someone already started a newer conversation with this customer — that one owns the chat now.
-  const newer = await prisma.conversation.count({ where: { contactId: contact.id, createdAt: { gt: survey.sentAt } } });
-  if (newer > 0) return false;
+  // The time to answer ran out while the closing message was still waiting (the server was down for a day): the survey is over.
+  if (survey.answeredAt === null && survey.expiresAt <= now) return false;
+  // Someone already started a newer conversation with this customer — that one owns the chat now. The same goes for
+  // a conversation that was taken up again: an agent is on it, and the message has to reach them.
+  if (survey.conversation.status !== "CLOSED" || (await hasConversationSince(contact.id, survey.sentAt))) return false;
 
+  const closingPending = survey.closingText !== null && survey.closingResolvedAt === null;
   const score = parseSurveyScore(message.body);
-  if (score === null) {
-    await prisma.satisfactionSurvey.update({ where: { id: survey.id }, data: { expiresAt: now } });
-    return false;
+
+  if (score !== null && survey.answeredAt === null) {
+    const recorded = await prisma.satisfactionSurvey.updateMany({ where: { id: survey.id, answeredAt: null }, data: { score, answeredAt: now } });
+    if (recorded.count === 0) {
+      // The same answer arrived twice at once — the other one did the work.
+      await keepOnClosedConversation(survey.conversationId, message);
+      return true;
+    }
+    if (closingPending) {
+      // Now the wait is short: the closing message follows the score by 10 seconds (unless it was claimed this very moment).
+      await prisma.satisfactionSurvey.updateMany({
+        where: { id: survey.id, closingText: { not: null }, closingResolvedAt: null },
+        data: { closingDueAt: new Date(now.getTime() + CLOSING_AFTER_ANSWER_MS) },
+      });
+    }
+    await keepOnClosedConversation(survey.conversationId, message);
+    const settings = await getSurveySettings();
+    if (contact.phone) await sendSurveyText({ id: survey.conversationId, whatsappConnectionId: connectionId }, contact.phone, settings.thanks);
+    return true;
   }
 
-  await prisma.satisfactionSurvey.update({ where: { id: survey.id }, data: { score, answeredAt: now } });
-  await prisma.message.create({
-    data: {
-      conversationId: survey.conversationId,
-      direction: "INBOUND",
-      type: "TEXT",
-      status: "DELIVERED",
-      body: message.body,
-      providerMessageId: message.providerMessageId,
-    },
-  });
-  const settings = await getSurveySettings();
-  if (contact.phone) await sendSurveyText({ id: survey.conversationId, whatsappConnectionId: connectionId }, contact.phone, settings.thanks);
-  return true;
+  // Still inside the wait: for the score (before it comes) or for the closing message (after it).
+  const waiting = closingPending || (survey.answeredAt === null && survey.closingDueAt !== null && survey.closingDueAt > now);
+  // A repeated score ("10" again) counts as the answer it already is, like a plain "obrigado".
+  if (waiting && (score !== null || isGratitudeMessage(message.body))) {
+    await keepOnClosedConversation(survey.conversationId, message);
+    return true;
+  }
+
+  // The customer wants to talk: the survey is over and the closing message, if one was waiting, is not sent.
+  if (survey.answeredAt === null) await prisma.satisfactionSurvey.updateMany({ where: { id: survey.id, answeredAt: null }, data: { expiresAt: now } });
+  if (closingPending) {
+    await prisma.satisfactionSurvey.updateMany({
+      where: { id: survey.id, closingResolvedAt: null },
+      data: { closingResolvedAt: now, closingOutcome: CLOSING_CANCELED_CUSTOMER_WROTE },
+    });
+  }
+  return false;
 }
 
 interface NpsBreakdown {

@@ -22,8 +22,11 @@ import {
   captureSurveyAnswer,
   getSatisfactionByAgent,
   getSatisfactionSummary,
+  getSurveySettings,
   parseSurveyScore,
+  processDueClosingMessages,
   sendCloseFollowUp,
+  toSurveySettingsDTO,
   updateSurveySettings,
   willSendSurveyOnClose,
 } from "../src/modules/satisfaction/satisfaction.service";
@@ -57,13 +60,14 @@ describe("Pesquisa de satisfação (NPS)", () => {
     return { contact, conversation };
   }
 
-  function configure(connectionIds: string[], question = QUESTION, enabled = true) {
+  function configure(connectionIds: string[], question = QUESTION, enabled = true, closingWaitMinutes = 30) {
     return updateSurveySettings({
       enabled,
       connectionScope: { allConnections: false, connectionIds },
       question,
       thanks: "Obrigado!",
       answerWindowHours: 24,
+      closingWaitMinutes,
     });
   }
 
@@ -246,7 +250,7 @@ describe("Pesquisa de satisfação (NPS)", () => {
   });
 
   describe("mensagem de encerramento com a pesquisa ligada", () => {
-    it("com a pesquisa a caminho, a mensagem espera a janela do Desfazer e sai logo antes da pergunta", async () => {
+    it("com a pesquisa a caminho, a janela do Desfazer termina só com a pergunta; a mensagem fica guardada para depois da nota", async () => {
       await configure([connectionId]);
       const { conversation } = await attendedConversation("5511900000080");
       expect(await willSendSurveyOnClose(conversation.id)).toBe(true);
@@ -256,10 +260,10 @@ describe("Pesquisa de satisfação (NPS)", () => {
       expect(sent).toHaveLength(0); // nothing leaves while the "Desfazer" window is open
 
       await sendCloseFollowUp(conversation.id, held);
-      expect(sent.map((m) => m.text)).toEqual([CLOSING.text, QUESTION]);
-      expect(sent[0].sender).toBe("Ana"); // the closing message still goes out as the agent
-      const message = await prisma.message.findFirstOrThrow({ where: { conversationId: conversation.id, body: CLOSING.text } });
-      expect(message).toMatchObject({ direction: "OUTBOUND", senderAgentId: agentId, automatedBy: null });
+      expect(sent.map((m) => m.text)).toEqual([QUESTION]); // the closing message does not go with it
+      const survey = await prisma.satisfactionSurvey.findUniqueOrThrow({ where: { conversationId: conversation.id } });
+      expect(survey).toMatchObject({ closingText: CLOSING.text, closingSenderId: agentId, closingSenderName: "Ana", closingResolvedAt: null, closingOutcome: null });
+      expect(await prisma.message.count({ where: { conversationId: conversation.id, body: CLOSING.text } })).toBe(0);
     });
 
     it("se o atendente desfaz dentro da janela, nem a mensagem nem a pesquisa são enviadas", async () => {
@@ -275,7 +279,7 @@ describe("Pesquisa de satisfação (NPS)", () => {
       expect((await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).status).toBe("IN_PROGRESS");
     });
 
-    it("depois que a mensagem e a pesquisa saíram, não dá mais para desfazer", async () => {
+    it("depois que a pergunta saiu, não dá mais para desfazer", async () => {
       await configure([connectionId]);
       const { conversation } = await attendedConversation("5511900000082");
       await closeConversation(conversation.id, agentId, { ...CLOSING, senderId: agentId });
@@ -308,6 +312,344 @@ describe("Pesquisa de satisfação (NPS)", () => {
       await configure([connectionId]);
       await prisma.conversation.update({ where: { id: conversation.id }, data: { assignedAgentId: null } });
       expect(await willSendSurveyOnClose(conversation.id)).toBe(false); // nobody attended it
+    });
+
+    it("se o cliente voltou a escrever durante a janela do Desfazer, nem a pergunta nem a mensagem saem", async () => {
+      await configure([connectionId]);
+      const { contact, conversation } = await attendedConversation("5511900000085");
+      const held = { ...CLOSING, senderId: agentId };
+      await closeConversation(conversation.id, agentId, held);
+      // The customer wrote before the timer fired: a new conversation is already in the queue.
+      await prisma.conversation.create({
+        data: { contactId: contact.id, whatsappConnectionId: connectionId, status: "NEW", enteredQueueAt: new Date(), createdAt: new Date(Date.now() + 1000), lastMessageAt: new Date() },
+      });
+
+      await sendCloseFollowUp(conversation.id, held);
+      expect(sent).toHaveLength(0);
+      expect(await prisma.satisfactionSurvey.count()).toBe(0);
+    });
+
+    it("o aviso do Desfazer disparado duas vezes (encerrou, desfez e encerrou de novo) não repete nada", async () => {
+      await configure([connectionId]);
+      const { conversation } = await attendedConversation("5511900000086");
+      const held = { ...CLOSING, senderId: agentId };
+      await closeConversation(conversation.id, agentId, held);
+      await sendCloseFollowUp(conversation.id, held);
+      await sendCloseFollowUp(conversation.id, held); // the second timer
+      expect(sent.map((m) => m.text)).toEqual([QUESTION]);
+      expect(await prisma.satisfactionSurvey.count()).toBe(1);
+    });
+  });
+
+  describe("mensagem de encerramento: a espera pela nota", () => {
+    let serial = 0;
+
+    /** Closes like the agent would and lets the "Desfazer" window pass: the question is out and the closing message waits. */
+    async function closedAndAsked(phone: string, withClosingMessage = true) {
+      const { contact, conversation } = await attendedConversation(phone);
+      const held = withClosingMessage ? { ...CLOSING, senderId: agentId } : undefined;
+      await closeConversation(conversation.id, agentId, held);
+      await sendCloseFollowUp(conversation.id, held);
+      sent.length = 0; // from here on, only what the customer's replies cause
+      const survey = await prisma.satisfactionSurvey.findUniqueOrThrow({ where: { conversationId: conversation.id } });
+      return { contact, conversation, survey };
+    }
+
+    const reply = (contact: { id: string; phone: string | null }, body: string | null) =>
+      captureSurveyAnswer(connectionId, contact, { body, providerMessageId: `wamid-wait-${(serial += 1)}` });
+    const texts = () => sent.map((m) => m.text);
+    /** The sweep as it would run `ms` from now. */
+    const sweepAfter = (ms: number) => processDueClosingMessages(new Date(Date.now() + ms));
+    /** The wait is over (what 30 minutes without an answer amounts to). */
+    const makeDue = (conversationId: string) => prisma.satisfactionSurvey.update({ where: { conversationId }, data: { closingDueAt: new Date(Date.now() - 1000) } });
+    const surveyOf = (conversationId: string) => prisma.satisfactionSurvey.findUniqueOrThrow({ where: { conversationId } });
+
+    beforeEach(async () => {
+      await configure([connectionId]);
+    });
+
+    it("a mensagem fica guardada na pesquisa com o prazo de 30 minutos a partir da pergunta", async () => {
+      const { survey } = await closedAndAsked("5511900000100");
+      expect(survey.closingDueAt!.getTime() - survey.sentAt.getTime()).toBe(30 * 60_000);
+      expect(survey.closingText).toBe(CLOSING.text);
+      expect(await sweepAfter(0)).toBe(0); // nothing is due yet
+    });
+
+    it("o prazo vem da configuração, e nunca passa do tempo que o cliente tem para responder", async () => {
+      await configure([connectionId], QUESTION, true, 45);
+      const first = await closedAndAsked("5511900000101");
+      expect(first.survey.closingDueAt!.getTime() - first.survey.sentAt.getTime()).toBe(45 * 60_000);
+
+      await updateSurveySettings({
+        enabled: true,
+        connectionScope: { allConnections: false, connectionIds: [connectionId] },
+        question: QUESTION,
+        thanks: "Obrigado!",
+        answerWindowHours: 1,
+        closingWaitMinutes: 720,
+      });
+      const second = await closedAndAsked("5511900000102");
+      expect(second.survey.closingDueAt!.getTime() - second.survey.sentAt.getTime()).toBe(60 * 60_000);
+    });
+
+    it("a nota: o agradecimento sai na hora e a mensagem de encerramento 10 segundos depois, uma vez só", async () => {
+      const { contact, conversation } = await closedAndAsked("5511900000103");
+
+      expect(await reply(contact, "10")).toBe(true);
+      expect(texts()).toEqual(["Obrigado!"]); // thanks at once; the closing message is not out yet
+      const answered = await surveyOf(conversation.id);
+      expect(answered.score).toBe(10);
+      expect(answered.closingDueAt!.getTime() - answered.answeredAt!.getTime()).toBe(10_000);
+
+      expect(await sweepAfter(5_000)).toBe(0);
+      expect(texts()).toEqual(["Obrigado!"]);
+
+      expect(await sweepAfter(11_000)).toBe(1);
+      expect(texts()).toEqual(["Obrigado!", CLOSING.text]);
+      expect(sent.at(-1)?.sender).toBe("Ana"); // goes out as the agent who closed
+      const message = await prisma.message.findFirstOrThrow({ where: { conversationId: conversation.id, body: CLOSING.text } });
+      expect(message).toMatchObject({ direction: "OUTBOUND", senderAgentId: agentId, automatedBy: null });
+      expect(await surveyOf(conversation.id)).toMatchObject({ closingOutcome: "SENT" });
+      expect((await surveyOf(conversation.id)).closingResolvedAt).not.toBeNull();
+
+      expect(await sweepAfter(60 * 60_000)).toBe(0); // once only
+      expect(texts()).toHaveLength(2);
+    });
+
+    it("sem resposta, a mensagem sai quando a espera acaba — e uma nota que chegue depois ainda vale, sem repetir a mensagem", async () => {
+      const { contact, conversation } = await closedAndAsked("5511900000104");
+
+      expect(await sweepAfter(29 * 60_000)).toBe(0);
+      expect(texts()).toEqual([]);
+
+      await makeDue(conversation.id);
+      expect(await processDueClosingMessages()).toBe(1);
+      expect(texts()).toEqual([CLOSING.text]);
+
+      expect(await reply(contact, "8")).toBe(true); // the answer window is 24 h
+      expect(texts()).toEqual([CLOSING.text, "Obrigado!"]);
+      expect((await surveyOf(conversation.id)).score).toBe(8);
+      expect(await processDueClosingMessages()).toBe(0);
+      expect(texts()).toHaveLength(2);
+    });
+
+    it("agradecimento enquanto espera a nota: fica na conversa encerrada, não abre conversa e não muda o prazo", async () => {
+      const { contact, conversation, survey } = await closedAndAsked("5511900000105");
+
+      expect(await reply(contact, "obrigado")).toBe(true);
+      expect(await reply(contact, "Valeu! 👍")).toBe(true);
+
+      expect(await prisma.conversation.count({ where: { contactId: contact.id } })).toBe(1);
+      const stored = await prisma.message.findMany({ where: { conversationId: conversation.id, direction: "INBOUND" }, orderBy: { createdAt: "asc" }, select: { body: true, type: true } });
+      expect(stored).toEqual([
+        { body: "obrigado", type: "TEXT" },
+        { body: "Valeu! 👍", type: "TEXT" },
+      ]);
+      expect(texts()).toEqual([]); // nothing is answered to a thank-you
+      const after = await surveyOf(conversation.id);
+      expect(after.closingDueAt).toEqual(survey.closingDueAt); // the deadline did not move
+      expect(after).toMatchObject({ answeredAt: null, closingResolvedAt: null });
+
+      expect(await sweepAfter(31 * 60_000)).toBe(1); // the closing message still goes out when the wait ends
+      expect(texts()).toEqual([CLOSING.text]);
+    });
+
+    it("quem agradece e depois manda a nota ainda é avaliado", async () => {
+      const { contact, conversation } = await closedAndAsked("5511900000106");
+      expect(await reply(contact, "obrigado")).toBe(true);
+      expect(await reply(contact, "9")).toBe(true);
+      expect((await surveyOf(conversation.id)).score).toBe(9);
+      expect(texts()).toEqual(["Obrigado!"]);
+      expect(await sweepAfter(11_000)).toBe(1);
+    });
+
+    it("quer conversar antes da nota: a pesquisa termina, a mensagem de encerramento nunca é enviada e a mensagem segue para a fila", async () => {
+      const { contact, conversation } = await closedAndAsked("5511900000107");
+
+      expect(await reply(contact, "preciso de ajuda com o boleto")).toBe(false); // the normal path opens the new conversation
+      const after = await surveyOf(conversation.id);
+      expect(after.closingOutcome).toBe("CANCELED_CUSTOMER_WROTE");
+      expect(after.closingResolvedAt).not.toBeNull();
+      expect(after.expiresAt.getTime()).toBeLessThanOrEqual(Date.now());
+
+      expect(await sweepAfter(31 * 60_000)).toBe(0);
+      expect(texts()).toEqual([]);
+      expect(await reply(contact, "10")).toBe(false); // the survey is over: this is not a score any more
+    });
+
+    it("um agradecimento com pedido junto também é querer conversar", async () => {
+      const { contact, conversation } = await closedAndAsked("5511900000108");
+      expect(await reply(contact, "obrigado, mas ainda tenho uma dúvida")).toBe(false);
+      expect((await surveyOf(conversation.id)).closingOutcome).toBe("CANCELED_CUSTOMER_WROTE");
+      expect(await sweepAfter(31 * 60_000)).toBe(0);
+    });
+
+    it("figura, áudio ou qualquer coisa que não seja texto é querer conversar", async () => {
+      const { contact, conversation } = await closedAndAsked("5511900000109");
+      expect(await reply(contact, null)).toBe(false);
+      expect((await surveyOf(conversation.id)).closingOutcome).toBe("CANCELED_CUSTOMER_WROTE");
+      expect(await sweepAfter(31 * 60_000)).toBe(0);
+    });
+
+    it("nos 10 segundos depois da nota, agradecer ou repetir a nota mantém a mensagem de encerramento", async () => {
+      const { contact, conversation } = await closedAndAsked("5511900000110");
+      expect(await reply(contact, "10")).toBe(true);
+      const answered = await surveyOf(conversation.id);
+
+      expect(await reply(contact, "obrigado")).toBe(true);
+      expect(await reply(contact, "10")).toBe(true); // a repeated score is still the same answer
+      const after = await surveyOf(conversation.id);
+      expect(after.score).toBe(10);
+      expect(after.closingDueAt).toEqual(answered.closingDueAt);
+      expect(texts()).toEqual(["Obrigado!"]); // no second thanks for the repeated score
+      expect(await prisma.conversation.count({ where: { contactId: contact.id } })).toBe(1);
+
+      expect(await sweepAfter(11_000)).toBe(1);
+      expect(texts()).toEqual(["Obrigado!", CLOSING.text]);
+    });
+
+    it("nos 10 segundos depois da nota, querer conversar cancela a mensagem de encerramento (a nota fica registrada)", async () => {
+      const { contact, conversation } = await closedAndAsked("5511900000111");
+      expect(await reply(contact, "9")).toBe(true);
+      sent.length = 0;
+
+      expect(await reply(contact, "na verdade o produto veio com defeito")).toBe(false);
+      const after = await surveyOf(conversation.id);
+      expect(after).toMatchObject({ score: 9, closingOutcome: "CANCELED_CUSTOMER_WROTE" });
+      expect(await sweepAfter(11_000)).toBe(0);
+      expect(texts()).toEqual([]);
+    });
+
+    it("depois que a mensagem de encerramento saiu, tudo volta ao normal: a mensagem seguinte abre conversa", async () => {
+      const { contact, conversation } = await closedAndAsked("5511900000112");
+      await makeDue(conversation.id);
+      expect(await processDueClosingMessages()).toBe(1);
+      sent.length = 0;
+
+      expect(await reply(contact, "obrigado")).toBe(false);
+      expect(texts()).toEqual([]);
+    });
+
+    it("sem mensagem de encerramento, o agradecimento enquanto a pesquisa espera também não abre conversa — e depois do prazo volta ao normal", async () => {
+      const { contact, conversation } = await closedAndAsked("5511900000113", false);
+      expect(await reply(contact, "obrigado")).toBe(true);
+      expect(await sweepAfter(31 * 60_000)).toBe(0); // there is nothing to send
+      expect(texts()).toEqual([]);
+
+      await makeDue(conversation.id);
+      expect(await reply(contact, "obrigado")).toBe(false);
+    });
+
+    it("sem mensagem de encerramento, depois da nota um agradecimento segue o caminho normal", async () => {
+      const { contact } = await closedAndAsked("5511900000114", false);
+      expect(await reply(contact, "10")).toBe(true);
+      expect(await reply(contact, "obrigado")).toBe(false);
+    });
+
+    it("a espera sobrevive a um reinício: nada depende de temporizador em memória", async () => {
+      const { conversation } = await closedAndAsked("5511900000115");
+      await makeDue(conversation.id);
+      // A fresh process only has the database — the sweep alone finds it.
+      expect(await processDueClosingMessages()).toBe(1);
+      expect(texts()).toEqual([CLOSING.text]);
+    });
+
+    it("duas varreduras ao mesmo tempo (ou duas instâncias) enviam a mensagem uma vez só", async () => {
+      const { conversation } = await closedAndAsked("5511900000116");
+      await makeDue(conversation.id);
+      const results = await Promise.all([processDueClosingMessages(), processDueClosingMessages(), processDueClosingMessages()]);
+      expect(results.reduce((a, b) => a + b, 0)).toBe(1);
+      expect(texts()).toEqual([CLOSING.text]);
+      expect(await prisma.message.count({ where: { conversationId: conversation.id, body: CLOSING.text } })).toBe(1);
+    });
+
+    it("se o cliente já tem uma conversa mais nova (aberta por outro meio), a mensagem de encerramento é descartada", async () => {
+      const { contact, conversation } = await closedAndAsked("5511900000117");
+      await prisma.conversation.create({
+        data: { contactId: contact.id, whatsappConnectionId: connectionId, status: "NEW", enteredQueueAt: new Date(), createdAt: new Date(Date.now() + 1000), lastMessageAt: new Date() },
+      });
+      await makeDue(conversation.id);
+      expect(await processDueClosingMessages()).toBe(0);
+      expect(texts()).toEqual([]);
+      expect(await surveyOf(conversation.id)).toMatchObject({ closingOutcome: "CANCELED_NEWER_CONVERSATION" });
+    });
+
+    it("se a conversa foi retomada por alguém, a mensagem de encerramento é descartada e a resposta do cliente chega ao atendente", async () => {
+      const { contact, conversation } = await closedAndAsked("5511900000118");
+      await prisma.conversation.update({ where: { id: conversation.id }, data: { status: "IN_PROGRESS", closedAt: null } });
+
+      expect(await reply(contact, "obrigado")).toBe(false); // not swallowed by the survey
+      await makeDue(conversation.id);
+      expect(await processDueClosingMessages()).toBe(0);
+      expect(await surveyOf(conversation.id)).toMatchObject({ closingOutcome: "CANCELED_NOT_CLOSED" });
+    });
+
+    it("com a conexão fora do ar a mensagem espera (não é perdida) e sai quando ela volta", async () => {
+      const { conversation } = await closedAndAsked("5511900000119");
+      await makeDue(conversation.id);
+      await prisma.whatsAppConnection.update({ where: { id: connectionId }, data: { status: "DISCONNECTED" } });
+
+      expect(await processDueClosingMessages()).toBe(0);
+      expect((await surveyOf(conversation.id)).closingResolvedAt).toBeNull();
+      expect(texts()).toEqual([]);
+
+      await prisma.whatsAppConnection.update({ where: { id: connectionId }, data: { status: "CONNECTED" } });
+      expect(await processDueClosingMessages()).toBe(1);
+      expect(texts()).toEqual([CLOSING.text]);
+    });
+
+    it("se o WhatsApp recusar a mensagem de encerramento, fica registrado como falha, sem tentar de novo", async () => {
+      const { conversation } = await closedAndAsked("5511900000120");
+      await makeDue(conversation.id);
+      const whatsappService = await import("../src/modules/whatsapp/whatsapp.service");
+      vi.mocked(whatsappService.sendOutboundText).mockResolvedValueOnce({ status: "FAILED" } as never);
+
+      expect(await processDueClosingMessages()).toBe(0);
+      expect(await surveyOf(conversation.id)).toMatchObject({ closingOutcome: "FAILED" });
+      expect(await processDueClosingMessages()).toBe(0);
+    });
+
+    it("o atendente que encerrou pode ter sido removido: a mensagem sai mesmo assim", async () => {
+      const { conversation } = await closedAndAsked("5511900000121");
+      await prisma.satisfactionSurvey.update({ where: { conversationId: conversation.id }, data: { closingSenderId: "00000000-0000-4000-8000-000000000000" } });
+      await makeDue(conversation.id);
+      expect(await processDueClosingMessages()).toBe(1);
+      const message = await prisma.message.findFirstOrThrow({ where: { conversationId: conversation.id, body: CLOSING.text } });
+      expect(message.senderAgentId).toBeNull();
+    });
+
+    it("se o tempo para responder acabou com a mensagem ainda esperando (servidor parado), a nota atrasada não vale", async () => {
+      const { contact, conversation } = await closedAndAsked("5511900000123");
+      await prisma.satisfactionSurvey.update({ where: { conversationId: conversation.id }, data: { expiresAt: new Date(Date.now() - 1000) } });
+      expect(await reply(contact, "10")).toBe(false);
+      expect((await surveyOf(conversation.id)).score).toBeNull();
+    });
+
+    it("a mesma nota entregue duas vezes só vale uma vez", async () => {
+      const { contact, conversation } = await closedAndAsked("5511900000122");
+      const delivery = { body: "10", providerMessageId: "wamid-duplicado" };
+      expect(await captureSurveyAnswer(connectionId, contact, delivery)).toBe(true);
+      expect(await captureSurveyAnswer(connectionId, contact, delivery)).toBe(true);
+      expect(texts()).toEqual(["Obrigado!"]);
+      expect(await prisma.message.count({ where: { conversationId: conversation.id, providerMessageId: "wamid-duplicado" } })).toBe(1);
+    });
+  });
+
+  describe("configuração da espera", () => {
+    it("o padrão é 30 minutos, também para configurações salvas antes de existir esse campo", async () => {
+      expect((await getSurveySettings()).closingWaitMinutes).toBe(30);
+      await prisma.systemSetting.upsert({
+        where: { key: "satisfactionSurvey" },
+        update: { value: { enabled: true, allConnections: true, connectionIds: [], question: QUESTION, questionId: null, thanks: "Valeu!", answerWindowHours: 24 } },
+        create: { key: "satisfactionSurvey", value: { enabled: true, allConnections: true, connectionIds: [], question: QUESTION, questionId: null, thanks: "Valeu!", answerWindowHours: 24 } },
+      });
+      expect(await getSurveySettings()).toMatchObject({ enabled: true, thanks: "Valeu!", closingWaitMinutes: 30 });
+    });
+
+    it("guarda e devolve o valor escolhido", async () => {
+      await configure([connectionId], QUESTION, true, 90);
+      expect((await getSurveySettings()).closingWaitMinutes).toBe(90);
+      expect(await toSurveySettingsDTO(await getSurveySettings())).toMatchObject({ closingWaitMinutes: 90 });
     });
   });
 });
