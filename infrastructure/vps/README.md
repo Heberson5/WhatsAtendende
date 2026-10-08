@@ -49,6 +49,23 @@ proposital, para não expor banco de dados/cache numa VPS pública (veja
 `docker-compose.yml`). Para inspecionar o banco diretamente, use
 `docker compose exec postgres psql -U whatsatendende`.
 
+## Tamanho máximo dos arquivos enviados
+
+Quem recebe o arquivo primeiro é o nginx do container `web`, que deixa
+passar até **100 MB** por envio (`client_max_body_size` em
+`infrastructure/docker/nginx.conf`). Depois vem o limite da própria API,
+**25 MB por arquivo** por padrão — acima disso a tela mostra "Arquivo muito
+grande". Para mudar esse segundo limite, coloque `UPLOAD_MAX_SIZE_MB=40` (por
+exemplo) no `.env` da VPS e rode o deploy **[15]**; não passe de 100.
+
+Se existir outro proxy na frente do container (o que faz o HTTPS, ou uma CDN),
+ele tem o limite dele, que o repositório não controla. Um envio recusado com
+**413 Request Entity Too Large** e uma página HTML simples vem de um nginx, e o
+rodapé dessa página (aba Rede do F12 › Resposta) diz de qual: `nginx/1.27.x` é
+o do container `web` (corrigido aqui); outro número, como `nginx/1.24.0
+(Ubuntu)`, é o proxy da VPS — e lá é preciso colocar `client_max_body_size
+100m;` no `server` do site.
+
 ## Backup e restauração completos
 
 Antes de qualquer atualização arriscada (ex.: trocar a versão do Baileys),
