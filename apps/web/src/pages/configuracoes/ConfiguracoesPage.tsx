@@ -1,24 +1,26 @@
 import { useSearchParams } from "react-router-dom";
 import clsx from "clsx";
-import { Clock3, FileDown, KeyRound, Mail, MailPlus, Palette, ShieldCheck, CalendarDays, type LucideIcon } from "lucide-react";
+import { Clock3, FileDown, KeyRound, Mail, MailPlus, Palette, Phone, ShieldCheck, CalendarDays, type LucideIcon } from "lucide-react";
 import { PERMISSION, type Permission } from "@whatsatendende/types";
 import { BrandingPanel } from "./BrandingPanel";
 import { AppInstallPanel } from "./AppInstallPanel";
 import { ExportacoesPanel } from "./ExportacoesPanel";
 import { FeriadosPanel } from "./FeriadosPanel";
 import { FilaSettingsPanel } from "./FilaSettingsPanel";
+import { NumerosTelefonePanel } from "./NumerosTelefonePanel";
 import { EmailSettingsPanel } from "./EmailSettingsPanel";
 import { EmailTemplatesPanel } from "./EmailTemplatesPanel";
 import { PermissionsPanel } from "./PermissionsPanel";
 import { SecuritySettingsPanel } from "./SecuritySettingsPanel";
 import { useAuthStore } from "../../store/auth-store";
 
-type Tab = "branding" | "exportacoes" | "email" | "email-templates" | "feriados" | "fila" | "seguranca" | "permissoes";
+type Tab = "branding" | "exportacoes" | "email" | "email-templates" | "feriados" | "fila" | "telefone" | "seguranca" | "permissoes";
 
 // Grouped by subject in the left-hand section menu.
 const TABS: { key: Tab; label: string; group: string; icon: LucideIcon }[] = [
   { key: "fila", label: "Fila", group: "Atendimento", icon: Clock3 },
   { key: "feriados", label: "Feriados", group: "Atendimento", icon: CalendarDays },
+  { key: "telefone", label: "Números de telefone", group: "Atendimento", icon: Phone },
   { key: "branding", label: "Identidade visual", group: "Aparência", icon: Palette },
   { key: "exportacoes", label: "Exportações", group: "Aparência", icon: FileDown },
   { key: "email", label: "E-mail", group: "E-mail", icon: Mail },
@@ -41,6 +43,7 @@ const TAB_PERMISSION: Partial<Record<Tab, Permission>> = {
   "email-templates": PERMISSION.CONFIGURACOES_EMAIL_MODELOS_VISUALIZAR,
   feriados: PERMISSION.CONFIGURACOES_FERIADOS_VISUALIZAR,
   fila: PERMISSION.CONFIGURACOES_FILA_VISUALIZAR,
+  telefone: PERMISSION.CONFIGURACOES_TELEFONE_VISUALIZAR,
 };
 
 export default function ConfiguracoesPage() {
@@ -119,6 +122,7 @@ export default function ConfiguracoesPage() {
         {activeTab === "email-templates" && <EmailTemplatesPanel />}
         {activeTab === "feriados" && <FeriadosPanel />}
         {activeTab === "fila" && <FilaSettingsPanel />}
+        {activeTab === "telefone" && <NumerosTelefonePanel />}
         {activeTab === "seguranca" && role === "ADMIN" && <SecuritySettingsPanel />}
         {activeTab === "permissoes" && role === "ADMIN" && <PermissionsPanel />}
       </div>

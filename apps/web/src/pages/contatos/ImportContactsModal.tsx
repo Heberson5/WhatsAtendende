@@ -51,7 +51,7 @@ export function ImportContactsModal({ connections, onClose }: { connections: { i
               Planilha CSV com cabeçalho e as colunas <b className="text-[var(--color-text)]">Nome</b>, <b className="text-[var(--color-text)]">Telefone</b> e{" "}
               <b className="text-[var(--color-text)]">Etiquetas</b> (opcional, várias separadas por vírgula). Separador ponto e vírgula ou vírgula.
             </p>
-            <p className="mt-1">Telefone com DDD; sem o 55 na frente, ele é adicionado. Um telefone que já existe na conexão é atualizado, não duplicado.</p>
+            <p className="mt-1">Telefone com DDD; sem o DDI na frente, o DDI padrão é adicionado, e o 9 a mais de um celular é corrigido (veja Configurações › Números de telefone). Um telefone que já existe na conexão é atualizado, não duplicado.</p>
             <p className="mt-1 font-mono text-[11px]">Nome;Telefone;Etiquetas{"\n"}Ana Souza;11 98765-4321;VIP, Atacado</p>
           </div>
 

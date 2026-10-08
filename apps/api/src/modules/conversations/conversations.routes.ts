@@ -20,6 +20,7 @@ import { syncReadReceiptToDevice, requestOlderHistory, sendOutboundText } from "
 import { sendMetaMessage } from "../meta/meta.service";
 import { createOutboundMessage, createSystemOutboundMessage } from "../messages/messages.service";
 import { getActiveClosingMessageForAgent } from "../closing-messages/closing-messages.service";
+import { resolveNumberToStart } from "../phone-numbers/resolve-number.service";
 import { willSendSurveyOnClose, type HeldClosingMessage } from "../satisfaction/satisfaction.service";
 import { getActiveTemplateFor, renderAutoMessageTemplate, ROLE_LABEL } from "../auto-message-templates/auto-message-templates.service";
 import { createNotification } from "../notifications/notifications.service";
@@ -135,8 +136,18 @@ conversationsRouter.post(
     if (req.auth!.role === "MANAGER" && !(await canManagerAccessConnection(req.auth!.userId, targetConnectionId, "receive"))) {
       throw Errors.forbidden("Voce nao tem permissao para receber conversas desta conexao");
     }
-    const conversation = await service.startConversation(targetConnectionId, phone, name ?? null, req.auth!.userId);
-    await writeAudit({ userId: req.auth!.userId, action: "CONVERSATION_STARTED", entity: "Conversation", entityId: conversation.id, ipAddress: req.ip ?? null, metadata: { connectionId: targetConnectionId, phone } });
+    // The typed number goes through Configurações › Números de telefone (DDI padrão, 9 a mais) first; WhatsApp
+    // is asked only when the 9 was dropped, to know which of the two forms the account really has.
+    const { phone: startPhone, confirmedOnWhatsApp } = await resolveNumberToStart(targetConnectionId, phone);
+    const conversation = await service.startConversation(targetConnectionId, startPhone, name ?? null, req.auth!.userId, { confirmedOnWhatsApp });
+    await writeAudit({
+      userId: req.auth!.userId,
+      action: "CONVERSATION_STARTED",
+      entity: "Conversation",
+      entityId: conversation.id,
+      ipAddress: req.ip ?? null,
+      metadata: { connectionId: targetConnectionId, phone: startPhone, ...(startPhone !== phone.replace(/\D/g, "") && { typedPhone: phone }) },
+    });
     // startConversation only ever targets a WhatsApp connection (Nova
     // Conversa has no Instagram/Messenger equivalent — those channels are
     // inbound-only in this phase, and Meta's own policies restrict

@@ -15,6 +15,7 @@ import { writeAudit } from "../../lib/audit";
 import { sendMail, sendTemplatedMail, previewTemplatedMail } from "../../lib/mail";
 import { env } from "../../config/env";
 import * as service from "./settings.service";
+import { getPhoneSettings, updatePhoneSettings } from "../phone-numbers/phone-settings.service";
 
 export const settingsRouter = Router();
 
@@ -409,6 +410,36 @@ settingsRouter.patch(
     const patch = queueSettingsSchema.parse(req.body ?? {});
     const settings = await service.updateBusinessSettings(patch);
     await writeAudit({ userId: req.auth!.userId, action: "SETTINGS_QUEUE_UPDATED", entity: "SystemSetting", entityId: "business", ipAddress: req.ip ?? null, metadata: patch });
+    res.json(settings);
+  })
+);
+
+// How a number typed by hand is completed (DDI padrão and the extra 9). Any
+// authenticated user can read it — Nova conversa previews what will be used —
+// but only the tab's own permission can change it.
+const phoneSettingsSchema = z
+  .object({
+    defaultCountryCodeEnabled: z.boolean(),
+    defaultCountryCode: z.string().regex(/^\d{1,3}$/, "Informe o DDI com 1 a 3 números"),
+    fixExtraNineEnabled: z.boolean(),
+  })
+  .strict();
+
+settingsRouter.get(
+  "/phone",
+  asyncHandler(async (_req, res) => {
+    res.json(await getPhoneSettings());
+  })
+);
+
+settingsRouter.patch(
+  "/phone",
+  requirePermission(PERMISSION.CONFIGURACOES_GERENCIAR),
+  requirePermission(PERMISSION.CONFIGURACOES_TELEFONE_EDITAR),
+  asyncHandler(async (req, res) => {
+    const input = phoneSettingsSchema.parse(req.body ?? {});
+    const settings = await updatePhoneSettings(input);
+    await writeAudit({ userId: req.auth!.userId, action: "SETTINGS_PHONE_UPDATED", entity: "SystemSetting", entityId: "phoneNumbers", ipAddress: req.ip ?? null, metadata: input });
     res.json(settings);
   })
 );

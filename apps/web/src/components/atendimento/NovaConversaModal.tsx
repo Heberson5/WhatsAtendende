@@ -2,9 +2,10 @@ import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Search, UserPlus, X, CheckCircle2, XCircle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import type { ConversationListItemDTO, WhatsAppDeviceContactDTO } from "@whatsatendende/types";
+import { normalizeTypedPhone, type ConversationListItemDTO, type PhoneLookupDTO, type WhatsAppDeviceContactDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { formatPhone } from "../../lib/format-phone";
+import { usePhoneSettings } from "../../hooks/usePhoneSettings";
 
 interface ConnectionOption {
   id: string;
@@ -50,6 +51,7 @@ export function NovaConversaModal({
     onError: (err) => toast.error(getApiErrorMessage(err)),
   });
 
+  const { data: phoneSettings } = usePhoneSettings();
   const manualDigits = manualPhone.replace(/\D/g, "");
   // Validates a typed number against WhatsApp itself (one bounded lookup —
   // see PROMPT: "buscar no celular somente o que digitar, pelo número")
@@ -60,11 +62,15 @@ export function NovaConversaModal({
   const numberLookup = useQuery({
     queryKey: ["whatsapp-number-lookup", connectionId, manualDigits],
     queryFn: async () =>
-      (await api.get<{ exists: boolean; phone: string | null }>(`/whatsapp/connections/${connectionId}/lookup-number`, { params: { phone: manualDigits } }))
-        .data,
+      (await api.get<PhoneLookupDTO>(`/whatsapp/connections/${connectionId}/lookup-number`, { params: { phone: manualDigits } })).data,
     enabled: mode === "manual" && Boolean(connectionId) && manualDigits.length >= 10,
   });
-  const numberConfirmedMissing = mode === "manual" && numberLookup.isSuccess && !numberLookup.data.exists;
+  // `exists: null` means WhatsApp could not be asked right now — never blocks, like a failed lookup.
+  const numberConfirmedMissing = mode === "manual" && numberLookup.isSuccess && numberLookup.data.exists === false;
+  const numberConfirmed = numberLookup.isSuccess && numberLookup.data.exists === true;
+  // What the conversation will use: the number WhatsApp confirmed, or else the typed one after Configurações › Números de telefone.
+  const numberToUse = numberConfirmed && numberLookup.data?.phone ? numberLookup.data.phone : phoneSettings ? normalizeTypedPhone(manualPhone, phoneSettings).phone : null;
+  const defaultCountryCode = phoneSettings?.defaultCountryCodeEnabled ? phoneSettings.defaultCountryCode : null;
 
   const filtered = (contacts ?? []).filter((c) => {
     const q = search.trim().toLowerCase();
@@ -156,29 +162,43 @@ export function NovaConversaModal({
         ) : (
           <div className="space-y-3">
             <label className="block text-sm">
-              <span className="mb-1 block font-medium">Número (com DDI e DDD)</span>
+              <span className="mb-1 block font-medium">
+                {!phoneSettings ? "Número" : defaultCountryCode ? "Número (DDI opcional)" : "Número (com DDI e DDD)"}
+              </span>
               <input
                 value={manualPhone}
                 onChange={(e) => setManualPhone(e.target.value)}
-                placeholder="5511999999999"
+                placeholder={!phoneSettings ? "" : defaultCountryCode ? "65 99999-9999" : "5511999999999"}
                 className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm"
               />
+              {defaultCountryCode && <p className="mt-1 text-xs text-muted">Sem o DDI, usamos +{defaultCountryCode}.</p>}
               {manualDigits.length >= 10 && connectionId && (
-                <p className="mt-1.5 flex items-center gap-1.5 text-xs">
-                  {numberLookup.isFetching ? (
-                    <>
-                      <Loader2 className="h-3.5 w-3.5 animate-spin text-muted" /> <span className="text-muted">Verificando no WhatsApp...</span>
-                    </>
-                  ) : numberConfirmedMissing ? (
-                    <>
-                      <XCircle className="h-3.5 w-3.5 text-red-500" /> <span className="text-red-600">Este número não está no WhatsApp.</span>
-                    </>
-                  ) : numberLookup.isSuccess && numberLookup.data.exists ? (
-                    <>
-                      <CheckCircle2 className="h-3.5 w-3.5 text-green-500" /> <span className="text-green-700">Número confirmado no WhatsApp.</span>
-                    </>
-                  ) : null}
-                </p>
+                <div className="mt-1.5 space-y-1 text-xs">
+                  {numberToUse && numberToUse !== manualDigits && (
+                    <p className="text-muted">
+                      Será usado: <span className="font-medium tabular-nums text-[var(--color-text)]">{formatPhone(numberToUse)}</span>
+                    </p>
+                  )}
+                  <p className="flex items-center gap-1.5">
+                    {numberLookup.isFetching ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-muted" /> <span className="text-muted">Verificando no WhatsApp...</span>
+                      </>
+                    ) : numberConfirmedMissing ? (
+                      <>
+                        <XCircle className="h-3.5 w-3.5 text-red-500" />{" "}
+                        <span className="text-red-600">
+                          Este número não está no WhatsApp
+                          {numberLookup.data?.normalizedPhone ? ` (conferido: ${formatPhone(numberLookup.data.normalizedPhone)})` : ""}.
+                        </span>
+                      </>
+                    ) : numberConfirmed ? (
+                      <>
+                        <CheckCircle2 className="h-3.5 w-3.5 text-green-500" /> <span className="text-green-700">Número confirmado no WhatsApp.</span>
+                      </>
+                    ) : null}
+                  </p>
+                </div>
               )}
             </label>
             <label className="block text-sm">
