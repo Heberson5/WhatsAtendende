@@ -68,7 +68,7 @@ export const RELEASES: Release[] = [
     version: "2.1.7",
     date: "08 out 2026",
     name: "Conversas e Gestão mais corretas",
-    summary: "As reações aparecem uma vez só e o filtro de período da Gestão passa a filtrar de verdade.",
+    summary: "As reações aparecem uma vez só, o filtro de período da Gestão filtra de verdade e a conversa iniciada ou aberta pelo celular continua pelo celular, sem linha repetida.",
     notes: [
       {
         type: "correcao",
@@ -87,6 +87,15 @@ export const RELEASES: Release[] = [
         before: "“Hoje” listava conversas de outros dias.",
         after: "“Hoje” lista só o que teve movimento hoje; “Todo o período” mostra tudo.",
         where: "Gestão › filtro de período, no alto da lista",
+      },
+      {
+        type: "correcao",
+        area: "gestao",
+        title: "Conversa iniciada ou aberta pelo celular não gera linha repetida",
+        text: "Quando uma conversa começa pelo celular da empresa (a equipe escreve primeiro), ou é aberta ou respondida lá antes de alguém aceitá-la no sistema, ela fica como “Atendido pelo celular”. Antes, cada nova mensagem do cliente abria uma segunda conversa, na fila, ao lado da primeira — o mesmo cliente aparecia em duas linhas na Gestão. Agora as mensagens novas entram na mesma linha, que continua pelo celular e não entra na fila. A conversa que um atendente aceitou no sistema continua no sistema, mesmo que alguém abra ou responda pelo celular. Para trazer uma conversa do celular para o sistema, use Devolver para a fila ou Transferir, na Gestão. Depois que a conversa é encerrada, uma nova mensagem do cliente abre uma conversa nova, como sempre. Como nesse caso o cliente não entra mais na fila, a Gestão passou a mostrar “sem resposta há…” também nas linhas “Atendido pelo celular”.",
+        before: "O mesmo cliente aparecia em duas linhas: uma “Atendido pelo celular” e outra na fila.",
+        after: "Uma linha só, que continua pelo celular até ser encerrada.",
+        where: "Gestão › lista de conversas",
       },
     ],
   },

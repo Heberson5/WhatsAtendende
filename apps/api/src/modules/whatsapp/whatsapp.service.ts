@@ -552,13 +552,19 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
         "WhatsApp rejected an outbound message — marking it failed"
       );
     }
-    const message = await messagesService.updateMessageStatusByProviderId(event.providerMessageId, event.status);
-    if (!message) return;
-    const conversation = await prisma.conversation.findUnique({
-      where: { id: message.conversationId },
-      select: { assignedAgentId: true },
-    });
-    realtimeEvents.messageStatusChanged(message.conversationId, conversation?.assignedAgentId);
+    try {
+      const message = await messagesService.updateMessageStatusByProviderId(event.providerMessageId, event.status);
+      if (!message) return;
+      const conversation = await prisma.conversation.findUnique({
+        where: { id: message.conversationId },
+        select: { assignedAgentId: true },
+      });
+      realtimeEvents.messageStatusChanged(message.conversationId, conversation?.assignedAgentId);
+    } catch (err) {
+      // A receipt for a message that was removed a moment ago (the row vanished between the lookup and the
+      // update) is not worth an unhandled rejection — which would take the whole process down.
+      logger.error({ err, connectionId, providerMessageId: event.providerMessageId }, "failed to apply a delivery receipt");
+    }
   });
 
   provider.onHistorySync(async (event) => {

@@ -384,19 +384,20 @@ export async function getOldestMessageAnchor(
  * queue (not the last agent), per spec section 28's default.
  *
  * HANDLED_EXTERNALLY is deliberately included here, unlike CLOSED/ABANDONED:
- * it isn't a deliberate "this attendance is over" action by an agent, just a
- * passive marker that the customer's messages are being handled directly on
- * the linked phone instead of through this app. Treating it as terminal
- * (excluded from "active") used to mean every single message exchanged while
- * a chat sat in that state — inbound from the customer, or another
- * device-sent reply — reopened it into a BRAND NEW Conversation row each
- * time, since neither findOrOpenConversationForInboundMessage nor
- * findOrOpenConversationForDeviceSentMessage below could find the existing
- * one anymore. On any real account where staff sometimes reply straight from
- * the phone, that turned one ongoing WhatsApp thread into dozens of
- * near-empty Conversation rows — see PROMPT: "em Gestão ... está trazendo
- * mais de uma linha para a mesma conversa, isso significa que a cada
- * mensagem recebida ou enviada, está acrescentando uma nova linha".
+ * it isn't a deliberate "this attendance is over" action by an agent, it marks
+ * a conversation that lives on the linked phone — started there (the team wrote
+ * first), or opened/answered there before anyone accepted it here. It stays
+ * there: the customer's next messages go into the SAME row, which keeps its
+ * status, instead of a second conversation opening next to it (the one thread
+ * listed twice in Gestão, once "Atendido pelo celular" and once in the queue).
+ * A conversation belongs to where it began until it is closed; to take a
+ * phone one over, Gestão has Devolver para a fila / Transferir. See PROMPT:
+ * "caso a conversa tenha sido aberta ou iniciada no celular, deverá permanecer
+ * pelo celular".
+ *
+ * (This replaces two earlier behaviors: the customer's message re-queued that
+ * same row, overwriting its Entrada na fila/Aceite, and then it opened a new row
+ * on every return, which left the phone one behind forever as a duplicate.)
  */
 export async function findActiveConversationForContact(contactId: string) {
   return prisma.conversation.findFirst({
@@ -535,8 +536,10 @@ export async function findOrOpenConversationForInboundMessage(
   channel: Channel = "WHATSAPP"
 ) {
   const connectionField = channel === "WHATSAPP" ? { whatsappConnectionId: connectionId } : { metaConnectionId: connectionId };
+  // Any open conversation takes the message — one being handled on the linked
+  // phone (HANDLED_EXTERNALLY) included, see findActiveConversationForContact.
   const active = await findActiveConversationForContact(contactId);
-  if (active && active.status !== "HANDLED_EXTERNALLY") {
+  if (active) {
     return { conversation: active, isNewConversation: false, autoAssignedAgentId: null as string | null, flowId: null as string | null };
   }
 
@@ -550,18 +553,6 @@ export async function findOrOpenConversationForInboundMessage(
   const rawMentionedAgent = await findMentionedAgent(body);
   const mentionedAgent = rawMentionedAgent?.presence === "ONLINE" ? rawMentionedAgent : null;
   const now = new Date();
-
-  // The customer messaging again after being handled outside this app (on
-  // the phone, or another app) starts a genuinely NEW conversation here —
-  // its own row, with its own Entrada na fila/Aceite — instead of updating
-  // the HANDLED_EXTERNALLY row in place, which used to overwrite that
-  // row's timestamps and erase the earlier interaction from Gestão's
-  // history. See PROMPT: "Na tela de gestão, está unificando quando o
-  // cliente volta a conversar... cada vez que o cliente iniciar uma nova
-  // conversa, deverá ter uma nova linha... não é para sobrescrever o
-  // anterior." The old HANDLED_EXTERNALLY row is left untouched; only its
-  // id is kept for the audit trail below.
-  const previousConversationId = active?.id ?? null;
 
   // An active Fluxo on this connection talks to the customer first (see
   // flow-engine.service.ts) — unless they asked for an online agent by name.
@@ -585,22 +576,18 @@ export async function findOrOpenConversationForInboundMessage(
       : { contactId, channel, ...connectionField, status: flowId ? "IN_FLOW" : "NEW", enteredQueueAt: now, lastMessageAt: now },
   });
 
-  const createdPayload = previousConversationId
-    ? { previousConversationId, reason: "customer messaged again after being handled externally" }
-    : undefined;
-
   if (mentionedAgent) {
     await prisma.$transaction([
       prisma.conversationAssignment.create({
         data: { conversationId: conversation.id, toAgentId: mentionedAgent.id, reason: "MENTION" },
       }),
       prisma.conversationEvent.create({
-        data: { conversationId: conversation.id, type: "CREATED", payload: { ...createdPayload, autoAssignedByMention: mentionedAgent.displayName } },
+        data: { conversationId: conversation.id, type: "CREATED", payload: { autoAssignedByMention: mentionedAgent.displayName } },
       }),
     ]);
   } else {
     await prisma.conversationEvent.create({
-      data: { conversationId: conversation.id, type: "CREATED", payload: createdPayload },
+      data: { conversationId: conversation.id, type: "CREATED" },
     });
   }
 

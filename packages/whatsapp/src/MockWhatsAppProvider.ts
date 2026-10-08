@@ -262,6 +262,22 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
     this.emitter.emit("message", event);
   }
 
+  /** Test helper: a message typed on the linked phone itself (or another linked device) to this customer — an OUTBOUND message the app didn't send. */
+  simulateDeviceSentMessage(phone: string, body: string): void {
+    const event: InboundMessageEvent = {
+      providerMessageId: randomUUID(),
+      chatId: `${phone}@s.whatsapp.net`,
+      phone,
+      contactName: null,
+      type: "TEXT",
+      body,
+      replyToProviderMessageId: null,
+      timestamp: new Date(),
+      fromMe: true,
+    };
+    this.emitter.emit("message", event);
+  }
+
   private ensureConnected() {
     if (this.status.state !== "CONNECTED") {
       throw new Error("WhatsApp provider is not connected");
