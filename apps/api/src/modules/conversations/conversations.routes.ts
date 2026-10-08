@@ -11,7 +11,7 @@ import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
 import { env } from "../../config/env";
 import { parseListParam } from "../../lib/parse-list-param";
-import { optionalDateQueryParam } from "../../lib/period";
+import { optionalDateQueryParam, resolvePeriod } from "../../lib/period";
 import { resolveAllowedConnectionIds, canManagerAccessConnection } from "../../lib/connection-access";
 import { toConversationListItemDTO } from "./conversations.mapper";
 import * as service from "./conversations.service";
@@ -162,8 +162,12 @@ conversationsRouter.post(
 // distinct from their "/queue" and "/mine" above, which only ever show
 // conversations they can actually act on (their own, or unassigned).
 const oversightQuerySchema = z.object({
+  // "hoje", "ontem"... — resolved below in the viewer's own time zone, the same way the Dashboard and Relatórios do.
+  period: z.enum(["today", "yesterday", "last7days", "month", "lastMonth", "custom"]).optional(),
   from: optionalDateQueryParam,
   to: optionalDateQueryParam,
+  // The browser's UTC offset in minutes (Date#getTimezoneOffset()) — see lib/period.ts for why the server can't use its own clock.
+  tzOffsetMinutes: z.coerce.number().default(0),
   agentId: z.string().uuid().optional(),
   // Repeated query param (?status=a&status=b) or comma-separated — see
   // PROMPT: Dashboard's "Em atendimento" card needs IN_PROGRESS + TRANSFERRED at once.
@@ -183,9 +187,15 @@ conversationsRouter.get(
       connectionIds = await resolveAllowedConnectionIds(req.auth!, connectionIds, "manage");
     }
     const status = parseListParam(filters.status)?.filter((s) => OVERSIGHT_STATUSES.has(s));
+    // No period (or a "personalizado" still missing its dates) = whatever from/to came — a link from the
+    // Dashboard's "Aguardando" card carries none and means "everything, right now".
+    const range =
+      filters.period && (filters.period !== "custom" || (filters.from && filters.to))
+        ? resolvePeriod(filters.period, filters.from, filters.to, filters.tzOffsetMinutes)
+        : { from: filters.from, to: filters.to };
     const conversations = await service.listAllConversations({
-      from: filters.from,
-      to: filters.to,
+      from: range.from,
+      to: range.to,
       agentId: filters.agentId,
       status,
       contactSearch: filters.q,

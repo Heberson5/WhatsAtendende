@@ -16,6 +16,7 @@ import { ReadOnlyConversationDrawer } from "../../components/gestao/ReadOnlyConv
 import { MergeConversationModal } from "../../components/gestao/MergeConversationModal";
 import { GestaoTransferModal } from "../../components/gestao/GestaoTransferModal";
 import { useNow } from "../../hooks/useNow";
+import { formatActivity } from "../../lib/formatActivity";
 import { STATUS_COLOR, STATUS_LABEL } from "../../lib/conversationStatus";
 import { toastWithUndo } from "../../lib/undoToast";
 
@@ -93,6 +94,10 @@ export default function GestaoPage() {
         from: searchParams.get("from") ?? undefined,
         to: searchParams.get("to") ?? undefined,
       });
+    } else if (statusParam) {
+      // The Dashboard's "Aguardando" card carries no period on purpose — it is what is waiting
+      // right now, whatever day it arrived — so it must not be narrowed to the page's default "Hoje".
+      setPeriod({ period: "all" });
     }
     setSearchParams(
       (prev) => {
@@ -140,6 +145,11 @@ export default function GestaoPage() {
       (
         await api.get<ConversationListItemDTO[]>("/conversations/oversight", {
           params: {
+            // The period itself — the API turns "hoje", "este mês"... into dates in this browser's time zone
+            // (same rule as the Dashboard and Relatórios); only "personalizado" carries from/to, and
+            // "Todo o período" sends nothing. Leaving `period` out used to list everything under "Hoje".
+            period: period.period === "all" ? undefined : period.period,
+            tzOffsetMinutes: new Date().getTimezoneOffset(),
             from: period.from,
             to: period.to,
             agentId: agentId === "all" ? undefined : agentId,
@@ -197,7 +207,7 @@ export default function GestaoPage() {
   return (
     <div className="flex h-full flex-col overflow-hidden p-3 sm:p-6">
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <PeriodFilter value={period} onChange={setPeriod} />
+        <PeriodFilter value={period} onChange={setPeriod} allowAll />
 
         <select value={agentId} onChange={(e) => setAgentId(e.target.value)} className="focus-ring rounded-card border border-border bg-surface px-3 py-2 text-sm">
           <option value="all">Todos os atendentes</option>
@@ -292,7 +302,7 @@ export default function GestaoPage() {
               <th className="px-3 py-3">Atendente</th>
               <th className="px-3 py-3">Conexão</th>
               <th className="px-3 py-3">Esperando</th>
-              <th className="px-3 py-3">Última mensagem</th>
+              <th className="px-3 py-3">Última atividade</th>
               <th className="px-4 py-3" />
             </tr>
           </thead>
@@ -367,7 +377,10 @@ export default function GestaoPage() {
                 >
                   {wait?.label ?? "—"}
                 </td>
-                <td className="max-w-[220px] truncate px-3 py-3 text-xs text-muted">{c.lastMessagePreview ?? "—"}</td>
+                <td className="max-w-[220px] px-3 py-3 text-xs text-muted">
+                  <div className="truncate">{c.lastMessagePreview ?? "—"}</div>
+                  <div className="text-[11px] opacity-75">{formatActivity(c.lastMessageAt, now)}</div>
+                </td>
                 <td className="px-4 py-3 text-right">
                   <div className="flex items-center justify-end gap-0.5 whitespace-nowrap">
                     {canManage && ROUTABLE_STATUSES.has(c.status) && (

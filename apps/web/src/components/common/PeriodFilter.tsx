@@ -1,6 +1,7 @@
 import { useState } from "react";
 
-export type PeriodKey = "today" | "yesterday" | "last7days" | "month" | "lastMonth" | "custom";
+// "all" (no period filter at all) only exists where a screen opts in with `allowAll` — Gestão, which also lists what is waiting right now.
+export type PeriodKey = "today" | "yesterday" | "last7days" | "month" | "lastMonth" | "custom" | "all";
 
 export interface PeriodValue {
   period: PeriodKey;
@@ -17,10 +18,23 @@ const OPTIONS: { value: PeriodKey; label: string; short: string }[] = [
   { value: "custom", label: "Personalizado", short: "Personalizado" },
 ];
 
-/** `segmented` shows every period as a button (Dashboard); the default is a compact select. */
-export function PeriodFilter({ value, onChange, segmented }: { value: PeriodValue; onChange: (v: PeriodValue) => void; segmented?: boolean }) {
+const ALL_OPTION = { value: "all" as PeriodKey, label: "Todo o período", short: "Tudo" };
+
+/** `segmented` shows every period as a button (Dashboard); the default is a compact select. `allowAll` adds "Todo o período" (select only). */
+export function PeriodFilter({
+  value,
+  onChange,
+  segmented,
+  allowAll,
+}: {
+  value: PeriodValue;
+  onChange: (v: PeriodValue) => void;
+  segmented?: boolean;
+  allowAll?: boolean;
+}) {
   const [customFrom, setCustomFrom] = useState(value.from ?? "");
   const [customTo, setCustomTo] = useState(value.to ?? "");
+  const selectOptions = allowAll ? [...OPTIONS, ALL_OPTION] : OPTIONS;
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -54,7 +68,7 @@ export function PeriodFilter({ value, onChange, segmented }: { value: PeriodValu
         }}
         className="focus-ring rounded-card border border-border bg-surface px-3 py-2 text-sm"
       >
-        {OPTIONS.map((opt) => (
+        {selectOptions.map((opt) => (
           <option key={opt.value} value={opt.value}>
             {opt.label}
           </option>

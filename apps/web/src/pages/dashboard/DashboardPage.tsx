@@ -193,7 +193,7 @@ export default function DashboardPage() {
     }
   }
 
-  const periodLabel = { today: "hoje", yesterday: "ontem", last7days: "nos últimos 7 dias", month: "neste mês", lastMonth: "no mês anterior", custom: "no período" }[
+  const periodLabel = { today: "hoje", yesterday: "ontem", last7days: "nos últimos 7 dias", month: "neste mês", lastMonth: "no mês anterior", custom: "no período", all: "em todo o período" }[
     period.period
   ];
 

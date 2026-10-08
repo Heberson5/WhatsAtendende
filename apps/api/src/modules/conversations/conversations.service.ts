@@ -932,18 +932,30 @@ export interface OversightFilters {
   connectionIds?: string[];
 }
 
-/** Gestão/Admin oversight listing — full visibility, but callers must still enforce read-only in the route layer. */
+/**
+ * Gestão/Admin oversight listing — full visibility, but callers must still enforce read-only in the route layer.
+ *
+ * With a period, a conversation belongs to it when anything happened inside it: it
+ * started, had a message (either way), or was closed — so "Hoje" shows what is
+ * moving today, including a chat that began yesterday and got a message this
+ * morning, instead of only the ones created today. Newest activity first.
+ */
 export async function listAllConversations(filters: OversightFilters) {
+  const inPeriod = { gte: filters.from, lte: filters.to };
   return prisma.conversation.findMany({
     where: {
-      createdAt: filters.from || filters.to ? { gte: filters.from, lte: filters.to } : undefined,
       assignedAgentId: filters.agentId,
       status: filters.status?.length ? { in: filters.status as any } : undefined,
-      // Same WhatsApp-only-filter + "every Meta conversation regardless"
-      // OR shape as listQueue above (see its own comment for why).
-      OR: [
-        { channel: "WHATSAPP", whatsappConnectionId: filters.connectionIds === undefined ? undefined : { in: filters.connectionIds } },
-        { channel: { not: "WHATSAPP" } },
+      AND: [
+        // Same WhatsApp-only-filter + "every Meta conversation regardless"
+        // OR shape as listQueue above (see its own comment for why).
+        {
+          OR: [
+            { channel: "WHATSAPP", whatsappConnectionId: filters.connectionIds === undefined ? undefined : { in: filters.connectionIds } },
+            { channel: { not: "WHATSAPP" } },
+          ],
+        },
+        ...(filters.from || filters.to ? [{ OR: [{ createdAt: inPeriod }, { lastMessageAt: inPeriod }, { closedAt: inPeriod }] }] : []),
       ],
       contact: filters.contactSearch
         ? {
@@ -955,7 +967,7 @@ export async function listAllConversations(filters: OversightFilters) {
         : undefined,
     },
     include: conversationInclude,
-    orderBy: { createdAt: "desc" },
+    orderBy: { lastMessageAt: "desc" },
     take: 200,
   });
 }
