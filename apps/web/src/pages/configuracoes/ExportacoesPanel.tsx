@@ -6,7 +6,7 @@ import { PERMISSION } from "@whatsatendende/types";
 import { useAuthStore } from "../../store/auth-store";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { useExportBranding } from "../../hooks/useExportBranding";
-import { darken } from "../../lib/chart-theme";
+import { darken, lighten } from "../../lib/chart-theme";
 import { UnsavedChangesBar } from "../../components/common/UnsavedChangesBar";
 
 const SAMPLE_ROWS = [
@@ -36,7 +36,9 @@ export function ExportacoesPanel() {
     setPrimaryColor(exportBranding.primaryColor);
   }
 
-  const primaryDark = darken(primaryColor, 0.25);
+  // The presentation cover's own shades (see palette() in lib/dashboardPresentation.ts).
+  const coverDark = darken(primaryColor, 0.66);
+  const coverMid = lighten(primaryColor, 0.45);
   const logoUrl = exportBranding?.logoUrl ?? null;
 
   const saveMutation = useMutation({
@@ -128,18 +130,35 @@ export function ExportacoesPanel() {
             <Presentation className="h-4.5 w-4.5 text-primary" />
             <h2 className="text-base font-semibold">Apresentação (PowerPoint)</h2>
           </div>
-          <p className="mb-4 text-xs text-muted">Capa do Dashboard exportado em "Exportar PPT".</p>
+          <p className="mb-4 text-xs text-muted">Capa da apresentação gerada no Dashboard, em "Apresentação (PPT)".</p>
 
-          <div className="aspect-video w-full overflow-hidden rounded-lg border border-border bg-white shadow-inner">
-            <div className="flex h-[28%] items-center gap-3 px-4" style={{ backgroundColor: primaryColor }}>
-              {logoUrl && <img src={logoUrl} alt="" className="h-8 max-w-[35%] object-contain" />}
-              <span className="truncate text-sm font-bold text-white">{companyName || "WhatsAtendende"}</span>
+          {/* The cover built in lib/dashboardPresentation.ts, in miniature: the color's dark shade, translucent circles, the logo on a white badge. */}
+          <div className="relative aspect-video w-full overflow-hidden rounded-lg border border-border shadow-inner" style={{ backgroundColor: coverDark }}>
+            <div className="absolute aspect-square rounded-full" style={{ left: "62%", top: "-21%", width: "49.5%", backgroundColor: primaryColor, opacity: 0.28 }} />
+            <div className="absolute aspect-square rounded-full" style={{ left: "78%", top: "52%", width: "31.5%", backgroundColor: primaryColor, opacity: 0.16 }} />
+            <div className="absolute aspect-square rounded-full border-2" style={{ left: "69%", top: "60%", width: "8.25%", borderColor: coverMid }} />
+            <div className="absolute left-[4.5%] top-[11%] w-[68%]">
+              {logoUrl ? (
+                <div className="mb-4 inline-flex rounded bg-white px-2 py-1">
+                  <img src={logoUrl} alt="" className="h-5 max-w-[7rem] object-contain" />
+                </div>
+              ) : (
+                <p className="mb-4 truncate text-xs font-bold text-white">{companyName || "WhatsAtendende"}</p>
+              )}
+              <p className="text-[7px] font-bold uppercase tracking-[0.25em]" style={{ color: coverMid }}>
+                Relatório de atendimento
+              </p>
+              <p className="mt-1 text-lg font-bold leading-tight text-white">Desempenho do atendimento</p>
+              <p className="mt-1 text-[10px]" style={{ color: lighten(primaryColor, 0.8) }}>
+                Este mês · setembro de 2026, até 26/09
+              </p>
+              <p className="text-[8px]" style={{ color: lighten(primaryColor, 0.6) }}>
+                Todas as conexões · todos os atendentes
+              </p>
             </div>
-            <div className="flex h-[72%] flex-col justify-center gap-1.5 px-4">
-              <p className="text-lg font-bold text-slate-800">Dashboard de Atendimento</p>
-              <p className="text-[11px] text-slate-500">Hoje · Gerado em 26/09/2026, 10:00</p>
-              <div className="mt-1 h-1 w-10 rounded-full" style={{ backgroundColor: primaryDark }} />
-            </div>
+            <p className="absolute bottom-[6%] left-[4.5%] truncate text-[7px]" style={{ color: lighten(primaryColor, 0.5) }}>
+              {companyName || "WhatsAtendende"} · gerado em 26/09/2026, 10:00
+            </p>
           </div>
         </div>
 
