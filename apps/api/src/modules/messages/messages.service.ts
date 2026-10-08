@@ -248,6 +248,9 @@ export async function updateMessageStatusByProviderId(
 ) {
   const message = await prisma.message.findUnique({ where: { providerMessageId } });
   if (!message) return null;
+  // A rejection can show up after the recipient's phone already confirmed the
+  // message — the confirmation wins, a delivered message is never "failed".
+  if (status === "FAILED" && (message.status === "DELIVERED" || message.status === "READ")) return null;
   return prisma.message.update({
     where: { id: message.id },
     data: {

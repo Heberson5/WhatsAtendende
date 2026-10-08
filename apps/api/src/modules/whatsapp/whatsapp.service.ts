@@ -530,6 +530,15 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
   }
 
   provider.onDelivery(async (event) => {
+    if (event.status === "FAILED") {
+      // WhatsApp accepted the message from us and then refused it (an error
+      // ack) — it will never reach the customer. The code is the only clue to
+      // why, and the provider's own logger is silent by default.
+      logger.warn(
+        { connectionId, providerMessageId: event.providerMessageId, chatId: event.chatId, errorCode: event.errorCode },
+        "WhatsApp rejected an outbound message — marking it failed"
+      );
+    }
     const message = await messagesService.updateMessageStatusByProviderId(event.providerMessageId, event.status);
     if (!message) return;
     const conversation = await prisma.conversation.findUnique({

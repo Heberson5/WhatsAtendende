@@ -2,6 +2,8 @@ export * from "./types";
 export { MockWhatsAppProvider } from "./MockWhatsAppProvider";
 export { BaileysWhatsAppProvider } from "./BaileysWhatsAppProvider";
 export type { BaileysProviderOptions } from "./BaileysWhatsAppProvider";
+export { deliveryEventFromBaileysUpdate } from "./delivery-status";
+export type { BaileysMessageUpdate } from "./delivery-status";
 export { CloudApiWhatsAppProvider } from "./CloudApiWhatsAppProvider";
 export type { CloudApiProviderOptions, CloudApiWebhookValue, TemplateSendInput } from "./CloudApiWhatsAppProvider";
 

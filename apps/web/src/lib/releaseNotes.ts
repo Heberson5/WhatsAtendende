@@ -65,6 +65,23 @@ export const RELEASE_NOTE_AREAS: Record<ReleaseNoteArea, { label: string; requir
 
 export const RELEASES: Release[] = [
   {
+    version: "2.1.6",
+    date: "08 out 2026",
+    name: "Mensagem recusada pelo WhatsApp aparece como falha",
+    summary: "Quando o WhatsApp recebe uma mensagem do sistema e depois a recusa, ela passa a aparecer com um “!” vermelho em vez de ficar como enviada.",
+    notes: [
+      {
+        type: "correcao",
+        area: "atendimento",
+        title: "Mensagem recusada pelo WhatsApp ficava como enviada",
+        text: "Quando o WhatsApp recebia a mensagem do sistema e em seguida a recusava, ela ficava com um único ✓, como se tivesse sido enviada, e o cliente nunca a recebia. Agora ela fica marcada com um “!” vermelho, e o código da recusa é registrado no log do servidor para o suporte investigar. Uma mensagem que já foi entregue ao cliente não é afetada.",
+        before: "A mensagem recusada continuava com um ✓, igual a uma enviada.",
+        after: "A mensagem recusada fica com um “!” vermelho ao lado da hora.",
+        where: "Atendimento › marca ao lado da hora da mensagem enviada",
+      },
+    ],
+  },
+  {
     version: "2.1.5",
     date: "08 out 2026",
     name: "Envio de arquivos maiores",
