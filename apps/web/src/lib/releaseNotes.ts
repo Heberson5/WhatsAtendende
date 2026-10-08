@@ -65,6 +65,42 @@ export const RELEASE_NOTE_AREAS: Record<ReleaseNoteArea, { label: string; requir
 
 export const RELEASES: Release[] = [
   {
+    version: "2.1.8",
+    date: "08 out 2026",
+    name: "Encerramento depois da nota",
+    summary: "Com a pesquisa de satisfação ligada, a mensagem de encerramento passa a sair 10 segundos depois da nota do cliente — ou depois de uma espera que você define, se ele não responder.",
+    notes: [
+      {
+        type: "melhoria",
+        area: "respostas",
+        title: "A mensagem de encerramento vem depois da nota",
+        text: "Antes, a mensagem de encerramento saía junto com a pergunta da pesquisa. Agora o cliente recebe só a pergunta. Quando ele responde a nota, recebe o agradecimento da pesquisa na hora e, 10 segundos depois, a mensagem de encerramento. Se ele não responder, a mensagem de encerramento é enviada depois de uma espera que você define em Respostas › Pesquisa: o padrão é 30 minutos, de 1 minuto a 12 horas, e ela não pode passar do tempo que o cliente tem para responder. A espera fica guardada no servidor, então reiniciar o sistema nesse intervalo não faz a mensagem se perder. Sem pesquisa, ou com a pesquisa desligada, a mensagem de encerramento continua saindo na hora.",
+        before: "A mensagem de encerramento chegava junto com a pergunta, antes de o cliente dar a nota.",
+        after: "Pergunta, nota, agradecimento e, 10 segundos depois, a mensagem de encerramento. Sem resposta, ela sai ao fim da espera.",
+        steps: ["Abra Respostas › Pesquisa.", "Em “Se o cliente não responder, enviar a mensagem de encerramento em (minutos)” {1}, informe a espera.", "Clique em Salvar alterações."],
+        where: "Respostas › Pesquisa",
+        requires: [PERMISSION.RESPOSTAS_PESQUISA_VISUALIZAR],
+        images: [{ file: "pesquisa-espera", caption: "{1} Espera, em minutos, até a mensagem de encerramento quando o cliente não responde" }],
+      },
+      {
+        type: "melhoria",
+        area: "atendimento",
+        title: "Quem agradece continua na espera; quem quer conversar volta para a fila",
+        text: "Enquanto a pesquisa aguarda a nota, uma mensagem só de agradecimento do cliente (“obrigado”, “valeu”, “ok”, 👍) fica guardada na conversa encerrada. Ela não abre uma conversa nova, não muda o prazo e a mensagem de encerramento sai no horário de sempre. Se o cliente escrever qualquer outra coisa — uma dúvida, um pedido, uma foto, um áudio —, a pesquisa termina, a mensagem entra na fila como uma conversa nova e a mensagem de encerramento não é enviada. Na dúvida entre agradecimento e pedido, o sistema trata como pedido, para que ninguém fique sem resposta. Depois que a mensagem de encerramento sai, tudo volta ao normal: uma nova mensagem do cliente abre uma conversa nova.",
+        before: "Qualquer mensagem que não fosse a nota, até um “obrigado”, abria uma conversa nova na fila.",
+        after: "O “obrigado” fica guardado e a espera continua; só quem quer conversar volta para a fila.",
+        where: "Atendimento e Gestão, com a pesquisa de satisfação ligada",
+      },
+      {
+        type: "correcao",
+        area: "atendimento",
+        title: "Cliente que volta a escrever logo depois de encerrar não recebe a pesquisa",
+        text: "Se o cliente escrevia de novo durante os 10 segundos do botão Desfazer, a pergunta da pesquisa e a mensagem de encerramento ainda eram enviadas por cima da conversa nova. Agora, nesse caso, nenhuma das duas é enviada.",
+        where: "Atendimento e Gestão, ao encerrar",
+      },
+    ],
+  },
+  {
     version: "2.1.7",
     date: "08 out 2026",
     name: "Conversas e Gestão mais corretas",

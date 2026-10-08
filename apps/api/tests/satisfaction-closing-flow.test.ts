@@ -4,7 +4,7 @@ import { createApp } from "../src/app";
 import { prisma } from "../src/lib/prisma";
 import { __getProviderForTests } from "../src/modules/whatsapp/whatsapp.service";
 import { createClosingMessage } from "../src/modules/closing-messages/closing-messages.service";
-import { updateSurveySettings } from "../src/modules/satisfaction/satisfaction.service";
+import { processDueClosingMessages, updateSurveySettings } from "../src/modules/satisfaction/satisfaction.service";
 import { CONVERSATION_UNDO_WINDOW_MS } from "@whatsatendende/types";
 import type { MockWhatsAppProvider } from "@whatsatendende/whatsapp";
 import { resetDatabase, createTestUser, createWaitingConversation, TEST_PASSWORD } from "./helpers";
@@ -30,6 +30,7 @@ function enableSurvey(connectionIds: string[]) {
     question: QUESTION,
     thanks: "Obrigado!",
     answerWindowHours: 24,
+    closingWaitMinutes: 30,
   });
 }
 
@@ -69,34 +70,126 @@ describe("encerrar com a mensagem de encerramento e a pesquisa de satisfação l
     return conversation;
   }
 
-  it("a mensagem de encerramento espera os 10 segundos e sai logo antes da pesquisa", async () => {
-    await enableSurvey([connectionId]);
-    const conversation = await acceptedConversation("5511990007001");
-    const before = provider.sentTexts.length;
-    // Accepting may already have sent an Aceite auto-message (those templates outlive resetDatabase) — count from here.
-    const outboundBefore = await prisma.message.count({ where: { conversationId: conversation.id, direction: "OUTBOUND" } });
+  /** The texts that went to this customer since `base` (what was already there when the test started). */
+  const textsTo = (phone: string) => provider.sentTexts.filter((m) => m.chatId.startsWith(`${phone}@`)).map((m) => m.text);
 
+  /** Accepts, closes through the API and lets the "Desfazer" window pass: the question is out and the closing message waits. */
+  async function closedAndAsked(phone: string) {
+    await enableSurvey([connectionId]);
+    const conversation = await acceptedConversation(phone);
+    // Accepting may already have sent an Aceite auto-message (those templates outlive resetDatabase) — count from here.
+    const base = textsTo(phone).length;
     vi.useFakeTimers({ toFake: ["setTimeout"] });
     const closeRes = await request(app).post(`/api/conversations/${conversation.id}/close`).set("Authorization", `Bearer ${anaToken}`);
     expect(closeRes.status).toBe(200);
-
     // Closed, but nothing has gone to the customer yet — the "Desfazer" window is still open.
-    expect(provider.sentTexts.length).toBe(before);
-    expect(await prisma.message.count({ where: { conversationId: conversation.id, direction: "OUTBOUND" } })).toBe(outboundBefore);
-
+    expect(textsTo(phone).length).toBe(base);
     await vi.advanceTimersByTimeAsync(CONVERSATION_UNDO_WINDOW_MS);
     vi.useRealTimers();
-    await waitUntil(() => provider.sentTexts.length >= before + 2);
+    await waitUntil(() => textsTo(phone).length >= base + 1);
+    await new Promise((resolve) => setTimeout(resolve, 300)); // give a closing message that should not be there time to show up
+    return { conversation, sentSince: () => textsTo(phone).slice(base) };
+  }
 
-    const texts = provider.sentTexts.slice(before).map((m) => m.text);
-    expect(texts).toHaveLength(2);
-    expect(texts[0]).toContain("*Ana:*");
-    expect(texts[0]).toContain("Obrigado, *Joana Cliente*! Foi um prazer atender você.");
-    expect(texts[1]).toBe(QUESTION);
+  const surveyOf = (conversationId: string) => prisma.satisfactionSurvey.findUniqueOrThrow({ where: { conversationId }, include: { question: true } });
+  const conversationsOf = (contactId: string) => prisma.conversation.count({ where: { contactId } });
 
-    const survey = await prisma.satisfactionSurvey.findUniqueOrThrow({ where: { conversationId: conversation.id }, include: { question: true } });
+  async function waitUntilAsync(condition: () => Promise<boolean>, timeoutMs = 5000) {
+    const end = Date.now() + timeoutMs;
+    while (!(await condition()) && Date.now() < end) await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+
+  it("depois dos 10 segundos só a pergunta sai; a mensagem de encerramento espera a nota e sai 10 segundos depois dela", async () => {
+    const phone = "5511990007001";
+    const { conversation, sentSince } = await closedAndAsked(phone);
+
+    expect(sentSince()).toEqual([QUESTION]);
+    const survey = await surveyOf(conversation.id);
     expect(survey.question?.text).toBe(QUESTION);
+    expect(survey.closingText).toContain("Obrigado, *Joana Cliente*! Foi um prazer atender você."); // kept, already rendered
     expect(survey.agentId).not.toBeNull();
+
+    // The customer answers.
+    provider.simulateIncomingMessage(phone, "10");
+    await waitUntil(() => sentSince().length >= 2);
+    expect(sentSince()).toEqual([QUESTION, "Obrigado!"]);
+    expect(await conversationsOf(conversation.contactId)).toBe(1); // the score did not open a conversation
+    expect((await surveyOf(conversation.id)).score).toBe(10);
+
+    // Ten seconds after the score, the sweep sends the closing message — as the agent who closed.
+    expect(await processDueClosingMessages(new Date(Date.now() + 11_000))).toBe(1);
+    const texts = sentSince();
+    expect(texts).toHaveLength(3);
+    expect(texts[2]).toContain("*Ana:*");
+    expect(texts[2]).toContain("Obrigado, *Joana Cliente*! Foi um prazer atender você.");
+  }, 20000);
+
+  it("o cliente não responde: a mensagem de encerramento sai quando a espera de 30 minutos acaba", async () => {
+    const { conversation, sentSince } = await closedAndAsked("5511990007004");
+    const survey = await surveyOf(conversation.id);
+    expect(survey.closingDueAt!.getTime() - survey.sentAt.getTime()).toBe(30 * 60_000);
+
+    expect(await processDueClosingMessages(new Date(Date.now() + 29 * 60_000))).toBe(0);
+    expect(sentSince()).toEqual([QUESTION]);
+
+    expect(await processDueClosingMessages(new Date(Date.now() + 31 * 60_000))).toBe(1);
+    const texts = sentSince();
+    expect(texts).toHaveLength(2);
+    expect(texts[1]).toContain("*Ana:*");
+    expect(texts[1]).toContain("Obrigado, *Joana Cliente*");
+  }, 20000);
+
+  it("o cliente agradece em vez de dar a nota: nada abre na fila e a mensagem de encerramento sai no prazo de sempre", async () => {
+    const phone = "5511990007005";
+    const { conversation, sentSince } = await closedAndAsked(phone);
+    const before = await surveyOf(conversation.id);
+
+    provider.simulateIncomingMessage(phone, "Obrigado!");
+    await waitUntilAsync(async () => (await prisma.message.count({ where: { conversationId: conversation.id, direction: "INBOUND", body: "Obrigado!" } })) > 0);
+    expect(await conversationsOf(conversation.contactId)).toBe(1);
+    expect(sentSince()).toEqual([QUESTION]);
+    expect((await surveyOf(conversation.id)).closingDueAt).toEqual(before.closingDueAt);
+
+    expect(await processDueClosingMessages(new Date(Date.now() + 31 * 60_000))).toBe(1);
+    expect(sentSince()).toHaveLength(2);
+    expect(sentSince()[1]).toContain("Obrigado, *Joana Cliente*");
+  }, 20000);
+
+  it("o cliente quer continuar a conversa: volta para a fila e a mensagem de encerramento nunca é enviada", async () => {
+    const phone = "5511990007006";
+    const { conversation, sentSince } = await closedAndAsked(phone);
+
+    provider.simulateIncomingMessage(phone, "Na verdade preciso de ajuda com o boleto");
+    await waitUntilAsync(async () => (await conversationsOf(conversation.contactId)) === 2);
+    const queued = await prisma.conversation.findFirstOrThrow({ where: { contactId: conversation.contactId, id: { not: conversation.id } } });
+    expect(queued.status).toBe("NEW");
+    expect(queued.assignedAgentId).toBeNull();
+    expect((await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).status).toBe("CLOSED");
+    expect((await surveyOf(conversation.id)).closingOutcome).toBe("CANCELED_CUSTOMER_WROTE");
+
+    expect(await processDueClosingMessages(new Date(Date.now() + 31 * 60_000))).toBe(0);
+    expect(sentSince().some((text) => text.includes("Foi um prazer atender você"))).toBe(false);
+  }, 20000);
+
+  it("uma figura com a legenda 10 não é a nota: é o cliente querendo conversar", async () => {
+    const phone = "5511990007007";
+    const { conversation, sentSince } = await closedAndAsked(phone);
+
+    (provider as unknown as { emitter: { emit: (event: string, payload: unknown) => void } }).emitter.emit("message", {
+      providerMessageId: "wamid-figura-10",
+      chatId: `${phone}@s.whatsapp.net`,
+      phone,
+      contactName: null,
+      type: "IMAGE",
+      body: "10",
+      replyToProviderMessageId: null,
+      timestamp: new Date(),
+      fromMe: false,
+    });
+    await waitUntilAsync(async () => (await conversationsOf(conversation.contactId)) === 2);
+    expect(await conversationsOf(conversation.contactId)).toBe(2);
+    expect((await surveyOf(conversation.id)).score).toBeNull();
+    expect(sentSince()).toEqual([QUESTION]);
   }, 20000);
 
   it("se o atendente desfaz o encerramento, nem a mensagem nem a pesquisa são enviadas", async () => {

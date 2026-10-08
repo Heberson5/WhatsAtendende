@@ -354,8 +354,10 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
           .then((photoUrl) => (photoUrl ? conversationsService.updateContactPhoto(contact.id, photoUrl) : undefined))
           .catch(() => undefined);
       }
-      // The customer answering the satisfaction survey of a closed conversation — recorded there, nothing new opens.
-      if (await satisfaction.captureSurveyAnswer(connectionId, contact, { body: event.body ?? null, providerMessageId: event.providerMessageId })) return;
+      // The customer answering the satisfaction survey of a closed conversation (or thanking for it) — kept there, nothing new opens.
+      // Only the text of a text message can be a score or a thank-you: a picture or an audio is somebody who wants to talk.
+      const surveyBody = event.type === "TEXT" ? event.body ?? null : null;
+      if (await satisfaction.captureSurveyAnswer(connectionId, contact, { body: surveyBody, providerMessageId: event.providerMessageId })) return;
 
       const { conversation, isNewConversation, autoAssignedAgentId, flowId } = await conversationsService.findOrOpenConversationForInboundMessage(
         connectionId,

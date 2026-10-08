@@ -3,6 +3,7 @@ import { createApp } from "./app";
 import { createSocketServer } from "./realtime/socket-server";
 import { initWhatsAppConnections, shutdownAllConnections } from "./modules/whatsapp/whatsapp.service";
 import { revertExpiredTransfers } from "./modules/conversations/conversations.service";
+import { processDueClosingMessages } from "./modules/satisfaction/satisfaction.service";
 import { runHolidaySyncIfDue } from "./modules/holidays/holidays.service";
 import { sendQueueRemindersIfDue } from "./lib/queue-reminder";
 import { syncContactsIfDue } from "./lib/contacts-sync";
@@ -25,6 +26,10 @@ const QUEUE_REMINDER_CHECK_INTERVAL_MS = 60 * 1000;
 
 // Looks for connections that missed the Monday 00:00 address-book load (or never had one).
 const CONTACTS_SYNC_CHECK_INTERVAL_MS = 10 * 60 * 1000;
+
+// The closing message that waits on a satisfaction survey goes out 10 seconds after the customer's
+// score — so the check has to be much finer than the other sweeps.
+const CLOSING_MESSAGE_SWEEP_INTERVAL_MS = 5 * 1000;
 
 async function main() {
   // Presence is otherwise only ever kept correct by live socket connections
@@ -65,6 +70,20 @@ async function main() {
   }, CONTACTS_SYNC_CHECK_INTERVAL_MS);
   contactsSyncTimer.unref();
 
+  // Kept in the database (not in a timer), so a restart in the middle of the wait loses nothing. The guard
+  // only avoids piling sweeps up behind a slow send — a message is claimed atomically either way.
+  let closingSweepRunning = false;
+  const closingMessageTimer = setInterval(() => {
+    if (closingSweepRunning) return;
+    closingSweepRunning = true;
+    processDueClosingMessages()
+      .catch((err) => logger.error({ err }, "failed to send the closing messages that were due"))
+      .finally(() => {
+        closingSweepRunning = false;
+      });
+  }, CLOSING_MESSAGE_SWEEP_INTERVAL_MS);
+  closingMessageTimer.unref();
+
   httpServer.listen(env.PORT, () => {
     logger.info(`API listening on port ${env.PORT} (env=${env.NODE_ENV}, whatsapp=${env.WHATSAPP_PROVIDER})`);
   });
@@ -75,6 +94,7 @@ async function main() {
     clearInterval(holidaySyncTimer);
     clearInterval(queueReminderTimer);
     clearInterval(contactsSyncTimer);
+    clearInterval(closingMessageTimer);
     httpServer.close();
     // Every deploy sends this signal to the outgoing container — ending
     // each WhatsApp connection's socket cleanly here (rather than letting

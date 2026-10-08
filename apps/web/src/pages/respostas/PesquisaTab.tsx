@@ -17,6 +17,8 @@ import {
 
 const MIN_WINDOW_HOURS = 1;
 const MAX_WINDOW_HOURS = 72; // matches the backend's zod schema
+const MIN_CLOSING_WAIT_MINUTES = 1;
+const MAX_CLOSING_WAIT_MINUTES = 720;
 
 interface FormValues {
   enabled: boolean;
@@ -24,6 +26,7 @@ interface FormValues {
   question: string;
   thanks: string;
   answerWindowHours: number;
+  closingWaitMinutes: number;
 }
 
 function toForm(dto: SatisfactionSurveySettingsDTO): FormValues {
@@ -33,6 +36,7 @@ function toForm(dto: SatisfactionSurveySettingsDTO): FormValues {
     question: dto.question,
     thanks: dto.thanks,
     answerWindowHours: dto.answerWindowHours,
+    closingWaitMinutes: dto.closingWaitMinutes,
   };
 }
 
@@ -82,11 +86,19 @@ export function PesquisaTab() {
   const scopeMissing =
     !values.connectionScope.allConnections &&
     values.connectionScope.connectionIds.length === 0;
+  const waitInRange =
+    Number.isInteger(values.closingWaitMinutes) &&
+    values.closingWaitMinutes >= MIN_CLOSING_WAIT_MINUTES &&
+    values.closingWaitMinutes <= MAX_CLOSING_WAIT_MINUTES;
+  // The closing message waits inside the time the customer still has to answer.
+  const waitWithinWindow = values.closingWaitMinutes <= values.answerWindowHours * 60;
   const valid =
     values.question.trim() !== "" &&
     values.thanks.trim() !== "" &&
     values.answerWindowHours >= MIN_WINDOW_HOURS &&
     values.answerWindowHours <= MAX_WINDOW_HOURS &&
+    waitInRange &&
+    waitWithinWindow &&
     !(values.enabled && scopeMissing);
   const set = (patch: Partial<FormValues>) =>
     setValues((v) => (v ? { ...v, ...patch } : v));
@@ -102,10 +114,13 @@ export function PesquisaTab() {
           enviada se o cliente escreveu nas últimas 24 horas.
         </p>
         <p className="text-sm text-muted">
-          A pesquisa só sai depois dos 10 segundos do botão Desfazer. Se o
-          atendente tiver uma mensagem de encerramento (Respostas ›
-          Encerramento), ela espera esse mesmo tempo e é enviada logo antes da
-          pergunta. Se ele desfazer o encerramento, nada é enviado.
+          A pesquisa só sai depois dos 10 segundos do botão Desfazer. A mensagem
+          de encerramento do atendente (Respostas › Encerramento) não vai junto
+          com ela: é enviada 10 segundos depois que o cliente responde a nota ou,
+          se ele não responder, depois da espera definida abaixo. Se o cliente só
+          agradecer, a espera continua; se quiser seguir a conversa, a mensagem
+          volta para a fila e a mensagem de encerramento não é enviada. Se o
+          atendente desfizer o encerramento, nada é enviado.
         </p>
 
         <fieldset
@@ -169,8 +184,39 @@ export function PesquisaTab() {
               className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm"
             />
             <span className="mt-1 block text-xs text-muted">
-              Enviado quando o cliente responde com uma nota válida.
+              Enviado na hora, quando o cliente responde com uma nota válida. A
+              mensagem de encerramento vem 10 segundos depois.
             </span>
+          </label>
+
+          <label className="block max-w-xs">
+            <span className="mb-1 block text-sm font-medium">
+              Se o cliente não responder, enviar a mensagem de encerramento em
+              (minutos)
+            </span>
+            <input
+              type="number"
+              min={MIN_CLOSING_WAIT_MINUTES}
+              max={MAX_CLOSING_WAIT_MINUTES}
+              value={values.closingWaitMinutes}
+              onChange={(e) =>
+                set({ closingWaitMinutes: Number(e.target.value) })
+              }
+              aria-invalid={!waitInRange || !waitWithinWindow}
+              className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm"
+            />
+            {waitInRange && !waitWithinWindow ? (
+              <span className="mt-1 block text-xs text-danger" role="alert">
+                A espera não pode ser maior que o tempo para o cliente responder
+                ({values.answerWindowHours} h).
+              </span>
+            ) : (
+              <span className="mt-1 block text-xs text-muted">
+                {waitInRange
+                  ? "Conta a partir do envio da pergunta. Quem responde a nota recebe a mensagem 10 segundos depois dela."
+                  : `Use um valor de ${MIN_CLOSING_WAIT_MINUTES} a ${MAX_CLOSING_WAIT_MINUTES} minutos.`}
+              </span>
+            )}
           </label>
 
           <label className="block max-w-xs">

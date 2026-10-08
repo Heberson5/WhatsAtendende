@@ -1344,8 +1344,9 @@ export async function returnConversationToQueue(conversationId: string, initiate
 
 /**
  * `closingMessage` is the agent's closing message when the survey follows this
- * close: it isn't sent now, it waits out the "Desfazer" window and goes out
- * right before the survey (see scheduleCloseFollowUp).
+ * close: it isn't sent now — the survey keeps it and sends it 10 seconds after
+ * the customer's score, or when the wait runs out (see scheduleCloseFollowUp
+ * and processDueClosingMessages).
  */
 export async function closeConversation(conversationId: string, agentId: string, closingMessage?: HeldClosingMessage) {
   const previous = await prisma.conversation.findUnique({ where: { id: conversationId }, select: { status: true } });

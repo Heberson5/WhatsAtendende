@@ -412,6 +412,12 @@ export interface SatisfactionSurveySettingsDTO {
   thanks: string;
   /** How long after sending a reply still counts as the answer. */
   answerWindowHours: number;
+  /**
+   * The agent's closing message waits for the score: it goes out 10 seconds after
+   * the customer answers, or this many minutes after the question if they never
+   * do. Never longer than the answer window.
+   */
+  closingWaitMinutes: number;
 }
 
 /** NPS of one survey question: 9–10 promoters, 7–8 passives, 0–6 detractors. */
