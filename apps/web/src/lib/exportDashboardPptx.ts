@@ -33,6 +33,7 @@ const PERIOD_LABELS: Record<PeriodValue["period"], string> = {
   month: "Este mês",
   lastMonth: "Mês anterior",
   custom: "Período personalizado",
+  all: "Todo o período",
 };
 
 function periodLabel(period: PeriodValue): string {

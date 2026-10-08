@@ -68,7 +68,7 @@ export const RELEASES: Release[] = [
     version: "2.1.7",
     date: "08 out 2026",
     name: "Conversas e Gestão mais corretas",
-    summary: "As reações aparecem uma vez só.",
+    summary: "As reações aparecem uma vez só e o filtro de período da Gestão passa a filtrar de verdade.",
     notes: [
       {
         type: "correcao",
@@ -78,6 +78,15 @@ export const RELEASES: Release[] = [
         before: "A reação do atendente aparecia duas vezes na mensagem, e a do cliente podia desaparecer.",
         after: "Cada reação aparece uma vez; o mesmo emoji de duas pessoas vira “👍 2”.",
         where: "Atendimento e Gestão, dentro da conversa",
+      },
+      {
+        type: "correcao",
+        area: "gestao",
+        title: "O filtro de período da Gestão agora filtra de verdade",
+        text: "A Gestão abria em “Hoje”, mas a lista trazia conversas de qualquer dia. O mesmo acontecia em Ontem, Últimos 7 dias, Este mês e Mês anterior — só “Personalizado” funcionava. Agora cada período mostra o que teve movimento nele: conversas que começaram, tiveram mensagem (do cliente ou da equipe) ou foram encerradas no período. Uma conversa que começou ontem e recebeu mensagem hoje aparece em Hoje. A opção nova “Todo o período” mostra tudo, e a coluna “Última atividade” traz o dia e a hora da última mensagem. O atalho “Aguardando” do Dashboard continua abrindo todas as conversas que esperam, de qualquer dia. Os cards do Dashboard contam as conversas pelo início delas, então a lista da Gestão pode ter algumas a mais.",
+        before: "“Hoje” listava conversas de outros dias.",
+        after: "“Hoje” lista só o que teve movimento hoje; “Todo o período” mostra tudo.",
+        where: "Gestão › filtro de período, no alto da lista",
       },
     ],
   },
