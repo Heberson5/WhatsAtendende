@@ -182,7 +182,9 @@ export default function GestaoPage() {
       const minutes = (now - new Date(c.enteredQueueAt).getTime()) / 60_000;
       return { label: formatDistanceToNow(new Date(c.enteredQueueAt), { locale: ptBR }), minutes };
     }
-    if (c.awaitingReplySince && (c.status === "IN_PROGRESS" || c.status === "TRANSFERRED")) {
+    // "Atendido pelo celular" too: the customer's new messages stay on that row and never reach the
+    // queue, so this is how a manager sees someone has been left waiting on the phone.
+    if (c.awaitingReplySince && (c.status === "IN_PROGRESS" || c.status === "TRANSFERRED" || c.status === "HANDLED_EXTERNALLY")) {
       const minutes = (now - new Date(c.awaitingReplySince).getTime()) / 60_000;
       return { label: `sem resposta há ${formatDistanceToNow(new Date(c.awaitingReplySince), { locale: ptBR })}`, minutes };
     }

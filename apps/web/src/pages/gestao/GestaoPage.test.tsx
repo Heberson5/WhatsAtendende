@@ -15,7 +15,13 @@ vi.mock("../../lib/api", () => ({
 
 const hoursAgo = (hours: number) => new Date(Date.now() - hours * 3_600_000).toISOString();
 
-function row(id: string, name: string, lastMessageAt: string, status: ConversationListItemDTO["status"] = "IN_PROGRESS"): ConversationListItemDTO {
+function row(
+  id: string,
+  name: string,
+  lastMessageAt: string,
+  status: ConversationListItemDTO["status"] = "IN_PROGRESS",
+  awaitingReplySince: string | null = null
+): ConversationListItemDTO {
   return {
     id,
     contact: { id: `c-${id}`, name, phone: "5511990001111", photoUrl: null },
@@ -30,7 +36,7 @@ function row(id: string, name: string, lastMessageAt: string, status: Conversati
     acceptedAt: null,
     lastMessageAt,
     lastMessagePreview: `última de ${name}`,
-    awaitingReplySince: null,
+    awaitingReplySince,
     unreadCount: 0,
     isNew: false,
     pendingTransferDeadline: null,
@@ -127,5 +133,19 @@ describe("Gestão: última atividade", () => {
     expect(within(maria).getByText(/^hoje \d{2}:\d{2}$/)).toBeInTheDocument();
     expect(within(joao).getByText(/^(ontem|\d{2}\/\d{2}) \d{2}:\d{2}$/)).toBeInTheDocument();
     expect(screen.getByText("Última atividade")).toBeInTheDocument();
+  });
+});
+
+describe("Gestão: conversas pelo celular", () => {
+  beforeEach(() => {
+    vi.mocked(api.get).mockReset();
+  });
+
+  it("mostra há quanto tempo o cliente espera resposta, já que a mensagem dele não entra na fila", async () => {
+    renderPage("/gestao", [row("1", "Maria", hoursAgo(2), "HANDLED_EXTERNALLY", hoursAgo(2)), row("2", "João", hoursAgo(2), "HANDLED_EXTERNALLY", null)]);
+    const maria = (await screen.findByText("Maria")).closest("tr") as HTMLElement;
+    const joao = screen.getByText("João").closest("tr") as HTMLElement;
+    expect(within(maria).getByText(/sem resposta há/)).toBeInTheDocument();
+    expect(within(joao).queryByText(/sem resposta há/)).not.toBeInTheDocument();
   });
 });
