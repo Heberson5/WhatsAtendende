@@ -228,6 +228,11 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
     this.emitter.on("chatIdentityResolved", listener);
   }
 
+  /** Test helper: force a delivery event (e.g. FAILED, which Baileys sends when WhatsApp's server rejects a message) for a message already sent. */
+  simulateDelivery(event: Omit<DeliveryEvent, "timestamp">): void {
+    this.emitter.emit("delivery", { ...event, timestamp: new Date() } satisfies DeliveryEvent);
+  }
+
   /** Test helper: force a chat-identity-resolved event without a real @lid chat behind it. */
   simulateChatIdentityResolved(chatId: string, phone: string, name: string | null = null): void {
     this.emitter.emit("chatIdentityResolved", { chatId, phone, name } satisfies ChatIdentityResolvedEvent);

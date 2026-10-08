@@ -27,6 +27,7 @@ import type {
   WhatsAppProvider,
   WhatsAppStatusSnapshot,
 } from "./types";
+import { deliveryEventFromBaileysUpdate } from "./delivery-status";
 
 export interface BaileysProviderOptions {
   /** Directory where Baileys persists the multi-device auth/session state. */
@@ -522,16 +523,8 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
 
       socket.ev.on("messages.update", (updates) => {
         for (const update of updates) {
-          const receipt = (update.update as any)?.status;
-          if (!receipt) continue;
-          const status = mapBaileysReceiptToStatus(receipt);
-          if (!status) continue;
-          this.emitter.emit("delivery", {
-            providerMessageId: update.key.id ?? "",
-            chatId: update.key.remoteJid ?? "",
-            status,
-            timestamp: new Date(),
-          } satisfies DeliveryEvent);
+          const event = deliveryEventFromBaileysUpdate(update);
+          if (event) this.emitter.emit("delivery", event);
         }
       });
 
@@ -1165,19 +1158,4 @@ function convertHistoryMessage(message: WAMessage, chatId: string): HistoryMessa
   if (content.audioMessage) return { ...base, type: "AUDIO", body: null };
   if (content.documentMessage) return { ...base, type: "DOCUMENT", body: content.documentMessage.title ?? null };
   return null;
-}
-
-function mapBaileysReceiptToStatus(receipt: number): DeliveryEvent["status"] | null {
-  // Baileys WAMessageStatus enum: 0 ERROR,1 PENDING,2 SERVER_ACK,3 DELIVERY_ACK,4 READ,5 PLAYED
-  switch (receipt) {
-    case 3:
-      return "DELIVERED";
-    case 4:
-    case 5:
-      return "READ";
-    case 0:
-      return "FAILED";
-    default:
-      return null;
-  }
 }

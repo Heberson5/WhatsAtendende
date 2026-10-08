@@ -78,6 +78,8 @@ export interface DeliveryEvent {
   providerMessageId: string;
   chatId: string;
   status: "SENT" | "DELIVERED" | "READ" | "FAILED";
+  /** FAILED only, when the provider says why — for Baileys, the code in the error ack WhatsApp's server sent back for the message. */
+  errorCode?: string;
   timestamp: Date;
 }
 
