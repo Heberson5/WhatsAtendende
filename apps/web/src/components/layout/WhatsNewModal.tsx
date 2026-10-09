@@ -7,19 +7,22 @@ import { useReleaseNotes } from "../../hooks/useReleaseNotes";
 const HIGHLIGHT_COUNT = 5;
 
 /**
- * One-time "O que há de novo" popup after an update: shows the newest
- * release this user hasn't seen yet (only notes for areas they can access).
- * Closing it, or opening the full notes, marks the release as seen.
+ * One-time "O que há de novo" popup after an update: what changed in every
+ * release since this user's last visit (only notes for areas they can access),
+ * newest first. Closing it, or opening the full notes, marks them as seen.
  */
 export function WhatsNewModal() {
-  const { latest, hasUnseen, markSeen } = useReleaseNotes();
+  const { latest, unseen, hasUnseen, markSeen } = useReleaseNotes();
   const location = useLocation();
   const navigate = useNavigate();
 
   if (!latest || !hasUnseen || location.pathname === "/notas-de-versao") return null;
 
-  const highlights = [...latest.notes.filter((n) => n.type === "novo"), ...latest.notes.filter((n) => n.type !== "novo")].slice(0, HIGHLIGHT_COUNT);
-  const remaining = latest.notes.length - highlights.length;
+  const several = unseen.length > 1;
+  const notes = unseen.flatMap((release) => release.notes.map((note) => ({ note, version: release.version })));
+  const highlights = [...notes.filter(({ note }) => note.type === "novo"), ...notes.filter(({ note }) => note.type !== "novo")].slice(0, HIGHLIGHT_COUNT);
+  const remaining = notes.length - highlights.length;
+  const oldest = unseen[unseen.length - 1];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" onClick={markSeen}>
@@ -35,22 +38,27 @@ export function WhatsNewModal() {
             <Sparkles className="h-5 w-5" />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="font-mono text-xs text-muted">Versão {latest.version}</p>
+            <p className="font-mono text-xs text-muted">{several ? `Versões ${oldest.version} a ${latest.version}` : `Versão ${latest.version}`}</p>
             <h2 id="whats-new-title" className="text-lg font-semibold">
-              O que há de novo: {latest.name}
+              {several ? "O que há de novo desde a sua última visita" : `O que há de novo: ${latest.name}`}
             </h2>
-            <p className="mt-0.5 text-[13px] text-muted">{latest.summary}</p>
+            <p className="mt-0.5 text-[13px] text-muted">
+              {several ? `${unseen.length} versões, com ${notes.length} ${notes.length === 1 ? "novidade" : "novidades"} nas telas que você usa.` : latest.summary}
+            </p>
           </div>
           <button type="button" onClick={markSeen} className="focus-ring rounded-lg p-1.5 text-muted hover:bg-surface-alt" aria-label="Fechar">
             <X className="h-4 w-4" />
           </button>
         </div>
         <ul className="flex-1 space-y-3 overflow-y-auto p-5">
-          {highlights.map((note) => (
-            <li key={note.title} className="flex gap-2.5">
+          {highlights.map(({ note, version }) => (
+            <li key={`${version}-${note.title}`} className="flex gap-2.5">
               <span className="mt-0.5 h-fit shrink-0 rounded-md bg-primary/10 px-1.5 py-px text-[10.5px] font-bold text-primary">{RELEASE_NOTE_TYPE_LABEL[note.type]}</span>
               <div className="min-w-0">
-                <p className="text-sm font-semibold">{note.title}</p>
+                <p className="text-sm font-semibold">
+                  {note.title}
+                  {several && <span className="ml-1.5 font-mono text-[11px] font-normal text-muted">{version}</span>}
+                </p>
                 <p className="line-clamp-2 text-[13px] text-muted">{note.text ?? note.after}</p>
               </div>
             </li>

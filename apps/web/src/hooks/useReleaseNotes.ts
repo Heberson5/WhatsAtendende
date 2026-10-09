@@ -26,6 +26,9 @@ export function useReleaseNotes() {
   const releases = data ?? [];
   const latest = releases[0] ?? null;
   const hasUnseen = latest !== null && (seenVersion === null || compareVersions(latest.version, seenVersion) > 0);
+  // Every version since the person's last visit (newest first) — someone back after several updates gets all of
+  // them, not only the newest. Someone who never opened the notes gets just the current one, not the whole history.
+  const unseen = !hasUnseen || !latest ? [] : seenVersion === null ? [latest] : releases.filter((r) => compareVersions(r.version, seenVersion) > 0);
 
   const markSeen = useCallback(() => {
     if (!latest || !hasUnseen) return;
@@ -33,5 +36,5 @@ export function useReleaseNotes() {
     api.patch("/profile/release-notes-seen", { version: latest.version }).catch(() => updateReleaseNotesSeen(seenVersion));
   }, [latest, hasUnseen, seenVersion, updateReleaseNotesSeen]);
 
-  return { releases, latest, hasUnseen, markSeen, isLoading };
+  return { releases, latest, unseen, hasUnseen, markSeen, isLoading };
 }
