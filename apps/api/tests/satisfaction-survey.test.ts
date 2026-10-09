@@ -22,12 +22,12 @@ import {
   captureSurveyAnswer,
   getSatisfactionByAgent,
   getSatisfactionSummary,
-  getSurveySettings,
+  createSurvey,
+  deleteSurvey,
   parseSurveyScore,
   processDueClosingMessages,
   sendCloseFollowUp,
-  toSurveySettingsDTO,
-  updateSurveySettings,
+  updateSurvey,
   willSendSurveyOnClose,
 } from "../src/modules/satisfaction/satisfaction.service";
 import { closeConversation, undoLastConversationAction } from "../src/modules/conversations/conversations.service";
@@ -60,15 +60,11 @@ describe("Pesquisa de satisfação (NPS)", () => {
     return { contact, conversation };
   }
 
-  function configure(connectionIds: string[], question = QUESTION, enabled = true, closingWaitMinutes = 30) {
-    return updateSurveySettings({
-      enabled,
-      connectionScope: { allConnections: false, connectionIds },
-      question,
-      thanks: "Obrigado!",
-      answerWindowHours: 24,
-      closingWaitMinutes,
-    });
+  /** Sets up the one survey of these tests (creating it the first time, editing it after). */
+  async function configure(connectionIds: string[], question = QUESTION, enabled = true, closingWaitMinutes = 30, answerWindowHours = 24) {
+    const input = { name: "Pesquisa", active: enabled, connectionScope: { allConnections: false, connectionIds }, question, thanks: "Obrigado!", answerWindowHours, closingWaitMinutes };
+    const existing = await prisma.satisfactionSurveyConfig.findFirst();
+    return existing ? updateSurvey(existing.id, input) : createSurvey(input);
   }
 
   /** Closes the conversation and answers the survey, like a customer would. */
@@ -207,7 +203,7 @@ describe("Pesquisa de satisfação (NPS)", () => {
       const summary = await getSatisfactionSummary(PERIOD());
       expect(summary.questions).toHaveLength(1);
       expect(summary.questions[0]).toMatchObject({ question: QUESTION, current: true, answered: 2, nps: 0 });
-      expect(await prisma.satisfactionQuestion.count()).toBe(2); // the new wording was saved once, never answered
+      expect(await prisma.satisfactionQuestion.count()).toBe(1); // the other wording was never sent, so it left no question behind
     });
 
     it("só lista as perguntas enviadas no período", async () => {
@@ -380,14 +376,7 @@ describe("Pesquisa de satisfação (NPS)", () => {
       const first = await closedAndAsked("5511900000101");
       expect(first.survey.closingDueAt!.getTime() - first.survey.sentAt.getTime()).toBe(45 * 60_000);
 
-      await updateSurveySettings({
-        enabled: true,
-        connectionScope: { allConnections: false, connectionIds: [connectionId] },
-        question: QUESTION,
-        thanks: "Obrigado!",
-        answerWindowHours: 1,
-        closingWaitMinutes: 720,
-      });
+      await configure([connectionId], QUESTION, true, 720, 1);
       const second = await closedAndAsked("5511900000102");
       expect(second.survey.closingDueAt!.getTime() - second.survey.sentAt.getTime()).toBe(60 * 60_000);
     });
@@ -635,21 +624,71 @@ describe("Pesquisa de satisfação (NPS)", () => {
     });
   });
 
-  describe("configuração da espera", () => {
-    it("o padrão é 30 minutos, também para configurações salvas antes de existir esse campo", async () => {
-      expect((await getSurveySettings()).closingWaitMinutes).toBe(30);
-      await prisma.systemSetting.upsert({
-        where: { key: "satisfactionSurvey" },
-        update: { value: { enabled: true, allConnections: true, connectionIds: [], question: QUESTION, questionId: null, thanks: "Valeu!", answerWindowHours: 24 } },
-        create: { key: "satisfactionSurvey", value: { enabled: true, allConnections: true, connectionIds: [], question: QUESTION, questionId: null, thanks: "Valeu!", answerWindowHours: 24 } },
+  describe("várias pesquisas (Respostas › Pesquisa)", () => {
+    const survey = (overrides: Partial<Parameters<typeof createSurvey>[0]> = {}) =>
+      createSurvey({
+        name: "Pesquisa",
+        active: true,
+        connectionScope: { allConnections: false, connectionIds: [connectionId] },
+        question: QUESTION,
+        thanks: "Obrigado!",
+        answerWindowHours: 24,
+        closingWaitMinutes: 30,
+        ...overrides,
       });
-      expect(await getSurveySettings()).toMatchObject({ enabled: true, thanks: "Valeu!", closingWaitMinutes: 30 });
+
+    it("pesquisas desligadas (como os modelos) nunca são enviadas", async () => {
+      await survey({ name: "Modelo 1", active: false });
+      await survey({ name: "Modelo 2", active: false, connectionScope: { allConnections: true, connectionIds: [] } });
+      const { conversation } = await attendedConversation("5511900000201");
+      expect(await willSendSurveyOnClose(conversation.id)).toBe(false);
+      await closeConversation(conversation.id, agentId);
+      await sendCloseFollowUp(conversation.id);
+      expect(sent).toHaveLength(0);
     });
 
-    it("guarda e devolve o valor escolhido", async () => {
-      await configure([connectionId], QUESTION, true, 90);
-      expect((await getSurveySettings()).closingWaitMinutes).toBe(90);
-      expect(await toSurveySettingsDTO(await getSurveySettings())).toMatchObject({ closingWaitMinutes: 90 });
+    it("vale a pesquisa escolhida para a conexão, mesmo com uma de todas as conexões mais recente; o agradecimento é o dela", async () => {
+      const other = await createTestConnection("Vendas");
+      await survey({ name: "Do suporte", question: NEW_QUESTION, thanks: "Valeu, suporte!" });
+      await survey({ name: "Das vendas", question: "Nota para vendas?", thanks: "Valeu, vendas!", connectionScope: { allConnections: false, connectionIds: [other.id] } });
+      await survey({ name: "Geral", thanks: "Valeu, geral!", connectionScope: { allConnections: true, connectionIds: [] } });
+
+      const { contact } = await closeAndAnswer("5511900000202", "8");
+      expect(sent.map((m) => m.text)).toEqual([NEW_QUESTION, "Valeu, suporte!"]);
+      const recorded = await prisma.satisfactionSurvey.findFirstOrThrow({ where: { contactId: contact.id }, include: { config: true } });
+      expect(recorded.config?.name).toBe("Do suporte");
+    });
+
+    it("sem pesquisa da conexão, vale a de todas as conexões", async () => {
+      await survey({ name: "Desligada da conexão", active: false, question: NEW_QUESTION });
+      await survey({ name: "Geral", connectionScope: { allConnections: true, connectionIds: [] } });
+      await closeAndAnswer("5511900000203", "10");
+      expect(sent.map((m) => m.text)).toEqual([QUESTION, "Obrigado!"]);
+    });
+
+    it("o Dashboard marca como em uso as perguntas das pesquisas ligadas", async () => {
+      const first = await survey({ name: "Atual" });
+      await closeAndAnswer("5511900000204", "9");
+      await updateSurvey(first.id, { active: false });
+      await survey({ name: "Nova", question: NEW_QUESTION });
+      await closeAndAnswer("5511900000205", "6");
+      const summary = await getSatisfactionSummary(PERIOD());
+      expect(summary.questions.map((q) => [q.question, q.current])).toEqual([
+        [NEW_QUESTION, true],
+        [QUESTION, false],
+      ]);
+    });
+
+    it("excluir a pesquisa não apaga as notas; quem responde depois recebe o agradecimento padrão", async () => {
+      const used = await survey({ thanks: "Valeu demais!" });
+      const { contact, conversation } = await attendedConversation("5511900000206");
+      await closeConversation(conversation.id, agentId);
+      await sendCloseFollowUp(conversation.id);
+      await deleteSurvey(used.id);
+
+      expect(await captureSurveyAnswer(connectionId, contact, { body: "7", providerMessageId: "wamid-206" })).toBe(true);
+      expect(sent.at(-1)?.text).toBe("Obrigado pela sua avaliação!");
+      expect((await prisma.satisfactionSurvey.findUniqueOrThrow({ where: { conversationId: conversation.id } })).score).toBe(7);
     });
   });
 });

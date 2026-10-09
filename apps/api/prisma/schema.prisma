@@ -301,16 +301,17 @@ model WhatsAppConnection {
   createdAt          DateTime                 @default(now())
   updatedAt          DateTime                 @updatedAt
 
-  agents              User[]
-  contacts            Contact[]
-  conversations       Conversation[]
-  quickReplies        QuickReply[]              @relation("QuickReplyConnections")
-  autoMessages        AutoMessageTemplate[]     @relation("AutoMessageTemplateConnections")
-  closingMessages     ClosingMessage[]          @relation("ClosingMessageConnections")
-  managerGrants       ManagerConnectionAccess[]
-  messageTemplates    MessageTemplate[]
-  flowConnections     FlowConnection[]
-  satisfactionSurveys SatisfactionSurvey[]
+  agents                    User[]
+  contacts                  Contact[]
+  conversations             Conversation[]
+  quickReplies              QuickReply[]               @relation("QuickReplyConnections")
+  autoMessages              AutoMessageTemplate[]      @relation("AutoMessageTemplateConnections")
+  satisfactionSurveyConfigs SatisfactionSurveyConfig[] @relation("SatisfactionSurveyConnections")
+  closingMessages           ClosingMessage[]           @relation("ClosingMessageConnections")
+  managerGrants             ManagerConnectionAccess[]
+  messageTemplates          MessageTemplate[]
+  flowConnections           FlowConnection[]
+  satisfactionSurveys       SatisfactionSurvey[]
 
   @@index([status])
 }
@@ -1172,6 +1173,30 @@ model ContactTag {
   @@index([tagId])
 }
 
+// A satisfaction survey as set up in Respostas › Pesquisa: the question sent when an attended WhatsApp conversation
+// is closed, its thank-you and its waits. There can be several — templates to start from, one per connection — but
+// only ACTIVE ones are ever sent, and for each conversation the most specific one applies (see getSurveyFor). See
+// PROMPT: "Cadastre ao menos 4 pesquisas desligadas, para servir de modelo".
+model SatisfactionSurveyConfig {
+  id                 String               @id @default(uuid())
+  name               String
+  active             Boolean              @default(false)
+  // Sent for conversations of every connection, or only of `connections`. One chosen for the connection wins
+  // over an "all connections" one.
+  allConnections     Boolean              @default(false)
+  connections        WhatsAppConnection[] @relation("SatisfactionSurveyConnections")
+  question           String
+  // Sent right after a valid score.
+  thanks             String
+  // How long a score is still accepted.
+  answerWindowHours  Int                  @default(24)
+  // How long after the question the held closing message goes out if the customer never answers.
+  closingWaitMinutes Int                  @default(30)
+  sent               SatisfactionSurvey[]
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+}
+
 // One NPS question the survey has asked (nota de 0 a 10). Editing the question
 // text in Respostas › Pesquisa starts a new row, so the Dashboard keeps one NPS
 // per question and the answers to an older wording stay in the history.
@@ -1187,21 +1212,25 @@ model SatisfactionQuestion {
 // The customer's next message, if it's a 0–10 score inside the answer window,
 // is recorded here instead of opening a new conversation.
 model SatisfactionSurvey {
-  id                   String                @id @default(uuid())
-  conversation         Conversation          @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  conversationId       String                @unique
+  id                   String                    @id @default(uuid())
+  conversation         Conversation              @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversationId       String                    @unique
   contactId            String
-  whatsappConnection   WhatsAppConnection    @relation(fields: [whatsappConnectionId], references: [id], onDelete: Cascade)
+  whatsappConnection   WhatsAppConnection        @relation(fields: [whatsappConnectionId], references: [id], onDelete: Cascade)
   whatsappConnectionId String
   // Who attended the conversation being rated.
-  agent                User?                 @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  agent                User?                     @relation(fields: [agentId], references: [id], onDelete: SetNull)
   agentId              String?
   // The question that was asked. Null only on surveys sent before the NPS
   // (0–10) scale existed — those scores are on the old 1–5 scale.
-  question             SatisfactionQuestion? @relation(fields: [questionId], references: [id], onDelete: SetNull)
+  question             SatisfactionQuestion?     @relation(fields: [questionId], references: [id], onDelete: SetNull)
   questionId           String?
+  // The survey (Respostas › Pesquisa) this was sent from — its thank-you goes out with the score. Null on surveys
+  // sent before there could be more than one, and once that survey is deleted.
+  config               SatisfactionSurveyConfig? @relation(fields: [configId], references: [id], onDelete: SetNull)
+  configId             String?
   score                Int?
-  sentAt               DateTime              @default(now())
+  sentAt               DateTime                  @default(now())
   expiresAt            DateTime
   answeredAt           DateTime?
 
