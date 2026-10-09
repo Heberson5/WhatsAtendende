@@ -281,7 +281,8 @@ export default function AtendimentoPage() {
                   aria-selected={tab === t.value}
                   onClick={() => setTab(t.value)}
                   className={clsx(
-                    "focus-ring flex items-center justify-center gap-1.5 rounded-[7px] py-1.5 text-[13px] font-medium transition-colors",
+                    "focus-ring flex min-w-0 items-center justify-center rounded-[7px] py-1.5 font-medium transition-colors",
+                    tabs.length === 4 ? "gap-1 text-[12px]" : "gap-1.5 text-[13px]",
                     tab === t.value ? "bg-surface font-semibold text-[var(--color-text)] shadow-sm" : "text-muted hover:text-[var(--color-text)]"
                   )}
                 >
