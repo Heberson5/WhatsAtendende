@@ -8,7 +8,8 @@ declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
-      auth?: { userId: string; role: Role; displayName: string };
+      // sessionId: the RefreshToken row behind the access token (its `sid`), set by requireAuth.
+      auth?: { userId: string; role: Role; displayName: string; sessionId?: string };
       // Raw request body bytes, captured by express.json()'s `verify`
       // callback in app.ts — needed to check the Meta webhook's
       // X-Hub-Signature-256 (an HMAC over the exact bytes received, which
@@ -32,7 +33,7 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
     if (!(await isSessionActive(payload.sid))) {
       return next(Errors.unauthorized("Sessao encerrada — login realizado em outro dispositivo"));
     }
-    req.auth = { userId: payload.sub, role: payload.role, displayName: payload.displayName };
+    req.auth = { userId: payload.sub, role: payload.role, displayName: payload.displayName, sessionId: payload.sid };
     next();
   } catch {
     next(Errors.unauthorized("Token invalido ou expirado"));

@@ -140,7 +140,7 @@ export const realtimeEvents = {
    * session and redirects before that disconnect even lands, and uses
    * `reason` to show the right message.
    */
-  userForceLoggedOut: (userId: string, reason: "ADMIN" | "NEW_LOGIN" | "SCHEDULE" = "ADMIN") => {
+  userForceLoggedOut: (userId: string, reason: "ADMIN" | "NEW_LOGIN" | "SCHEDULE" | "INACTIVITY" = "ADMIN") => {
     getIO()?.to(ROOMS.user(userId)).emit("user:force-logout", { reason });
     getIO()?.in(ROOMS.user(userId)).disconnectSockets(true);
   },

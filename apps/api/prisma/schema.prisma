@@ -191,13 +191,16 @@ model PasswordResetToken {
 }
 
 model RefreshToken {
-  id        String    @id @default(uuid())
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId    String
-  tokenHash String    @unique
-  expiresAt DateTime
-  revokedAt DateTime?
-  createdAt DateTime  @default(now())
+  id             String    @id @default(uuid())
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId         String
+  tokenHash      String    @unique
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  // Last time the person actually used the system (mouse, keyboard, touch) in this session — reported by the
+  // browser, not by background requests. Ends the session after the inactivity limit of Configurações › Sessão.
+  lastActivityAt DateTime  @default(now())
 
   @@index([userId])
 }

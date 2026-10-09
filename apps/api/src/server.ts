@@ -6,6 +6,7 @@ import { revertExpiredTransfers } from "./modules/conversations/conversations.se
 import { processDueClosingMessages } from "./modules/satisfaction/satisfaction.service";
 import { runHolidaySyncIfDue } from "./modules/holidays/holidays.service";
 import { sendQueueRemindersIfDue } from "./lib/queue-reminder";
+import { endIdleSessions } from "./modules/auth/auth.service";
 import { syncContactsIfDue } from "./lib/contacts-sync";
 import { env } from "./config/env";
 import { logger } from "./lib/logger";
@@ -23,6 +24,9 @@ const HOLIDAY_SYNC_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 // is just how often it's cheap to check whether it's due yet. See PROMPT:
 // "notificações a cada um minuto quando tem conversas na fila".
 const QUEUE_REMINDER_CHECK_INTERVAL_MS = 60 * 1000;
+
+// Sessions left without use past Configurações › Sessão's limit (see endIdleSessions).
+const IDLE_SESSION_SWEEP_INTERVAL_MS = 60 * 1000;
 
 // Looks for connections that missed the Monday 00:00 address-book load (or never had one).
 const CONTACTS_SYNC_CHECK_INTERVAL_MS = 10 * 60 * 1000;
@@ -65,6 +69,11 @@ async function main() {
   }, QUEUE_REMINDER_CHECK_INTERVAL_MS);
   queueReminderTimer.unref();
 
+  const idleSessionTimer = setInterval(() => {
+    endIdleSessions().catch((err) => logger.error({ err }, "failed to end idle sessions"));
+  }, IDLE_SESSION_SWEEP_INTERVAL_MS);
+  idleSessionTimer.unref();
+
   const contactsSyncTimer = setInterval(() => {
     syncContactsIfDue().catch((err) => logger.error({ err }, "failed to run the weekly address book sync"));
   }, CONTACTS_SYNC_CHECK_INTERVAL_MS);
@@ -93,6 +102,7 @@ async function main() {
     clearInterval(transferSweepTimer);
     clearInterval(holidaySyncTimer);
     clearInterval(queueReminderTimer);
+    clearInterval(idleSessionTimer);
     clearInterval(contactsSyncTimer);
     clearInterval(closingMessageTimer);
     httpServer.close();

@@ -5,7 +5,7 @@ import { Errors } from "../../lib/http-error";
 import { writeAudit } from "../../lib/audit";
 import { sendTemplatedMail } from "../../lib/mail";
 import { clearPendingTransferDeadlines } from "../conversations/conversations.service";
-import { getMaintenanceSettings } from "../settings/settings.service";
+import { getBusinessSettings, getMaintenanceSettings } from "../settings/settings.service";
 import { resolveAccessDecision, resolveLocalNow } from "../../lib/access-schedule";
 import { findApplicableHoliday } from "../holidays/holidays.service";
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from "./jwt";
@@ -14,6 +14,14 @@ import { realtimeEvents } from "../../realtime/realtime";
 import type { AccessSchedule } from "@whatsatendende/types";
 
 const REFRESH_TOKEN_DAYS = 7;
+
+/**
+ * How long past the inactivity limit (Configurações › Sessão) the server waits before ending an idle session
+ * itself. The browser ends it right on the limit (see the web app's useIdleLogout) and reports activity at
+ * most every 30 seconds, so the server's own record lags by up to that much; it only has to step in when the
+ * browser couldn't — a tab frozen while the computer slept, a browser that stopped running the page.
+ */
+const IDLE_GRACE_MS = 2 * 60 * 1000;
 
 // Never a real bcrypt hash of any real password — used only to make the
 // "user not found" path do roughly the same amount of CPU work as the
@@ -148,6 +156,42 @@ export async function login(email: string, password: string, ip: string | null, 
   return { accessToken, refreshToken, user };
 }
 
+/** Sessions whose last activity is before this are idle past the limit (null: no limit configured). */
+async function idleCutoff(now = new Date()): Promise<Date | null> {
+  const minutes = Number((await getBusinessSettings()).inactivityTimeoutMinutes);
+  if (!Number.isFinite(minutes) || minutes <= 0) return null;
+  return new Date(now.getTime() - minutes * 60_000 - IDLE_GRACE_MS);
+}
+
+/** The browser saw the person use the system (POST /auth/activity). */
+export async function recordSessionActivity(sessionId: string) {
+  await prisma.refreshToken.updateMany({ where: { id: sessionId, revokedAt: null }, data: { lastActivityAt: new Date() } });
+}
+
+async function endIdleSession(session: { id: string; userId: string }) {
+  const ended = await prisma.refreshToken.updateMany({ where: { id: session.id, revokedAt: null }, data: { revokedAt: new Date() } });
+  if (ended.count === 0) return; // logged out (or ended) in the meantime
+  await prisma.user.update({ where: { id: session.userId }, data: { presence: "OFFLINE" } }).catch(() => undefined);
+  await writeAudit({ userId: session.userId, action: "LOGOUT_INACTIVITY", entity: "User", entityId: session.userId });
+  realtimeEvents.userForceLoggedOut(session.userId, "INACTIVITY");
+}
+
+/**
+ * Ends every session left without use past the inactivity limit — see PROMPT: "deixei conectado de um dia
+ * para o outro e não fez logoff automaticamente". Run every minute by server.ts; revoking the session makes
+ * the very next request (and the next silent refresh) fail, whatever state the browser tab is in.
+ */
+export async function endIdleSessions(now = new Date()): Promise<number> {
+  const cutoff = await idleCutoff(now);
+  if (!cutoff) return 0;
+  const idle = await prisma.refreshToken.findMany({
+    where: { revokedAt: null, expiresAt: { gt: now }, lastActivityAt: { lt: cutoff } },
+    select: { id: true, userId: true },
+  });
+  for (const session of idle) await endIdleSession(session);
+  return idle.length;
+}
+
 export async function refresh(refreshToken: string, tzOffsetMinutes = 0, ip: string | null = null) {
   let payload: { sub: string };
   try {
@@ -160,6 +204,13 @@ export async function refresh(refreshToken: string, tzOffsetMinutes = 0, ip: str
   const stored = await prisma.refreshToken.findUnique({ where: { tokenHash } });
   if (!stored || stored.revokedAt || stored.expiresAt < new Date()) {
     throw Errors.unauthorized("Sessao expirada, faca login novamente");
+  }
+
+  // Background requests keep refreshing an open tab forever; only real use (lastActivityAt) keeps it alive.
+  const cutoff = await idleCutoff();
+  if (cutoff && stored.lastActivityAt < cutoff) {
+    await endIdleSession(stored);
+    throw Errors.unauthorized("Sessão encerrada por inatividade. Faça login novamente.");
   }
 
   const user = await prisma.user.findUnique({ where: { id: payload.sub }, include: { whatsappConnection: true, pauseReason: true } });
@@ -189,6 +240,8 @@ export async function refresh(refreshToken: string, tzOffsetMinutes = 0, ip: str
       userId: user.id,
       tokenHash: hashToken(newRefreshToken),
       expiresAt: new Date(Date.now() + REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000),
+      // A refresh is the browser renewing its token, not the person using the system.
+      lastActivityAt: stored.lastActivityAt,
     },
   });
 

@@ -29,6 +29,7 @@ const ACTION_LABEL: Record<string, string> = {
   LOGIN_FAILED: "Falha no login",
   LOGIN_BLOCKED_INACTIVE: "Login bloqueado (usuário inativo)",
   LOGOUT: "Logout",
+  LOGOUT_INACTIVITY: "Logoff por inatividade",
   PASSWORD_RESET_REQUESTED: "Redefinição de senha solicitada",
   PASSWORD_RESET_COMPLETED: "Redefinição de senha concluída",
   CONVERSATION_STARTED: "Conversa iniciada",
