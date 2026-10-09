@@ -18,6 +18,7 @@ const ENTITY_LABEL: Record<string, string> = {
   WhatsAppConnection: "Conexão WhatsApp",
   SystemSetting: "Configuração",
   SatisfactionSurveyConfig: "Pesquisa de satisfação",
+  ReleaseNoteVersion: "Nota de versão",
   RolePermission: "Permissão",
 };
 
@@ -34,6 +35,9 @@ const ACTION_LABEL: Record<string, string> = {
   SATISFACTION_SURVEY_CREATED: "Pesquisa de satisfação criada",
   SATISFACTION_SURVEY_UPDATED: "Pesquisa de satisfação alterada",
   SATISFACTION_SURVEY_DELETED: "Pesquisa de satisfação excluída",
+  RELEASE_NOTES_CREATED: "Versão das notas de versão criada",
+  RELEASE_NOTES_UPDATED: "Versão das notas de versão alterada",
+  RELEASE_NOTES_DELETED: "Versão das notas de versão excluída",
   PASSWORD_RESET_REQUESTED: "Redefinição de senha solicitada",
   PASSWORD_RESET_COMPLETED: "Redefinição de senha concluída",
   CONVERSATION_STARTED: "Conversa iniciada",

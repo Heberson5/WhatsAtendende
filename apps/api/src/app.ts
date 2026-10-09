@@ -35,6 +35,7 @@ import { messageTemplatesRouter } from "./modules/message-templates/message-temp
 import { pauseReasonsRouter } from "./modules/pause-reasons/pause-reasons.routes";
 import { clientPanelRouter, tagsRouter } from "./modules/client-panel/client-panel.routes";
 import { flowsRouter } from "./modules/flows/flows.routes";
+import { releaseNotesRouter } from "./modules/release-notes/release-notes.routes";
 
 export function createApp() {
   const app = express();
@@ -117,6 +118,7 @@ export function createApp() {
   app.use("/uploads/profile", express.static(path.join(env.UPLOAD_DIR, "profile")));
   app.use("/uploads/contacts", express.static(path.join(env.UPLOAD_DIR, "contacts")));
   app.use("/uploads/message-templates", express.static(path.join(env.UPLOAD_DIR, "message-templates")));
+  app.use("/uploads/release-notes", express.static(path.join(env.UPLOAD_DIR, "release-notes")));
 
   app.get("/api/health", (_req, res) => res.json({ status: "ok", timestamp: new Date().toISOString() }));
 
@@ -147,6 +149,7 @@ export function createApp() {
   app.use("/api/writing-assist", writingAssistRouter);
   app.use("/api/pause-reasons", pauseReasonsRouter);
   app.use("/api/flows", flowsRouter);
+  app.use("/api/release-notes", releaseNotesRouter);
 
   app.use((req, res) => {
     res.status(404).json({ error: "NOT_FOUND", message: `Rota nao encontrada: ${req.method} ${req.path}` });

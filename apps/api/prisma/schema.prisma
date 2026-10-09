@@ -1253,3 +1253,20 @@ model SatisfactionSurvey {
   @@index([questionId])
   @@index([closingDueAt])
 }
+
+// One version of Notas de versão — what changed, written for the people using the system. Edited by an administrator
+// in Configurações › Notas de versão; the versions shipped with the system are copied here once (see
+// syncDefaultReleaseNotes). The notes are kept with the version, as JSON checked by the API (release-notes.routes.ts),
+// and each one is only shown to who can open its area.
+model ReleaseNoteVersion {
+  id        String   @id @default(uuid())
+  // "2.2.0" — the newest by number is the current one.
+  version   String   @unique
+  // As shown, e.g. "09 out 2026".
+  date      String
+  name      String
+  summary   String
+  notes     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

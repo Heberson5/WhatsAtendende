@@ -1487,3 +1487,94 @@ export interface ContactPanelDTO {
   }[];
   previousConversationCount: number;
 }
+
+// ---------------------------------------------------------------------------
+// Notas de versão — what changed in each version, written for the people using the system. Kept in the database
+// and edited by an administrator in Configurações › Notas de versão. Each note belongs to an area of the app and is
+// only shown to users who can open that area (the same permissions that gate the sidebar menu), so nobody reads
+// about screens they can't use.
+// ---------------------------------------------------------------------------
+
+export type ReleaseNoteType = "novo" | "melhoria" | "correcao";
+
+export type ReleaseNoteArea = "geral" | "atendimento" | "gestao" | "contatos" | "dashboard" | "usuarios" | "respostas" | "fluxo" | "conexoes" | "configuracoes" | "landingPage" | "administracao";
+
+export interface ReleaseNoteImageDTO {
+  /** Address of the screenshot: /notas-de-versao/… (shipped with the system) or /uploads/release-notes/… (sent in Configurações). */
+  src: string;
+  /** "{1}" renders as the numbered marker drawn on the screenshot. */
+  caption: string;
+  size?: "small" | "tiny";
+}
+
+export interface ReleaseNoteDTO {
+  type: ReleaseNoteType;
+  area: ReleaseNoteArea;
+  title: string;
+  text?: string;
+  /** Shown together with `after`, as Antes/Agora. */
+  before?: string;
+  after?: string;
+  /** "Como usar" — "{1}" renders as the numbered marker of the screenshot. */
+  steps?: string[];
+  /** "Onde fica". */
+  where?: string;
+  images?: ReleaseNoteImageDTO[];
+  /** Extra permissions on top of the area's own (e.g. a specific tab). */
+  requires?: Permission[];
+  /** Only these roles read the note, whatever their permissions. */
+  roles?: Role[];
+}
+
+/** A version as it is written — what the editor sends. */
+export interface ReleaseContent {
+  /** "2.2.0" — the newest version (by number) is the current one. */
+  version: string;
+  /** As shown, e.g. "09 out 2026". */
+  date: string;
+  name: string;
+  summary: string;
+  notes: ReleaseNoteDTO[];
+}
+
+export interface ReleaseDTO extends ReleaseContent {
+  id: string;
+}
+
+export const RELEASE_NOTE_TYPE_LABEL: Record<ReleaseNoteType, string> = { novo: "Novo", melhoria: "Melhoria", correcao: "Correção" };
+
+// Area order is the display order inside a release.
+export const RELEASE_NOTE_AREAS: Record<ReleaseNoteArea, { label: string; requires: Permission[]; adminOnly?: boolean }> = {
+  geral: { label: "Geral", requires: [] },
+  atendimento: { label: "Atendimento", requires: [PERMISSION.ATENDIMENTO_ACESSAR] },
+  gestao: { label: "Gestão", requires: [PERMISSION.GESTAO_ACESSAR] },
+  contatos: { label: "Contatos", requires: [PERMISSION.CONTATOS_ACESSAR] },
+  dashboard: { label: "Dashboard e Relatórios", requires: [PERMISSION.DASHBOARD_ACESSAR] },
+  usuarios: { label: "Usuários", requires: [PERMISSION.USUARIOS_VISUALIZAR] },
+  respostas: { label: "Respostas", requires: [PERMISSION.RESPOSTAS_RAPIDAS_GERENCIAR] },
+  fluxo: { label: "Fluxo", requires: [PERMISSION.FLUXO_VISUALIZAR] },
+  conexoes: { label: "Conexões", requires: [PERMISSION.CONEXOES_GERENCIAR] },
+  configuracoes: { label: "Configurações", requires: [PERMISSION.CONFIGURACOES_GERENCIAR] },
+  landingPage: { label: "Landing Page", requires: [PERMISSION.LANDING_PAGE_VISUALIZAR] },
+  administracao: { label: "Administração", requires: [], adminOnly: true },
+};
+
+export function canSeeReleaseNote(note: ReleaseNoteDTO, role: Role, permissions: PermissionMap): boolean {
+  const area = RELEASE_NOTE_AREAS[note.area];
+  if (note.roles && note.roles.length > 0 && !note.roles.includes(role)) return false;
+  if (area.adminOnly) return role === "ADMIN";
+  return [...area.requires, ...(note.requires ?? [])].every((p) => permissions[p]);
+}
+
+/** Releases trimmed to the notes this user can see; releases left empty are dropped. */
+export function visibleReleases<R extends ReleaseContent>(releases: R[], role: Role, permissions: PermissionMap): R[] {
+  return releases.map((r) => ({ ...r, notes: r.notes.filter((n) => canSeeReleaseNote(n, role, permissions)) })).filter((r) => r.notes.length > 0);
+}
+
+/** Compares "2.10.0" and "2.9.1" as numbers, part by part. */
+export function compareVersions(a: string, b: string): number {
+  const pa = a.split(".").map(Number);
+  const pb = b.split(".").map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) - (pb[i] ?? 0);
+  return 0;
+}

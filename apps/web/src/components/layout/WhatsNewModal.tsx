@@ -1,6 +1,6 @@
 import { useLocation, useNavigate } from "react-router-dom";
 import { Sparkles, X } from "lucide-react";
-import { RELEASE_NOTE_TYPE_LABEL } from "../../lib/releaseNotes";
+import { RELEASE_NOTE_TYPE_LABEL } from "@whatsatendende/types";
 import { useReleaseNotes } from "../../hooks/useReleaseNotes";
 
 // How many highlights the popup lists before pointing to the full page.
