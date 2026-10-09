@@ -6,6 +6,7 @@ export async function resetDatabase() {
   // Order matters: children before parents.
   await prisma.messageReaction.deleteMany();
   await prisma.messageAttachment.deleteMany();
+  await prisma.groupReadState.deleteMany();
   await prisma.message.deleteMany();
   await prisma.flowSession.deleteMany();
   await prisma.flowEdge.deleteMany();

@@ -155,6 +155,26 @@ whatsappRouter.delete(
 
 const connectSchema = z.object({ phoneNumber: z.string().trim().regex(/^\d{8,15}$/).optional() });
 
+// Atendimento's Grupos tab for this number — administrators only: it decides what every attendant of it sees.
+const groupsSchema = z.object({ enabled: z.boolean() });
+whatsappRouter.patch(
+  "/connections/:id/groups",
+  requireRole("ADMIN"),
+  asyncHandler(async (req, res) => {
+    const { enabled } = groupsSchema.parse(req.body);
+    const connection = await service.setConnectionGroupsEnabled(req.params.id, enabled);
+    await writeAudit({
+      userId: req.auth!.userId,
+      action: enabled ? "CONNECTION_GROUPS_ENABLED" : "CONNECTION_GROUPS_DISABLED",
+      entity: "WhatsAppConnection",
+      entityId: connection.id,
+      ipAddress: req.ip ?? null,
+      metadata: { name: connection.name },
+    });
+    res.json(connection);
+  })
+);
+
 whatsappRouter.post(
   "/connections/:id/connect",
   requirePermission(PERMISSION.CONEXOES_GERENCIAR),

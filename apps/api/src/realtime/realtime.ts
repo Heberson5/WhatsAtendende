@@ -21,6 +21,22 @@ export const ROOMS = {
 };
 
 export const realtimeEvents = {
+  /** A new message in a WhatsApp group, sent to each person who sees it; `notify` = pop a notice for them. */
+  groupMessage: (
+    userId: string,
+    payload: { conversationId: string; connectionId: string; groupName: string; senderName: string; preview: string; notify: boolean }
+  ) => {
+    getIO()?.to(ROOMS.user(userId)).emit("group:message", payload);
+  },
+  /** Someone opened a group: everybody's "Visto por" / Leitura da equipe changes. */
+  groupRead: (userIds: string[], conversationId: string, readerId: string) => {
+    for (const userId of userIds) getIO()?.to(ROOMS.user(userId)).emit("group:read", { conversationId, userId: readerId });
+    getIO()?.to(ROOMS.oversight()).emit("groups:updated");
+  },
+  /** Groups list changed (a message, groups turned on/off) — administrators see every group. */
+  groupsChanged: () => {
+    getIO()?.to(ROOMS.oversight()).emit("groups:updated");
+  },
   conversationAccepted: (conversationId: string, connectionId: string, agentId: string) => {
     getIO()?.to(ROOMS.queue(connectionId)).emit("queue:updated");
     // MANAGER/ADMIN have no fixed connection room — their combined queue view

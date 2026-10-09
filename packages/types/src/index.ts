@@ -37,6 +37,8 @@ export const CONVERSATION_STATUS = {
   // A still-unassigned conversation was read directly on the linked phone —
   // it leaves the queue without being attributed to any agent.
   HANDLED_EXTERNALLY: "HANDLED_EXTERNALLY",
+  // A WhatsApp group — shown only in Atendimento's Grupos tab, never in the queue or in any metric.
+  GROUP: "GROUP",
 } as const;
 export type ConversationStatus = (typeof CONVERSATION_STATUS)[keyof typeof CONVERSATION_STATUS];
 
@@ -592,6 +594,50 @@ export interface MessageDTO {
   linkPreview: { title: string; description: string | null; url: string; thumbnailUrl: string | null } | null;
   attachments: MessageAttachmentDTO[];
   reactions: MessageReactionDTO[];
+  /** Group messages only (inbound): who in the group wrote it. `color` is fixed per person. */
+  senderParticipant?: { name: string; phone: string | null; color: string } | null;
+}
+
+/** One person of the team who can see a WhatsApp group, and how far they have read it. */
+export interface GroupReaderDTO {
+  userId: string;
+  name: string;
+  photoUrl: string | null;
+  /** Hasn't opened the group since they got access to it. */
+  neverOpened: boolean;
+  lastReadAt: string | null;
+  unreadCount: number;
+  isMe: boolean;
+}
+
+/** A WhatsApp group in Atendimento's Grupos tab. Unread counts are the logged-in person's own. */
+export interface GroupListItemDTO {
+  id: string;
+  name: string;
+  photoUrl: string | null;
+  participantsCount: number | null;
+  whatsappConnectionId: string;
+  whatsappConnectionName: string;
+  whatsappConnectionColor: string;
+  whatsappConnectionStatus: WhatsAppConnectionStatus;
+  lastMessageAt: string;
+  lastMessagePreview: { senderName: string; text: string } | null;
+  unreadCount: number;
+  myLastReadAt: string | null;
+  muted: boolean;
+  readers: GroupReaderDTO[];
+}
+
+export interface GroupParticipantDTO {
+  name: string;
+  phone: string | null;
+  isAdmin: boolean;
+}
+
+export interface GroupsSummaryDTO {
+  /** How many groups have messages this person hasn't read. */
+  groupsWithUnread: number;
+  unreadMessages: number;
 }
 
 export interface MessageAttachmentDTO {
@@ -674,6 +720,9 @@ export const PERMISSION = {
   ATENDIMENTO_ACESSAR: "atendimento.acessar",
   ATENDIMENTO_TRANSFERIR: "atendimento.transferir",
   ATENDIMENTO_ENCERRAR: "atendimento.encerrar",
+  // WhatsApp groups (Atendimento's Grupos tab) — only on connections where an administrator turned groups on.
+  ATENDIMENTO_GRUPOS_VISUALIZAR: "atendimento.grupos.visualizar",
+  ATENDIMENTO_GRUPOS_RESPONDER: "atendimento.grupos.responder",
   GESTAO_ACESSAR: "gestao.acessar",
   // Layered ON TOP of GESTAO_ACESSAR (need both) — see that key's own doc
   // comment.
@@ -820,6 +869,22 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     group: "Atendimento",
     label: "Encerrar conversas",
     description: "Encerrar uma conversa em atendimento.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: true, MANAGER: true },
+  },
+  {
+    key: PERMISSION.ATENDIMENTO_GRUPOS_VISUALIZAR,
+    group: "Atendimento",
+    label: "Ver grupos",
+    description: "Ver a aba Grupos e receber os avisos de mensagens novas nos grupos do WhatsApp das conexões que atende.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: true, MANAGER: true },
+  },
+  {
+    key: PERMISSION.ATENDIMENTO_GRUPOS_RESPONDER,
+    group: "Atendimento",
+    label: "Responder em grupos",
+    description: "Enviar mensagens nos grupos do WhatsApp, com o nome de exibição no início, como nas conversas.",
     editableRoles: ["AGENT", "MANAGER"],
     defaultAllowed: { AGENT: true, MANAGER: true },
   },

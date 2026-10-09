@@ -22,6 +22,8 @@ export async function getDashboard({ from, to, agentId, connectionIds }: Dashboa
   const connectionFilter = connectionIds === undefined ? undefined : { in: connectionIds };
   const whereBase = {
     createdAt: { gte: from, lte: to },
+    // WhatsApp groups never count: they are not customer conversations.
+    status: { not: "GROUP" as const },
     ...(agentId ? { assignedAgentId: agentId } : {}),
     ...(connectionFilter ? { whatsappConnectionId: connectionFilter } : {}),
   };
@@ -45,7 +47,7 @@ export async function getDashboard({ from, to, agentId, connectionIds }: Dashboa
       where: {
         createdAt: { gte: from, lte: to },
         conversation: {
-          ...(agentId ? { assignedAgentId: agentId } : {}),
+          status: { not: "GROUP" as const },          ...(agentId ? { assignedAgentId: agentId } : {}),
           ...(connectionFilter ? { whatsappConnectionId: connectionFilter } : {}),
         },
       },
@@ -124,6 +126,7 @@ export async function getDashboard({ from, to, agentId, connectionIds }: Dashboa
 async function getPeriodTotals({ from, to, agentId, connectionIds }: DashboardParams) {
   const connectionFilter = connectionIds === undefined ? undefined : { in: connectionIds };
   const conversationScope = {
+    status: { not: "GROUP" as const },
     ...(agentId ? { assignedAgentId: agentId } : {}),
     ...(connectionFilter ? { whatsappConnectionId: connectionFilter } : {}),
   };
@@ -245,7 +248,7 @@ async function getPerAgentBreakdown(from: Date, to: Date, connectionFilter?: { i
         where: {
           senderAgentId: agent.id,
           createdAt: { gte: from, lte: to },
-          ...(connectionFilter ? { conversation: { whatsappConnectionId: connectionFilter } } : {}),
+          conversation: { status: { not: "GROUP" as const }, ...(connectionFilter ? { whatsappConnectionId: connectionFilter } : {}) },
         },
       });
       // Inbound messages inside this agent's own conversations — not
@@ -417,6 +420,7 @@ export async function getWordCloud({ from, to, agentId, connectionIds }: Dashboa
       body: { not: null },
       createdAt: { gte: from, lte: to },
       conversation: {
+        status: { not: "GROUP" as const },
         ...(agentId ? { assignedAgentId: agentId } : {}),
         ...(connectionFilter ? { whatsappConnectionId: connectionFilter } : {}),
       },
