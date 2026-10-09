@@ -5,6 +5,7 @@ import type {
   ConnectOptions,
   ContactInfo,
   DeliveryEvent,
+  GroupInfo,
   HistorySyncEvent,
   InboundMessageEvent,
   ReactionEvent,
@@ -53,11 +54,13 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
   };
   private autoMessageTimer: NodeJS.Timeout | null = null;
   /** Test helper: every sendText/sendFile call, exactly as this "reached WhatsApp" — lets tests assert on things like whatsapp.service.ts's sender-name prefix without a real WhatsApp account. */
-  readonly sentTexts: { chatId: string; text: string; replyToProviderMessageId?: string; replyToText?: string | null }[] = [];
+  readonly sentTexts: { chatId: string; text: string; replyToProviderMessageId?: string; replyToText?: string | null; replyToParticipantJid?: string | null }[] = [];
   readonly sentFiles: { chatId: string; caption?: string }[] = [];
   readonly sentAudios: { chatId: string; mimeType: string; sizeBytes: number }[] = [];
   /** Test helper: every markRead call, exactly as this "reached WhatsApp". */
-  readonly readReceiptsSent: { chatId: string; providerMessageIds: string[] }[] = [];
+  readonly readReceiptsSent: { chatId: string; providerMessageIds: string[]; participantByMessageId?: Record<string, string> }[] = [];
+  /** Test/demo helper: the groups this "linked number" is in. */
+  readonly mockGroups: GroupInfo[] = [];
   /** Test helper: every reaction this provider was asked to send. */
   readonly reactionsSent: { chatId: string; providerMessageId: string; emoji: string | null; targetFromMe: boolean }[] = [];
 
@@ -113,7 +116,13 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
 
   async sendText(chatId: string, text: string, options?: SendTextOptions): Promise<SendResult> {
     this.ensureConnected();
-    this.sentTexts.push({ chatId, text, replyToProviderMessageId: options?.replyToProviderMessageId, replyToText: options?.replyToText });
+    this.sentTexts.push({
+      chatId,
+      text,
+      replyToProviderMessageId: options?.replyToProviderMessageId,
+      replyToText: options?.replyToText,
+      ...(options?.replyToParticipantJid ? { replyToParticipantJid: options.replyToParticipantJid } : {}),
+    });
     const result = { providerMessageId: randomUUID(), timestamp: new Date() };
     this.simulateDeliveryLifecycle(chatId, result.providerMessageId);
     return result;
@@ -147,9 +156,17 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
     this.reactionsSent.push({ chatId, providerMessageId, emoji, targetFromMe: Boolean(options?.targetFromMe) });
   }
 
-  async markRead(chatId: string, providerMessageIds: string[]): Promise<void> {
+  async markRead(chatId: string, providerMessageIds: string[], options?: { participantByMessageId?: Record<string, string> }): Promise<void> {
     this.ensureConnected();
-    this.readReceiptsSent.push({ chatId, providerMessageIds });
+    this.readReceiptsSent.push({ chatId, providerMessageIds, ...(options?.participantByMessageId ? { participantByMessageId: options.participantByMessageId } : {}) });
+  }
+
+  async listGroups(): Promise<GroupInfo[]> {
+    return this.mockGroups;
+  }
+
+  async getGroupInfo(chatId: string): Promise<GroupInfo | null> {
+    return this.mockGroups.find((g) => g.chatId === chatId) ?? null;
   }
 
   async getContactInfo(chatId: string): Promise<ContactInfo> {
@@ -260,6 +277,45 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
       fromMe: false,
     };
     this.emitter.emit("message", event);
+  }
+
+  /** Test/demo helper: someone writes in a WhatsApp group. Returns the message id. */
+  simulateIncomingGroupMessage(groupChatId: string, participantPhone: string | null, participantName: string | null, body: string, extra: Partial<InboundMessageEvent> = {}): string {
+    const providerMessageId = randomUUID();
+    this.emitter.emit("message", {
+      providerMessageId,
+      chatId: groupChatId,
+      phone: groupChatId.split("@")[0],
+      contactName: null,
+      type: "TEXT",
+      body,
+      replyToProviderMessageId: null,
+      timestamp: new Date(),
+      fromMe: false,
+      group: {
+        participantJid: participantPhone ? `${participantPhone}@s.whatsapp.net` : `${randomUUID().slice(0, 8)}@lid`,
+        participantPhone,
+        participantName,
+      },
+      ...extra,
+    } satisfies InboundMessageEvent);
+    return providerMessageId;
+  }
+
+  /** Test helper: a message typed in a group on the linked phone itself. */
+  simulateDeviceSentGroupMessage(groupChatId: string, body: string): void {
+    this.emitter.emit("message", {
+      providerMessageId: randomUUID(),
+      chatId: groupChatId,
+      phone: groupChatId.split("@")[0],
+      contactName: null,
+      type: "TEXT",
+      body,
+      replyToProviderMessageId: null,
+      timestamp: new Date(),
+      fromMe: true,
+      group: { participantJid: "", participantPhone: null, participantName: null },
+    } satisfies InboundMessageEvent);
   }
 
   /** Test helper: a message typed on the linked phone itself (or another linked device) to this customer — an OUTBOUND message the app didn't send. */

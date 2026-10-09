@@ -6,6 +6,7 @@ import type {
   ConnectOptions,
   ContactInfo,
   DeliveryEvent,
+  GroupInfo,
   HistorySyncEvent,
   InboundMessageEvent,
   ReactionEvent,
@@ -264,6 +265,15 @@ export class CloudApiWhatsAppProvider implements WhatsAppProvider {
   }
 
   async getContactPhoto(): Promise<string | null> {
+    return null;
+  }
+
+  // The Cloud API doesn't take part in WhatsApp groups.
+  async listGroups(): Promise<GroupInfo[]> {
+    return [];
+  }
+
+  async getGroupInfo(): Promise<GroupInfo | null> {
     return null;
   }
 

@@ -17,6 +17,7 @@ import type {
   ConnectOptions,
   ContactInfo,
   DeliveryEvent,
+  GroupInfo,
   HistoryChatInfo,
   HistoryMessageEvent,
   HistorySyncEvent,
@@ -29,6 +30,7 @@ import type {
 } from "./types";
 import { deliveryEventFromBaileysUpdate } from "./delivery-status";
 import { reactionEventFromBaileys } from "./reaction-event";
+import { groupSenderFromBaileys, isGroupChat } from "./group-message";
 
 export interface BaileysProviderOptions {
   /** Directory where Baileys persists the multi-device auth/session state. */
@@ -70,6 +72,9 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
   // arrive (no makeInMemoryStore dependency needed for just this). Backs
   // listContacts() — the phone's address book, used by "start a new conversation".
   private contacts = new Map<string, ContactInfo>();
+  /** Group names and participants, read from WhatsApp at most every GROUP_INFO_TTL_MS per group. */
+  private groupInfoCache = new Map<string, { info: GroupInfo; at: number }>();
+  private static readonly GROUP_INFO_TTL_MS = 10 * 60_000;
   // Persists the in-memory contacts Map to a small JSON file next to the
   // Baileys auth state so "Nova conversa"'s address book survives an API
   // process restart (every deploy). Without this, listContacts() came back
@@ -556,7 +561,8 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
       });
 
       socket.ev.on("messages.reaction", (reactions) => {
-        for (const r of reactions) this.emitter.emit("reaction", reactionEventFromBaileys(r));
+        // Reactions inside groups are left out for now.
+        for (const r of reactions) if (!isGroupChat(r.key.remoteJid ?? "")) this.emitter.emit("reaction", reactionEventFromBaileys(r));
       });
     } catch (err) {
       // A failure before the socket even got a chance to try connecting
@@ -638,7 +644,12 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
     // reply send silently (caught and swallowed by sendOutboundText).
     const quoted = options?.replyToProviderMessageId
       ? {
-          key: { id: options.replyToProviderMessageId, remoteJid: chatId, fromMe: false },
+          key: {
+            id: options.replyToProviderMessageId,
+            remoteJid: chatId,
+            fromMe: false,
+            ...(options.replyToParticipantJid ? { participant: options.replyToParticipantJid } : {}),
+          },
           message: { conversation: options.replyToText ?? "" },
         }
       : undefined;
@@ -746,10 +757,44 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
     this.cacheSentMessage(sent);
   }
 
-  async markRead(chatId: string, providerMessageIds: string[]): Promise<void> {
+  async markRead(chatId: string, providerMessageIds: string[], options?: { participantByMessageId?: Record<string, string> }): Promise<void> {
     if (providerMessageIds.length === 0) return;
     const socket = this.requireSocket();
-    await socket.readMessages(providerMessageIds.map((id) => ({ remoteJid: chatId, id, fromMe: false })));
+    // In a group each receipt also has to say who wrote the message.
+    await socket.readMessages(
+      providerMessageIds.map((id) => {
+        const participant = options?.participantByMessageId?.[id];
+        return { remoteJid: chatId, id, fromMe: false, ...(participant ? { participant } : {}) };
+      })
+    );
+  }
+
+  async listGroups(): Promise<GroupInfo[]> {
+    const socket = this.requireSocket();
+    const groups = await socket.groupFetchAllParticipating();
+    const list = Object.values(groups).map((g) => groupInfoFromMetadata(g, (jid) => this.participantName(jid)));
+    for (const g of list) this.groupInfoCache.set(g.chatId, { info: g, at: Date.now() });
+    return list;
+  }
+
+  async getGroupInfo(chatId: string): Promise<GroupInfo | null> {
+    const cached = this.groupInfoCache.get(chatId);
+    if (cached && Date.now() - cached.at < BaileysWhatsAppProvider.GROUP_INFO_TTL_MS) return cached.info;
+    try {
+      const socket = this.requireSocket();
+      const info = groupInfoFromMetadata(await socket.groupMetadata(chatId), (jid) => this.participantName(jid));
+      this.groupInfoCache.set(chatId, { info, at: Date.now() });
+      return info;
+    } catch (err) {
+      this.logger.warn({ err, chatId }, "could not read a WhatsApp group's details");
+      return cached?.info ?? null;
+    }
+  }
+
+  /** A group participant's name as saved in the linked phone, when known. */
+  private participantName(jid: string): string | null {
+    const phone = jid.split("@")[0].split(":")[0];
+    return this.contacts.get(phone)?.name ?? null;
   }
 
   async getContactInfo(chatId: string): Promise<ContactInfo> {
@@ -912,7 +957,9 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
     // identically. The consumer now de-duplicates by providerMessageId
     // instead — see fromMe on InboundMessageEvent.
     const chatId = message.key.remoteJid ?? "";
-    if (!chatId || isNonCustomerChat(chatId)) return; // ignore groups, status updates, broadcast lists, channels
+    if (!chatId || isIgnoredChat(chatId)) return; // ignore status updates, broadcast lists, channels
+    // A group message: the app decides whether that connection takes groups at all.
+    const group = groupSenderFromBaileys(message.key, message.key.fromMe ? null : message.pushName);
 
     const content = message.message;
     if (!content) return;
@@ -924,7 +971,8 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
       phone: phoneFromJid(chatId, message.key.senderPn ?? message.key.participantPn),
       // pushName on a fromMe message is this account's own name, not the
       // customer's — never let it overwrite the contact's stored name.
-      contactName: message.key.fromMe ? null : (message.pushName ?? null),
+      contactName: message.key.fromMe || group ? null : (message.pushName ?? null),
+      ...(group ? { group } : {}),
       replyToProviderMessageId:
         content.extendedTextMessage?.contextInfo?.stanzaId ?? null,
       isQuotedStoryReply: quotedStory !== null,
@@ -1040,7 +1088,32 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
  * customer waiting for an agent, so they must never reach findOrCreateContact.
  */
 function isNonCustomerChat(chatId: string): boolean {
-  return chatId.endsWith("@g.us") || chatId.endsWith("@broadcast") || chatId.endsWith("@newsletter");
+  return isGroupChat(chatId) || isIgnoredChat(chatId);
+}
+
+/** Never reaches the app at all, not even as a group: Status updates, broadcast lists and channels. */
+function isIgnoredChat(chatId: string): boolean {
+  return chatId.endsWith("@broadcast") || chatId.endsWith("@newsletter");
+}
+
+/** Baileys group metadata as a provider GroupInfo; `savedName` looks a participant up in the phone's address book. */
+function groupInfoFromMetadata(
+  meta: { id: string; subject?: string | null; participants?: Array<{ id: string; jid?: string; name?: string; notify?: string; admin?: string | null }> },
+  savedName: (jid: string) => string | null
+): GroupInfo {
+  return {
+    chatId: meta.id,
+    subject: meta.subject?.trim() || "Grupo",
+    participants: (meta.participants ?? []).map((p) => {
+      const phoneJid = [p.id, p.jid].find((jid) => jid?.endsWith("@s.whatsapp.net"));
+      return {
+        jid: p.id,
+        phone: phoneJid ? phoneJid.split("@")[0].split(":")[0] : null,
+        name: p.name ?? savedName(phoneJid ?? p.id) ?? p.notify ?? null,
+        isAdmin: p.admin === "admin" || p.admin === "superadmin",
+      };
+    }),
+  };
 }
 
 /**
