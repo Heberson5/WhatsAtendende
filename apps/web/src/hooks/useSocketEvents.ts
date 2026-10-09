@@ -6,6 +6,7 @@ import { getSocket } from "../lib/socket";
 import { notifyDesktop } from "./useDesktopNotifications";
 import { useAuthStore } from "../store/auth-store";
 import type { NotificationsResponse } from "../components/layout/NotificationBell";
+import { useActiveGroupStore } from "../store/active-group-store";
 
 /** Subscribes to server-pushed realtime events and invalidates the affected React Query caches — no polling. */
 export function useSocketEvents(activeConversationId: string | null) {
@@ -100,13 +101,29 @@ export function useSocketEvents(activeConversationId: string | null) {
     // Writes straight into NotificationBell's own query-cache key — see its
     // comment for why the listener lives here instead of in that (more
     // deeply nested) component.
+    // A group's bell entry is updated in place (one per group): it moves to the top instead of adding another.
     const onNotificationNew = (notification: NotificationDTO) => {
-      queryClient.setQueryData<NotificationsResponse | undefined>(["notifications"], (prev) =>
-        prev
-          ? { items: [notification, ...prev.items].slice(0, 30), unreadCount: prev.unreadCount + 1 }
-          : { items: [notification], unreadCount: 1 }
-      );
+      queryClient.setQueryData<NotificationsResponse | undefined>(["notifications"], (prev) => {
+        if (!prev) return { items: [notification], unreadCount: 1 };
+        const existing = prev.items.find((n) => n.id === notification.id);
+        const wasUnread = Boolean(existing && !existing.readAt);
+        return {
+          items: [notification, ...prev.items.filter((n) => n.id !== notification.id)].slice(0, 30),
+          unreadCount: prev.unreadCount + (wasUnread ? 0 : 1),
+        };
+      });
     };
+    // A new message in a WhatsApp group: everybody who sees the group is told, unless it's open on
+    // their screen, they silenced it, or they wrote it (the server sends notify=false then).
+    const onGroupMessage = (payload: { conversationId: string; groupName: string; senderName: string; preview: string; notify: boolean }) => {
+      queryClient.invalidateQueries({ queryKey: ["groups"] });
+      queryClient.invalidateQueries({ queryKey: ["group-messages", payload.conversationId] });
+      if (!payload.notify || useActiveGroupStore.getState().activeGroupId === payload.conversationId) return;
+      const text = `${payload.senderName}: ${payload.preview}`;
+      toast.message(payload.groupName, { description: text, id: `wa-group-${payload.conversationId}` });
+      notifyDesktop(payload.groupName, text, `wa-group-${payload.conversationId}`);
+    };
+    const onGroupsUpdated = () => queryClient.invalidateQueries({ queryKey: ["groups"] });
 
     socket.on("queue:updated", onQueueUpdated);
     socket.on("queue:new-conversation", onNewQueueConversation);
@@ -122,6 +139,9 @@ export function useSocketEvents(activeConversationId: string | null) {
     socket.on("whatsapp:status", onWhatsappStatus);
     socket.on("presence:self", onPresenceSelf);
     socket.on("notification:new", onNotificationNew);
+    socket.on("group:message", onGroupMessage);
+    socket.on("group:read", onGroupsUpdated);
+    socket.on("groups:updated", onGroupsUpdated);
 
     return () => {
       socket.off("queue:updated", onQueueUpdated);
@@ -138,6 +158,9 @@ export function useSocketEvents(activeConversationId: string | null) {
       socket.off("whatsapp:status", onWhatsappStatus);
       socket.off("presence:self", onPresenceSelf);
       socket.off("notification:new", onNotificationNew);
+      socket.off("group:message", onGroupMessage);
+      socket.off("group:read", onGroupsUpdated);
+      socket.off("groups:updated", onGroupsUpdated);
     };
   }, [queryClient, activeConversationId, accessToken]);
 

@@ -20,7 +20,7 @@ import {
   Sparkles,
   Contact,
 } from "lucide-react";
-import { PERMISSION, type ConversationListItemDTO, type Permission } from "@whatsatendende/types";
+import { PERMISSION, type ConversationListItemDTO, type GroupsSummaryDTO, type Permission } from "@whatsatendende/types";
 import { api } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
 import { useBranding } from "../../hooks/useBranding";
@@ -117,10 +117,27 @@ export function useMenuBadges(): Record<string, MenuBadge | undefined> {
     refetchInterval: 60_000,
   });
 
+  const canSeeGroups = Boolean(permissions?.[PERMISSION.ATENDIMENTO_GRUPOS_VISUALIZAR]);
+  // Shares the "groups" prefix with Atendimento's list, so the same socket events refresh it.
+  const { data: groupsSummary } = useQuery({
+    queryKey: ["groups", "summary"],
+    queryFn: async () => (await api.get<GroupsSummaryDTO>("/groups/summary")).data,
+    enabled: canAttend && canSeeGroups,
+    refetchInterval: 60_000,
+  });
+
   const queueCount = queue?.length ?? 0;
+  const groupsUnread = groupsSummary?.groupsWithUnread ?? 0;
+  const attendCount = queueCount + groupsUnread;
+  const attendLabel = [
+    queueCount ? `${queueCount} na fila` : null,
+    groupsUnread ? `${groupsUnread} ${groupsUnread === 1 ? "grupo com mensagens não lidas" : "grupos com mensagens não lidas"}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   const droppedCount = connections?.filter((c) => c.connectionMode === "QRCODE" && c.state === "DISCONNECTED").length ?? 0;
   return {
-    "/atendimento": queueCount ? { count: queueCount, tone: "queue", label: `${queueCount} na fila` } : undefined,
+    "/atendimento": attendCount ? { count: attendCount, tone: "queue", label: attendLabel } : undefined,
     "/conexoes": droppedCount
       ? { count: droppedCount, tone: "alert", label: `${droppedCount} ${droppedCount === 1 ? "conexão desconectada" : "conexões desconectadas"}` }
       : undefined,

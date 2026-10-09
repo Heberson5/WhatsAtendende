@@ -213,7 +213,8 @@ export function MessageBubble({
 }: {
   message: MessageDTO;
   onReply: (message: MessageDTO) => void;
-  onReact: (message: MessageDTO, emoji: string) => void;
+  /** Omitted where reactions aren't offered (WhatsApp groups). */
+  onReact?: (message: MessageDTO, emoji: string) => void;
   onDelete?: (message: MessageDTO) => void;
   /** Starts a new conversation with a phone number found inside a received vCard attachment. Omitted in read-only views (Gestão). */
   onStartConversation?: (phone: string, name: string) => void;
@@ -240,6 +241,14 @@ export function MessageBubble({
         highlighted && "ring-2 ring-yellow-400 ring-offset-2 ring-offset-[var(--color-bg)]"
       )}
     >
+      {!isOutbound && message.senderParticipant && (
+        <p className="mb-0.5 text-xs font-bold" style={{ color: message.senderParticipant.color }}>
+          {message.senderParticipant.name}
+          {message.senderParticipant.phone && message.senderParticipant.name !== `+${message.senderParticipant.phone}` && (
+            <span className="ml-1.5 font-normal text-muted">+{message.senderParticipant.phone}</span>
+          )}
+        </p>
+      )}
       {isOutbound && message.senderAgentDisplayName && (
         <>
           <p className="text-xs font-bold opacity-90">{message.senderAgentDisplayName}</p>
@@ -256,7 +265,7 @@ export function MessageBubble({
           title={onJumpToMessage ? "Ir para a mensagem respondida" : undefined}
           className="focus-ring mb-1.5 block w-full rounded border-s-2 border-secondary bg-black/10 px-2 py-1 text-start text-xs opacity-90 enabled:cursor-pointer enabled:hover:bg-black/15"
         >
-          <p className="font-semibold">{repliedMessage.senderAgentDisplayName ?? "Cliente"}</p>
+          <p className="font-semibold">{repliedMessage.senderAgentDisplayName ?? repliedMessage.senderParticipant?.name ?? "Cliente"}</p>
           <p className="truncate">{repliedMessage.body ?? "Anexo"}</p>
         </button>
       )}
@@ -351,36 +360,38 @@ export function MessageBubble({
           <Trash2 className="h-3.5 w-3.5" />
         </button>
       )}
-      <div className="relative">
-        <button
-          onClick={() => setShowReactions((s) => !s)}
-          className="focus-ring rounded-full p-1.5 text-muted hover:bg-surface-alt hover:text-[var(--color-text)]"
-          aria-label="Reagir"
-        >
-          <Smile className="h-3.5 w-3.5" />
-        </button>
-        {showReactions && (
-          <div
-            className={clsx(
-              "absolute top-8 z-10 flex gap-1 rounded-full border border-border bg-surface px-2 py-1 shadow-lg",
-              isOutbound ? "right-0" : "left-0"
-            )}
+      {onReact && (
+        <div className="relative">
+          <button
+            onClick={() => setShowReactions((s) => !s)}
+            className="focus-ring rounded-full p-1.5 text-muted hover:bg-surface-alt hover:text-[var(--color-text)]"
+            aria-label="Reagir"
           >
-            {QUICK_REACTIONS.map((emoji) => (
-              <button
-                key={emoji}
-                onClick={() => {
-                  onReact(message, emoji);
-                  setShowReactions(false);
-                }}
-                className="focus-ring text-base transition-transform hover:scale-125"
-              >
-                {emoji}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+            <Smile className="h-3.5 w-3.5" />
+          </button>
+          {showReactions && (
+            <div
+              className={clsx(
+                "absolute top-8 z-10 flex gap-1 rounded-full border border-border bg-surface px-2 py-1 shadow-lg",
+                isOutbound ? "right-0" : "left-0"
+              )}
+            >
+              {QUICK_REACTIONS.map((emoji) => (
+                <button
+                  key={emoji}
+                  onClick={() => {
+                    onReact(message, emoji);
+                    setShowReactions(false);
+                  }}
+                  className="focus-ring text-base transition-transform hover:scale-125"
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 

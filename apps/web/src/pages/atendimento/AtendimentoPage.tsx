@@ -4,7 +4,7 @@ import clsx from "clsx";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { MessagesSquare, Plus, Radio, Search } from "lucide-react";
-import type { ConversationListItemDTO } from "@whatsatendende/types";
+import { PERMISSION, type ConversationListItemDTO, type GroupListItemDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { ConversationCard, minutesWaiting, NO_REPLY_WARNING_MINUTES } from "../../components/atendimento/ConversationCard";
 import { ClientPanel } from "../../components/atendimento/ClientPanel";
@@ -16,6 +16,10 @@ import { ConnectionFilter } from "../../components/common/ConnectionFilter";
 import { NovaConversaModal } from "../../components/atendimento/NovaConversaModal";
 import { useActiveConversationStore } from "../../store/active-conversation-store";
 import { useAuthStore } from "../../store/auth-store";
+import { GroupCard } from "../../components/atendimento/GroupCard";
+import { GroupChatPanel } from "../../components/atendimento/GroupChatPanel";
+import { GroupInfoPanel } from "../../components/atendimento/GroupInfoPanel";
+import { useActiveGroupStore } from "../../store/active-group-store";
 
 const CLIENT_PANEL_KEY = "client-panel-collapsed";
 // Below this width the chat needs the room, so the panel starts collapsed.
@@ -35,7 +39,8 @@ type ListFilter = "all" | "unread" | "noReply";
 
 export default function AtendimentoPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [tab, setTab] = useState<"queue" | "mine" | "transferred">("mine");
+  const [tab, setTab] = useState<"queue" | "mine" | "transferred" | "groups">("mine");
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [connectionIds, setConnectionIds] = useState<string[]>([]);
   const [novaConversaOpen, setNovaConversaOpen] = useState(false);
   const [listSearch, setListSearch] = useState("");
@@ -71,6 +76,8 @@ export default function AtendimentoPage() {
   // this filter for them anyway — so only MANAGER/ADMIN, who see every
   // connection's queue combined by default, get the filter UI at all.
   const canFilterByConnection = user?.role === "MANAGER" || user?.role === "ADMIN";
+  const canSeeGroups = Boolean(useAuthStore((s) => s.permissions?.[PERMISSION.ATENDIMENTO_GRUPOS_VISUALIZAR]));
+  const setActiveGroupId = useActiveGroupStore((s) => s.setActiveGroupId);
   const hasFixedConnection = Boolean(user?.whatsappConnectionName);
 
   // Realtime listening itself (toasts, desktop notifications, the socket
@@ -124,6 +131,39 @@ export default function AtendimentoPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, mineQuery.data]);
 
+  // WhatsApp groups (only on connections where an administrator turned them on) — each person's own unread counts.
+  const groupsQuery = useQuery({
+    queryKey: ["groups", connectionIds],
+    queryFn: async () =>
+      (await api.get<GroupListItemDTO[]>("/groups", { params: { connectionIds: canFilterByConnection && connectionIds.length ? connectionIds.join(",") : undefined } })).data,
+    enabled: canSeeGroups,
+    refetchInterval: 30_000,
+  });
+  const groups = groupsQuery.data ?? [];
+  const selectedGroup = tab === "groups" ? (groups.find((g) => g.id === selectedGroupId) ?? null) : null;
+  // The open group doesn't pop notices for its own messages (they're on screen).
+  useEffect(() => {
+    setActiveGroupId(selectedGroup?.id ?? null);
+    return () => setActiveGroupId(null);
+  }, [selectedGroup?.id, setActiveGroupId]);
+  // Deep link from the bell / a notice: ?grupo=<id>.
+  useEffect(() => {
+    const groupId = searchParams.get("grupo");
+    if (!groupId || !groupsQuery.data) return;
+    if (groupsQuery.data.some((g) => g.id === groupId)) {
+      setSelectedId(null);
+      setWatchingConversation(null);
+      setTab("groups");
+      setSelectedGroupId(groupId);
+    }
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete("grupo");
+      return next;
+    }, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, groupsQuery.data]);
+
   const transferredOutQuery = useQuery({
     queryKey: ["transferred-out"],
     queryFn: async () => (await api.get<ConversationListItemDTO[]>("/conversations/transferred-out")).data,
@@ -171,19 +211,25 @@ export default function AtendimentoPage() {
   );
   const visibleQueue = (queueQuery.data ?? []).filter(matchesSearch);
   const visibleTransferred = (transferredOutQuery.data ?? []).filter(matchesSearch);
-  const panelConversation = selectedConversation ?? watchingConversation;
+  const panelConversation = tab === "groups" ? null : (selectedConversation ?? watchingConversation);
+  const groupsWithUnread = groups.filter((g) => g.unreadCount > 0).length;
+  const visibleGroups = groups.filter((g) => !listSearch.trim() || g.name.toLowerCase().includes(listSearch.trim().toLowerCase()));
+  // The tab shows up once there's a group to see (an administrator turned groups on for a number this person attends).
+  const showGroupsTab = canSeeGroups && (groups.length > 0 || tab === "groups");
+  const chatOpen = tab === "groups" ? Boolean(selectedGroup) : Boolean(selectedConversation || watchingConversation);
 
   const tabs = [
     { value: "mine" as const, label: "Meus", count: mine.length },
     { value: "queue" as const, label: "Fila", count: queueCount },
     { value: "transferred" as const, label: "Transf.", count: transferredOutQuery.data?.length ?? 0 },
+    ...(showGroupsTab ? [{ value: "groups" as const, label: "Grupos", count: groupsWithUnread }] : []),
   ];
 
   return (
     <div
       className={clsx(
         "grid h-full overflow-hidden",
-        panelConversation
+        panelConversation || selectedGroup
           ? clientPanelCollapsed
             ? "md:grid-cols-[320px_1fr_auto]"
             : "md:grid-cols-[300px_1fr_260px] xl:grid-cols-[320px_1fr_280px]"
@@ -193,7 +239,7 @@ export default function AtendimentoPage() {
       <div
         className={clsx(
           "flex-col overflow-hidden border-r border-border bg-surface md:flex",
-          selectedConversation || watchingConversation ? "hidden" : "flex"
+          chatOpen ? "hidden" : "flex"
         )}
       >
         {hasFixedConnection && user?.whatsappConnectionStatus !== "CONNECTED" && (
@@ -221,9 +267,13 @@ export default function AtendimentoPage() {
             </button>
           </div>
 
-          <div className="grid grid-cols-3 rounded-[10px] border border-border bg-surface-alt p-[3px]" role="tablist" aria-label="Conversas">
+          <div
+            className={clsx("grid rounded-[10px] border border-border bg-surface-alt p-[3px]", tabs.length === 4 ? "grid-cols-4" : "grid-cols-3")}
+            role="tablist"
+            aria-label="Conversas"
+          >
             {tabs.map((t) => {
-              const highlightQueue = t.value === "queue" && queueHasPending;
+              const highlightQueue = (t.value === "queue" && queueHasPending) || (t.value === "groups" && groupsWithUnread > 0);
               return (
                 <button
                   key={t.value}
@@ -319,6 +369,13 @@ export default function AtendimentoPage() {
               <EmptyState message="Nenhuma conversa aguardando." />
             ))}
 
+          {tab === "groups" &&
+            (visibleGroups.length ? (
+              visibleGroups.map((g) => <GroupCard key={g.id} group={g} selected={g.id === selectedGroupId} onSelect={() => setSelectedGroupId(g.id)} />)
+            ) : (
+              <EmptyState message={groups.length ? "Nenhum grupo com esse nome." : "Nenhum grupo nas conexões que você atende."} />
+            ))}
+
           {tab === "transferred" &&
             (visibleTransferred.length ? (
               visibleTransferred.map((c) => (
@@ -339,8 +396,23 @@ export default function AtendimentoPage() {
         </div>
       </div>
 
-      <div className={clsx("min-w-0 overflow-hidden bg-[var(--color-bg)]", selectedConversation || watchingConversation ? "block" : "hidden md:block")}>
-        {selectedConversation ? (
+      <div className={clsx("min-w-0 overflow-hidden bg-[var(--color-bg)]", chatOpen ? "block" : "hidden md:block")}>
+        {tab === "groups" ? (
+          selectedGroup ? (
+            <GroupChatPanel
+              key={selectedGroup.id}
+              group={selectedGroup}
+              onBack={() => setSelectedGroupId(null)}
+              infoPanelOpen={!clientPanelCollapsed}
+              onToggleInfoPanel={toggleClientPanel}
+            />
+          ) : (
+            <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-muted">
+              <MessagesSquare className="h-10 w-10 opacity-30" />
+              Selecione um grupo para ver as mensagens
+            </div>
+          )
+        ) : selectedConversation ? (
           <ChatPanel
             conversation={selectedConversation}
             onClosed={() => setSelectedId(null)}
@@ -362,6 +434,12 @@ export default function AtendimentoPage() {
           </div>
         )}
       </div>
+
+      {selectedGroup && (
+        <div className="hidden min-w-0 overflow-hidden md:block">
+          {clientPanelCollapsed ? null : <GroupInfoPanel group={selectedGroup} onClose={toggleClientPanel} />}
+        </div>
+      )}
 
       {panelConversation && (
         <div className="hidden min-w-0 overflow-hidden md:block">
