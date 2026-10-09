@@ -40,10 +40,20 @@ const STATUS_CHIPS: { key: string; label: string; statuses: ConversationStatus[]
 const WAIT_WARNING_MINUTES = 5;
 const WAIT_DANGER_MINUTES = 15;
 
-interface AgentOption {
+interface AttendantOption {
   id: string;
   displayName: string;
+  role: "AGENT" | "MANAGER" | "ADMIN";
+  isSelf: boolean;
 }
+
+// Managers and administrators attend customers too, so they are in the filter, each under their own heading. The
+// server leaves the administrators out for a manager.
+const ATTENDANT_GROUPS = [
+  { role: "AGENT", label: "Atendentes" },
+  { role: "MANAGER", label: "Gestores" },
+  { role: "ADMIN", label: "Administradores" },
+] as const;
 
 export default function GestaoPage() {
   const [period, setPeriod] = useState<PeriodValue>({ period: "today" });
@@ -114,9 +124,9 @@ export default function GestaoPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
-  const { data: agents } = useQuery({
-    queryKey: ["agents"],
-    queryFn: async () => (await api.get<AgentOption[]>("/agents")).data,
+  const { data: attendants } = useQuery({
+    queryKey: ["gestao-attendants"],
+    queryFn: async () => (await api.get<AttendantOption[]>("/agents/attendants")).data,
   });
 
   const returnToQueueMutation = useMutation({
@@ -211,13 +221,25 @@ export default function GestaoPage() {
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <PeriodFilter value={period} onChange={setPeriod} allowAll />
 
-        <select value={agentId} onChange={(e) => setAgentId(e.target.value)} className="focus-ring rounded-card border border-border bg-surface px-3 py-2 text-sm">
+        <select
+          value={agentId}
+          onChange={(e) => setAgentId(e.target.value)}
+          aria-label="Filtrar por atendente"
+          className="focus-ring rounded-card border border-border bg-surface px-3 py-2 text-sm"
+        >
           <option value="all">Todos os atendentes</option>
-          {agents?.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.displayName}
-            </option>
-          ))}
+          {ATTENDANT_GROUPS.map(({ role, label }) => {
+            const people = (attendants ?? []).filter((a) => a.role === role);
+            return people.length > 0 ? (
+              <optgroup key={role} label={label}>
+                {people.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.isSelf ? `${a.displayName} (você)` : a.displayName}
+                  </option>
+                ))}
+              </optgroup>
+            ) : null;
+          })}
         </select>
 
         <label className="flex min-w-[200px] flex-1 items-center gap-2 rounded-card border border-border bg-surface px-3 py-2 text-sm focus-within:border-primary/50">

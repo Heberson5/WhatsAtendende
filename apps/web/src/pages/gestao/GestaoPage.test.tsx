@@ -149,3 +149,41 @@ describe("Gestão: conversas pelo celular", () => {
     expect(within(joao).queryByText(/sem resposta há/)).not.toBeInTheDocument();
   });
 });
+
+describe("Gestão: filtro de atendentes", () => {
+  beforeEach(() => {
+    vi.mocked(api.get).mockReset();
+  });
+
+  it("lista atendentes, gestores e administradores separados, com o próprio nome marcado, e filtra pelo escolhido", async () => {
+    vi.mocked(api.get).mockImplementation(((url: string) => {
+      if (url === "/agents/attendants") {
+        return Promise.resolve({
+          data: [
+            { id: "a1", displayName: "Admin", role: "ADMIN", isSelf: true },
+            { id: "g1", displayName: "Gestora", role: "MANAGER", isSelf: false },
+            { id: "t1", displayName: "Maria", role: "AGENT", isSelf: false },
+          ],
+        });
+      }
+      return Promise.resolve({ data: [] });
+    }) as never);
+    useAuthStore.setState({ permissions: {} as PermissionMap, user: { role: "ADMIN" } as never });
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <MemoryRouter initialEntries={["/gestao"]}>
+          <GestaoPage />
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+
+    const filter = screen.getByRole("combobox", { name: "Filtrar por atendente" });
+    expect(await within(filter).findByRole("option", { name: "Admin (você)" })).toBeInTheDocument();
+    const groups = within(filter).getAllByRole("group");
+    expect(groups.map((g) => g.getAttribute("label"))).toEqual(["Atendentes", "Gestores", "Administradores"]);
+    expect(within(groups[1]).getByRole("option", { name: "Gestora" })).toBeInTheDocument();
+
+    fireEvent.change(filter, { target: { value: "g1" } });
+    await waitFor(() => expect(oversightCalls().at(-1)?.agentId).toBe("g1"));
+  });
+});

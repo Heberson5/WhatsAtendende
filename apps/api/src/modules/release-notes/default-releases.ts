@@ -15,7 +15,7 @@ export const DEFAULT_RELEASES: ReleaseContent[] = [
     date: "09 out 2026",
     name: "Notas de versão editáveis, várias pesquisas e aceite por usuário",
     summary:
-      "O logoff por inatividade volta a funcionar, também com o sistema aberto a noite toda. O administrador passa a escrever as notas de versão pelo sistema, a pesquisa de satisfação vira uma lista com 4 modelos e cada mensagem de aceite pode ser só de algumas pessoas. A 1ª resposta do Dashboard conta só o que o atendente escreve.",
+      "O logoff por inatividade volta a funcionar, também com o sistema aberto a noite toda. O administrador passa a escrever as notas de versão pelo sistema, a pesquisa de satisfação vira uma lista com 4 modelos e cada mensagem de aceite pode ser só de algumas pessoas. A 1ª resposta do Dashboard conta só o que o atendente escreve, e o filtro da Gestão inclui gestores e administradores.",
     notes: [
       {
         type: "correcao",
@@ -34,6 +34,16 @@ export const DEFAULT_RELEASES: ReleaseContent[] = [
         before: "Abaixo de 1 minuto aparecia “0 min”, e a mensagem automática de encerramento podia contar como 1ª resposta.",
         after: "Conta só a mensagem escrita pelo atendente, e abaixo de 1 minuto o tempo aparece em segundos.",
         where: "Dashboard › 1ª resposta (média) e Tempos médios de atendimento",
+      },
+      {
+        type: "melhoria",
+        area: "gestao",
+        title: "Filtro de atendentes da Gestão com gestores e administradores",
+        text: "Gestores e administradores também atendem clientes, então passaram a aparecer no filtro de atendentes da Gestão, separados em Atendentes, Gestores e Administradores. O seu próprio nome vem marcado com “(você)”. O gestor vê os atendentes e os gestores; os administradores aparecem só para o administrador.",
+        before: "O filtro listava só os atendentes.",
+        after: "Lista também os gestores e, para o administrador, os administradores — com o seu nome marcado.",
+        where: "Gestão › filtro de atendentes, no alto da lista",
+        roles: ["ADMIN", "MANAGER"],
       },
       {
         type: "novo",
