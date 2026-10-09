@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { Bell, BellOff, Check, MessageSquare, ArrowRightLeft } from "lucide-react";
+import { Bell, BellOff, Check, MessageSquare, ArrowRightLeft, Users } from "lucide-react";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -14,11 +14,12 @@ export interface NotificationsResponse {
   unreadCount: number;
 }
 
-const TYPE_ICON: Record<string, typeof MessageSquare> = { MESSAGE: MessageSquare, TRANSFER: ArrowRightLeft };
+const TYPE_ICON: Record<string, typeof MessageSquare> = { MESSAGE: MessageSquare, TRANSFER: ArrowRightLeft, GROUP_MESSAGE: Users };
 
 /** Where clicking a notification goes — see PROMPT: "ao clicar em cima de alguma, será direcionado para o local". Only Conversation-linked ones exist today (new message, transfer received) — both always land the agent's own "Ativos". */
 function entityPath(notification: NotificationDTO): string | null {
   if (notification.entityType === "Conversation" && notification.entityId) return `/atendimento?open=${notification.entityId}`;
+  if (notification.entityType === "Group" && notification.entityId) return `/atendimento?grupo=${notification.entityId}`;
   return null;
 }
 

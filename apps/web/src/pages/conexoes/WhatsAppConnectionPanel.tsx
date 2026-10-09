@@ -13,6 +13,8 @@ interface ConnectionSummary {
   name: string;
   color: string;
   connectionMode: "QRCODE" | "OFFICIAL_API";
+  groupsEnabled: boolean;
+  groupsCount: number;
   state: "DISCONNECTED" | "CONNECTING" | "QR_PENDING" | "CODE_PENDING" | "CONNECTED";
   qrCodeDataUrl: string | null;
   pairingCode: string | null;
@@ -48,6 +50,7 @@ export function WhatsAppConnectionPanel() {
   const permissions = useAuthStore((s) => s.permissions);
   const canAdicionar = permissions?.[PERMISSION.CONEXOES_WHATSAPP_ADICIONAR];
   const canEditar = permissions?.[PERMISSION.CONEXOES_WHATSAPP_EDITAR];
+  const isAdmin = useAuthStore((s) => s.user?.role === "ADMIN");
   const canExcluir = permissions?.[PERMISSION.CONEXOES_WHATSAPP_EXCLUIR];
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
@@ -341,6 +344,7 @@ export function WhatsAppConnectionPanel() {
                     </button>
                   )}
                 </div>
+                {isAdmin && <GroupsToggle connection={connection} />}
                 {canEditar && (
                   <div className="flex gap-2">
                     <button
@@ -439,6 +443,50 @@ export function WhatsAppConnectionPanel() {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+/** Atendimento's Grupos tab for this number — administrators only; off by default. */
+function GroupsToggle({ connection }: { connection: ConnectionSummary }) {
+  const queryClient = useQueryClient();
+  const toggle = useMutation({
+    mutationFn: (enabled: boolean) => api.patch(`/whatsapp/connections/${connection.id}/groups`, { enabled }),
+    onSuccess: (_res, enabled) => {
+      queryClient.invalidateQueries({ queryKey: ["whatsapp-connections"] });
+      queryClient.invalidateQueries({ queryKey: ["groups"] });
+      toast.success(enabled ? "Grupos ligados: já aparecem na aba Grupos do Atendimento." : "Grupos desligados para este número.");
+    },
+    onError: (err) => toast.error(getApiErrorMessage(err)),
+  });
+  const on = connection.groupsEnabled;
+  return (
+    <div className="rounded-card border border-border px-3 py-2.5" data-groups-toggle>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium">Grupos do WhatsApp</p>
+          <p className="text-xs text-muted">
+            {on
+              ? "Os grupos deste número aparecem na aba Grupos do Atendimento, para todos que atendem esta conexão. Cada pessoa tem a sua leitura."
+              : "Desligado: as mensagens de grupos deste número não entram no sistema."}
+          </p>
+        </div>
+        <button
+          role="switch"
+          aria-checked={on}
+          aria-label="Receber grupos do WhatsApp"
+          disabled={toggle.isPending}
+          onClick={() => toggle.mutate(!on)}
+          className={"focus-ring relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors disabled:opacity-60 " + (on ? "bg-primary" : "bg-border")}
+        >
+          <span className={"inline-block h-4 w-4 rounded-full bg-white shadow transition-transform " + (on ? "translate-x-4" : "translate-x-0.5")} />
+        </button>
+      </div>
+      {on && (
+        <p className="mt-1.5 text-[11.5px] text-muted">
+          {connection.groupsCount} {connection.groupsCount === 1 ? "grupo encontrado" : "grupos encontrados"} neste número · quem vê e quem responde é definido em Perfis de acesso.
+        </p>
+      )}
     </div>
   );
 }
