@@ -934,6 +934,8 @@ export async function listAllConversations(filters: OversightFilters) {
       assignedAgentId: filters.agentId,
       status: filters.status?.length ? { in: filters.status as any } : undefined,
       AND: [
+        // WhatsApp groups have their own tab in Atendimento — never in Gestão.
+        { status: { not: "GROUP" } },
         // Same WhatsApp-only-filter + "every Meta conversation regardless"
         // OR shape as listQueue above (see its own comment for why).
         {
@@ -988,6 +990,7 @@ export async function mergeConversations(duplicateConversationId: string, intoCo
   ]);
   if (!duplicate) throw Errors.notFound("Conversa duplicada nao encontrada");
   if (!into) throw Errors.notFound("Conversa de destino nao encontrada");
+  if (duplicate.status === "GROUP" || into.status === "GROUP") throw Errors.badRequest("Grupos do WhatsApp nao podem ser mesclados");
   if (duplicate.whatsappConnectionId !== into.whatsappConnectionId) {
     throw Errors.badRequest("So e possivel mesclar conversas da mesma conexao de WhatsApp");
   }

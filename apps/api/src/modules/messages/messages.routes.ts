@@ -23,6 +23,7 @@ import * as metaService from "../meta/meta.service";
 import * as templatesService from "../message-templates/message-templates.service";
 import { toMessageTemplateDTO } from "../message-templates/message-templates.mapper";
 import { realtimeEvents } from "../../realtime/realtime";
+import * as groupsService from "../groups/groups.service";
 import { assertAgentCanAccessConversation, assertAgentCanReadContactHistory, assertAgentCanReadConversation, getConversationOrThrow } from "../conversations/conversations.service";
 
 export const messagesRouter = Router();
@@ -64,7 +65,10 @@ messagesRouter.get(
       include: { message: { include: { conversation: true } } },
     });
     if (!attachment) throw Errors.notFound();
-    if (req.auth!.role === "AGENT") {
+    if (attachment.message.conversation.status === "GROUP") {
+      // A group's file: whoever sees that group (not "the conversation's agent" — a group has none).
+      await groupsService.getGroupForUser(attachment.message.conversationId, req.auth!);
+    } else if (req.auth!.role === "AGENT") {
       await assertAgentCanReadContactHistory(attachment.message.conversation.contactId, req.auth!);
     }
     if (!attachment.storageKey) throw Errors.notFound("Arquivo sem conteudo binario (ex.: localizacao/vcard)");
@@ -113,7 +117,7 @@ const ALLOWED_MIME_TYPES = new Set([
 
 fs.mkdirSync(env.UPLOAD_DIR, { recursive: true });
 
-const upload = multer({
+export const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: env.UPLOAD_MAX_SIZE_MB * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
@@ -125,7 +129,7 @@ const upload = multer({
   },
 });
 
-function mimeToMessageType(mime: string): "IMAGE" | "VIDEO" | "AUDIO" | "DOCUMENT" {
+export function mimeToMessageType(mime: string): "IMAGE" | "VIDEO" | "AUDIO" | "DOCUMENT" {
   if (mime.startsWith("image/")) return "IMAGE";
   if (mime.startsWith("video/")) return "VIDEO";
   if (mime.startsWith("audio/")) return "AUDIO";

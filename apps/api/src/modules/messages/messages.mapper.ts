@@ -10,6 +10,15 @@ type MessageWithRelations = Message & {
   reactions: (MessageReaction & { user: User | null })[];
 };
 
+// A group participant keeps one color, from their WhatsApp id — like WhatsApp itself does.
+const PARTICIPANT_COLORS = ["#0E7490", "#7C3AED", "#C2410C", "#047857", "#B91C1C", "#1D4ED8", "#BE185D", "#4D7C0F"];
+
+function participantColor(jid: string): string {
+  let hash = 0;
+  for (const ch of jid) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  return PARTICIPANT_COLORS[hash % PARTICIPANT_COLORS.length];
+}
+
 function base64ToDataUrl(base64: string | null): string | null {
   return base64 ? `data:image/jpeg;base64,${base64}` : null;
 }
@@ -61,5 +70,13 @@ export function toMessageDTO(message: MessageWithRelations): MessageDTO {
       userId: r.userId ?? "customer",
       userDisplayName: r.user?.displayName ?? "Cliente",
     })),
+    senderParticipant:
+      message.direction === "INBOUND" && (message.senderParticipantJid || message.senderParticipantName)
+        ? {
+            name: message.senderParticipantName ?? (message.senderParticipantPhone ? `+${message.senderParticipantPhone}` : "Participante"),
+            phone: message.senderParticipantPhone,
+            color: participantColor(message.senderParticipantJid ?? message.senderParticipantName ?? ""),
+          }
+        : null,
   };
 }

@@ -25,6 +25,7 @@ import * as conversationsService from "../conversations/conversations.service";
 import * as messagesService from "../messages/messages.service";
 import * as satisfaction from "../satisfaction/satisfaction.service";
 import * as flowEngine from "../flows/flow-engine.service";
+import * as groupsService from "../groups/groups.service";
 import { toMessageDTO } from "../messages/messages.mapper";
 import { getManagerConnectionIds } from "../../lib/connection-access";
 import { createNotification } from "../notifications/notifications.service";
@@ -137,6 +138,61 @@ export async function syncReadReceiptToDevice(conversationId: string): Promise<v
   } catch (err) {
     logger.error({ err, conversationId }, "failed to sync a WhatsApp read receipt to the linked phone");
   }
+}
+
+/** A group's name and participants straight from WhatsApp (cached by the provider); null when it can't be read. */
+export async function getGroupInfo(connectionId: string, chatId: string) {
+  const provider = providers.get(connectionId);
+  if (!provider || provider.getStatus().state !== "CONNECTED") return null;
+  return provider.getGroupInfo(chatId).catch(() => null);
+}
+
+/** WhatsApp's read receipt for a group's messages the team just read for the first time (best-effort). */
+export async function syncGroupReadReceiptToDevice(groupId: string, messages: { providerMessageId: string; participantJid: string | null }[]): Promise<void> {
+  if (messages.length === 0) return;
+  try {
+    const group = await prisma.conversation.findUnique({ where: { id: groupId }, include: { contact: true } });
+    if (!group?.contact.providerChatId || !group.whatsappConnectionId) return;
+    const provider = providers.get(group.whatsappConnectionId);
+    if (!provider || provider.getStatus().state !== "CONNECTED") return;
+    const participantByMessageId: Record<string, string> = {};
+    for (const m of messages) if (m.participantJid) participantByMessageId[m.providerMessageId] = m.participantJid;
+    await provider.markRead(
+      group.contact.providerChatId,
+      messages.map((m) => m.providerMessageId),
+      { participantByMessageId }
+    );
+  } catch (err) {
+    logger.error({ err, groupId }, "failed to sync a WhatsApp group read receipt to the linked phone");
+  }
+}
+
+/**
+ * Turns Atendimento's Grupos tab on or off for one connection (administrator
+ * only). Turning it on brings the number's groups in right away; turning it
+ * off stops new group messages — what was stored stays, and comes back if
+ * it is turned on again.
+ */
+export async function setConnectionGroupsEnabled(connectionId: string, enabled: boolean): Promise<ConnectionSummaryDTO> {
+  const row = await prisma.whatsAppConnection.findUnique({ where: { id: connectionId } });
+  if (!row) throw Errors.notFound("Conexao de WhatsApp nao encontrada");
+  if (row.connectionMode === "OFFICIAL_API") throw Errors.badRequest("A API Oficial do WhatsApp não recebe mensagens de grupos");
+  await prisma.whatsAppConnection.update({
+    where: { id: connectionId },
+    data: enabled ? { groupsEnabled: true, ...(row.groupsEnabled ? {} : { groupsEnabledAt: new Date() }) } : { groupsEnabled: false },
+  });
+  if (enabled) {
+    const provider = providers.get(connectionId);
+    if (provider && provider.getStatus().state === "CONNECTED") {
+      const groups = await provider.listGroups().catch((err) => {
+        logger.warn({ err, connectionId }, "could not list the WhatsApp groups of a connection");
+        return [];
+      });
+      await groupsService.syncGroups(connectionId, groups);
+    }
+  }
+  realtimeEvents.groupsChanged();
+  return getConnectionSummary(connectionId);
 }
 
 // A single WhatsApp round trip per click, capped well below anything that
@@ -337,6 +393,14 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
 
   provider.onMessage(async (event) => {
     try {
+      // A WhatsApp group: its own tab, never the queue, Fluxo, @menção or the survey.
+      if (event.group) {
+        await groupsService.handleInboundGroupMessage(connectionId, event, {
+          getGroupInfo: (chatId) => provider.getGroupInfo(chatId),
+          addAttachments: addAttachmentsFromEvent,
+        });
+        return;
+      }
       if (event.fromMe) {
         await handleDeviceSentMessage(event);
         return;
@@ -761,6 +825,10 @@ export interface ConnectionSummaryDTO {
   // Last time the phone's address book was loaded into Nova conversa — null if never.
   contactsSyncedAt: string | null;
   agentCount: number;
+  /** Atendimento's Grupos tab is on for this number (never for an OFFICIAL_API one). */
+  groupsEnabled: boolean;
+  /** How many WhatsApp groups of this number the system knows. */
+  groupsCount: number;
   createdByUserId: string | null;
   createdByUserName: string | null;
   // OFFICIAL_API only — accessToken itself is never returned, only whether
@@ -779,7 +847,9 @@ export interface ConnectionSummaryDTO {
 // changeable afterwards via PATCH /connections/:id.
 const COLOR_PALETTE = ["#0097B4", "#7C3AED", "#F97316", "#059669", "#DC2626", "#2563EB", "#DB2777", "#65A30D"];
 
-const connectionSummaryInclude = { _count: { select: { agents: true } }, createdByUser: { select: { id: true, displayName: true } } } as const;
+const connectionSummaryInclude = {
+  _count: { select: { agents: true, conversations: { where: { status: "GROUP" as const } } } },
+  createdByUser: { select: { id: true, displayName: true } } } as const;
 
 function toConnectionSummary(row: {
   id: string;
@@ -791,7 +861,8 @@ function toConnectionSummary(row: {
   linkedNumber: string | null;
   lastConnectedAt: Date | null;
   contactsSyncedAt: Date | null;
-  _count: { agents: number };
+  _count: { agents: number; conversations: number };
+  groupsEnabled: boolean;
   createdByUser: { id: string; displayName: string } | null;
   phoneNumberId: string | null;
   wabaId: string | null;
@@ -815,6 +886,8 @@ function toConnectionSummary(row: {
     lastConnectedAt: (runtime?.lastConnectedAt ?? row.lastConnectedAt)?.toISOString?.() ?? null,
     contactsSyncedAt: row.contactsSyncedAt?.toISOString() ?? null,
     agentCount: row._count.agents,
+    groupsEnabled: row.groupsEnabled,
+    groupsCount: row._count.conversations,
     createdByUserId: row.createdByUser?.id ?? null,
     createdByUserName: row.createdByUser?.displayName ?? null,
     phoneNumberId: row.phoneNumberId,
@@ -1044,7 +1117,7 @@ export async function listContacts(connectionId: string): Promise<DeviceContact[
   const [addressBook, known] = await Promise.all([
     getProvider(connectionId).listContacts(),
     prisma.contact.findMany({
-      where: { whatsappConnectionId: connectionId, channel: "WHATSAPP", phone: { not: null } },
+      where: { whatsappConnectionId: connectionId, channel: "WHATSAPP", phone: { not: null }, isGroup: false },
       select: { phone: true, name: true, photoUrl: true, providerChatId: true },
     }),
   ]);
@@ -1170,12 +1243,14 @@ export async function sendOutboundText(
   text: string,
   senderDisplayName: string,
   replyToProviderMessageId?: string,
-  replyToText?: string | null
+  replyToText?: string | null,
+  replyToParticipantJid?: string | null
 ) {
   return sendWithTimeoutGuard(messageId, "text", () =>
     getProvider(connectionId).sendText(toChatId(contactPhone), withSenderPrefix(senderDisplayName, text), {
       replyToProviderMessageId,
       replyToText,
+      ...(replyToParticipantJid ? { replyToParticipantJid } : {}),
     })
   );
 }

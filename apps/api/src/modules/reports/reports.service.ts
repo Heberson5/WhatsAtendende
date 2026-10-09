@@ -57,6 +57,8 @@ export async function getAttendanceReport({ from, to, agentId, connectionIds, tz
   const conversations = await prisma.conversation.findMany({
     where: {
       createdAt: { gte: from, lte: to },
+      // WhatsApp groups never count: they are not customer conversations.
+      status: { not: "GROUP" as const },
       assignedAgentId: agentId,
       ...(connectionFilter ? { whatsappConnectionId: connectionFilter } : {}),
     },
@@ -112,7 +114,7 @@ export async function getPerAgentReport({ from, to, connectionIds }: ReportParam
         where: {
           senderAgentId: agent.id,
           createdAt: { gte: from, lte: to },
-          ...(connectionFilter ? { conversation: { whatsappConnectionId: connectionFilter } } : {}),
+          conversation: { status: { not: "GROUP" as const }, ...(connectionFilter ? { whatsappConnectionId: connectionFilter } : {}) },
         },
       });
       const transfersReceived = await prisma.conversationTransfer.count({
@@ -149,6 +151,7 @@ export async function getPerAgentReport({ from, to, connectionIds }: ReportParam
 export async function getMessagesReport({ from, to, agentId, connectionIds }: ReportParams) {
   const connectionFilter = connectionIds === undefined ? undefined : { in: connectionIds };
   const conversationFilter = {
+    status: { not: "GROUP" as const },
     ...(agentId ? { assignedAgentId: agentId } : {}),
     ...(connectionFilter ? { whatsappConnectionId: connectionFilter } : {}),
   };

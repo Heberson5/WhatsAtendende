@@ -48,6 +48,8 @@ function buildWhere(filters: ContactFilters): Prisma.ContactWhereInput {
   const search = filters.search?.trim();
   const digits = search?.replace(/\D/g, "");
   return {
+    // WhatsApp groups are not contacts: they live in Atendimento's Grupos tab.
+    isGroup: false,
     ...(filters.connectionIds && { whatsappConnectionId: { in: filters.connectionIds } }),
     ...(filters.tagId && { tags: { some: { tagId: filters.tagId } } }),
     ...(search && {

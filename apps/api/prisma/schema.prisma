@@ -82,6 +82,7 @@ model User {
   messageReactions      MessageReaction[]
   auditLogs             AuditLog[]
   notifications         Notification[]
+  groupReadStates       GroupReadState[]
   // Connections this user (a MANAGER, in practice) personally created —
   // owning a connection grants full view/edit/receive access to it with no
   // separate grant row needed. See PROMPT: "conexões que foram cadastradas
@@ -261,6 +262,11 @@ model WhatsAppConnection {
   // weekly (Monday 00:00) or by an admin; see contacts-sync.ts.
   contactsSyncedAt   DateTime?
   lastQrAt           DateTime?
+  // Atendimento's Grupos tab for this number — off until an administrator
+  // turns it on; group messages are dropped while off. groupsEnabledAt is
+  // where everybody's "não lidas" start counting from.
+  groupsEnabled      Boolean                  @default(false)
+  groupsEnabledAt    DateTime?
   // --- OFFICIAL_API only (all null for a QRCODE connection) ---
   // Meta Cloud API identifiers for this WABA's phone number — see
   // developers.facebook.com/docs/whatsapp/cloud-api/get-started.
@@ -560,11 +566,11 @@ model MetaConnection {
 // ---------------------------------------------------------------------------
 
 model Contact {
-  id                   String              @id @default(uuid())
+  id                     String              @id @default(uuid())
   // Defaults to WHATSAPP for every row created before this field existed.
   // Determines which of whatsappConnection*/metaConnection* below is set —
   // exactly one of the two connection FKs is populated, never both.
-  channel              Channel             @default(WHATSAPP)
+  channel                Channel             @default(WHATSAPP)
   // Scoped per connection, not globally: the same phone number talking to
   // two different connected WhatsApp numbers is two separate customer
   // relationships (different business/department), so it's two Contact rows.
@@ -575,20 +581,20 @@ model Contact {
   // optional relation is SetNull, which would silently orphan history) —
   // deleteConnection already checks contactCount before deleting for
   // exactly this reason: "o historico é preservado para sempre".
-  whatsappConnection   WhatsAppConnection? @relation(fields: [whatsappConnectionId], references: [id], onDelete: Restrict)
-  whatsappConnectionId String?
-  metaConnection       MetaConnection?     @relation(fields: [metaConnectionId], references: [id], onDelete: Restrict)
-  metaConnectionId     String?
+  whatsappConnection     WhatsAppConnection? @relation(fields: [whatsappConnectionId], references: [id], onDelete: Restrict)
+  whatsappConnectionId   String?
+  metaConnection         MetaConnection?     @relation(fields: [metaConnectionId], references: [id], onDelete: Restrict)
+  metaConnectionId       String?
   // Required for WHATSAPP, always null for INSTAGRAM/MESSENGER (those
   // channels never expose a phone number, only an opaque scoped user id —
   // see externalUserId below).
-  phone                String?
+  phone                  String?
   // Instagram-scoped ID (IGSID) or Messenger page-scoped ID (PSID) — the
   // Meta-channel equivalent of `phone`/`providerChatId` below, which stay
   // WhatsApp-only.
-  externalUserId       String?
-  name                 String?
-  photoUrl             String?
+  externalUserId         String?
+  name                   String?
+  photoUrl               String?
   // WhatsApp's raw chat id (e.g. "<n>@lid" or "<n>@s.whatsapp.net") as first
   // learned for this contact — WhatsApp's @lid privacy migration means the
   // SAME chat can report this id in either form across different events
@@ -598,9 +604,13 @@ model Contact {
   // stable key to recognize "this is the same chat" by even on a later
   // event whose own chatId came back unresolved (@lid) with no phone
   // number attached at all — see findOrCreateContact.
-  providerChatId       String?
-  firstConversationAt  DateTime            @default(now())
-  lastInteractionAt    DateTime            @default(now())
+  providerChatId         String?
+  // A WhatsApp group ("...@g.us" providerChatId), shown only in Atendimento's
+  // Grupos tab: `name` is the group's name and `phone` the group id digits.
+  isGroup                Boolean             @default(false)
+  groupParticipantsCount Int?
+  firstConversationAt    DateTime            @default(now())
+  lastInteractionAt      DateTime            @default(now())
 
   conversations Conversation[]
   flowSessions  FlowSession[]
@@ -630,6 +640,10 @@ enum ConversationStatus {
   // the same contact starts a brand-new conversation, same precedent as
   // CLOSED (see findActiveConversationForContact).
   HANDLED_EXTERNALLY
+  // A WhatsApp group (see Contact.isGroup): one conversation per group, kept
+  // out of the queue — never accepted, transferred or closed — and out of
+  // every metric. Each person's own reading lives in GroupReadState.
+  GROUP
 }
 
 model Conversation {
@@ -685,6 +699,7 @@ model Conversation {
   version Int @default(0)
 
   messages           Message[]
+  groupReadStates    GroupReadState[]
   flowSession        FlowSession?
   satisfactionSurvey SatisfactionSurvey?
   notes              ConversationNote[]
@@ -832,6 +847,11 @@ model Message {
   deletedAt       DateTime?
   deletedByUserId String?
 
+  // Group messages only (INBOUND): who in the group wrote it.
+  senderParticipantJid   String?
+  senderParticipantName  String?
+  senderParticipantPhone String?
+
   attachments MessageAttachment[]
   reactions   MessageReaction[]
 
@@ -904,6 +924,22 @@ model SystemSetting {
   key       String   @id
   value     Json
   updatedAt DateTime @updatedAt
+}
+
+/// One person's reading of one WhatsApp group: "não lida" is individual.
+model GroupReadState {
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversationId String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId         String
+  lastReadAt     DateTime
+  firstOpenedAt  DateTime?
+  lastOpenedAt   DateTime?
+  // Set while this person silenced the group: still counted as unread, no notices.
+  mutedAt        DateTime?
+
+  @@id([conversationId, userId])
+  @@index([userId])
 }
 
 model Notification {

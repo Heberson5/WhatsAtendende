@@ -36,6 +36,7 @@ import { pauseReasonsRouter } from "./modules/pause-reasons/pause-reasons.routes
 import { clientPanelRouter, tagsRouter } from "./modules/client-panel/client-panel.routes";
 import { flowsRouter } from "./modules/flows/flows.routes";
 import { releaseNotesRouter } from "./modules/release-notes/release-notes.routes";
+import { groupsRouter } from "./modules/groups/groups.routes";
 
 export function createApp() {
   const app = express();
@@ -145,6 +146,7 @@ export function createApp() {
   app.use("/api/satisfaction-survey", satisfactionRouter);
   app.use("/api/notifications", notificationsRouter);
   app.use("/api/holidays", holidaysRouter);
+  app.use("/api/groups", groupsRouter);
   app.use("/api/meta", metaRouter);
   app.use("/api/writing-assist", writingAssistRouter);
   app.use("/api/pause-reasons", pauseReasonsRouter);
