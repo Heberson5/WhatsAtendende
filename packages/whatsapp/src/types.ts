@@ -72,6 +72,33 @@ export interface InboundMessageEvent {
   // recorded that one and skipping it, rather than filtering fromMe out
   // entirely — that would silently drop every message sent from the phone.
   fromMe: boolean;
+  /**
+   * Set only for a message in a WhatsApp group (chatId ends in "@g.us"):
+   * who in the group wrote it. `phone` stays the group's own id digits there
+   * — a group has no phone number — so it must never be used as a customer.
+   * Absent for every 1:1 chat.
+   */
+  group?: GroupMessageSender;
+}
+
+/** Who wrote a group message. `participantPhone` is null when WhatsApp only gave an opaque @lid id. */
+export interface GroupMessageSender {
+  participantJid: string;
+  participantPhone: string | null;
+  participantName: string | null;
+}
+
+export interface GroupParticipant {
+  jid: string;
+  phone: string | null;
+  name: string | null;
+  isAdmin: boolean;
+}
+
+export interface GroupInfo {
+  chatId: string;
+  subject: string;
+  participants: GroupParticipant[];
 }
 
 export interface DeliveryEvent {
@@ -119,6 +146,8 @@ export interface SendTextOptions {
   // text sends can be a reply (see the /messages/.../text route), so this
   // is always the replied-to message's plain body.
   replyToText?: string | null;
+  /** Replying to a group message: who wrote it — WhatsApp needs the author to find the quoted message in a group. */
+  replyToParticipantJid?: string | null;
 }
 
 export interface ContactInfo {
@@ -273,7 +302,12 @@ export interface WhatsAppProvider {
    * phone itself. There is no way to request only one of the two — it's a
    * single underlying receipt.
    */
-  markRead(chatId: string, providerMessageIds: string[]): Promise<void>;
+  markRead(chatId: string, providerMessageIds: string[], options?: { participantByMessageId?: Record<string, string> }): Promise<void>;
+
+  /** Every group the linked number is in (empty for providers without groups, like the Cloud API). */
+  listGroups(): Promise<GroupInfo[]>;
+  /** One group's name and participants, or null when it can't be read. */
+  getGroupInfo(chatId: string): Promise<GroupInfo | null>;
 
   getContactInfo(chatId: string): Promise<ContactInfo>;
   getContactPhoto(chatId: string): Promise<string | null>;
