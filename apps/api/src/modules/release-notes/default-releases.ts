@@ -15,7 +15,7 @@ export const DEFAULT_RELEASES: ReleaseContent[] = [
     date: "09 out 2026",
     name: "Notas de versão editáveis, várias pesquisas e aceite por usuário",
     summary:
-      "O logoff por inatividade volta a funcionar, também com o sistema aberto a noite toda. O administrador passa a escrever as notas de versão pelo sistema, a pesquisa de satisfação vira uma lista com 4 modelos e cada mensagem de aceite pode ser só de algumas pessoas.",
+      "O logoff por inatividade volta a funcionar, também com o sistema aberto a noite toda. O administrador passa a escrever as notas de versão pelo sistema, a pesquisa de satisfação vira uma lista com 4 modelos e cada mensagem de aceite pode ser só de algumas pessoas. A 1ª resposta do Dashboard conta só o que o atendente escreve.",
     notes: [
       {
         type: "correcao",
@@ -25,6 +25,15 @@ export const DEFAULT_RELEASES: ReleaseContent[] = [
         before: "Com o sistema aberto, a sessão nunca era encerrada por inatividade.",
         after: "Passado o tempo sem uso, a sessão é encerrada e aparece “Sessão encerrada por inatividade”.",
         where: "Configurações › Segurança (tempo de inatividade)",
+      },
+      {
+        type: "correcao",
+        area: "dashboard",
+        title: "1ª resposta: só conta o que o atendente escreve",
+        text: "O tempo da 1ª resposta vai do aceite até a primeira mensagem escrita pelo atendente. As mensagens automáticas — de aceite, de transferência e de encerramento — não contam. Numa conversa encerrada sem o atendente escrever nada, a mensagem automática de encerramento entrava como 1ª resposta; não entra mais. E um tempo abaixo de 1 minuto aparece em segundos (por exemplo, 42 s): antes aparecia “0 min”, como se a resposta tivesse saído junto com a mensagem de aceite.",
+        before: "Abaixo de 1 minuto aparecia “0 min”, e a mensagem automática de encerramento podia contar como 1ª resposta.",
+        after: "Conta só a mensagem escrita pelo atendente, e abaixo de 1 minuto o tempo aparece em segundos.",
+        where: "Dashboard › 1ª resposta (média) e Tempos médios de atendimento",
       },
       {
         type: "novo",

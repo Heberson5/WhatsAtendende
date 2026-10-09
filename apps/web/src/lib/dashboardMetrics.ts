@@ -24,6 +24,9 @@ export function compareWithPrevious(current: number | null, previous: number | n
 
 export function formatMinutes(ms: number | null): string {
   if (ms === null) return "-";
+  // Under a minute in seconds: a quick 1ª resposta used to read "0 min", as if the acceptance message had counted.
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 60) return `${seconds} s`;
   const minutes = Math.round(ms / 60000);
   if (minutes < 60) return `${minutes} min`;
   const hours = Math.floor(minutes / 60);

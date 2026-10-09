@@ -284,6 +284,7 @@ export default function DashboardPage() {
               label="1ª resposta (média)"
               value={formatMinutes(data.timings.avgFirstResponseMs)}
               icon={Timer}
+              hint="sem contar a mensagem de aceite"
               delta={compareWithPrevious(data.timings.avgFirstResponseMs, data.previous.avgFirstResponseMs, true)}
             />
             <StatCard

@@ -575,7 +575,7 @@ export function buildDashboardPresentation(PptxGen: typeof PptxGenJS, input: Pre
       [
         "Cada média vem das conversas do período que passaram pela etapa:",
         `• Aceite: ${noteTime(t.avgAcceptMs)} — da entrada na fila até um atendente aceitar.`,
-        `• 1ª resposta: ${noteTime(t.avgFirstResponseMs)} — do aceite até a primeira mensagem do atendente.`,
+        `• 1ª resposta: ${noteTime(t.avgFirstResponseMs)} — do aceite até a primeira mensagem escrita pelo atendente (a mensagem automática de aceite não conta).`,
         `• Atendimento: ${noteTime(t.avgHandlingMs)} — do aceite até o encerramento.`,
         `• Até o encerramento: ${noteTime(t.avgClosingMs)} — da entrada na fila até o encerramento.`,
         "As distâncias entre as etapas não estão em escala.",
@@ -938,7 +938,7 @@ export function buildDashboardPresentation(PptxGen: typeof PptxGenJS, input: Pre
       ["Atendimentos únicos", "Clientes diferentes atendidos: o mesmo cliente em duas conversas conta uma vez."],
       ["Na fila", "Conversas esperando um atendente no momento em que o relatório foi gerado."],
       ["Aceite", "Tempo médio da entrada na fila até um atendente aceitar a conversa."],
-      ["1ª resposta", "Tempo médio do aceite até o atendente enviar a primeira mensagem."],
+      ["1ª resposta", "Tempo médio do aceite até o atendente escrever — a mensagem automática de aceite não conta."],
       ["Atendimento", "Tempo médio do aceite até o encerramento da conversa."],
       ["NPS", "Promotores (notas 9–10) menos detratores (0–6), em %. Vai de -100 a +100."],
       ["Período anterior", "Um período do mesmo tamanho logo antes deste — base das setas de comparação."],
