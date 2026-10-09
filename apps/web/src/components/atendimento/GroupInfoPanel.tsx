@@ -70,8 +70,8 @@ export function GroupInfoPanel({ group, onClose }: { group: GroupListItemDTO; on
       </section>
 
       <section className="px-4 py-3" aria-label="Participantes">
-        <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted">Participantes{participants.data ? ` · ${participants.data.length}` : ""}</p>
-        {participants.data?.length === 0 && <p className="text-xs text-muted">A lista aparece quando a conexão está conectada.</p>}
+        <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted">Participantes{participants.data?.length ? ` · ${participants.data.length}` : ""}</p>
+        {participants.data?.length === 0 && <p className="text-xs text-muted">A lista vem do WhatsApp e aparece quando o número está conectado.</p>}
         <ul className="space-y-1.5">
           {(participants.data ?? []).map((p, i) => (
             <li key={`${p.phone ?? p.name}-${i}`} className="flex items-center justify-between gap-2 text-[12.5px]">
