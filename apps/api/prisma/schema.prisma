@@ -100,9 +100,11 @@ model User {
   // instead of blocking the delete. See PROMPT: "Um usuário não poderá
   // estar em mais de um, portanto, se habilitar o usuário no recente, irá
   // sair do anterior."
-  closingMessage      ClosingMessage?      @relation(fields: [closingMessageId], references: [id], onDelete: SetNull)
-  satisfactionSurveys SatisfactionSurvey[]
-  closingMessageId    String?
+  closingMessage       ClosingMessage?       @relation(fields: [closingMessageId], references: [id], onDelete: SetNull)
+  satisfactionSurveys  SatisfactionSurvey[]
+  closingMessageId     String?
+  // Acceptance messages chosen for this user ("Quem pode usar" in Respostas › Aceite) — a user can be in several.
+  autoMessageTemplates AutoMessageTemplate[] @relation("AutoMessageTemplateUsers")
 
   // Set together with presence=AWAY when this agent pauses themselves from
   // the profile menu — both null again on resume. onDelete: Restrict so a
@@ -387,6 +389,11 @@ model AutoMessageTemplate {
   // A connection-specific active template wins over an "all connections" one.
   allConnections Boolean              @default(true)
   connections    WhatsAppConnection[] @relation("AutoMessageTemplateConnections")
+  // Who it is sent for: anyone, or only when one of `users` is the agent taking the conversation (Respostas ›
+  // Aceite › "Quem pode usar"). A message chosen for the person wins over one for everyone, then the connection
+  // decides as above. See PROMPT: "os campos para selecionar os usuários que poderão utilizar a mensagem".
+  allUsers       Boolean              @default(true)
+  users          User[]               @relation("AutoMessageTemplateUsers")
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt
 
@@ -1204,13 +1211,13 @@ model SatisfactionSurvey {
   // customer never answers; a message from the customer that wants to keep talking
   // cancels it. closingDueAt also marks how long a "thanks" from the customer is
   // still treated as part of the wait (it is set even when there is no message to send).
-  closingText          String?
-  closingSenderId      String?
-  closingSenderName    String?
-  closingDueAt         DateTime?
+  closingText       String?
+  closingSenderId   String?
+  closingSenderName String?
+  closingDueAt      DateTime?
   // Set once it was sent or dropped; closingOutcome says which (SENT, FAILED, CANCELED_*).
-  closingResolvedAt    DateTime?
-  closingOutcome       String?
+  closingResolvedAt DateTime?
+  closingOutcome    String?
 
   @@index([contactId, whatsappConnectionId, answeredAt])
   @@index([sentAt])

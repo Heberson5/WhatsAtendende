@@ -63,6 +63,7 @@ const bodySchema = z.object({
   text: z.string().min(1).max(4096),
   active: z.boolean(),
   connectionScope: connectionScopeSchema,
+  userScope: service.userScopeSchema.optional(),
 });
 
 autoMessageTemplatesRouter.post(
@@ -77,7 +78,7 @@ autoMessageTemplatesRouter.post(
       entity: "AutoMessageTemplate",
       entityId: row.id,
       ipAddress: req.ip ?? null,
-      metadata: { trigger: input.trigger, name: input.name, active: input.active, connectionScope: input.connectionScope },
+      metadata: { trigger: input.trigger, name: input.name, active: input.active, connectionScope: input.connectionScope, userScope: input.userScope },
     });
     res.status(201).json(toAutoMessageTemplateDTO(row));
   })

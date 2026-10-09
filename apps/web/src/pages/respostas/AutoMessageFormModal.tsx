@@ -3,6 +3,7 @@ import { X } from "lucide-react";
 import type { AutoMessageTemplateDTO, AutoMessageTrigger } from "@whatsatendende/types";
 import { AutoMessagePreview } from "./AutoMessagePreview";
 import { ConnectionScopePicker, toConnectionScopeValue, type ConnectionScopeValue } from "./ConnectionScopePicker";
+import { UserScopePicker, toUserScopeValue, type UserScopeValue } from "./UserScopePicker";
 import {
   fillAutoMessageTags,
   AGENT_EXAMPLE,
@@ -17,6 +18,7 @@ export interface AutoMessageFormValues {
   text: string;
   active: boolean;
   connectionScope: ConnectionScopeValue;
+  userScope: UserScopeValue;
 }
 
 // {{atendente}} kept for templates saved before the other two existed —
@@ -49,6 +51,7 @@ export function AutoMessageFormModal({
   const [text, setText] = useState(template?.text ?? "");
   const [active, setActive] = useState(template?.active ?? true);
   const [connectionScope, setConnectionScope] = useState(toConnectionScopeValue(template?.connectionScope, true));
+  const [userScope, setUserScope] = useState(toUserScopeValue(template?.userScope));
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [textareaEl, setTextareaEl] = useState<HTMLTextAreaElement | null>(null);
@@ -89,9 +92,13 @@ export function AutoMessageFormModal({
       setError("Escolha pelo menos uma conexão ou marque todas as conexões");
       return;
     }
+    if (!userScope.allUsers && userScope.userIds.length === 0) {
+      setError("Escolha pelo menos um usuário ou marque todos os usuários");
+      return;
+    }
     setLoading(true);
     try {
-      await onSubmit({ trigger, name, text, active, connectionScope });
+      await onSubmit({ trigger, name, text, active, connectionScope, userScope });
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao salvar mensagem automática");
@@ -162,6 +169,15 @@ export function AutoMessageFormModal({
             onChange={setConnectionScope}
             hint="Uma mensagem escolhida para a conexão tem prioridade sobre uma de todas as conexões."
           />
+
+          {/* Transferência keeps one message for everyone — see PROMPT: "os campos para selecionar os usuários que poderão utilizar a mensagem" (Aceite). */}
+          {trigger === "ACCEPT" && (
+            <UserScopePicker
+              value={userScope}
+              onChange={setUserScope}
+              hint="Enviada quando um destes usuários aceita a conversa. Uma mensagem escolhida para o usuário tem prioridade sobre uma de todos os usuários."
+            />
+          )}
 
           <label className="flex items-center justify-between rounded-card border border-border px-3 py-2">
             <span className="text-sm font-medium">Ativo</span>

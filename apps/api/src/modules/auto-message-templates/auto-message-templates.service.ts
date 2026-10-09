@@ -1,18 +1,48 @@
 import type { AutoMessageTrigger, Role } from "@prisma/client";
+import { z } from "zod";
 import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
 import { appliesToConnection, assertScopeConnectionsExist, scopeData, withScopeConnections, type ConnectionScopeInput } from "../../lib/connection-scope";
+
+/** "Todos os usuários" or the users a message is sent for — Respostas › Aceite › "Quem pode usar". */
+export const userScopeSchema = z
+  .object({ allUsers: z.boolean(), userIds: z.array(z.string().uuid()).max(500) })
+  .refine((s) => s.allUsers || s.userIds.length > 0, { message: "Escolha pelo menos um usuário ou marque todos os usuários" });
+
+export type UserScopeInput = z.infer<typeof userScopeSchema>;
+
+const withScope = {
+  ...withScopeConnections,
+  users: { select: { id: true, displayName: true }, orderBy: { displayName: "asc" as const } },
+} as const;
+
+async function assertScopeUsersExist(scope: UserScopeInput): Promise<void> {
+  if (scope.allUsers) return;
+  const count = await prisma.user.count({ where: { id: { in: scope.userIds } } });
+  if (count !== new Set(scope.userIds).size) throw Errors.badRequest("Um ou mais usuários escolhidos são inválidos");
+}
+
+function userScopeData<Op extends "connect" | "set">(scope: UserScopeInput, op: Op) {
+  const ids = scope.allUsers ? [] : scope.userIds;
+  return { allUsers: scope.allUsers, users: { [op]: ids.map((id) => ({ id })) } as Record<Op, { id: string }[]> };
+}
+
+/** Rows sent for this agent: the ones for everyone, plus the ones chosen for them. */
+function appliesToUser(agentId: string | null) {
+  if (!agentId) return { allUsers: true };
+  return { OR: [{ allUsers: true }, { users: { some: { id: agentId } } }] };
+}
 
 export async function listAutoMessageTemplates(trigger?: AutoMessageTrigger) {
   return prisma.autoMessageTemplate.findMany({
     where: trigger ? { trigger } : undefined,
     orderBy: { name: "asc" },
-    include: withScopeConnections,
+    include: withScope,
   });
 }
 
 export async function getAutoMessageTemplate(id: string) {
-  const row = await prisma.autoMessageTemplate.findUnique({ where: { id }, include: withScopeConnections });
+  const row = await prisma.autoMessageTemplate.findUnique({ where: { id }, include: withScope });
   if (!row) throw Errors.notFound("Mensagem automatica nao encontrada");
   return row;
 }
@@ -23,20 +53,27 @@ export interface AutoMessageTemplateInput {
   text: string;
   active: boolean;
   connectionScope: ConnectionScopeInput;
+  // Left out: sent for everyone.
+  userScope?: UserScopeInput;
 }
 
-export async function createAutoMessageTemplate({ connectionScope, ...input }: AutoMessageTemplateInput) {
+export async function createAutoMessageTemplate({ connectionScope, userScope = { allUsers: true, userIds: [] }, ...input }: AutoMessageTemplateInput) {
   await assertScopeConnectionsExist(connectionScope);
-  return prisma.autoMessageTemplate.create({ data: { ...input, ...scopeData(connectionScope, "connect") }, include: withScopeConnections });
+  await assertScopeUsersExist(userScope);
+  return prisma.autoMessageTemplate.create({
+    data: { ...input, ...scopeData(connectionScope, "connect"), ...userScopeData(userScope, "connect") },
+    include: withScope,
+  });
 }
 
-export async function updateAutoMessageTemplate(id: string, { connectionScope, ...input }: Partial<AutoMessageTemplateInput>) {
+export async function updateAutoMessageTemplate(id: string, { connectionScope, userScope, ...input }: Partial<AutoMessageTemplateInput>) {
   await getAutoMessageTemplate(id);
   if (connectionScope) await assertScopeConnectionsExist(connectionScope);
+  if (userScope) await assertScopeUsersExist(userScope);
   return prisma.autoMessageTemplate.update({
     where: { id },
-    data: { ...input, ...(connectionScope && scopeData(connectionScope, "set")) },
-    include: withScopeConnections,
+    data: { ...input, ...(connectionScope && scopeData(connectionScope, "set")), ...(userScope && userScopeData(userScope, "set")) },
+    include: withScope,
   });
 }
 
@@ -47,17 +84,19 @@ export async function deleteAutoMessageTemplate(id: string) {
 
 /**
  * The template actually used when a trigger fires on a conversation of this
- * connection — the most recently updated ACTIVE row for it, preferring one
- * picked specifically for the connection over an "all connections" one, or
- * null when none applies (the trigger is then a no-op). More than one active
- * row can exist, but only one message ever goes out per event.
+ * connection, taken by this agent (the one accepting it, or receiving the
+ * transfer) — among the ACTIVE rows that apply, the most specific one: chosen
+ * for the agent first, then for the connection, then the most recently
+ * updated. Null when none applies (the trigger is then a no-op). More than
+ * one active row can exist, but only one message ever goes out per event.
  */
-export async function getActiveTemplateFor(trigger: AutoMessageTrigger, whatsappConnectionId: string | null) {
+export async function getActiveTemplateFor(trigger: AutoMessageTrigger, whatsappConnectionId: string | null, agentId: string | null = null) {
   const rows = await prisma.autoMessageTemplate.findMany({
-    where: { trigger, active: true, ...appliesToConnection(whatsappConnectionId) },
+    where: { trigger, active: true, AND: [appliesToConnection(whatsappConnectionId), appliesToUser(agentId)] },
     orderBy: { updatedAt: "desc" },
   });
-  return rows.find((r) => !r.allConnections) ?? rows[0] ?? null;
+  const specificity = (row: (typeof rows)[number]) => (row.allUsers ? 0 : 2) + (row.allConnections ? 0 : 1);
+  return rows.reduce<(typeof rows)[number] | null>((best, row) => (!best || specificity(row) > specificity(best) ? row : best), null);
 }
 
 const TAGS = {

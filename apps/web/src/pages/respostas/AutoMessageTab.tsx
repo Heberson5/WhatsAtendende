@@ -6,6 +6,7 @@ import { PERMISSION, type AutoMessageTemplateDTO, type AutoMessageTrigger, type 
 import { useAuthStore } from "../../store/auth-store";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { describeConnectionScope } from "./ConnectionScopePicker";
+import { describeUserScope } from "./UserScopePicker";
 import { AutoMessageFormModal, type AutoMessageFormValues } from "./AutoMessageFormModal";
 
 const TRIGGER_PERMISSION: Record<AutoMessageTrigger, { adicionar: Permission; editar: Permission; excluir: Permission }> = {
@@ -28,6 +29,9 @@ export function AutoMessageTab({ trigger, description, emptyMessage }: { trigger
   const canAdicionar = permissions?.[TRIGGER_PERMISSION[trigger].adicionar];
   const canEditar = permissions?.[TRIGGER_PERMISSION[trigger].editar];
   const canExcluir = permissions?.[TRIGGER_PERMISSION[trigger].excluir];
+  // Only Aceite chooses who uses each message (see AutoMessageFormModal).
+  const showUsers = trigger === "ACCEPT";
+  const columns = showUsers ? 6 : 5;
   const [modalTarget, setModalTarget] = useState<AutoMessageTemplateDTO | null | "new">(null);
   const [deleteTarget, setDeleteTarget] = useState<AutoMessageTemplateDTO | null>(null);
 
@@ -96,6 +100,7 @@ export function AutoMessageTab({ trigger, description, emptyMessage }: { trigger
               <th className="px-4 py-3">Nome</th>
               <th className="px-4 py-3">Texto</th>
               <th className="px-4 py-3">Conexões</th>
+              {showUsers && <th className="px-4 py-3">Quem pode usar</th>}
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3 text-right">Ações</th>
             </tr>
@@ -103,14 +108,14 @@ export function AutoMessageTab({ trigger, description, emptyMessage }: { trigger
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-muted">
+                <td colSpan={columns} className="px-4 py-8 text-center text-muted">
                   Carregando...
                 </td>
               </tr>
             )}
             {!isLoading && templates?.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-muted">
+                <td colSpan={columns} className="px-4 py-8 text-center text-muted">
                   {emptyMessage}
                 </td>
               </tr>
@@ -124,6 +129,11 @@ export function AutoMessageTab({ trigger, description, emptyMessage }: { trigger
                 <td className="max-w-[14rem] truncate px-4 py-3 text-muted" title={describeConnectionScope(t.connectionScope)}>
                   {describeConnectionScope(t.connectionScope)}
                 </td>
+                {showUsers && (
+                  <td className="max-w-[14rem] truncate px-4 py-3 text-muted" title={describeUserScope(t.userScope)}>
+                    {describeUserScope(t.userScope)}
+                  </td>
+                )}
                 <td className="px-4 py-3">
                   <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${t.active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}`}>
                     {t.active ? "Ativo" : "Inativo"}
