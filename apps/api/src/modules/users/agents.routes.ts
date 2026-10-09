@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { asyncHandler } from "../../lib/async-handler";
 import { requireAuth, requireRole } from "../../middleware/auth";
+import type { Role } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 
 /** Lightweight agent listings used by the transfer modal and management screens (not full user CRUD). */
@@ -50,6 +51,23 @@ agentsRouter.get(
         pauseReasonName: a.pauseReason?.name ?? null,
       }))
     );
+  })
+);
+
+// Gestão's "Atendente" filter: everyone whose conversations Gestão can list, since a manager or an administrator
+// may attend a customer too. A manager never sees the administrators there. See PROMPT: "o administrador poderá
+// ver na lista de atendentes o próprio nome e de algum gestor ... mas o gestor não poderá ver o administrador".
+agentsRouter.get(
+  "/attendants",
+  requireRole("MANAGER", "ADMIN"),
+  asyncHandler(async (req, res) => {
+    const roles: Role[] = req.auth!.role === "ADMIN" ? ["AGENT", "MANAGER", "ADMIN"] : ["AGENT", "MANAGER"];
+    const users = await prisma.user.findMany({
+      where: { role: { in: roles } },
+      select: { id: true, displayName: true, role: true, status: true },
+      orderBy: { displayName: "asc" },
+    });
+    res.json(users.map((u) => ({ ...u, isSelf: u.id === req.auth!.userId })));
   })
 );
 
