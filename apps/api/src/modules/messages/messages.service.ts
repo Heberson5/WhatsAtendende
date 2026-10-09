@@ -52,8 +52,16 @@ export interface CreateOutboundMessageInput {
   type: MessageType;
   body?: string | null;
   replyToMessageId?: string | null;
+  /** Sent by the system on the agent's behalf (the closing message on Encerrar) — never the agent's first response. */
+  automatic?: boolean;
 }
 
+/**
+ * firstResponseAt — the Dashboard's "1ª resposta" (acceptedAt → this) — is the first message the agent actually
+ * writes. The automatic messages never set it: the acceptance and transfer messages go through
+ * createSystemOutboundMessage, and the closing message passes `automatic`. See PROMPT: "o tempo da primeira
+ * resposta não deve considerar o envio da mensagem de aceite. deve considerar o que o atendente envia depois."
+ */
 export async function createOutboundMessage(input: CreateOutboundMessageInput) {
   const conversation = await prisma.conversation.findUnique({ where: { id: input.conversationId } });
   if (!conversation) throw Errors.notFound("Conversa nao encontrada");
@@ -76,7 +84,7 @@ export async function createOutboundMessage(input: CreateOutboundMessageInput) {
   });
 
   const updates: Record<string, unknown> = { lastMessageAt: new Date(), lastMessageDirection: "OUTBOUND", awaitingReplySince: null };
-  if (!conversation.firstResponseAt) updates.firstResponseAt = new Date();
+  if (!conversation.firstResponseAt && !input.automatic) updates.firstResponseAt = new Date();
   await prisma.conversation.update({ where: { id: input.conversationId }, data: updates });
 
   return message;

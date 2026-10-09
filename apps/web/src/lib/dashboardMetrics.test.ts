@@ -55,6 +55,8 @@ describe("números do Dashboard", () => {
   it("minutos e porcentagens", () => {
     expect(formatMinutes(null)).toBe("-");
     expect(formatMinutes(2.6 * 60000)).toBe("3 min");
+    expect(formatMinutes(42_400)).toBe("42 s");
+    expect(formatMinutes(59_600)).toBe("1 min");
     expect(formatMinutes(61 * 60000)).toBe("1h 1min");
     expect(percentOf(1, 3)).toBe(33);
     expect(percentOf(5, 0)).toBe(0);

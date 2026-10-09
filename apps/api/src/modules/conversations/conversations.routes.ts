@@ -583,6 +583,7 @@ conversationsRouter.post(
           agentId: req.auth!.userId,
           type: "TEXT",
           body: text,
+          automatic: true,
         });
         await sendOutboundTextViaChannel(existing, outboundMessage.id, text, req.auth!.displayName);
         realtimeEvents.newMessage(existing.id, req.auth!.userId);
