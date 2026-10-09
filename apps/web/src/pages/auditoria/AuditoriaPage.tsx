@@ -17,6 +17,7 @@ const ENTITY_LABEL: Record<string, string> = {
   Message: "Mensagem",
   WhatsAppConnection: "Conexão WhatsApp",
   SystemSetting: "Configuração",
+  SatisfactionSurveyConfig: "Pesquisa de satisfação",
   RolePermission: "Permissão",
 };
 
@@ -30,6 +31,9 @@ const ACTION_LABEL: Record<string, string> = {
   LOGIN_BLOCKED_INACTIVE: "Login bloqueado (usuário inativo)",
   LOGOUT: "Logout",
   LOGOUT_INACTIVITY: "Logoff por inatividade",
+  SATISFACTION_SURVEY_CREATED: "Pesquisa de satisfação criada",
+  SATISFACTION_SURVEY_UPDATED: "Pesquisa de satisfação alterada",
+  SATISFACTION_SURVEY_DELETED: "Pesquisa de satisfação excluída",
   PASSWORD_RESET_REQUESTED: "Redefinição de senha solicitada",
   PASSWORD_RESET_COMPLETED: "Redefinição de senha concluída",
   CONVERSATION_STARTED: "Conversa iniciada",

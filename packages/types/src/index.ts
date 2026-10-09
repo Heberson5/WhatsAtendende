@@ -398,9 +398,15 @@ export interface NotificationDTO {
 
 export type AutoMessageTrigger = "TRANSFER" | "ACCEPT";
 
-/** Pesquisa de satisfação (NPS) — off until someone switches it on in Respostas › Pesquisa. */
-export interface SatisfactionSurveySettingsDTO {
-  enabled: boolean;
+/**
+ * One pesquisa de satisfação (NPS) of Respostas › Pesquisa. Several can exist — the ones that ship are templates,
+ * all off — but only active ones are sent: per conversation, the one chosen for its connection, else one for all
+ * connections (the most recently updated, if more than one applies).
+ */
+export interface SatisfactionSurveyDTO {
+  id: string;
+  name: string;
+  active: boolean;
   connectionScope: ConnectionScopeDTO;
   /**
    * Sent after the conversation is closed (and the "Desfazer" window has passed);
@@ -418,6 +424,8 @@ export interface SatisfactionSurveySettingsDTO {
    * do. Never longer than the answer window.
    */
   closingWaitMinutes: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 /** NPS of one survey question: 9–10 promoters, 7–8 passives, 0–6 detractors. */
@@ -750,6 +758,8 @@ export const PERMISSION = {
   RESPOSTAS_TEMPLATES_EXCLUIR: "respostas_templates.excluir",
   RESPOSTAS_PESQUISA_VISUALIZAR: "respostas_pesquisa.visualizar",
   RESPOSTAS_PESQUISA_EDITAR: "respostas_pesquisa.editar",
+  RESPOSTAS_PESQUISA_ADICIONAR: "respostas_pesquisa.adicionar",
+  RESPOSTAS_PESQUISA_EXCLUIR: "respostas_pesquisa.excluir",
   // Standalone top-level menu (not nested under CONFIGURACOES_GERENCIAR) —
   // see PROMPT: "planeje um novo menu chamado landing page". Single record
   // to edit (no list), so only visualizar/editar.
@@ -1253,7 +1263,7 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     key: PERMISSION.RESPOSTAS_PESQUISA_VISUALIZAR,
     group: "Respostas",
     label: "Respostas — Pesquisa de satisfação (visualizar)",
-    description: "Ver a configuração da pesquisa de satisfação enviada ao encerrar (aba Pesquisa).",
+    description: "Ver as pesquisas de satisfação enviadas ao encerrar (aba Pesquisa).",
     editableRoles: ["AGENT", "MANAGER"],
     defaultAllowed: { AGENT: false, MANAGER: true },
   },
@@ -1261,7 +1271,23 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     key: PERMISSION.RESPOSTAS_PESQUISA_EDITAR,
     group: "Respostas",
     label: "Respostas — Pesquisa de satisfação (editar)",
-    description: "Ligar/desligar a pesquisa de satisfação, escolher as conexões e editar os textos.",
+    description: "Ligar/desligar uma pesquisa de satisfação, escolher as conexões e editar os textos.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.RESPOSTAS_PESQUISA_ADICIONAR,
+    group: "Respostas",
+    label: "Respostas — Pesquisa de satisfação (adicionar)",
+    description: "Criar uma pesquisa de satisfação, do zero ou a partir de outra (Duplicar).",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.RESPOSTAS_PESQUISA_EXCLUIR,
+    group: "Respostas",
+    label: "Respostas — Pesquisa de satisfação (excluir)",
+    description: "Excluir uma pesquisa de satisfação. As notas já recebidas continuam no Dashboard.",
     editableRoles: ["AGENT", "MANAGER"],
     defaultAllowed: { AGENT: false, MANAGER: true },
   },

@@ -4,7 +4,7 @@ import { createApp } from "../src/app";
 import { prisma } from "../src/lib/prisma";
 import { __getProviderForTests } from "../src/modules/whatsapp/whatsapp.service";
 import { createClosingMessage } from "../src/modules/closing-messages/closing-messages.service";
-import { processDueClosingMessages, updateSurveySettings } from "../src/modules/satisfaction/satisfaction.service";
+import { createSurvey, processDueClosingMessages } from "../src/modules/satisfaction/satisfaction.service";
 import { CONVERSATION_UNDO_WINDOW_MS } from "@whatsatendende/types";
 import type { MockWhatsAppProvider } from "@whatsatendende/whatsapp";
 import { resetDatabase, createTestUser, createWaitingConversation, TEST_PASSWORD } from "./helpers";
@@ -23,9 +23,12 @@ async function waitUntil(condition: () => boolean, timeoutMs = 5000) {
   while (!condition() && Date.now() < end) await new Promise((resolve) => setTimeout(resolve, 25));
 }
 
-function enableSurvey(connectionIds: string[]) {
-  return updateSurveySettings({
-    enabled: true,
+/** The one survey switched on in these tests — it replaces whatever an earlier test left. */
+async function enableSurvey(connectionIds: string[]) {
+  await prisma.satisfactionSurveyConfig.deleteMany();
+  return createSurvey({
+    name: "Pesquisa",
+    active: true,
     connectionScope: { allConnections: false, connectionIds },
     question: QUESTION,
     thanks: "Obrigado!",

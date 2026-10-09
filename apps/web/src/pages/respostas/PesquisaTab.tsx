@@ -1,264 +1,213 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Copy, Eye, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import {
-  PERMISSION,
-  type SatisfactionSurveySettingsDTO,
-} from "@whatsatendende/types";
+import { PERMISSION, type SatisfactionSurveyDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
-import { UnsavedChangesBar } from "../../components/common/UnsavedChangesBar";
-import { renderWhatsAppFormatting } from "../../lib/whatsappFormatting";
-import {
-  ConnectionScopePicker,
-  toConnectionScopeValue,
-  type ConnectionScopeValue,
-} from "./ConnectionScopePicker";
+import { describeConnectionScope } from "./ConnectionScopePicker";
+import { PesquisaFormModal, toPesquisaFormValues, type PesquisaFormValues } from "./PesquisaFormModal";
 
-const MIN_WINDOW_HOURS = 1;
-const MAX_WINDOW_HOURS = 72; // matches the backend's zod schema
-const MIN_CLOSING_WAIT_MINUTES = 1;
-const MAX_CLOSING_WAIT_MINUTES = 720;
+const QUERY_KEY = ["satisfaction-surveys"];
 
-interface FormValues {
-  enabled: boolean;
-  connectionScope: ConnectionScopeValue;
-  question: string;
-  thanks: string;
-  answerWindowHours: number;
-  closingWaitMinutes: number;
+type FormTarget = { mode: "new" } | { mode: "copy"; survey: SatisfactionSurveyDTO } | { mode: "edit"; survey: SatisfactionSurveyDTO };
+
+function describeScope(survey: SatisfactionSurveyDTO): string {
+  const { allConnections, connections } = survey.connectionScope;
+  return allConnections || connections.length > 0 ? describeConnectionScope(survey.connectionScope) : "Nenhuma conexão";
 }
 
-function toForm(dto: SatisfactionSurveySettingsDTO): FormValues {
-  return {
-    enabled: dto.enabled,
-    connectionScope: toConnectionScopeValue(dto.connectionScope, false),
-    question: dto.question,
-    thanks: dto.thanks,
-    answerWindowHours: dto.answerWindowHours,
-    closingWaitMinutes: dto.closingWaitMinutes,
-  };
-}
-
-/** Pesquisa de satisfação (NPS, nota de 0 a 10) sent when a conversation is closed — off until someone switches it on here. */
+/**
+ * Pesquisas de satisfação (NPS, nota de 0 a 10) sent when a conversation is closed — a list: the ones that ship are
+ * templates, all off. See PROMPT: "Cadastre ao menos 4 pesquisas desligadas, para servir de modelo".
+ */
 export function PesquisaTab() {
   const queryClient = useQueryClient();
-  const canEditar = useAuthStore(
-    (s) => s.permissions?.[PERMISSION.RESPOSTAS_PESQUISA_EDITAR],
-  );
-  const { data } = useQuery({
-    queryKey: ["satisfaction-survey-settings"],
-    queryFn: async () =>
-      (
-        await api.get<SatisfactionSurveySettingsDTO>(
-          "/satisfaction-survey/settings",
-        )
-      ).data,
+  const permissions = useAuthStore((s) => s.permissions);
+  const canAdicionar = permissions?.[PERMISSION.RESPOSTAS_PESQUISA_ADICIONAR];
+  const canEditar = permissions?.[PERMISSION.RESPOSTAS_PESQUISA_EDITAR];
+  const canExcluir = permissions?.[PERMISSION.RESPOSTAS_PESQUISA_EXCLUIR];
+  const [formTarget, setFormTarget] = useState<FormTarget | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<SatisfactionSurveyDTO | null>(null);
+
+  const { data: surveys, isLoading } = useQuery({
+    queryKey: QUERY_KEY,
+    queryFn: async () => (await api.get<SatisfactionSurveyDTO[]>("/satisfaction-survey/surveys")).data,
   });
 
-  const [values, setValues] = useState<FormValues | null>(null);
-  useEffect(() => {
-    if (data) setValues(toForm(data));
-  }, [data]);
-
   const save = useMutation({
-    mutationFn: async (next: FormValues) =>
-      (
-        await api.put<SatisfactionSurveySettingsDTO>(
-          "/satisfaction-survey/settings",
-          next,
-        )
-      ).data,
-    onSuccess: (saved) => {
-      queryClient.setQueryData(["satisfaction-survey-settings"], saved);
-      toast.success(
-        saved.enabled
-          ? "Pesquisa de satisfação ligada."
-          : "Pesquisa de satisfação salva (desligada).",
-      );
+    mutationFn: async ({ id, values }: { id: string | null; values: PesquisaFormValues }) =>
+      (id ? await api.patch<SatisfactionSurveyDTO>(`/satisfaction-survey/surveys/${id}`, values) : await api.post<SatisfactionSurveyDTO>("/satisfaction-survey/surveys", values)).data,
+    onSuccess: (saved, { id }) => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+      toast.success(`${id ? "Pesquisa salva" : "Pesquisa criada"}${saved.active ? " e ligada." : " (desligada)."}`);
+    },
+  });
+
+  const remove = useMutation({
+    mutationFn: (id: string) => api.delete(`/satisfaction-survey/surveys/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+      toast.success("Pesquisa excluída.");
+      setDeleteTarget(null);
     },
     onError: (err) => toast.error(getApiErrorMessage(err)),
   });
 
-  if (!data || !values) return null;
-  const saved = toForm(data);
-  const dirty = JSON.stringify(values) !== JSON.stringify(saved);
-  const scopeMissing =
-    !values.connectionScope.allConnections &&
-    values.connectionScope.connectionIds.length === 0;
-  const waitInRange =
-    Number.isInteger(values.closingWaitMinutes) &&
-    values.closingWaitMinutes >= MIN_CLOSING_WAIT_MINUTES &&
-    values.closingWaitMinutes <= MAX_CLOSING_WAIT_MINUTES;
-  // The closing message waits inside the time the customer still has to answer.
-  const waitWithinWindow = values.closingWaitMinutes <= values.answerWindowHours * 60;
-  const valid =
-    values.question.trim() !== "" &&
-    values.thanks.trim() !== "" &&
-    values.answerWindowHours >= MIN_WINDOW_HOURS &&
-    values.answerWindowHours <= MAX_WINDOW_HOURS &&
-    waitInRange &&
-    waitWithinWindow &&
-    !(values.enabled && scopeMissing);
-  const set = (patch: Partial<FormValues>) =>
-    setValues((v) => (v ? { ...v, ...patch } : v));
+  async function handleSubmit(values: PesquisaFormValues) {
+    try {
+      await save.mutateAsync({ id: formTarget?.mode === "edit" ? formTarget.survey.id : null, values });
+    } catch (err) {
+      throw new Error(getApiErrorMessage(err));
+    }
+  }
+
+  const activeCount = surveys?.filter((s) => s.active).length ?? 0;
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="max-w-2xl space-y-5 py-2">
-        <p className="text-sm text-muted">
-          Ao encerrar uma conversa atendida, o cliente recebe a pergunta abaixo
-          e responde com uma nota de 0 a 10. A nota fica registrada na própria
-          conversa e alimenta o NPS: o Dashboard mostra o NPS de cada pergunta e
-          Relatórios › Por atendente traz o de cada pessoa. Na API Oficial, só é
-          enviada se o cliente escreveu nas últimas 24 horas.
-        </p>
-        <p className="text-sm text-muted">
-          A pesquisa só sai depois dos 10 segundos do botão Desfazer. A mensagem
-          de encerramento do atendente (Respostas › Encerramento) não vai junto
-          com ela: é enviada 10 segundos depois que o cliente responde a nota ou,
-          se ele não responder, depois da espera definida abaixo. Se o cliente só
-          agradecer, a espera continua; se quiser seguir a conversa, a mensagem
-          volta para a fila e a mensagem de encerramento não é enviada. Se o
-          atendente desfizer o encerramento, nada é enviado.
-        </p>
-
-        <fieldset
-          disabled={!canEditar}
-          className="space-y-4 rounded-card border border-border bg-surface p-5 disabled:opacity-70"
-        >
-          <label className="flex items-center justify-between gap-4">
-            <span>
-              <span className="block text-sm font-semibold">
-                Enviar pesquisa ao encerrar
-              </span>
-              <span className="block text-xs text-muted">
-                {values.enabled
-                  ? "Ligada — será enviada nas conexões escolhidas."
-                  : "Desligada — nada é enviado aos clientes."}
-              </span>
-            </span>
-            <input
-              type="checkbox"
-              role="switch"
-              checked={values.enabled}
-              onChange={(e) => set({ enabled: e.target.checked })}
-              className="h-5 w-5 shrink-0 accent-primary"
-            />
-          </label>
-
-          <ConnectionScopePicker
-            value={values.connectionScope}
-            onChange={(connectionScope) => set({ connectionScope })}
-            hint={
-              values.enabled && scopeMissing
-                ? "Escolha pelo menos uma conexão para ligar a pesquisa."
-                : "A pesquisa só é enviada em conversas dessas conexões."
-            }
-          />
-
-          <label className="block">
-            <span className="mb-1 block text-sm font-medium">Pergunta</span>
-            <textarea
-              rows={3}
-              value={values.question}
-              onChange={(e) => set({ question: e.target.value })}
-              maxLength={1024}
-              className="focus-ring w-full resize-none rounded-card border border-border bg-transparent px-3 py-2 text-sm"
-            />
-            <span className="mt-1 block text-xs text-muted">
-              {values.question.trim() !== saved.question
-                ? "Ao salvar, este texto passa a ser uma nova pergunta no Dashboard. O NPS da anterior continua no histórico."
-                : "Peça uma nota de 0 a 10. Ao mudar o texto, a pergunta anterior continua no histórico do Dashboard, com o NPS dela."}
-            </span>
-          </label>
-
-          <label className="block">
-            <span className="mb-1 block text-sm font-medium">
-              Agradecimento
-            </span>
-            <input
-              value={values.thanks}
-              onChange={(e) => set({ thanks: e.target.value })}
-              maxLength={1024}
-              className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm"
-            />
-            <span className="mt-1 block text-xs text-muted">
-              Enviado na hora, quando o cliente responde com uma nota válida. A
-              mensagem de encerramento vem 10 segundos depois.
-            </span>
-          </label>
-
-          <label className="block max-w-xs">
-            <span className="mb-1 block text-sm font-medium">
-              Se o cliente não responder, enviar a mensagem de encerramento em
-              (minutos)
-            </span>
-            <input
-              type="number"
-              min={MIN_CLOSING_WAIT_MINUTES}
-              max={MAX_CLOSING_WAIT_MINUTES}
-              value={values.closingWaitMinutes}
-              onChange={(e) =>
-                set({ closingWaitMinutes: Number(e.target.value) })
-              }
-              aria-invalid={!waitInRange || !waitWithinWindow}
-              className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm"
-            />
-            {waitInRange && !waitWithinWindow ? (
-              <span className="mt-1 block text-xs text-danger" role="alert">
-                A espera não pode ser maior que o tempo para o cliente responder
-                ({values.answerWindowHours} h).
-              </span>
-            ) : (
-              <span className="mt-1 block text-xs text-muted">
-                {waitInRange
-                  ? "Conta a partir do envio da pergunta. Quem responde a nota recebe a mensagem 10 segundos depois dela."
-                  : `Use um valor de ${MIN_CLOSING_WAIT_MINUTES} a ${MAX_CLOSING_WAIT_MINUTES} minutos.`}
-              </span>
-            )}
-          </label>
-
-          <label className="block max-w-xs">
-            <span className="mb-1 block text-sm font-medium">
-              Aceitar resposta por até (horas)
-            </span>
-            <input
-              type="number"
-              min={MIN_WINDOW_HOURS}
-              max={MAX_WINDOW_HOURS}
-              value={values.answerWindowHours}
-              onChange={(e) =>
-                set({ answerWindowHours: Number(e.target.value) })
-              }
-              className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm"
-            />
-            <span className="mt-1 block text-xs text-muted">
-              Depois disso, ou se o cliente escrever outra coisa, a mensagem
-              abre uma conversa normal.
-            </span>
-          </label>
-
-          <div>
-            <p className="mb-1 text-xs font-medium text-muted">
-              Prévia de como o cliente vai receber:
-            </p>
-            <div className="max-w-sm whitespace-pre-wrap break-words rounded-card bg-primary px-3 py-2 text-sm text-primary-fg shadow-soft">
-              {renderWhatsAppFormatting(values.question || "...")}
-            </div>
-          </div>
-        </fieldset>
-
-        {canEditar && (
-          <UnsavedChangesBar
-            dirty={dirty}
-            saving={save.isPending}
-            canSave={valid}
-            onSave={() => save.mutate(values)}
-            onDiscard={() => setValues(saved)}
-          />
+    <div className="flex h-full flex-col overflow-hidden">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div className="max-w-3xl space-y-2 text-sm text-muted">
+          <p>
+            Ao encerrar uma conversa atendida, o cliente recebe a pergunta da pesquisa e responde com uma nota de 0 a 10. A nota alimenta o NPS: o
+            Dashboard mostra o de cada pergunta e Relatórios › Por atendente, o de cada pessoa. Na API Oficial, só é enviada se o cliente escreveu nas
+            últimas 24 horas.
+          </p>
+          <p>
+            Só as pesquisas <strong className="text-text">ligadas</strong> são enviadas — uma por conversa: a escolhida para a conexão; se não houver, a
+            de todas as conexões. Os modelos vêm desligados: use <strong className="text-text">Duplicar</strong> ou{" "}
+            <strong className="text-text">Editar</strong>, escolha as conexões e ligue. A mensagem de encerramento do atendente espera a nota (ou o
+            tempo definido na pesquisa) e, se o atendente desfizer o encerramento, nada é enviado.
+          </p>
+        </div>
+        {canAdicionar && (
+          <button
+            onClick={() => setFormTarget({ mode: "new" })}
+            className="focus-ring flex shrink-0 items-center gap-1.5 rounded-card bg-primary px-4 py-2 text-sm font-semibold text-primary-fg hover:opacity-90"
+          >
+            <Plus className="h-4 w-4" /> Nova pesquisa
+          </button>
         )}
       </div>
+
+      {surveys && (
+        <p className="mb-2 text-xs font-medium text-muted" role="status">
+          {activeCount === 0 ? "Nenhuma pesquisa ligada — nada é enviado aos clientes." : `${activeCount} ${activeCount === 1 ? "pesquisa ligada" : "pesquisas ligadas"}.`}
+        </p>
+      )}
+
+      <div className="shadow-soft flex-1 overflow-auto rounded-card border border-border bg-surface">
+        <table className="w-full text-sm">
+          <thead className="sticky top-0 bg-surface-alt text-left text-xs uppercase tracking-wide text-muted">
+            <tr>
+              <th className="px-4 py-3">Nome</th>
+              <th className="px-4 py-3">Pergunta</th>
+              <th className="px-4 py-3">Conexões</th>
+              <th className="px-4 py-3">Status</th>
+              <th className="px-4 py-3 text-right">Ações</th>
+            </tr>
+          </thead>
+          <tbody>
+            {isLoading && (
+              <tr>
+                <td colSpan={5} className="px-4 py-8 text-center text-muted">
+                  Carregando...
+                </td>
+              </tr>
+            )}
+            {!isLoading && surveys?.length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-4 py-8 text-center text-muted">
+                  Nenhuma pesquisa cadastrada.
+                </td>
+              </tr>
+            )}
+            {surveys?.map((s) => (
+              <tr key={s.id} className="border-t border-border hover:bg-surface-alt">
+                <td className="px-4 py-3 font-medium">{s.name}</td>
+                <td className="max-w-sm truncate px-4 py-3 text-muted" title={s.question}>
+                  {s.question}
+                </td>
+                <td className="max-w-[14rem] truncate px-4 py-3 text-muted" title={describeScope(s)}>
+                  {describeScope(s)}
+                </td>
+                <td className="px-4 py-3">
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${s.active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}`}>
+                    {s.active ? "Ligada" : "Desligada"}
+                  </span>
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex justify-end gap-1">
+                    {canAdicionar && (
+                      <button
+                        onClick={() => setFormTarget({ mode: "copy", survey: s })}
+                        className="focus-ring rounded-card p-1.5 text-muted hover:bg-surface-alt"
+                        aria-label={`Duplicar ${s.name}`}
+                        title="Duplicar — nova pesquisa a partir desta"
+                      >
+                        <Copy className="h-4 w-4" />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setFormTarget({ mode: "edit", survey: s })}
+                      className="focus-ring rounded-card p-1.5 text-muted hover:bg-surface-alt"
+                      aria-label={`${canEditar ? "Editar" : "Ver"} ${s.name}`}
+                      title={canEditar ? "Editar" : "Ver"}
+                    >
+                      {canEditar ? <Pencil className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                    {canExcluir && (
+                      <button
+                        onClick={() => setDeleteTarget(s)}
+                        className="focus-ring rounded-card p-1.5 text-muted hover:bg-danger-soft hover:text-danger"
+                        aria-label={`Excluir ${s.name}`}
+                        title="Excluir"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {formTarget && (
+        <PesquisaFormModal
+          title={formTarget.mode === "new" ? "Nova pesquisa" : formTarget.mode === "copy" ? "Nova pesquisa (cópia)" : canEditar ? "Editar pesquisa" : "Pesquisa"}
+          initial={toPesquisaFormValues(formTarget.mode === "new" ? null : formTarget.survey, formTarget.mode === "copy")}
+          savedQuestion={formTarget.mode === "edit" ? formTarget.survey.question : null}
+          readOnly={formTarget.mode === "edit" && !canEditar}
+          onClose={() => setFormTarget(null)}
+          onSubmit={handleSubmit}
+        />
+      )}
+
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-sm rounded-card border border-border bg-surface p-5 shadow-elevated" role="dialog" aria-label="Excluir pesquisa">
+            <h2 className="text-base font-semibold">Excluir pesquisa?</h2>
+            <p className="mt-2 text-sm text-muted">
+              "{deleteTarget.name}" será removida. As notas já recebidas continuam no Dashboard.
+              {deleteTarget.active && " Ela está ligada: os clientes deixam de recebê-la."}
+            </p>
+            <div className="mt-5 flex gap-2">
+              <button onClick={() => setDeleteTarget(null)} className="focus-ring flex-1 rounded-card border border-border py-2 text-sm">
+                Cancelar
+              </button>
+              <button
+                onClick={() => remove.mutate(deleteTarget.id)}
+                disabled={remove.isPending}
+                className="focus-ring flex-1 rounded-card bg-red-600 py-2 text-sm font-semibold text-white disabled:opacity-60"
+              >
+                {remove.isPending ? "Excluindo..." : "Excluir"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

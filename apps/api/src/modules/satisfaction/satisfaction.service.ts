@@ -1,17 +1,19 @@
-import type { Prisma } from "@prisma/client";
-import { CONVERSATION_UNDO_WINDOW_MS, type SatisfactionQuestionSummaryDTO, type SatisfactionSummaryDTO, type SatisfactionSurveySettingsDTO } from "@whatsatendende/types";
+import type { Prisma, SatisfactionSurveyConfig } from "@prisma/client";
+import { CONVERSATION_UNDO_WINDOW_MS, type SatisfactionQuestionSummaryDTO, type SatisfactionSummaryDTO, type SatisfactionSurveyDTO } from "@whatsatendende/types";
 import { prisma } from "../../lib/prisma";
 import { logger } from "../../lib/logger";
-import type { ConnectionScopeInput } from "../../lib/connection-scope";
+import { Errors } from "../../lib/http-error";
+import { appliesToConnection, assertScopeConnectionsExist, scopeData, toConnectionScopeDTO, withScopeConnections, type ConnectionScopeInput } from "../../lib/connection-scope";
 import { realtimeEvents } from "../../realtime/realtime";
 import * as whatsappService from "../whatsapp/whatsapp.service";
 import { createSystemOutboundMessage } from "../messages/messages.service";
 import { isGratitudeMessage } from "./gratitude";
 
 /**
- * Pesquisa de satisfação (NPS). Off by default: nothing is ever sent until
- * someone switches it on (and picks the connections) in Respostas › Pesquisa.
- * When on, closing an attended WhatsApp conversation sends the question once
+ * Pesquisa de satisfação (NPS). Respostas › Pesquisa holds a list of surveys
+ * (SatisfactionSurveyConfig) — the ones that ship are templates, all off: nothing
+ * is ever sent until someone switches one on (and picks the connections). When
+ * one applies, closing an attended WhatsApp conversation sends its question once
  * the "Desfazer" window has passed; the customer's next message, if it's a 0–10
  * score, is recorded on that closed conversation instead of opening a new one.
  *
@@ -27,7 +29,6 @@ import { isGratitudeMessage } from "./gratitude";
  * starts a new question, and the Dashboard keeps one NPS per question.
  */
 
-const SETTINGS_KEY = "satisfactionSurvey";
 // The API Oficial only delivers free text within 24h of the customer's last message.
 const OFFICIAL_FREE_TEXT_WINDOW_MS = 24 * 60 * 60 * 1000;
 // The closing message follows the customer's score by this long.
@@ -41,48 +42,79 @@ const PROMOTER_MIN_SCORE = 9;
 const PASSIVE_MIN_SCORE = 7;
 // Surveys sent before the 0–10 scale existed have no question and were answered 1–5.
 const LEGACY_QUESTION_LABEL = "Pesquisa anterior (nota de 1 a 5)";
+// For a score on a survey whose setup was deleted in the meantime.
+const DEFAULT_THANKS = "Obrigado pela sua avaliação!";
 
-export interface SurveySettings {
-  enabled: boolean;
-  allConnections: boolean;
-  connectionIds: string[];
+type SurveyRow = SatisfactionSurveyConfig & { connections: { id: string; name: string }[] };
+
+export interface SurveyInput {
+  name: string;
+  active: boolean;
+  connectionScope: ConnectionScopeInput;
   question: string;
-  /** The SatisfactionQuestion row for `question` — set when the settings are saved. */
-  questionId: string | null;
   thanks: string;
   answerWindowHours: number;
-  /** How long after the question the closing message goes out if the customer never answers. */
   closingWaitMinutes: number;
 }
 
-const DEFAULT_SETTINGS: SurveySettings = {
-  enabled: false,
-  allConnections: false,
-  connectionIds: [],
-  question: "Em uma escala de 0 a 10, o quanto você recomendaria o nosso atendimento a um amigo ou colega? Responda apenas com o número, sendo 0 nada provável e 10 muito provável.",
-  questionId: null,
-  thanks: "Obrigado pela sua avaliação!",
-  answerWindowHours: 24,
-  closingWaitMinutes: DEFAULT_CLOSING_WAIT_MINUTES,
-};
-
-export async function getSurveySettings(): Promise<SurveySettings> {
-  const row = await prisma.systemSetting.findUnique({ where: { key: SETTINGS_KEY } });
-  return { ...DEFAULT_SETTINGS, ...(row?.value as Partial<SurveySettings> | undefined) };
+export function toSurveyDTO(row: SurveyRow): SatisfactionSurveyDTO {
+  return {
+    id: row.id,
+    name: row.name,
+    active: row.active,
+    connectionScope: toConnectionScopeDTO(row),
+    question: row.question,
+    thanks: row.thanks,
+    answerWindowHours: row.answerWindowHours,
+    closingWaitMinutes: row.closingWaitMinutes,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
 }
 
-export async function toSurveySettingsDTO(settings: SurveySettings): Promise<SatisfactionSurveySettingsDTO> {
-  const connections = settings.allConnections
-    ? []
-    : await prisma.whatsAppConnection.findMany({ where: { id: { in: settings.connectionIds } }, select: { id: true, name: true }, orderBy: { name: "asc" } });
-  return {
-    enabled: settings.enabled,
-    connectionScope: { allConnections: settings.allConnections, connections },
-    question: settings.question,
-    thanks: settings.thanks,
-    answerWindowHours: settings.answerWindowHours,
-    closingWaitMinutes: settings.closingWaitMinutes,
-  };
+/** Every survey — the ones switched on first. */
+export async function listSurveys(): Promise<SurveyRow[]> {
+  return prisma.satisfactionSurveyConfig.findMany({ orderBy: [{ active: "desc" }, { name: "asc" }], include: withScopeConnections });
+}
+
+export async function getSurvey(id: string): Promise<SurveyRow> {
+  const row = await prisma.satisfactionSurveyConfig.findUnique({ where: { id }, include: withScopeConnections });
+  if (!row) throw Errors.notFound("Pesquisa não encontrada");
+  return row;
+}
+
+export async function createSurvey({ connectionScope, ...input }: SurveyInput): Promise<SurveyRow> {
+  await assertScopeConnectionsExist(connectionScope);
+  return prisma.satisfactionSurveyConfig.create({ data: { ...input, ...scopeData(connectionScope, "connect") }, include: withScopeConnections });
+}
+
+export async function updateSurvey(id: string, { connectionScope, ...input }: Partial<SurveyInput>): Promise<SurveyRow> {
+  await getSurvey(id);
+  if (connectionScope) await assertScopeConnectionsExist(connectionScope);
+  return prisma.satisfactionSurveyConfig.update({
+    where: { id },
+    data: { ...input, ...(connectionScope && scopeData(connectionScope, "set")) },
+    include: withScopeConnections,
+  });
+}
+
+/** Surveys already sent keep their scores (and their question in the Dashboard). */
+export async function deleteSurvey(id: string): Promise<void> {
+  await getSurvey(id);
+  await prisma.satisfactionSurveyConfig.delete({ where: { id } });
+}
+
+/**
+ * The survey sent on conversations of this connection — among the ACTIVE ones that apply, the one chosen for the
+ * connection over an "all connections" one, then the most recently updated. Null when none is on for it.
+ */
+export async function getSurveyFor(whatsappConnectionId: string | null): Promise<SatisfactionSurveyConfig | null> {
+  if (!whatsappConnectionId) return null;
+  const rows = await prisma.satisfactionSurveyConfig.findMany({
+    where: { active: true, ...appliesToConnection(whatsappConnectionId) },
+    orderBy: { updatedAt: "desc" },
+  });
+  return rows.find((r) => !r.allConnections) ?? rows[0] ?? null;
 }
 
 /** The question row for this exact text — created the first time the text is used, reused if it comes back later. */
@@ -90,29 +122,6 @@ async function resolveQuestionId(text: string): Promise<string> {
   const existing = await prisma.satisfactionQuestion.findFirst({ where: { text }, orderBy: { createdAt: "desc" }, select: { id: true } });
   if (existing) return existing.id;
   return (await prisma.satisfactionQuestion.create({ data: { text }, select: { id: true } })).id;
-}
-
-export async function updateSurveySettings(input: {
-  enabled: boolean;
-  connectionScope: ConnectionScopeInput;
-  question: string;
-  thanks: string;
-  answerWindowHours: number;
-  closingWaitMinutes: number;
-}): Promise<SurveySettings> {
-  const value: SurveySettings = {
-    enabled: input.enabled,
-    allConnections: input.connectionScope.allConnections,
-    connectionIds: input.connectionScope.allConnections ? [] : input.connectionScope.connectionIds,
-    question: input.question,
-    questionId: await resolveQuestionId(input.question),
-    thanks: input.thanks,
-    answerWindowHours: input.answerWindowHours,
-    closingWaitMinutes: input.closingWaitMinutes,
-  };
-  const json = value as unknown as Prisma.InputJsonValue;
-  await prisma.systemSetting.upsert({ where: { key: SETTINGS_KEY }, update: { value: json }, create: { key: SETTINGS_KEY, value: json } });
-  return value;
 }
 
 /** "10", "nota 9", "7 pontos" → the score (0–10); anything else → null. */
@@ -147,12 +156,16 @@ const surveyConversationSelect = {
 } satisfies Prisma.ConversationSelect;
 type SurveyConversation = Prisma.ConversationGetPayload<{ select: typeof surveyConversationSelect }>;
 
-/** Whether this conversation gets the survey once it is closed — status aside, so it also answers for one that is still open. */
-async function isSurveyDue(conversation: SurveyConversation, settings: SurveySettings): Promise<boolean> {
-  if (!settings.enabled || conversation.channel !== "WHATSAPP" || conversation.satisfactionSurvey) return false;
+/**
+ * The survey this conversation gets once it is closed — status aside, so it also answers for one that is still
+ * open. Null when none is due.
+ */
+async function surveyDueFor(conversation: SurveyConversation): Promise<SatisfactionSurveyConfig | null> {
+  if (conversation.channel !== "WHATSAPP" || conversation.satisfactionSurvey) return null;
   // Only an attended conversation is rated — not one closed straight from the queue.
-  if (!conversation.whatsappConnectionId || !conversation.assignedAgentId || !conversation.contact.phone) return false;
-  if (!settings.allConnections && !settings.connectionIds.includes(conversation.whatsappConnectionId)) return false;
+  if (!conversation.whatsappConnectionId || !conversation.assignedAgentId || !conversation.contact.phone) return null;
+  const survey = await getSurveyFor(conversation.whatsappConnectionId);
+  if (!survey) return null;
 
   if (conversation.whatsappConnection?.connectionMode === "OFFICIAL_API") {
     const lastInbound = await prisma.message.findFirst({
@@ -160,9 +173,9 @@ async function isSurveyDue(conversation: SurveyConversation, settings: SurveySet
       orderBy: { createdAt: "desc" },
       select: { createdAt: true },
     });
-    if (!lastInbound || Date.now() - lastInbound.createdAt.getTime() > OFFICIAL_FREE_TEXT_WINDOW_MS) return false;
+    if (!lastInbound || Date.now() - lastInbound.createdAt.getTime() > OFFICIAL_FREE_TEXT_WINDOW_MS) return null;
   }
-  return true;
+  return survey;
 }
 
 /**
@@ -171,10 +184,8 @@ async function isSurveyDue(conversation: SurveyConversation, settings: SurveySet
  * when the wait runs out) instead of being sent at once.
  */
 export async function willSendSurveyOnClose(conversationId: string): Promise<boolean> {
-  const settings = await getSurveySettings();
-  if (!settings.enabled) return false;
   const conversation = await prisma.conversation.findUnique({ where: { id: conversationId }, select: surveyConversationSelect });
-  return conversation !== null && (await isSurveyDue(conversation, settings));
+  return conversation !== null && (await surveyDueFor(conversation)) !== null;
 }
 
 /** A closing message the close route held back — already rendered, with the person it is sent as. */
@@ -215,8 +226,8 @@ export async function sendCloseFollowUp(conversationId: string, closingMessage?:
     // The customer wrote again during the window: that new conversation owns the chat, and neither the question nor a goodbye fits it.
     if (conversation.closedAt && (await hasConversationSince(conversation.contactId, conversation.closedAt))) return;
 
-    const settings = await getSurveySettings();
-    if (!(await isSurveyDue(conversation, settings))) {
+    const survey = await surveyDueFor(conversation);
+    if (!survey) {
       // The survey was switched off (or stopped applying) during the window — nothing to wait for, the closing message goes out now.
       if (closingMessage) {
         try {
@@ -230,22 +241,23 @@ export async function sendCloseFollowUp(conversationId: string, closingMessage?:
 
     // Recorded before anything is sent, so a late "Desfazer" can no longer take the conversation back.
     const now = new Date();
-    const waitMinutes = Math.min(settings.closingWaitMinutes, settings.answerWindowHours * 60);
+    const waitMinutes = Math.min(survey.closingWaitMinutes, survey.answerWindowHours * 60);
     await prisma.satisfactionSurvey.create({
       data: {
         conversationId,
         contactId: conversation.contactId,
         whatsappConnectionId: conversation.whatsappConnectionId!,
         agentId: conversation.assignedAgentId,
-        questionId: settings.questionId ?? (await resolveQuestionId(settings.question)),
+        configId: survey.id,
+        questionId: await resolveQuestionId(survey.question),
         sentAt: now,
-        expiresAt: new Date(now.getTime() + settings.answerWindowHours * 60 * 60 * 1000),
+        expiresAt: new Date(now.getTime() + survey.answerWindowHours * 60 * 60 * 1000),
         // Even with no closing message to send, this is how long a "obrigado" from the customer still counts as part of the wait.
         closingDueAt: new Date(now.getTime() + waitMinutes * 60 * 1000),
         ...(closingMessage && { closingText: closingMessage.text, closingSenderId: closingMessage.senderId, closingSenderName: closingMessage.senderDisplayName }),
       },
     });
-    await sendSurveyText({ id: conversationId, whatsappConnectionId: conversation.whatsappConnectionId! }, conversation.contact.phone!, settings.question);
+    await sendSurveyText({ id: conversationId, whatsappConnectionId: conversation.whatsappConnectionId! }, conversation.contact.phone!, survey.question);
   } catch (err) {
     logger.error({ err, conversationId }, "failed to send closing follow-up");
   }
@@ -377,7 +389,7 @@ export async function captureSurveyAnswer(
       ],
     },
     orderBy: { sentAt: "desc" },
-    include: { conversation: { select: { status: true } } },
+    include: { conversation: { select: { status: true } }, config: { select: { thanks: true } } },
   });
   if (!survey) return false;
   // The time to answer ran out while the closing message was still waiting (the server was down for a day): the survey is over.
@@ -404,8 +416,8 @@ export async function captureSurveyAnswer(
       });
     }
     await keepOnClosedConversation(survey.conversationId, message);
-    const settings = await getSurveySettings();
-    if (contact.phone) await sendSurveyText({ id: survey.conversationId, whatsappConnectionId: connectionId }, contact.phone, settings.thanks);
+    const thanks = survey.config?.thanks ?? DEFAULT_THANKS;
+    if (contact.phone) await sendSurveyText({ id: survey.conversationId, whatsappConnectionId: connectionId }, contact.phone, thanks);
     return true;
   }
 
@@ -481,10 +493,12 @@ export async function getSatisfactionSummary(params: { from: Date; to: Date; age
     ...(params.agentId && { agentId: params.agentId }),
     ...(params.connectionIds && { whatsappConnectionId: { in: params.connectionIds } }),
   };
-  const [grouped, settings] = await Promise.all([
+  const [grouped, activeSurveys] = await Promise.all([
     prisma.satisfactionSurvey.groupBy({ by: ["questionId", "score"], where, _count: { _all: true } }),
-    getSurveySettings(),
+    prisma.satisfactionSurveyConfig.findMany({ where: { active: true }, select: { question: true } }),
   ]);
+  // "Em uso": a question of a survey that is switched on.
+  const questionsInUse = new Set(activeSurveys.map((s) => s.question));
 
   const rowsByQuestion = new Map<string | null, { score: number | null; count: number }[]>();
   for (const row of grouped) {
@@ -497,8 +511,8 @@ export async function getSatisfactionSummary(params: { from: Date; to: Date; age
   const questions = questionIds.length
     ? await prisma.satisfactionQuestion.findMany({ where: { id: { in: questionIds } }, orderBy: { createdAt: "desc" } })
     : [];
-  const summaries = questions.map((q) => summarizeQuestion({ questionId: q.id, question: q.text, current: q.text === settings.question }, rowsByQuestion.get(q.id) ?? []));
-  // The question in use first, then the older ones (newest first, as fetched).
+  const summaries = questions.map((q) => summarizeQuestion({ questionId: q.id, question: q.text, current: questionsInUse.has(q.text) }, rowsByQuestion.get(q.id) ?? []));
+  // The questions in use first, then the older ones (newest first, as fetched).
   summaries.sort((a, b) => Number(b.current) - Number(a.current));
   const legacyRows = rowsByQuestion.get(null);
   if (legacyRows) summaries.push(summarizeQuestion({ questionId: null, question: LEGACY_QUESTION_LABEL, current: false }, legacyRows));
