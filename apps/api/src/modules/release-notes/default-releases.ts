@@ -1,72 +1,68 @@
-import { PERMISSION, type Permission, type PermissionMap, type Role } from "@whatsatendende/types";
+import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
 
 /**
- * Notas de versão — what changed in each release, written for the people
- * using the system (not developers). Each note belongs to an area of the
- * app and is only shown to users who can open that area, using the same
- * permissions that gate the sidebar menu, so nobody reads about screens
- * they can't use. A note about something only some roles get (a button
- * only managers see, say) also lists those roles.
+ * The release notes that ship with the system — what changed in each version, written for the people using it.
+ * They are copied into the database once (see syncDefaultReleaseNotes): from then on an administrator edits,
+ * deletes and adds versions in Configurações › Notas de versão, and a version deleted there never comes back.
+ * A new version shipped here is added on the next start.
  *
- * Adding a release: put it at the top of RELEASES. Screenshots live in
- * public/notas-de-versao/ (webp, taken with demo data — never real
- * customers). In step/caption text, "{1}" renders as the numbered marker
- * drawn on the screenshot.
+ * Screenshots live in apps/web/public/notas-de-versao/ (webp, taken with demo data — never real customers). In
+ * step/caption text, "{1}" renders as the numbered marker drawn on the screenshot.
  */
-
-export type ReleaseNoteType = "novo" | "melhoria" | "correcao";
-
-export type ReleaseNoteArea = "geral" | "atendimento" | "gestao" | "contatos" | "dashboard" | "usuarios" | "respostas" | "fluxo" | "conexoes" | "configuracoes" | "landingPage" | "administracao";
-
-export interface ReleaseNoteImage {
-  file: string;
-  caption: string;
-  size?: "small" | "tiny";
-}
-
-export interface ReleaseNote {
-  type: ReleaseNoteType;
-  area: ReleaseNoteArea;
-  title: string;
-  text?: string;
-  before?: string;
-  after?: string;
-  steps?: string[];
-  where?: string;
-  images?: ReleaseNoteImage[];
-  // Extra permissions on top of the area's own (e.g. a specific tab).
-  requires?: Permission[];
-  // Only these roles read the note, whatever their permissions.
-  roles?: Role[];
-}
-
-export interface Release {
-  version: string;
-  date: string;
-  name: string;
-  summary: string;
-  notes: ReleaseNote[];
-}
-
-export const RELEASE_NOTE_TYPE_LABEL: Record<ReleaseNoteType, string> = { novo: "Novo", melhoria: "Melhoria", correcao: "Correção" };
-
-// Area order is the display order inside a release.
-export const RELEASE_NOTE_AREAS: Record<ReleaseNoteArea, { label: string; requires: Permission[]; adminOnly?: boolean }> = {
-  geral: { label: "Geral", requires: [] },
-  atendimento: { label: "Atendimento", requires: [PERMISSION.ATENDIMENTO_ACESSAR] },
-  gestao: { label: "Gestão", requires: [PERMISSION.GESTAO_ACESSAR] },
-  contatos: { label: "Contatos", requires: [PERMISSION.CONTATOS_ACESSAR] },
-  dashboard: { label: "Dashboard e Relatórios", requires: [PERMISSION.DASHBOARD_ACESSAR] },
-  usuarios: { label: "Usuários", requires: [PERMISSION.USUARIOS_VISUALIZAR] },
-  respostas: { label: "Respostas", requires: [PERMISSION.RESPOSTAS_RAPIDAS_GERENCIAR] },
-  fluxo: { label: "Fluxo", requires: [PERMISSION.FLUXO_VISUALIZAR] },
-  conexoes: { label: "Conexões", requires: [PERMISSION.CONEXOES_GERENCIAR] },
-  configuracoes: { label: "Configurações", requires: [PERMISSION.CONFIGURACOES_GERENCIAR] },
-  landingPage: { label: "Landing Page", requires: [PERMISSION.LANDING_PAGE_VISUALIZAR] },
-  administracao: { label: "Administração", requires: [], adminOnly: true },
-};
-
-export const RELEASES: Release[] = [
+export const DEFAULT_RELEASES: ReleaseContent[] = [
+  {
+    version: "2.3.0",
+    date: "09 out 2026",
+    name: "Notas de versão editáveis, várias pesquisas e aceite por usuário",
+    summary:
+      "O logoff por inatividade volta a funcionar, também com o sistema aberto a noite toda. O administrador passa a escrever as notas de versão pelo sistema, a pesquisa de satisfação vira uma lista com 4 modelos e cada mensagem de aceite pode ser só de algumas pessoas.",
+    notes: [
+      {
+        type: "correcao",
+        area: "geral",
+        title: "Logoff automático por inatividade volta a funcionar",
+        text: "Quem deixava o sistema aberto e parado continuava conectado, mesmo depois do tempo de inatividade definido em Configurações › Segurança (8 horas, se ninguém mudou). Agora a sessão é encerrada quando passa esse tempo sem uso — sem mexer no mouse, no teclado, na tela ou na rolagem. A conta vale para todas as abas do sistema juntas: quem trabalha numa aba não é desconectado por outra esquecida. Se o computador dormiu além do limite, o sistema volta para a tela de login assim que ele acordar. E, mesmo com o navegador travado ou fechado, o servidor encerra a sessão parada e registra “Logoff por inatividade” na Auditoria.",
+        before: "Com o sistema aberto, a sessão nunca era encerrada por inatividade.",
+        after: "Passado o tempo sem uso, a sessão é encerrada e aparece “Sessão encerrada por inatividade”.",
+        where: "Configurações › Segurança (tempo de inatividade)",
+      },
+      {
+        type: "novo",
+        area: "administracao",
+        title: "Cadastro das notas de versão",
+        text: "O administrador cria, edita e exclui as versões e as notas de cada uma. Cada nota tem tipo (Novo, Melhoria ou Correção), área, título, texto, Antes e Agora, Como usar, Onde fica, imagens com legenda e quem pode ver (todos que acessam a área, só gestores e administradores ou só administradores). A prévia, ao lado, mostra a versão exatamente como ela vai aparecer, enquanto você escreve. A versão de número mais alto é a atual: ao publicar uma nova, cada pessoa recebe o aviso de novidades uma vez. As notas que já existiam foram trazidas para o cadastro, com as imagens.",
+        steps: [
+          "Abra Configurações › Notas de versão e clique em Nova versão (ou no lápis de uma versão).",
+          "Para cada nota, escolha o tipo {1}, a área e escreva o texto. Para imagens, clique em Adicionar imagem e escreva a legenda — {1}, {2}… viram as marcações numeradas.",
+          "Confira na prévia {2} e clique em Salvar versão.",
+        ],
+        where: "Configurações › Notas de versão",
+        images: [{ src: "/notas-de-versao/notas-editor.webp", caption: "{1} Tipo da nota: Novo, Melhoria ou Correção {2} Prévia — a versão como ela vai aparecer" }],
+      },
+      {
+        type: "novo",
+        area: "respostas",
+        title: "Várias pesquisas de satisfação, com 4 modelos",
+        text: "Respostas › Pesquisa passa a ser uma lista. Cada pesquisa tem nome, conexões, pergunta, agradecimento, espera da mensagem de encerramento e prazo para responder. Só as ligadas são enviadas — uma por conversa: a escolhida para a conexão; se não houver, a de todas as conexões. A pesquisa que você já usava continua igual, no topo da lista. Vieram 4 modelos desligados para começar: Indicação (NPS), Nota do atendimento, Solicitação resolvida e Agilidade. Excluir uma pesquisa não apaga as notas já recebidas, que continuam no Dashboard.",
+        before: "Havia uma pesquisa só, para todas as conexões escolhidas.",
+        after: "Uma lista de pesquisas, cada uma com as suas conexões e textos.",
+        steps: ["Abra Respostas › Pesquisa.", "Em um modelo, clique em Duplicar {1} (ou no lápis, para editar o próprio modelo).", "Escolha as conexões, ligue a pesquisa e salve."],
+        where: "Respostas › Pesquisa",
+        requires: [PERMISSION.RESPOSTAS_PESQUISA_VISUALIZAR],
+        images: [{ src: "/notas-de-versao/pesquisas-lista.webp", caption: "{1} Duplicar: cria uma pesquisa nova, desligada, a partir do modelo" }],
+      },
+      {
+        type: "novo",
+        area: "respostas",
+        title: "Quem pode usar cada mensagem de aceite, e 3 modelos",
+        text: "Cada mensagem de aceite pode valer para todos os usuários ou só para os escolhidos. Ao aceitar uma conversa vale a mais específica: a escolhida para a pessoa, depois a da conexão. Quem não foi escolhido e não tem uma mensagem de todos os usuários não envia mensagem de aceite. Vieram 3 modelos desligados: Boas-vindas, Obrigado por aguardar e Atendimento especializado — escolha quem usa, ligue e salve.",
+        steps: ["Abra Respostas › Aceite e clique no lápis de uma mensagem.", "Em Quem pode usar {1}, escolha Todos os usuários ou marque as pessoas.", "Marque Ativo e salve."],
+        where: "Respostas › Aceite",
+        requires: [PERMISSION.RESPOSTAS_ACEITE_VISUALIZAR],
+        images: [{ src: "/notas-de-versao/aceite-quem-pode-usar.webp", caption: "{1} Quem pode usar: todos os usuários ou só os escolhidos", size: "small" }],
+      },
+    ],
+  },
   {
     version: "2.2.0",
     date: "08 out 2026",
@@ -88,9 +84,9 @@ export const RELEASES: Release[] = [
         where: "Dashboard › Apresentação (PPT), ao lado dos filtros",
         roles: ["ADMIN", "MANAGER"],
         images: [
-          { file: "dashboard-apresentacao", caption: "{1} Apresentação (PPT), ao lado dos filtros do Dashboard" },
-          { file: "apresentacao-slides-1", caption: "Capa, o período em resumo, indicadores e tempos médios da jornada do cliente (dados de exemplo)." },
-          { file: "apresentacao-slides-2", caption: "NPS, conversas por atendente, equipe ao longo do dia e o que os clientes mais falam (dados de exemplo)." },
+          { src: "/notas-de-versao/dashboard-apresentacao.webp", caption: "{1} Apresentação (PPT), ao lado dos filtros do Dashboard" },
+          { src: "/notas-de-versao/apresentacao-slides-1.webp", caption: "Capa, o período em resumo, indicadores e tempos médios da jornada do cliente (dados de exemplo)." },
+          { src: "/notas-de-versao/apresentacao-slides-2.webp", caption: "NPS, conversas por atendente, equipe ao longo do dia e o que os clientes mais falam (dados de exemplo)." },
         ],
       },
       {
@@ -120,9 +116,9 @@ export const RELEASES: Release[] = [
         steps: ["Clique no cartão do arquivo, na conversa.", "Para imprimir, clique em Imprimir {1} (ou use Ctrl+P) e escolha a impressora.", "Para guardar uma cópia, clique em Baixar {2}. Fechar {3}, ou a tecla Esc, volta para a conversa."],
         where: "Atendimento e Gestão, dentro da conversa",
         images: [
-          { file: "arquivos-cartoes", caption: "Os cartões de um PDF, de um Word e de um Bloco de Notas na conversa.", size: "small" },
-          { file: "arquivos-visualizador", caption: "{1} Imprimir {2} Baixar {3} Fechar" },
-          { file: "arquivos-bloco-de-notas", caption: "{1} Imprimir: o Bloco de Notas aberto no sistema" },
+          { src: "/notas-de-versao/arquivos-cartoes.webp", caption: "Os cartões de um PDF, de um Word e de um Bloco de Notas na conversa.", size: "small" },
+          { src: "/notas-de-versao/arquivos-visualizador.webp", caption: "{1} Imprimir {2} Baixar {3} Fechar" },
+          { src: "/notas-de-versao/arquivos-bloco-de-notas.webp", caption: "{1} Imprimir: o Bloco de Notas aberto no sistema" },
         ],
       },
       {
@@ -170,7 +166,7 @@ export const RELEASES: Release[] = [
         steps: ["Abra Respostas › Pesquisa.", "Em “Se o cliente não responder, enviar a mensagem de encerramento em (minutos)” {1}, informe a espera.", "Clique em Salvar alterações."],
         where: "Respostas › Pesquisa",
         requires: [PERMISSION.RESPOSTAS_PESQUISA_VISUALIZAR],
-        images: [{ file: "pesquisa-espera", caption: "{1} Espera, em minutos, até a mensagem de encerramento quando o cliente não responde" }],
+        images: [{ src: "/notas-de-versao/pesquisa-espera.webp", caption: "{1} Espera, em minutos, até a mensagem de encerramento quando o cliente não responde" }],
       },
       {
         type: "melhoria",
@@ -396,8 +392,8 @@ export const RELEASES: Release[] = [
         steps: ["Clique no cartão do PDF ou do Word.", "Role para ler o documento inteiro.", "Use o botão de baixar, no canto superior direito, para guardar o arquivo. Esc fecha."],
         where: "Atendimento e Gestão, dentro da conversa",
         images: [
-          { file: "previews-conversa", caption: "Um PDF, um documento do Word e um link com seus cartões de prévia.", size: "small" },
-          { file: "visualizador-pdf", caption: "O PDF aberto para leitura dentro do sistema." },
+          { src: "/notas-de-versao/previews-conversa.webp", caption: "Um PDF, um documento do Word e um link com seus cartões de prévia.", size: "small" },
+          { src: "/notas-de-versao/visualizador-pdf.webp", caption: "O PDF aberto para leitura dentro do sistema." },
         ],
       },
       {
@@ -406,7 +402,7 @@ export const RELEASES: Release[] = [
         title: "Número do cliente sempre visível",
         text: "O número aparece formatado (por exemplo +55 11 98765-4321) na lista de conversas, no topo da conversa e no painel do cliente. Na Nova conversa, a busca acha o contato pelo nome ou pelo número, digitado como você quiser.",
         where: "Atendimento › Nova conversa",
-        images: [{ file: "nova-conversa-numeros", caption: "Contatos com nome e número, e busca por “(11) 9”.", size: "small" }],
+        images: [{ src: "/notas-de-versao/nova-conversa-numeros.webp", caption: "Contatos com nome e número, e busca por “(11) 9”.", size: "small" }],
       },
       {
         type: "melhoria",
@@ -421,7 +417,7 @@ export const RELEASES: Release[] = [
         text: "Os contatos salvos no celular são carregados por completo uma vez por semana, na segunda-feira à meia-noite, e não mais aos poucos. O administrador pode carregar na hora, em Conexões. A tela mostra quando foi a última carga.",
         steps: ["Abra Conexões › WhatsApp.", "No cartão da conexão conectada, clique em “Carregar contatos agora”."],
         where: "Conexões › WhatsApp",
-        images: [{ file: "conexoes-contatos", caption: "Data da última carga e botão para carregar agora.", size: "small" }],
+        images: [{ src: "/notas-de-versao/conexoes-contatos.webp", caption: "Data da última carga e botão para carregar agora.", size: "small" }],
       },
       {
         type: "correcao",
@@ -459,7 +455,7 @@ export const RELEASES: Release[] = [
         title: "Passo “Horário de atendimento”",
         text: "Separa o caminho de quem escreve dentro e fora do horário. Escolha os dias e o horário de abertura e fechamento. Pela saída Aberto o cliente segue normalmente; pela saída Fechado você pode avisar que a empresa está fechada.",
         where: "Fluxo › Adicionar passo › Controle",
-        images: [{ file: "fluxo-horario", caption: "Modelo “Fora do horário”: dentro do horário vai para um atendente, fora dele recebe um aviso antes." }],
+        images: [{ src: "/notas-de-versao/fluxo-horario.webp", caption: "Modelo “Fora do horário”: dentro do horário vai para um atendente, fora dele recebe um aviso antes." }],
       },
       {
         type: "melhoria",
@@ -475,21 +471,21 @@ export const RELEASES: Release[] = [
         text: "Nas conexões da API Oficial, passadas 24 horas da última mensagem do cliente o WhatsApp só aceita templates aprovados pela Meta. Agora a conversa avisa quando isso acontece e deixa enviar o template ali mesmo, preenchendo os campos e vendo como o cliente vai receber.",
         steps: ["Abra a conversa e clique em “Enviar template” (ou na aba Template, ao lado de Responder).", "Escolha o template e preencha os campos.", "Clique em Enviar template."],
         where: "Atendimento › conversa de uma conexão da API Oficial",
-        images: [{ file: "template-conversa", caption: "Escolhendo o template e vendo a prévia antes de enviar." }],
+        images: [{ src: "/notas-de-versao/template-conversa.webp", caption: "Escolhendo o template e vendo a prévia antes de enviar." }],
       },
       {
         type: "novo",
         area: "atendimento",
         title: "Desfazer ao encerrar",
         text: "Encerrou sem querer? Por 10 segundos aparece o botão Desfazer e a conversa volta para você como estava. A pesquisa de satisfação, quando ligada, só é enviada depois desse tempo.",
-        images: [{ file: "desfazer", caption: "O aviso com o botão Desfazer, no canto inferior direito.", size: "small" }],
+        images: [{ src: "/notas-de-versao/desfazer.webp", caption: "O aviso com o botão Desfazer, no canto inferior direito.", size: "small" }],
       },
       {
         type: "novo",
         area: "gestao",
         title: "Desfazer ao enviar para a fila ou encerrar",
         text: "Depois de enviar uma conversa para a fila ou encerrar, aparece o botão Desfazer por 10 segundos. A conversa volta para o mesmo atendente, desde que ninguém a tenha aceitado nesse meio-tempo.",
-        images: [{ file: "desfazer", caption: "Clique em Desfazer enquanto o aviso estiver na tela.", size: "small" }],
+        images: [{ src: "/notas-de-versao/desfazer.webp", caption: "Clique em Desfazer enquanto o aviso estiver na tela.", size: "small" }],
       },
       {
         type: "melhoria",
@@ -497,7 +493,7 @@ export const RELEASES: Release[] = [
         title: "Notas internas e etiquetas na visualização da conversa",
         text: "Ao visualizar uma conversa pela Gestão, aparecem as etiquetas do cliente no topo e as notas internas da equipe no meio das mensagens, no ponto em que foram escritas.",
         where: "Gestão › Visualizar",
-        images: [{ file: "gestao-notas", caption: "Etiqueta do cliente no topo e nota interna no fim da conversa.", size: "small" }],
+        images: [{ src: "/notas-de-versao/gestao-notas.webp", caption: "Etiqueta do cliente no topo e nota interna no fim da conversa.", size: "small" }],
       },
       {
         type: "novo",
@@ -507,8 +503,8 @@ export const RELEASES: Release[] = [
         steps: ["Clique em Contatos no menu.", "Clique em um contato para abrir os detalhes.", "Em cada conversa do histórico, “Abrir” mostra a conversa completa na Gestão."],
         where: "Menu Operação › Contatos",
         images: [
-          { file: "contatos", caption: "Lista de contatos com busca e filtros." },
-          { file: "contato-detalhe", caption: "Detalhe do contato: nome, etiquetas e histórico.", size: "small" },
+          { src: "/notas-de-versao/contatos.webp", caption: "Lista de contatos com busca e filtros." },
+          { src: "/notas-de-versao/contato-detalhe.webp", caption: "Detalhe do contato: nome, etiquetas e histórico.", size: "small" },
         ],
       },
       {
@@ -519,7 +515,7 @@ export const RELEASES: Release[] = [
         steps: ["Clique em Importar CSV, escolha a conexão e o arquivo e clique em Importar.", "Para exportar, filtre a lista se quiser e clique em Exportar CSV."],
         where: "Contatos › Importar CSV / Exportar CSV",
         requires: [PERMISSION.CONTATOS_IMPORTAR_EXPORTAR],
-        images: [{ file: "contatos-importar", caption: "Resultado da importação, com a linha que tinha telefone inválido.", size: "small" }],
+        images: [{ src: "/notas-de-versao/contatos-importar.webp", caption: "Resultado da importação, com a linha que tinha telefone inválido.", size: "small" }],
       },
       {
         type: "novo",
@@ -528,7 +524,7 @@ export const RELEASES: Release[] = [
         text: "Crie, renomeie, troque a cor ou exclua etiquetas e veja quantos contatos usam cada uma. Ao excluir, a etiqueta sai de todos os contatos.",
         where: "Contatos › Etiquetas",
         requires: [PERMISSION.CONTATOS_ETIQUETAS_GERENCIAR],
-        images: [{ file: "contatos-etiquetas", caption: "Cada etiqueta com sua cor e quantos contatos a usam.", size: "small" }],
+        images: [{ src: "/notas-de-versao/contatos-etiquetas.webp", caption: "Cada etiqueta com sua cor e quantos contatos a usam.", size: "small" }],
       },
       {
         type: "novo",
@@ -538,7 +534,7 @@ export const RELEASES: Release[] = [
         before: "Cada resposta rápida pertencia a uma única conexão, e Aceite, Transferência e Encerramento valiam para todas.",
         after: "Você escolhe “Todas as conexões” ou marca as conexões desejadas. O que já existia continua funcionando como antes.",
         where: "Respostas › em cada cadastro, campo Conexões",
-        images: [{ file: "respostas-conexoes", caption: "Resposta rápida valendo só para a conexão Vendas.", size: "small" }],
+        images: [{ src: "/notas-de-versao/respostas-conexoes.webp", caption: "Resposta rápida valendo só para a conexão Vendas.", size: "small" }],
       },
       {
         type: "novo",
@@ -548,7 +544,7 @@ export const RELEASES: Release[] = [
         steps: ["Abra Respostas › Pesquisa.", "Ligue “Enviar pesquisa ao encerrar” e escolha as conexões.", "Ajuste a pergunta e o agradecimento, se quiser, e salve."],
         where: "Respostas › Pesquisa",
         requires: [PERMISSION.RESPOSTAS_PESQUISA_VISUALIZAR],
-        images: [{ file: "pesquisa", caption: "Configuração da pesquisa, desligada como vem por padrão." }],
+        images: [{ src: "/notas-de-versao/pesquisa.webp", caption: "Configuração da pesquisa, desligada como vem por padrão." }],
       },
       {
         type: "novo",
@@ -556,7 +552,7 @@ export const RELEASES: Release[] = [
         title: "Resultado da pesquisa de satisfação",
         text: "O Dashboard mostra a nota média do período, quantos clientes responderam e quantas notas de cada valor. Em Relatórios › Por atendente aparecem as avaliações recebidas e a nota média de cada atendente.",
         where: "Dashboard, ao lado das palavras mais usadas",
-        images: [{ file: "dashboard-satisfacao", caption: "Média, taxa de resposta e distribuição das notas.", size: "small" }],
+        images: [{ src: "/notas-de-versao/dashboard-satisfacao.webp", caption: "Média, taxa de resposta e distribuição das notas.", size: "small" }],
       },
       {
         type: "melhoria",
@@ -586,7 +582,7 @@ export const RELEASES: Release[] = [
         text: "Todas as telas foram redesenhadas para ficarem mais limpas e fáceis de ler. O sistema funciona no tema claro e no escuro, no computador e no celular.",
         steps: ["No topo da tela, clique no sol (claro), na lua (escuro) ou no monitor (segue o computador)."],
         where: "Topo da tela, ao lado da sua foto",
-        images: [{ file: "dark-atendimento", caption: "Tela de atendimento no tema escuro." }],
+        images: [{ src: "/notas-de-versao/dark-atendimento.webp", caption: "Tela de atendimento no tema escuro." }],
       },
       {
         type: "novo",
@@ -600,8 +596,8 @@ export const RELEASES: Release[] = [
         ],
         where: "Lado esquerdo da tela",
         images: [
-          { file: "menu-gestor", caption: "Menu aberto, como o gestor vê.", size: "tiny" },
-          { file: "menu-recolhido", caption: "Menu recolhido, com o nome do item ao passar o mouse.", size: "tiny" },
+          { src: "/notas-de-versao/menu-gestor.webp", caption: "Menu aberto, como o gestor vê.", size: "tiny" },
+          { src: "/notas-de-versao/menu-recolhido.webp", caption: "Menu recolhido, com o nome do item ao passar o mouse.", size: "tiny" },
         ],
       },
       {
@@ -611,7 +607,7 @@ export const RELEASES: Release[] = [
         text: "Uma busca única que encontra contatos, telas e ações. Digite o nome de um cliente para abrir a conversa, “dash” para ir ao Dashboard ou “pausar” para pausar o atendimento, sem tirar a mão do teclado.",
         steps: ["Aperte Ctrl+K ou clique na barra “Buscar contato, tela ou ação…” no topo.", "Digite parte do que procura.", "Use as setas para escolher e Enter para abrir. Esc fecha."],
         where: "Barra de busca no topo de qualquer tela",
-        images: [{ file: "ctrlk", caption: "Buscando “pa”: aparecem a cliente Ana Paula, a tela Landing Page e as ações de pausa.", size: "small" }],
+        images: [{ src: "/notas-de-versao/ctrlk.webp", caption: "Buscando “pa”: aparecem a cliente Ana Paula, a tela Landing Page e as ações de pausa.", size: "small" }],
       },
       {
         type: "novo",
@@ -627,8 +623,8 @@ export const RELEASES: Release[] = [
         text: "Tudo o que é seu fica no canto superior direito. O pontinho na sua foto mostra se você está online (verde) ou em pausa (amarelo).",
         where: "Canto superior direito",
         images: [
-          { file: "topbar", caption: "{1} Pausar {2} Notificações {3} Tema: claro, escuro ou automático." },
-          { file: "perfil-menu", caption: "Clique na sua foto para abrir Meu perfil ou Sair.", size: "small" },
+          { src: "/notas-de-versao/topbar.webp", caption: "{1} Pausar {2} Notificações {3} Tema: claro, escuro ou automático." },
+          { src: "/notas-de-versao/perfil-menu.webp", caption: "Clique na sua foto para abrir Meu perfil ou Sair.", size: "small" },
         ],
       },
       {
@@ -636,7 +632,7 @@ export const RELEASES: Release[] = [
         area: "geral",
         title: "Tela de login mais simples",
         text: "O cartão de entrada ficou centralizado e mais limpo. Se a senha estiver errada, o aviso aparece no próprio formulário, sem janela por cima. O sistema avisa quando o Caps Lock está ligado e lembra o último e-mail usado.",
-        images: [{ file: "login", caption: "Senha errada: o aviso aparece em vermelho, logo acima do botão Entrar." }],
+        images: [{ src: "/notas-de-versao/login.webp", caption: "Senha errada: o aviso aparece em vermelho, logo acima do botão Entrar." }],
       },
       {
         type: "melhoria",
@@ -669,7 +665,7 @@ export const RELEASES: Release[] = [
           "Veja e edite as etiquetas {2} e consulte as conversas anteriores {3}.",
         ],
         where: "Atendimento › conversa aberta › lado direito",
-        images: [{ file: "painel-cliente", caption: "{1} Recolher {2} Etiquetas {3} Conversas anteriores", size: "small" }],
+        images: [{ src: "/notas-de-versao/painel-cliente.webp", caption: "{1} Recolher {2} Etiquetas {3} Conversas anteriores", size: "small" }],
       },
       {
         type: "novo",
@@ -682,7 +678,7 @@ export const RELEASES: Release[] = [
           "A nota aparece na conversa com fundo amarelo e borda tracejada {2}, com o seu nome e o horário.",
         ],
         where: "Atendimento › conversa aberta › caixa de mensagem",
-        images: [{ file: "notas-internas", caption: "{1} Aba Nota interna {2} Nota salva na conversa", size: "small" }],
+        images: [{ src: "/notas-de-versao/notas-internas.webp", caption: "{1} Aba Nota interna {2} Nota salva na conversa", size: "small" }],
       },
       {
         type: "novo",
@@ -695,7 +691,7 @@ export const RELEASES: Release[] = [
           "Clique em uma sugestão ou em “Criar” para uma etiqueta nova. Para tirar, clique no × da etiqueta.",
         ],
         where: "Atendimento › painel do cliente › Etiquetas",
-        images: [{ file: "etiquetas", caption: "Digitando “Re”: aparece a etiqueta Retorno e a opção de criar uma nova.", size: "small" }],
+        images: [{ src: "/notas-de-versao/etiquetas.webp", caption: "Digitando “Re”: aparece a etiqueta Retorno e a opção de criar uma nova.", size: "small" }],
       },
       {
         type: "novo",
@@ -708,7 +704,7 @@ export const RELEASES: Release[] = [
           "Atenda primeiro as conversas em vermelho: são as que esperam há mais tempo.",
         ],
         where: "Atendimento › lista de conversas",
-        images: [{ file: "lista-filtros", caption: "{1} Filtros {2} Busca {3} Sem resposta. Carlos espera há 9 minutos (amarelo); Juliana, há 21 (vermelho).", size: "small" }],
+        images: [{ src: "/notas-de-versao/lista-filtros.webp", caption: "{1} Filtros {2} Busca {3} Sem resposta. Carlos espera há 9 minutos (amarelo); Juliana, há 21 (vermelho).", size: "small" }],
       },
       {
         type: "novo",
@@ -717,7 +713,7 @@ export const RELEASES: Release[] = [
         text: "As respostas rápidas cadastradas para a conexão aparecem como atalhos logo acima da caixa de texto. Um clique insere o texto, sem precisar lembrar ou digitar o atalho.",
         steps: ["Clique no atalho {1} para inserir o texto na caixa.", "Revise e envie normalmente."],
         where: "Atendimento › caixa de mensagem",
-        images: [{ file: "respostas-chips", caption: "{1} Atalho “/pix”, que insere a chave Pix da empresa.", size: "small" }],
+        images: [{ src: "/notas-de-versao/respostas-chips.webp", caption: "{1} Atalho “/pix”, que insere a chave Pix da empresa.", size: "small" }],
       },
       {
         type: "melhoria",
@@ -737,7 +733,7 @@ export const RELEASES: Release[] = [
           "Acompanhe a espera de cada cliente na coluna Esperando {4}.",
         ],
         where: "Gestão",
-        images: [{ file: "gestao-lote", caption: "Duas conversas selecionadas, com a barra de ações em lote." }],
+        images: [{ src: "/notas-de-versao/gestao-lote.webp", caption: "Duas conversas selecionadas, com a barra de ações em lote." }],
       },
       {
         type: "novo",
@@ -745,7 +741,7 @@ export const RELEASES: Release[] = [
         title: "Comparação com o período anterior e Atendimentos únicos",
         text: "Cada indicador mostra se subiu ou caiu em relação ao período anterior de mesmo tamanho: em verde quando melhorou, em vermelho quando piorou. Com “7 dias” selecionado, por exemplo, a comparação é com os 7 dias anteriores. O novo card Atendimentos únicos mostra quantos clientes diferentes foram atendidos: se o mesmo cliente abriu três conversas, conta uma vez.",
         where: "Dashboard › primeira linha",
-        images: [{ file: "dash-kpis", caption: "{1} Comparação com o período anterior {2} Atendimentos únicos" }],
+        images: [{ src: "/notas-de-versao/dash-kpis.webp", caption: "{1} Comparação com o período anterior {2} Atendimentos únicos" }],
       },
       {
         type: "novo",
@@ -753,7 +749,7 @@ export const RELEASES: Release[] = [
         title: "Equipe agora",
         text: "Mostra em tempo real quantas pessoas estão online, em pausa e offline, quem está em pausa, o motivo e há quanto tempo. A pausa fica em vermelho quando passa de 30 minutos.",
         where: "Dashboard",
-        images: [{ file: "dash-equipe", caption: "Maria está em pausa para almoço há 23 minutos.", size: "small" }],
+        images: [{ src: "/notas-de-versao/dash-equipe.webp", caption: "Maria está em pausa para almoço há 23 minutos.", size: "small" }],
       },
       {
         type: "novo",
@@ -761,7 +757,7 @@ export const RELEASES: Release[] = [
         title: "Tabela de atendentes",
         text: "Uma linha por atendente com a situação agora, conversas atendidas, tempo médio, tempo online e tempo em pausa no período. O maior tempo de pausa da equipe aparece em vermelho.",
         where: "Dashboard",
-        images: [{ file: "dash-atendentes", caption: "Tempo online e em pausa de cada atendente no período." }],
+        images: [{ src: "/notas-de-versao/dash-atendentes.webp", caption: "Tempo online e em pausa de cada atendente no período." }],
       },
       {
         type: "novo",
@@ -771,7 +767,7 @@ export const RELEASES: Release[] = [
         steps: ["Em Usuários, clique no lápis do usuário.", "No topo do painel, clique em “Escolher foto” {1}. Aceita JPG, PNG ou WEBP de até 8 MB.", "Clique em Salvar."],
         where: "Usuários › editar usuário",
         requires: [PERMISSION.USUARIOS_EDITAR],
-        images: [{ file: "usuarios-foto", caption: "{1} Foto do usuário", size: "small" }],
+        images: [{ src: "/notas-de-versao/usuarios-foto.webp", caption: "{1} Foto do usuário", size: "small" }],
       },
       {
         type: "melhoria",
@@ -779,7 +775,7 @@ export const RELEASES: Release[] = [
         title: "Lista de usuários mais completa",
         text: "Busca por nome ou e-mail, filtros com contagem (Todos, Online, Em pausa, Inativos), foto, presença atual e último acesso de cada pessoa.",
         where: "Usuários",
-        images: [{ file: "usuarios-lista", caption: "Lista com presença e último acesso." }],
+        images: [{ src: "/notas-de-versao/usuarios-lista.webp", caption: "Lista com presença e último acesso." }],
       },
       {
         type: "melhoria",
@@ -787,7 +783,7 @@ export const RELEASES: Release[] = [
         title: "Cadastros em painel lateral",
         text: "Ao criar ou editar uma resposta rápida, mensagem automática ou template, o formulário abre em um painel à direita. A lista continua visível atrás, para consultar enquanto edita.",
         where: "Respostas",
-        images: [{ file: "resp-rapida-nova", caption: "Nova resposta rápida aberta ao lado da lista." }],
+        images: [{ src: "/notas-de-versao/resp-rapida-nova.webp", caption: "Nova resposta rápida aberta ao lado da lista." }],
       },
       {
         type: "novo",
@@ -802,7 +798,7 @@ export const RELEASES: Release[] = [
         ],
         where: "Respostas › Templates",
         requires: [PERMISSION.RESPOSTAS_TEMPLATES_VISUALIZAR],
-        images: [{ file: "resp-template-novo", caption: "Cadastro de template com categoria, cabeçalho, texto, rodapé e botões." }],
+        images: [{ src: "/notas-de-versao/resp-template-novo.webp", caption: "Cadastro de template com categoria, cabeçalho, texto, rodapé e botões." }],
       },
       {
         type: "novo",
@@ -811,7 +807,7 @@ export const RELEASES: Release[] = [
         text: "Monte o caminho que o cliente percorre antes de falar com um atendente: mensagem de boas-vindas, menu de opções e transferência para a equipe certa. Comece de um modelo pronto (Boas-vindas ou Fora do horário) ou do zero. Cada cartão mostra um desenho do fluxo e avisa o que falta para ativar.",
         steps: ["Em Fluxo, clique em “Novo fluxo”.", "Escolha um modelo ou comece em branco.", "Vincule o fluxo a uma conexão WhatsApp Oficial."],
         where: "Fluxo",
-        images: [{ file: "fluxo-lista", caption: "Fluxos Boas-vindas e Fora do horário, criados a partir dos modelos." }],
+        images: [{ src: "/notas-de-versao/fluxo-lista.webp", caption: "Fluxos Boas-vindas e Fora do horário, criados a partir dos modelos." }],
       },
       {
         type: "novo",
@@ -825,7 +821,7 @@ export const RELEASES: Release[] = [
           "Salve e ative quando não houver avisos.",
         ],
         where: "Fluxo › abrir um fluxo",
-        images: [{ file: "fluxo-editor-no", caption: "Bloco “Menu de opções” selecionado, com a prévia no WhatsApp à direita." }],
+        images: [{ src: "/notas-de-versao/fluxo-editor-no.webp", caption: "Bloco “Menu de opções” selecionado, com a prévia no WhatsApp à direita." }],
       },
       {
         type: "novo",
@@ -839,7 +835,7 @@ export const RELEASES: Release[] = [
         ],
         where: "Conexões › WhatsApp Oficial",
         requires: [PERMISSION.CONEXOES_WHATSAPP_VISUALIZAR],
-        images: [{ file: "conexoes-oficial", caption: "Aba WhatsApp Oficial com a URL de callback para a Meta." }],
+        images: [{ src: "/notas-de-versao/conexoes-oficial.webp", caption: "Aba WhatsApp Oficial com a URL de callback para a Meta." }],
       },
       {
         type: "melhoria",
@@ -848,7 +844,7 @@ export const RELEASES: Release[] = [
         text: "Cada conexão virou um cartão com o estado em cores, o número, a cor da conexão e quantos atendentes estão vinculados. A conexão desconectada fica com borda vermelha para chamar atenção.",
         where: "Conexões › WhatsApp",
         requires: [PERMISSION.CONEXOES_WHATSAPP_VISUALIZAR],
-        images: [{ file: "conexoes", caption: "Conexões Suporte e Vendas em cartões." }],
+        images: [{ src: "/notas-de-versao/conexoes.webp", caption: "Conexões Suporte e Vendas em cartões." }],
       },
       {
         type: "melhoria",
@@ -856,7 +852,7 @@ export const RELEASES: Release[] = [
         title: "Configurações por seção e aviso de não salvo",
         text: "As configurações ficam organizadas em seções no menu à esquerda (Atendimento, Aparência, E-mail, Segurança). Ao alterar algo, aparece uma barra avisando que há alterações não salvas, com os botões Descartar e Salvar.",
         where: "Configurações",
-        images: [{ file: "config-naosalvo", caption: "Nome da empresa alterado: a barra escura embaixo avisa que falta salvar." }],
+        images: [{ src: "/notas-de-versao/config-naosalvo.webp", caption: "Nome da empresa alterado: a barra escura embaixo avisa que falta salvar." }],
       },
     ],
   },
@@ -873,7 +869,7 @@ export const RELEASES: Release[] = [
         text: "Precisa sair um pouco? Clique em Pausar e escolha o motivo. Enquanto estiver em pausa, você não recebe conversas novas, e a equipe vê que você está em pausa e por quê.",
         steps: ["Clique em “Pausar” no topo da tela.", "Escolha o motivo: Almoço, Reunião, Treinamento etc.", "Quando voltar, clique em “Retomar”."],
         where: "Topo da tela",
-        images: [{ file: "pausa", caption: "Lista de motivos ao clicar em Pausar.", size: "small" }],
+        images: [{ src: "/notas-de-versao/pausa.webp", caption: "Lista de motivos ao clicar em Pausar.", size: "small" }],
       },
       {
         type: "novo",
@@ -882,7 +878,7 @@ export const RELEASES: Release[] = [
         text: "Enquanto você digita, o sistema confere o português e mostra sugestões logo acima da caixa de texto. Aplicar é opcional: você pode ignorar e enviar como está.",
         steps: ["Digite a mensagem normalmente.", "Se houver sugestão, ela aparece acima da caixa: o trecho riscado e a correção.", "Clique em “Aplicar” para corrigir ou no × para dispensar."],
         where: "Atendimento › caixa de mensagem",
-        images: [{ file: "sugestao-escrita", caption: "Sugestão de trocar “um reunião” por “uma reunião”.", size: "small" }],
+        images: [{ src: "/notas-de-versao/sugestao-escrita.webp", caption: "Sugestão de trocar “um reunião” por “uma reunião”.", size: "small" }],
       },
       {
         type: "novo",
@@ -890,7 +886,7 @@ export const RELEASES: Release[] = [
         title: "Fila em destaque e lembrete",
         text: "Quando há clientes esperando, a aba Fila fica em destaque e quem está online recebe lembretes de tempos em tempos até alguém aceitar. Cada cliente aparece com o tempo de espera e o número de mensagens.",
         where: "Atendimento › aba Fila",
-        images: [{ file: "fila", caption: "Três clientes na fila, cada um com o botão Aceitar.", size: "small" }],
+        images: [{ src: "/notas-de-versao/fila.webp", caption: "Três clientes na fila, cada um com o botão Aceitar.", size: "small" }],
       },
       {
         type: "melhoria",
@@ -905,7 +901,7 @@ export const RELEASES: Release[] = [
         before: "Na lista de transferência, não dava para ter certeza de qual atendente estava selecionado.",
         after: "O escolhido fica realçado, e a lista mostra quem está online, em pausa (com o motivo) e a conexão de cada um.",
         requires: [PERMISSION.ATENDIMENTO_TRANSFERIR],
-        images: [{ file: "transfer-lista", caption: "Lista de atendentes com presença e conexão.", size: "small" }],
+        images: [{ src: "/notas-de-versao/transfer-lista.webp", caption: "Lista de atendentes com presença e conexão.", size: "small" }],
       },
       {
         type: "correcao",
@@ -920,7 +916,7 @@ export const RELEASES: Release[] = [
         title: "Presença ao longo do dia",
         text: "Gráfico com quantos atendentes estavam online e em pausa em cada hora do dia. Ajuda a ver horários com pouca gente. Você pode escolher a faixa de horas e salvar como padrão.",
         where: "Dashboard",
-        images: [{ file: "dash-presenca", caption: "Online (azul) e em pausa para almoço (laranja) por hora.", size: "small" }],
+        images: [{ src: "/notas-de-versao/dash-presenca.webp", caption: "Online (azul) e em pausa para almoço (laranja) por hora.", size: "small" }],
       },
       {
         type: "novo",
@@ -928,7 +924,7 @@ export const RELEASES: Release[] = [
         title: "Nuvem de palavras",
         text: "As palavras que os clientes mais usaram no período, em tamanho proporcional ao uso, com o número de vezes ao lado. Mostra rapidamente os assuntos mais procurados.",
         where: "Dashboard",
-        images: [{ file: "dash-nuvem", caption: "“pedido”, “ajuda” e “preciso” foram as mais usadas." }],
+        images: [{ src: "/notas-de-versao/dash-nuvem.webp", caption: "“pedido”, “ajuda” e “preciso” foram as mais usadas." }],
       },
       {
         type: "novo",
@@ -936,7 +932,7 @@ export const RELEASES: Release[] = [
         title: "Cards que levam à tela certa",
         text: "Clique em um card do Dashboard, como “Na fila agora” ou “Encerradas”, para abrir a Gestão já filtrada com aquelas conversas.",
         where: "Dashboard",
-        images: [{ file: "dash-cards-clicaveis", caption: "{1} Ao passar o mouse, o card mostra “Ver na Gestão →”.", size: "small" }],
+        images: [{ src: "/notas-de-versao/dash-cards-clicaveis.webp", caption: "{1} Ao passar o mouse, o card mostra “Ver na Gestão →”.", size: "small" }],
       },
       {
         type: "melhoria",
@@ -964,7 +960,7 @@ export const RELEASES: Release[] = [
         text: "Cadastre os motivos que aparecem para o atendente ao pausar, como Almoço, Reunião ou Treinamento. Desativar um motivo tira ele da lista, mas mantém o histórico das pausas.",
         where: "Respostas › Motivo de Pausa",
         requires: [PERMISSION.RESPOSTAS_MOTIVO_PAUSA_VISUALIZAR],
-        images: [{ file: "resp-pausa", caption: "Motivos cadastrados." }],
+        images: [{ src: "/notas-de-versao/resp-pausa.webp", caption: "Motivos cadastrados." }],
       },
       {
         type: "novo",
@@ -973,7 +969,7 @@ export const RELEASES: Release[] = [
         text: "Defina de quantos em quantos minutos os atendentes online são lembrados quando há clientes esperando na fila.",
         where: "Configurações › Fila",
         requires: [PERMISSION.CONFIGURACOES_FILA_VISUALIZAR],
-        images: [{ file: "config-fila", caption: "Intervalo do lembrete de fila, em minutos." }],
+        images: [{ src: "/notas-de-versao/config-fila.webp", caption: "Intervalo do lembrete de fila, em minutos." }],
       },
       {
         type: "melhoria",
@@ -1025,7 +1021,7 @@ export const RELEASES: Release[] = [
         title: "Menu Landing Page",
         text: "Personalize a tela de login (tamanho da logo, alinhamento e subtítulo), a ordem, os nomes e os ícones do menu principal e os títulos das telas. A prévia ao lado mostra o resultado antes de salvar.",
         where: "Menu lateral › Landing Page",
-        images: [{ file: "landing", caption: "Ajustes da tela de login com prévia ao vivo." }],
+        images: [{ src: "/notas-de-versao/landing.webp", caption: "Ajustes da tela de login com prévia ao vivo." }],
       },
       {
         type: "novo",
@@ -1034,7 +1030,7 @@ export const RELEASES: Release[] = [
         text: "Informe a versão atual do aplicativo. Quando ela muda, quem já instalou recebe um aviso para reinstalar e pegar o ícone e o nome novos.",
         where: "Configurações › Identidade visual",
         requires: [PERMISSION.CONFIGURACOES_IDENTIDADE_VISUALIZAR],
-        images: [{ file: "config-identidade", caption: "Identidade visual: logo, nome, cores e versão do app." }],
+        images: [{ src: "/notas-de-versao/config-identidade.webp", caption: "Identidade visual: logo, nome, cores e versão do app." }],
       },
       {
         type: "correcao",
@@ -1101,7 +1097,7 @@ export const RELEASES: Release[] = [
         steps: ["Em Respostas, abra Aceite, Transferência ou Encerramento.", "Edite a mensagem e clique nos campos acima do texto para inseri-los.", "Confira a prévia antes de salvar."],
         where: "Respostas › Aceite / Transferência / Encerramento",
         requires: [PERMISSION.RESPOSTAS_ACEITE_VISUALIZAR],
-        images: [{ file: "resp-aceite-editar", caption: "Mensagem de aceite com os campos e a prévia em azul." }],
+        images: [{ src: "/notas-de-versao/resp-aceite-editar.webp", caption: "Mensagem de aceite com os campos e a prévia em azul." }],
       },
       {
         type: "correcao",
@@ -1125,7 +1121,7 @@ export const RELEASES: Release[] = [
         text: "Defina a logo, o nome e a cor usados no PowerPoint e nos relatórios exportados, separados da identidade visual do sistema. A tela mostra uma prévia de cada exportação.",
         where: "Configurações › Exportações",
         requires: [PERMISSION.CONFIGURACOES_IDENTIDADE_VISUALIZAR],
-        images: [{ file: "config-exportacoes", caption: "Identidade das exportações, com prévia do PowerPoint e do relatório." }],
+        images: [{ src: "/notas-de-versao/config-exportacoes.webp", caption: "Identidade das exportações, com prévia do PowerPoint e do relatório." }],
       },
     ],
   },
@@ -1166,7 +1162,7 @@ export const RELEASES: Release[] = [
           "Digite o número com DDI e DDD {1}. Se ele não tiver WhatsApp, o aviso aparece logo abaixo.",
         ],
         where: "Atendimento › Nova conversa",
-        images: [{ file: "nova-conversa", caption: "{1} Número sem WhatsApp: o aviso aparece em vermelho.", size: "small" }],
+        images: [{ src: "/notas-de-versao/nova-conversa.webp", caption: "{1} Número sem WhatsApp: o aviso aparece em vermelho.", size: "small" }],
       },
       {
         type: "melhoria",
@@ -1188,7 +1184,7 @@ export const RELEASES: Release[] = [
         text: "O sininho guarda as suas notificações: mensagens novas, menções e transferências. Clique em uma para abrir a conversa. O número em vermelho mostra quantas ainda não foram lidas.",
         steps: ["Clique no sininho no topo da tela.", "Clique em uma notificação para abrir a conversa.", "Use “Marcar todas como lidas” para limpar."],
         where: "Topo da tela › sininho",
-        images: [{ file: "notificacoes", caption: "Notificações de mensagens novas, com atalho para a conversa.", size: "small" }],
+        images: [{ src: "/notas-de-versao/notificacoes.webp", caption: "Notificações de mensagens novas, com atalho para a conversa.", size: "small" }],
       },
       {
         type: "novo",
@@ -1197,7 +1193,7 @@ export const RELEASES: Release[] = [
         text: "Use os ícones da linha para transferir a conversa para outro atendente ou devolvê-la para a fila. A lista mostra quem está online, em pausa e offline.",
         where: "Gestão › ícones da linha",
         requires: [PERMISSION.GESTAO_GERENCIAR],
-        images: [{ file: "gestao-transferir", caption: "Transferir uma conversa para outro atendente.", size: "small" }],
+        images: [{ src: "/notas-de-versao/gestao-transferir.webp", caption: "Transferir uma conversa para outro atendente.", size: "small" }],
       },
       {
         type: "novo",
@@ -1206,7 +1202,7 @@ export const RELEASES: Release[] = [
         text: "O gestor pode encerrar uma conversa direto da Gestão e escolher se o cliente recebe ou não a mensagem de encerramento.",
         where: "Gestão › ícones da linha",
         requires: [PERMISSION.GESTAO_GERENCIAR],
-        images: [{ file: "gestao-encerrar", caption: "Encerrar com ou sem a mensagem de encerramento.", size: "small" }],
+        images: [{ src: "/notas-de-versao/gestao-encerrar.webp", caption: "Encerrar com ou sem a mensagem de encerramento.", size: "small" }],
       },
       {
         type: "correcao",
@@ -1221,7 +1217,7 @@ export const RELEASES: Release[] = [
         title: "Menu Respostas",
         text: "Respostas rápidas e mensagens automáticas ficam em um só menu, com uma aba para cada tipo.",
         where: "Menu lateral › Respostas",
-        images: [{ file: "resp-rapidas", caption: "Respostas rápidas com atalho, conexão e texto." }],
+        images: [{ src: "/notas-de-versao/resp-rapidas.webp", caption: "Respostas rápidas com atalho, conexão e texto." }],
       },
       {
         type: "novo",
@@ -1230,7 +1226,7 @@ export const RELEASES: Release[] = [
         text: "Mensagem enviada ao cliente quando a conversa é encerrada. Você escolhe para quais atendentes ela vale.",
         where: "Respostas › Encerramento",
         requires: [PERMISSION.RESPOSTAS_ENCERRAMENTO_VISUALIZAR],
-        images: [{ file: "resp-encerramento", caption: "Mensagem de encerramento e os usuários que a usam." }],
+        images: [{ src: "/notas-de-versao/resp-encerramento.webp", caption: "Mensagem de encerramento e os usuários que a usam." }],
       },
       {
         type: "novo",
@@ -1239,7 +1235,7 @@ export const RELEASES: Release[] = [
         text: "Mensagens enviadas ao cliente quando um atendente aceita a conversa ou quando ela é transferida. Exemplo: “Olá! Meu nome é Ana e vou continuar seu atendimento.”",
         where: "Respostas › Aceite e Transferência",
         requires: [PERMISSION.RESPOSTAS_ACEITE_VISUALIZAR],
-        images: [{ file: "resp-aceite", caption: "Mensagens de aceite cadastradas." }],
+        images: [{ src: "/notas-de-versao/resp-aceite.webp", caption: "Mensagens de aceite cadastradas." }],
       },
       {
         type: "novo",
@@ -1282,7 +1278,7 @@ export const RELEASES: Release[] = [
         steps: ["Na conversa, clique em Transferir.", "Escolha o atendente.", "Escreva a observação {1} e confirme."],
         where: "Atendimento › conversa › Transferir",
         requires: [PERMISSION.ATENDIMENTO_TRANSFERIR],
-        images: [{ file: "transferir-obs", caption: "{1} Observação para o colega.", size: "small" }],
+        images: [{ src: "/notas-de-versao/transferir-obs.webp", caption: "{1} Observação para o colega.", size: "small" }],
       },
       {
         type: "novo",
@@ -1328,24 +1324,3 @@ export const RELEASES: Release[] = [
     ],
   },
 ];
-
-export const RELEASE_NOTE_IMAGE_BASE = "/notas-de-versao/";
-
-function canSeeNote(note: ReleaseNote, role: Role, permissions: PermissionMap): boolean {
-  const area = RELEASE_NOTE_AREAS[note.area];
-  if (note.roles && !note.roles.includes(role)) return false;
-  if (area.adminOnly) return role === "ADMIN";
-  return [...area.requires, ...(note.requires ?? [])].every((p) => permissions[p]);
-}
-
-/** Releases trimmed to the notes this user can see; releases left empty are dropped. */
-export function visibleReleases(role: Role, permissions: PermissionMap): Release[] {
-  return RELEASES.map((r) => ({ ...r, notes: r.notes.filter((n) => canSeeNote(n, role, permissions)) })).filter((r) => r.notes.length > 0);
-}
-
-export function compareVersions(a: string, b: string): number {
-  const pa = a.split(".").map(Number);
-  const pb = b.split(".").map(Number);
-  for (let i = 0; i < 3; i++) if (pa[i] !== pb[i]) return pa[i] - pb[i];
-  return 0;
-}

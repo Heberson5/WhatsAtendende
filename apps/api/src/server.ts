@@ -7,6 +7,7 @@ import { processDueClosingMessages } from "./modules/satisfaction/satisfaction.s
 import { runHolidaySyncIfDue } from "./modules/holidays/holidays.service";
 import { sendQueueRemindersIfDue } from "./lib/queue-reminder";
 import { endIdleSessions } from "./modules/auth/auth.service";
+import { syncDefaultReleaseNotes } from "./modules/release-notes/release-notes.service";
 import { syncContactsIfDue } from "./lib/contacts-sync";
 import { env } from "./config/env";
 import { logger } from "./lib/logger";
@@ -44,6 +45,9 @@ async function main() {
   // Anyone actually still connected reconnects their socket within moments
   // of this process coming up and gets marked ONLINE again right away.
   await prisma.user.updateMany({ where: { presence: { not: "OFFLINE" } }, data: { presence: "OFFLINE" } });
+
+  // The release notes shipped with this version — each one copied into the database once (see syncDefaultReleaseNotes).
+  await syncDefaultReleaseNotes().catch((err) => logger.error({ err }, "failed to copy the shipped release notes"));
 
   const app = createApp();
   const httpServer = http.createServer(app);

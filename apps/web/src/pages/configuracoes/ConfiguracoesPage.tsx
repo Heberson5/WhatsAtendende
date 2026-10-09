@@ -1,6 +1,6 @@
 import { useSearchParams } from "react-router-dom";
 import clsx from "clsx";
-import { Clock3, FileDown, KeyRound, Mail, MailPlus, Palette, Phone, ShieldCheck, CalendarDays, type LucideIcon } from "lucide-react";
+import { Clock3, FileDown, KeyRound, Mail, MailPlus, Palette, Phone, ShieldCheck, CalendarDays, Sparkles, type LucideIcon } from "lucide-react";
 import { PERMISSION, type Permission } from "@whatsatendende/types";
 import { BrandingPanel } from "./BrandingPanel";
 import { AppInstallPanel } from "./AppInstallPanel";
@@ -10,11 +10,12 @@ import { FilaSettingsPanel } from "./FilaSettingsPanel";
 import { NumerosTelefonePanel } from "./NumerosTelefonePanel";
 import { EmailSettingsPanel } from "./EmailSettingsPanel";
 import { EmailTemplatesPanel } from "./EmailTemplatesPanel";
+import { NotasDeVersaoAdminPanel } from "./NotasDeVersaoAdminPanel";
 import { PermissionsPanel } from "./PermissionsPanel";
 import { SecuritySettingsPanel } from "./SecuritySettingsPanel";
 import { useAuthStore } from "../../store/auth-store";
 
-type Tab = "branding" | "exportacoes" | "email" | "email-templates" | "feriados" | "fila" | "telefone" | "seguranca" | "permissoes";
+type Tab = "branding" | "exportacoes" | "email" | "email-templates" | "feriados" | "fila" | "telefone" | "seguranca" | "permissoes" | "notas-de-versao";
 
 // Grouped by subject in the left-hand section menu.
 const TABS: { key: Tab; label: string; group: string; icon: LucideIcon }[] = [
@@ -27,6 +28,7 @@ const TABS: { key: Tab; label: string; group: string; icon: LucideIcon }[] = [
   { key: "email-templates", label: "Modelos de e-mail", group: "E-mail", icon: MailPlus },
   { key: "seguranca", label: "Segurança", group: "Segurança", icon: ShieldCheck },
   { key: "permissoes", label: "Permissões", group: "Segurança", icon: KeyRound },
+  { key: "notas-de-versao", label: "Notas de versão", group: "Sistema", icon: Sparkles },
 ];
 
 // Each sits behind its own finer permission on top of the CONFIGURACOES_GERENCIAR
@@ -70,7 +72,8 @@ export default function ConfiguracoesPage() {
   // configuracoes.gerenciar permission, same as the other Configurações
   // tabs — this is a UI-only restriction, not a backend one.)
   const visibleTabs = TABS.filter((t) => {
-    if (t.key === "permissoes" || t.key === "seguranca") return role === "ADMIN";
+    // Notas de versão is edited by administrators only (enforced by the API too — release-notes.routes.ts).
+    if (t.key === "permissoes" || t.key === "seguranca" || t.key === "notas-de-versao") return role === "ADMIN";
     const permission = TAB_PERMISSION[t.key];
     return !permission || permissions?.[permission];
   });
@@ -125,6 +128,7 @@ export default function ConfiguracoesPage() {
         {activeTab === "telefone" && <NumerosTelefonePanel />}
         {activeTab === "seguranca" && role === "ADMIN" && <SecuritySettingsPanel />}
         {activeTab === "permissoes" && role === "ADMIN" && <PermissionsPanel />}
+        {activeTab === "notas-de-versao" && role === "ADMIN" && <NotasDeVersaoAdminPanel />}
       </div>
     </div>
   );
