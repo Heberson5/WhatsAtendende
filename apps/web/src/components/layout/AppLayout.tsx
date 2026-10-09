@@ -78,13 +78,15 @@ export function AppLayout() {
   useEffect(() => {
     const socket = getSocket();
     if (!socket) return;
-    const handler = (payload?: { reason?: "ADMIN" | "NEW_LOGIN" | "SCHEDULE" }) => {
+    const handler = (payload?: { reason?: "ADMIN" | "NEW_LOGIN" | "SCHEDULE" | "INACTIVITY" }) => {
       toast.error(
         payload?.reason === "NEW_LOGIN"
           ? "Sua conta foi acessada em outro local. Esta sessão foi encerrada."
           : payload?.reason === "SCHEDULE"
             ? "Sua sessão foi encerrada: fora do horário de acesso permitido ou feriado."
-            : "Sua sessão foi encerrada por um administrador."
+            : payload?.reason === "INACTIVITY"
+              ? "Sessão encerrada por inatividade."
+              : "Sua sessão foi encerrada por um administrador."
       );
       clearSession();
       navigate("/login");
