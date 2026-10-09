@@ -457,8 +457,16 @@ export interface AutoMessageTemplateDTO {
   text: string;
   active: boolean;
   connectionScope: ConnectionScopeDTO;
+  /** Who it is sent for: everyone, or only when one of `users` takes the conversation (Respostas › Aceite › "Quem pode usar"). */
+  userScope: UserScopeDTO;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface UserScopeDTO {
+  allUsers: boolean;
+  /** Empty when allUsers. */
+  users: { id: string; displayName: string }[];
 }
 
 export interface WhatsAppConnectionSummaryDTO {

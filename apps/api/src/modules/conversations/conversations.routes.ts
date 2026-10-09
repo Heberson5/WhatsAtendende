@@ -274,7 +274,7 @@ async function sendAutoMessage(
   },
   sender: { id: string; name: string }
 ): Promise<void> {
-  const template = await getActiveTemplateFor(trigger, conversation.whatsappConnectionId);
+  const template = await getActiveTemplateFor(trigger, conversation.whatsappConnectionId, conversation.assignedAgentId);
   if (!template) return;
   const templateAgent = conversation.assignedAgent;
   const text = renderAutoMessageTemplate(template.text, {
