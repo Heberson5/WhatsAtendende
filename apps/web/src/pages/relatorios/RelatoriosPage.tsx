@@ -4,13 +4,15 @@ import { ChevronDown, Columns3, Download, FileSpreadsheet, FileText } from "luci
 import { api } from "../../lib/api";
 import { PeriodFilter, type PeriodValue } from "../../components/common/PeriodFilter";
 import { ConnectionFilter } from "../../components/common/ConnectionFilter";
+import { SatisfactionReport } from "../../components/reports/SatisfactionReport";
 
-type ReportKind = "attendance" | "per-agent" | "messages";
+type ReportKind = "attendance" | "per-agent" | "messages" | "satisfaction";
 
 const TABS: { key: ReportKind; label: string }[] = [
   { key: "attendance", label: "Atendimentos" },
   { key: "per-agent", label: "Por atendente" },
   { key: "messages", label: "Mensagens" },
+  { key: "satisfaction", label: "Pesquisa de satisfação" },
 ];
 
 const EXPORT_FORMATS: { key: "csv" | "pdf" | "xlsx"; label: string; icon: typeof Download }[] = [
@@ -53,6 +55,8 @@ export default function RelatoriosPage() {
       });
       return res.data;
     },
+    // The satisfaction tab has its own screen and query (SatisfactionReport).
+    enabled: tab !== "satisfaction",
   });
 
   const rows: Record<string, unknown>[] = Array.isArray(data) ? data : [];
@@ -70,7 +74,7 @@ export default function RelatoriosPage() {
 
   // See PROMPT: "Relatórios poder extrair em PDF e em xlsx" — alongside the
   // pre-existing CSV export, same three formats on every tab.
-  async function download(format: "csv" | "pdf" | "xlsx") {
+  async function download(format: "csv" | "pdf" | "xlsx", satisfactionTable?: "responses" | "agents") {
     setExportMenuOpen(false);
     const res = await api.get(`/reports/${tab}`, {
       params: {
@@ -79,14 +83,16 @@ export default function RelatoriosPage() {
         to: period.to,
         connectionId: connectionIds.length ? connectionIds : undefined,
         format,
-        columns: allColumns.length ? visibleColumns.join(",") : undefined,
+        columns: allColumns.length && !satisfactionTable ? visibleColumns.join(",") : undefined,
+        table: satisfactionTable,
+        tzOffsetMinutes: new Date().getTimezoneOffset(),
       },
       responseType: "blob",
     });
     const url = window.URL.createObjectURL(new Blob([res.data]));
     const link = document.createElement("a");
     link.href = url;
-    link.setAttribute("download", `relatorio-${tab}.${format}`);
+    link.setAttribute("download", satisfactionTable ? `relatorio-pesquisa-${satisfactionTable === "agents" ? "por-atendente" : "respostas"}.${format}` : `relatorio-${tab}.${format}`);
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -111,7 +117,7 @@ export default function RelatoriosPage() {
         <div className="flex flex-wrap items-center gap-3">
           <PeriodFilter value={period} onChange={setPeriod} />
           <ConnectionFilter value={connectionIds} onChange={setConnectionIds} />
-          {tab !== "messages" && allColumns.length > 0 && (
+          {tab !== "messages" && tab !== "satisfaction" && allColumns.length > 0 && (
             <div ref={columnsMenuRef} className="relative">
               <button
                 onClick={() => setColumnsMenuOpen((o) => !o)}
@@ -143,16 +149,38 @@ export default function RelatoriosPage() {
             {exportMenuOpen && (
               <>
                 <button className="fixed inset-0 z-10 cursor-default" onClick={() => setExportMenuOpen(false)} aria-label="Fechar menu de exportação" />
-                <div className="shadow-soft absolute right-0 top-full z-20 mt-1 w-44 rounded-card border border-border bg-surface p-1">
-                  {EXPORT_FORMATS.map((f) => (
-                    <button
-                      key={f.key}
-                      onClick={() => download(f.key)}
-                      className="focus-ring flex w-full items-center gap-2 rounded-card px-2.5 py-2 text-left text-sm hover:bg-surface-alt"
-                    >
-                      <f.icon className="h-4 w-4 text-muted" /> {f.label}
-                    </button>
-                  ))}
+                <div className={`shadow-soft absolute right-0 top-full z-20 mt-1 rounded-card border border-border bg-surface p-1 ${tab === "satisfaction" ? "w-60" : "w-44"}`}>
+                  {tab === "satisfaction" ? (
+                    (
+                      [
+                        { table: "responses", label: "Respostas (cliente e nota)" },
+                        { table: "agents", label: "Notas por atendente" },
+                      ] as const
+                    ).map((group) => (
+                      <div key={group.table} className="py-1">
+                        <p className="px-2.5 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted">{group.label}</p>
+                        {EXPORT_FORMATS.map((f) => (
+                          <button
+                            key={f.key}
+                            onClick={() => download(f.key, group.table)}
+                            className="focus-ring flex w-full items-center gap-2 rounded-card px-2.5 py-1.5 text-left text-sm hover:bg-surface-alt"
+                          >
+                            <f.icon className="h-4 w-4 text-muted" /> {f.label}
+                          </button>
+                        ))}
+                      </div>
+                    ))
+                  ) : (
+                    EXPORT_FORMATS.map((f) => (
+                      <button
+                        key={f.key}
+                        onClick={() => download(f.key)}
+                        className="focus-ring flex w-full items-center gap-2 rounded-card px-2.5 py-2 text-left text-sm hover:bg-surface-alt"
+                      >
+                        <f.icon className="h-4 w-4 text-muted" /> {f.label}
+                      </button>
+                    ))
+                  )}
                 </div>
               </>
             )}
@@ -171,7 +199,9 @@ export default function RelatoriosPage() {
         </div>
       )}
 
-      {tab !== "messages" && (
+      {tab === "satisfaction" && <SatisfactionReport period={period} connectionIds={connectionIds} />}
+
+      {tab !== "messages" && tab !== "satisfaction" && (
         <div className="shadow-soft flex-1 overflow-auto rounded-card border border-border bg-surface">
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-surface-alt text-left text-xs uppercase tracking-wide text-muted">

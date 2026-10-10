@@ -35,8 +35,9 @@ describe("Nova conversa › buscar nos contatos digitando", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useAuthStore.setState({ user: { id: "u1", role: "ADMIN" } as UserDTO, permissions: { "contatos.acessar": true } as never });
-    vi.mocked(api.get).mockImplementation((url: string, config?: { params?: { search?: string } }) => {
-      if (url === "/contacts") return Promise.resolve({ data: { items: config?.params?.search ? [contact({})] : [], total: 1 } }) as never;
+    vi.mocked(api.get).mockImplementation((url: string, config?: { params?: unknown }) => {
+      const search = (config?.params as { search?: string } | undefined)?.search;
+      if (url === "/contacts") return Promise.resolve({ data: { items: search ? [contact({})] : [], total: 1 } }) as never;
       if (url === "/settings/phone") return Promise.resolve({ data: { defaultCountryCodeEnabled: true, defaultCountryCode: "55", fixExtraNineEnabled: true } }) as never;
       return Promise.resolve({ data: [{ id: "vendas", name: "Vendas" }] }) as never;
     });

@@ -158,6 +158,69 @@ describe("apresentação do Dashboard", () => {
     expect(slides[titleIndex(slides, "O período em resumo")]).toContain("conversas encerradas");
   });
 
+  it("com o relatório da pesquisa: satisfação por atendente, evolução, por conexão e as notas baixas com o cliente", async () => {
+    const stats = (sent: number, answered: number, nps: number | null, promoters: number, passives: number, detractors: number, average: number | null) => ({
+      sent,
+      answered,
+      responseRate: sent ? Math.round((answered / sent) * 100) : null,
+      average,
+      nps,
+      promoters,
+      passives,
+      detractors,
+    });
+    const response = (contactName: string, agentName: string, score: number) => ({
+      surveyId: contactName,
+      conversationId: `c-${contactName}`,
+      sentAt: "2026-10-05T12:00:00.000Z",
+      answeredAt: "2026-10-05T12:05:00.000Z",
+      contactName,
+      contactPhone: "5565999990000",
+      agentName,
+      connectionName: "Suporte",
+      surveyName: "Pesquisa",
+      question: "De 0 a 10?",
+      score,
+      category: (score >= 9 ? "promoter" : score >= 7 ? "passive" : "detractor") as "promoter" | "passive" | "detractor",
+      status: "answered" as const,
+    });
+    const report: NonNullable<PresentationInput["satisfactionReport"]> = {
+      totals: { ...stats(20, 12, 25, 6, 3, 3, 7.8), distribution: [0, 0, 1, 1, 0, 0, 1, 1, 2, 3, 3], awaiting: 2 },
+      byAgent: [
+        { ...stats(12, 8, 50, 5, 2, 1, 8.4), agentId: "a1", agentName: "Ana Souza", lowest: 3, highest: 10 },
+        { ...stats(8, 4, -25, 1, 1, 2, 6.5), agentId: "a2", agentName: "Bruno Lima", lowest: 2, highest: 9 },
+      ],
+      byConnection: [
+        { ...stats(14, 9, 33, 5, 2, 2, 8.0), connectionId: "s", connectionName: "Suporte", connectionColor: "#0097B4" },
+        { ...stats(6, 3, 0, 1, 1, 1, 7.0), connectionId: "v", connectionName: "Vendas", connectionColor: "#7C3AED" },
+      ],
+      trend: [
+        { start: "2026-10-01T03:00:00.000Z", label: "01/10", answered: 5, average: 8.2, nps: 40 },
+        { start: "2026-10-02T03:00:00.000Z", label: "02/10", answered: 7, average: 7.5, nps: 14 },
+      ],
+      responses: [response("Marina Alves", "Ana Souza", 10), response("Rita Prado", "Bruno Lima", 3), response("Carlos Dias", "Bruno Lima", 2)],
+    };
+    const { slides, notes } = await open(input({ satisfactionReport: report }));
+    const byAgent = titleIndex(slides, "Satisfação por atendente");
+    const trend = titleIndex(slides, "Evolução da satisfação no período");
+    const byConnection = titleIndex(slides, "Satisfação por conexão");
+    const attention = titleIndex(slides, "Avaliações que pedem atenção");
+    const npsSlide = titleIndex(slides, "Como os clientes avaliam o atendimento");
+    expect([npsSlide, byAgent, trend, byConnection, attention].every((i) => i > 0)).toBe(true);
+    expect(npsSlide < byAgent && byAgent < trend && trend < byConnection && byConnection < attention).toBe(true);
+    expect(slides[byAgent]).toContain("Ana Souza");
+    expect(slides[byAgent]).toContain("+50");
+    expect(slides[byAgent]).toContain("-25");
+    expect(slides[attention]).toContain("Rita Prado");
+    expect(slides[attention]).toContain("Carlos Dias");
+    expect(slides[attention]).not.toContain("Marina Alves");
+    expect(notes.length).toBe(slides.length);
+
+    // Without answers in the period, none of these slides.
+    const empty = await open(input({ satisfactionReport: { ...report, totals: { ...report.totals, answered: 0 } } }));
+    expect(titleIndex(empty.slides, "Satisfação por atendente")).toBe(-1);
+  });
+
   it("a pesquisa antiga (1 a 5) não vira NPS", async () => {
     const legacy = { sent: 10, answered: 5, questions: [{ ...SATISFACTION!.questions[0], questionId: null, scaleMax: 5 as const, nps: null }] };
     const { slides } = await open(input({ satisfaction: legacy }));
