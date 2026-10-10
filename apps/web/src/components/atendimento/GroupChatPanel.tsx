@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, Bell, BellOff, Eye, PanelRight, Users } from "lucide-react";
+import { ArrowLeft, Bell, BellOff, Eye, History, Loader2, PanelRight, Users } from "lucide-react";
 import clsx from "clsx";
 import { PERMISSION, type GroupListItemDTO, type MessageDTO, type PaginatedResult } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
+import { getSocket } from "../../lib/socket";
 import { initials, seenByLabel, upToDateReaders } from "../../lib/groups";
 import { MessageBubble } from "./MessageBubble";
 import { Composer } from "./Composer";
@@ -31,10 +32,52 @@ export function GroupChatPanel({
   const [opened] = useState(() => ({ unread: group.unreadCount, lastReadAt: group.myLastReadAt }));
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const messagesQuery = useQuery({
+  // Newest 100 first; "Carregar mensagens anteriores" pages back through what's stored, then asks WhatsApp.
+  const messagesQuery = useInfiniteQuery({
     queryKey: ["group-messages", group.id],
-    queryFn: async () => (await api.get<PaginatedResult<MessageDTO>>(`/groups/${group.id}/messages`, { params: { limit: 100 } })).data,
+    queryFn: async ({ pageParam }) =>
+      (await api.get<PaginatedResult<MessageDTO>>(`/groups/${group.id}/messages`, { params: { limit: 100, cursor: pageParam } })).data,
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
   });
+  // Set while older messages are being added at the top: the view keeps its place instead of jumping to the end.
+  const keepPositionRef = useRef<number | null>(null);
+  const [askingWhatsApp, setAskingWhatsApp] = useState(false);
+  const accessToken = useAuthStore((s) => s.accessToken);
+
+  const olderHistory = useMutation({
+    mutationFn: () => api.post(`/groups/${group.id}/older-history`),
+    onSuccess: () => setAskingWhatsApp(true),
+    onError: (err) => toast.error(getApiErrorMessage(err)),
+  });
+  async function loadOlder() {
+    keepPositionRef.current = scrollRef.current?.scrollHeight ?? null;
+    if (messagesQuery.hasNextPage) await messagesQuery.fetchNextPage();
+    else olderHistory.mutate();
+  }
+  // What WhatsApp sends back arrives a moment later (group:history); nothing within 20 s means nothing came.
+  useEffect(() => {
+    if (!askingWhatsApp) return;
+    const socket = getSocket();
+    const onHistory = async (payload: { conversationId: string; count: number }) => {
+      if (payload.conversationId !== group.id) return;
+      setAskingWhatsApp(false);
+      keepPositionRef.current = scrollRef.current?.scrollHeight ?? null;
+      const refreshed = await messagesQuery.refetch();
+      if (refreshed.data?.pages.at(-1)?.nextCursor) await messagesQuery.fetchNextPage();
+      toast.success(payload.count === 1 ? "1 mensagem anterior carregada." : `${payload.count} mensagens anteriores carregadas.`);
+    };
+    socket?.on("group:history", onHistory);
+    const timer = setTimeout(() => {
+      setAskingWhatsApp(false);
+      toast.info("O WhatsApp não enviou mensagens anteriores agora. Pode ser que o celular não tenha mais essas mensagens; tente de novo mais tarde.");
+    }, 20_000);
+    return () => {
+      socket?.off("group:history", onHistory);
+      clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [askingWhatsApp, group.id, accessToken]);
 
   const markRead = useMutation({
     mutationFn: () => api.post(`/groups/${group.id}/read`),
@@ -43,12 +86,13 @@ export function GroupChatPanel({
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
     },
   });
-  const messageCount = messagesQuery.data?.items.length ?? 0;
+  const pages = messagesQuery.data?.pages;
+  const newestId = pages?.[0]?.items.at(-1)?.id;
   // Opening it, and every new message while it is open, is read by this person.
   useEffect(() => {
     markRead.mutate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [group.id, messageCount]);
+  }, [group.id, newestId]);
 
   const muteMutation = useMutation({
     mutationFn: (muted: boolean) => (muted ? api.post(`/groups/${group.id}/mute`) : api.delete(`/groups/${group.id}/mute`)),
@@ -85,7 +129,7 @@ export function GroupChatPanel({
   });
   const sendLocation = useMutation({ mutationFn: (input: { latitude: number; longitude: number }) => api.post(`/groups/${group.id}/location`, input), ...afterSend });
 
-  const messages = useMemo(() => messagesQuery.data?.items ?? [], [messagesQuery.data]);
+  const messages = useMemo(() => [...(pages ?? [])].reverse().flatMap((p) => p.items), [pages]);
   const messageById = useMemo(() => new Map(messages.map((m) => [m.id, m])), [messages]);
   const firstUnreadId = useMemo(() => {
     if (opened.unread === 0) return null;
@@ -99,14 +143,20 @@ export function GroupChatPanel({
 
   useEffect(() => {
     const el = scrollRef.current;
-    if (!el) return;
+    if (!el || messages.length === 0) return;
+    // Older messages were added above: stay on what was on screen.
+    if (keepPositionRef.current !== null) {
+      el.scrollTop += el.scrollHeight - keepPositionRef.current;
+      keepPositionRef.current = null;
+      return;
+    }
     const divider = el.querySelector("[data-unread-divider]");
     // The day's pill sticks to the top: leave room for it above the "não lidas" cut.
-    if (divider && opened.unread > 0 && messages.length && messageCount === messages.length && !el.dataset.scrolled) {
+    if (divider && opened.unread > 0 && !el.dataset.scrolled) {
       el.scrollTop += divider.getBoundingClientRect().top - el.getBoundingClientRect().top - 48;
       el.dataset.scrolled = "1";
     } else el.scrollTop = el.scrollHeight;
-  }, [messages.length, messageCount, opened.unread]);
+  }, [messages.length, newestId, opened.unread]);
 
   const timeline: TimelineEntry[] = messages.map((m) => ({
     key: m.id,
@@ -202,6 +252,22 @@ export function GroupChatPanel({
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">
         <div className="space-y-3">
+          {messages.length > 0 && (
+            <div className="flex justify-center">
+              <button
+                onClick={() => void loadOlder()}
+                disabled={askingWhatsApp || olderHistory.isPending || messagesQuery.isFetchingNextPage}
+                className="focus-ring flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1 text-xs font-medium text-muted shadow-sm hover:text-[var(--color-text)] disabled:opacity-70"
+              >
+                {askingWhatsApp || olderHistory.isPending || messagesQuery.isFetchingNextPage ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <History className="h-3.5 w-3.5" />
+                )}
+                {askingWhatsApp ? "Buscando no WhatsApp…" : "Carregar mensagens anteriores"}
+              </button>
+            </div>
+          )}
           {messages.length === 0 && !messagesQuery.isLoading ? (
             <p className="py-10 text-center text-sm text-muted">Nenhuma mensagem neste grupo desde que os grupos foram ligados.</p>
           ) : (

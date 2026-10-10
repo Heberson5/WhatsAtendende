@@ -8,6 +8,7 @@ import type {
   GroupInfo,
   HistorySyncEvent,
   InboundMessageEvent,
+  OlderHistoryAnchor,
   ReactionEvent,
   SendResult,
   SendTextOptions,
@@ -43,6 +44,14 @@ const DEVICE_CONTACTS: MockContactSeed[] = [
  * events asynchronously and keeps in-memory state. It is intentionally
  * isolated from BaileysWhatsAppProvider so the two never share code paths.
  */
+// Fictitious group participants and messages for the simulated older history of a group (dev/tests only).
+const MOCK_GROUP_PEOPLE = [
+  { jid: "5565991110001@s.whatsapp.net", phone: "5565991110001", name: "Ana Paula (Recepção)", isAdmin: true },
+  { jid: "5565991110002@s.whatsapp.net", phone: "5565991110002", name: "Carlos Mendes", isAdmin: false },
+  { jid: "5565991110003@s.whatsapp.net", phone: "5565991110003", name: "Rita Fernandes", isAdmin: false },
+];
+const MOCK_GROUP_HISTORY = ["Pessoal, amanhã abrimos às 7h.", "Combinado, obrigado pelo aviso!", "Ontem a agenda fechou às 18h."];
+
 export class MockWhatsAppProvider implements WhatsAppProvider {
   private emitter = new EventEmitter();
   private status: WhatsAppStatusSnapshot = {
@@ -183,19 +192,33 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
   }
 
   /** Simulates finding a couple of older messages predating whatever this app already has — see BaileysWhatsAppProvider's real implementation. */
-  async fetchOlderHistory(chatId: string, anchor: { providerMessageId: string; fromMe: boolean; timestamp: Date }, count: number): Promise<void> {
+  /** Test helper: every older-history request, exactly as it "reached WhatsApp". */
+  readonly olderHistoryRequests: { chatId: string; anchor: OlderHistoryAnchor; count: number }[] = [];
+
+  async fetchOlderHistory(chatId: string, anchor: OlderHistoryAnchor, count: number): Promise<void> {
     this.ensureConnected();
+    this.olderHistoryRequests.push({ chatId, anchor, count });
     const phone = chatId.replace(/\D/g, "");
     const batchSize = Math.min(count, 3);
-    const messages = Array.from({ length: batchSize }, (_, i) => ({
-      providerMessageId: `mock-hist-${randomUUID()}`,
-      chatId,
-      phone,
-      fromMe: i % 2 === 0,
-      type: "TEXT" as const,
-      body: `Mensagem anterior a conexao (simulada) ${batchSize - i}`,
-      timestamp: new Date(anchor.timestamp.getTime() - (i + 1) * 60_000),
-    }));
+    // In a group, the simulated messages come from its participants (or a made-up one).
+    const known = this.mockGroups.find((g) => g.chatId === chatId)?.participants ?? [];
+    const people = known.length ? known : MOCK_GROUP_PEOPLE;
+    const isGroup = chatId.endsWith("@g.us");
+    const messages: HistorySyncEvent["messages"] = Array.from({ length: batchSize }, (_, i) => {
+      const person = people[i % people.length];
+      return {
+        providerMessageId: `mock-hist-${randomUUID()}`,
+        chatId,
+        phone,
+        fromMe: isGroup ? false : i % 2 === 0,
+        type: "TEXT" as const,
+        body: isGroup ? MOCK_GROUP_HISTORY[i % MOCK_GROUP_HISTORY.length] : `Mensagem anterior a conexao (simulada) ${batchSize - i}`,
+        timestamp: new Date(anchor.timestamp.getTime() - (i + 1) * 60_000),
+        ...(isGroup
+          ? { group: { participantJid: person.jid, participantPhone: person.phone, participantName: person.name } }
+          : {}),
+      };
+    });
     setTimeout(() => this.emitter.emit("historySync", { contacts: [], chats: [], messages } satisfies HistorySyncEvent), 300);
   }
 

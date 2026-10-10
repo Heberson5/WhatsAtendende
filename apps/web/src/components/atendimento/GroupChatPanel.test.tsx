@@ -125,6 +125,22 @@ describe("Grupos no Atendimento", () => {
     await waitFor(() => expect(api.post).toHaveBeenCalledWith("/groups/g1/mute"));
   });
 
+  it("'Carregar mensagens anteriores' mostra primeiro o que já está guardado e, acabando, pede ao WhatsApp", async () => {
+    const page = (items: MessageDTO[], nextCursor: string | null) => ({ data: { items, nextCursor } }) as never;
+    vi.mocked(api.get)
+      .mockResolvedValueOnce(page([message("m9", "Mais recente", "2026-10-09T10:09:00.000Z")], "m9"))
+      .mockResolvedValueOnce(page([message("m1", "Guardada mais antiga", "2026-10-08T10:00:00.000Z")], null));
+    renderWithClient(<GroupChatPanel group={group({ unreadCount: 0 })} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Carregar mensagens anteriores" }));
+    expect(await screen.findByText("Guardada mais antiga")).toBeInTheDocument();
+    expect(api.get).toHaveBeenLastCalledWith("/groups/g1/messages", { params: { limit: 100, cursor: "m9" } });
+    expect(api.post).not.toHaveBeenCalledWith("/groups/g1/older-history");
+
+    fireEvent.click(screen.getByRole("button", { name: "Carregar mensagens anteriores" }));
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith("/groups/g1/older-history"));
+    expect(await screen.findByRole("button", { name: /Buscando no WhatsApp/ })).toBeDisabled();
+  });
+
   it("Leitura da equipe: quem leu tudo, quem abriu e tem não lidas, e quem não abriu", () => {
     vi.mocked(api.get).mockResolvedValue({ data: [] } as never);
     renderWithClient(

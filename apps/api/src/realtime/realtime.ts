@@ -33,6 +33,11 @@ export const realtimeEvents = {
     for (const userId of userIds) getIO()?.to(ROOMS.user(userId)).emit("group:read", { conversationId, userId: readerId });
     getIO()?.to(ROOMS.oversight()).emit("groups:updated");
   },
+  /** Older messages of a group arrived from WhatsApp (the "Carregar mensagens anteriores" button). */
+  groupHistory: (userIds: string[], conversationId: string, count: number) => {
+    for (const userId of userIds) getIO()?.to(ROOMS.user(userId)).emit("group:history", { conversationId, count });
+    getIO()?.to(ROOMS.oversight()).emit("group:history", { conversationId, count });
+  },
   /** Groups list changed (a message, groups turned on/off) — administrators see every group. */
   groupsChanged: () => {
     getIO()?.to(ROOMS.oversight()).emit("groups:updated");

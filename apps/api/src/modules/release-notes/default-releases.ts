@@ -11,6 +11,27 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.4.2",
+    date: "10 out 2026",
+    name: "Histórico dos grupos",
+    summary: "Os grupos ganham o botão Carregar mensagens anteriores, que traz do WhatsApp as mensagens de antes de os grupos serem ligados.",
+    notes: [
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "Carregar mensagens anteriores nos grupos",
+        text: "No alto de um grupo aberto, o botão Carregar mensagens anteriores mostra primeiro as mensagens que o sistema já tem guardadas e, quando elas acabam, pede ao WhatsApp mais 50 mensagens de antes, com o nome e o número de quem escreveu cada uma. As mensagens antigas entram como já lidas, para ninguém ficar com o contador cheio. O histórico vem do celular do número: ele precisa estar ligado e ainda ter essas mensagens. Fotos, áudios e documentos antigos aparecem sem o arquivo. O grupo precisa ter pelo menos uma mensagem recebida depois que os grupos foram ligados, para servir de ponto de partida.",
+        steps: ["Abra o grupo e clique em Carregar mensagens anteriores {1}, no alto das mensagens.", "As mensagens antigas aparecem acima das que já estavam {1}, e um aviso diz quantas chegaram {2}.", "Clique de novo para buscar mais. Se nada chegar, o aviso diz que o WhatsApp não enviou mensagens anteriores."],
+        where: "Atendimento › Grupos › grupo aberto",
+        requires: [PERMISSION.ATENDIMENTO_GRUPOS_VISUALIZAR],
+        images: [
+          { src: "/notas-de-versao/grupos-historico-botao.webp", caption: "{1} O botão no alto das mensagens do grupo", size: "small" },
+          { src: "/notas-de-versao/grupos-historico-carregado.webp", caption: "{1} As mensagens anteriores, com quem escreveu · {2} Quantas chegaram" },
+        ],
+      },
+    ],
+  },
+  {
     version: "2.4.1",
     date: "10 out 2026",
     name: "Encerrar sem mensagem também não envia a pesquisa",

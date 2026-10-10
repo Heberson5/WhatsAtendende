@@ -265,6 +265,45 @@ describe("WhatsApp groups in Atendimento", () => {
     expect(denied.text).not.toMatch(/sem conteudo/);
   });
 
+  it("'Carregar mensagens anteriores' asks WhatsApp from the oldest message, with its author, and the older ones come in already read", async () => {
+    const [group] = (await request(app).get("/api/groups").set("Authorization", `Bearer ${bianca}`)).body;
+    const unreadBefore = group.unreadCount;
+    const oldest = await prisma.message.findFirstOrThrow({ where: { conversationId: group.id, providerMessageId: { not: null } }, orderBy: { createdAt: "asc" } });
+    const customerMessagesBefore = await prisma.message.count({ where: { conversation: { status: { not: "GROUP" } } } });
+
+    const res = await request(app).post(`/api/groups/${group.id}/older-history`).set("Authorization", `Bearer ${bianca}`);
+    expect(res.status).toBe(202);
+    expect(provider.olderHistoryRequests.at(-1)).toMatchObject({
+      chatId: GROUP,
+      count: 50,
+      anchor: { providerMessageId: oldest.providerMessageId, fromMe: false, participant: oldest.senderParticipantJid },
+    });
+
+    for (let i = 0; i < 40 && (await prisma.message.count({ where: { conversationId: group.id, createdAt: { lt: oldest.createdAt } } })) < 3; i++) await wait(50);
+    const older = await prisma.message.findMany({ where: { conversationId: group.id, createdAt: { lt: oldest.createdAt } }, orderBy: { createdAt: "asc" } });
+    expect(older).toHaveLength(3);
+    expect(older.every((m) => m.direction === "INBOUND" && m.readAt !== null && m.senderParticipantName)).toBe(true);
+    expect(older.map((m) => m.senderParticipantName)).toEqual(expect.arrayContaining(["Ana Souza", "Carlos Lima"]));
+
+    // Read for everybody, and never mixed into the customer conversations.
+    const after = (await request(app).get("/api/groups").set("Authorization", `Bearer ${bianca}`)).body[0];
+    expect(after.unreadCount).toBe(unreadBefore);
+    expect(await prisma.message.count({ where: { conversation: { status: { not: "GROUP" } } } })).toBe(customerMessagesBefore);
+
+    // Somebody of another number can't ask.
+    expect((await request(app).post(`/api/groups/${group.id}/older-history`).set("Authorization", `Bearer ${outro}`)).status).toBe(404);
+  });
+
+  it("a group with no message yet has nothing to start the older history from", async () => {
+    const empty = await prisma.contact.create({ data: { whatsappConnectionId: connectionId, providerChatId: "120363000000000099@g.us", isGroup: true, name: "Sem mensagens" } });
+    const conv = await prisma.conversation.create({ data: { contactId: empty.id, whatsappConnectionId: connectionId, status: "GROUP" } });
+    const res = await request(app).post(`/api/groups/${conv.id}/older-history`).set("Authorization", `Bearer ${bianca}`);
+    expect(res.status).toBe(400);
+    expect(res.body.message ?? res.text).toMatch(/ponto de partida/);
+    await prisma.conversation.delete({ where: { id: conv.id } });
+    await prisma.contact.delete({ where: { id: empty.id } });
+  });
+
   it("turning groups off stops new messages and hides the tab; customer conversations are untouched", async () => {
     await createWaitingConversation("5565977776666", connectionId);
     await request(app).patch(`/api/whatsapp/connections/${connectionId}/groups`).set("Authorization", `Bearer ${admin}`).send({ enabled: false });
@@ -275,5 +314,29 @@ describe("WhatsApp groups in Atendimento", () => {
     expect((await request(app).get("/api/groups").set("Authorization", `Bearer ${lucas}`)).body).toHaveLength(0);
     const queue = (await request(app).get("/api/conversations/queue").set("Authorization", `Bearer ${lucas}`)).body;
     expect(queue.some((c: { contact: { phone: string } }) => c.contact.phone === "5565977776666")).toBe(true);
+  });
+});
+
+describe("importGroupHistory", () => {
+  it("adds a message only once, and ignores groups the app doesn't show", async () => {
+    const { importGroupHistory } = await import("../src/modules/groups/groups.service");
+    const connection = await prisma.whatsAppConnection.create({ data: { name: "HistOnce", status: "CONNECTED", groupsEnabled: true, groupsEnabledAt: new Date() } });
+    const contact = await prisma.contact.create({ data: { whatsappConnectionId: connection.id, providerChatId: "120363000000000777@g.us", isGroup: true, name: "Hist" } });
+    const conv = await prisma.conversation.create({ data: { contactId: contact.id, whatsappConnectionId: connection.id, status: "GROUP" } });
+    const msg = (id: string, chatId: string) => ({
+      providerMessageId: id,
+      chatId,
+      phone: chatId.split("@")[0],
+      fromMe: false,
+      type: "TEXT" as const,
+      body: "antiga",
+      timestamp: new Date("2026-01-01T10:00:00Z"),
+      group: { participantJid: "5565911112222@s.whatsapp.net", participantPhone: "5565911112222", participantName: "Rita" },
+    });
+    const batch = [msg("hist-once-1", "120363000000000777@g.us"), msg("hist-unknown-1", "120363000000000888@g.us")];
+    expect([...(await importGroupHistory(connection.id, batch)).values()]).toEqual([1]);
+    expect([...(await importGroupHistory(connection.id, batch)).values()]).toEqual([]);
+    expect(await prisma.message.count({ where: { conversationId: conv.id } })).toBe(1);
+    expect(await prisma.message.count({ where: { providerMessageId: "hist-unknown-1" } })).toBe(0);
   });
 });

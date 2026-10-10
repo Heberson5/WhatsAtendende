@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import {
   createWhatsAppProvider,
   CloudApiWhatsAppProvider,
+  isGroupChat,
   type CloudApiWebhookValue,
   type InboundMessageEvent,
   type SendResult,
@@ -138,6 +139,23 @@ export async function syncReadReceiptToDevice(conversationId: string): Promise<v
   } catch (err) {
     logger.error({ err, conversationId }, "failed to sync a WhatsApp read receipt to the linked phone");
   }
+}
+
+/**
+ * "Carregar mensagens anteriores" in a group: asks WhatsApp for one batch
+ * of messages older than the oldest the app has — same bounded, on-demand
+ * request as requestOlderHistory for a customer. What comes back (if the
+ * linked phone still has it) arrives through onHistorySync.
+ */
+export async function requestOlderGroupHistory(groupId: string): Promise<void> {
+  const group = await prisma.conversation.findUnique({ where: { id: groupId }, include: { contact: true, whatsappConnection: true } });
+  if (!group || group.status !== "GROUP" || !group.contact.providerChatId) throw Errors.notFound("Grupo nao encontrado");
+  if (group.whatsappConnection?.status !== "CONNECTED") {
+    throw Errors.badRequest("A conexão de WhatsApp está desconectada — não é possível buscar mensagens anteriores");
+  }
+  const anchor = await groupsService.getOldestGroupAnchor(groupId);
+  if (!anchor) throw Errors.badRequest("Este grupo ainda não tem uma mensagem recebida para servir de ponto de partida. Aguarde a próxima mensagem do grupo.");
+  await getProvider(group.whatsappConnectionId!).fetchOlderHistory(group.contact.providerChatId, anchor, HISTORY_BACKFILL_BATCH_SIZE);
 }
 
 /** A group's name and participants straight from WhatsApp (cached by the provider); null when it can't be read. */
@@ -648,15 +666,22 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
           .updateMany({ where: { whatsappConnectionId: connectionId, phone: c.phone, photoUrl: null }, data: { photoUrl } })
           .catch(() => undefined);
       }
-      if (event.messages.length > 0) {
+      // A group's history belongs to the Grupos tab, never to the customer conversations below.
+      const groupMessages = event.messages.filter((m) => m.group || isGroupChat(m.chatId));
+      if (groupMessages.length > 0) {
+        const added = await groupsService.importGroupHistory(connectionId, groupMessages);
+        if (added.size > 0) logger.info({ connectionId, groups: added.size }, "imported a WhatsApp group history batch");
+      }
+      const customerMessages = groupMessages.length > 0 ? event.messages.filter((m) => !(m.group || isGroupChat(m.chatId))) : event.messages;
+      if (customerMessages.length > 0) {
         const unreadChatIds = new Set(event.chats.filter((c) => c.unreadCount > 0).map((c) => c.chatId));
         const { touchedConversationIds, newQueueConversationIds } = await conversationsService.importHistoricalMessages(
           connectionId,
-          event.messages,
+          customerMessages,
           unreadChatIds
         );
         logger.info(
-          { connectionId, count: event.messages.length, newQueueConversations: newQueueConversationIds.size },
+          { connectionId, count: customerMessages.length, newQueueConversations: newQueueConversationIds.size },
           "imported a WhatsApp history sync batch"
         );
         // Without this, a conversation already open in ChatPanel when an
