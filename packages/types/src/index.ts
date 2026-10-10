@@ -452,6 +452,55 @@ export interface SatisfactionQuestionSummaryDTO {
   nps: number | null;
 }
 
+/** NPS buckets of a group of answers (0–10 scale): 9–10 promoters, 7–8 passives, 0–6 detractors. */
+export interface SatisfactionScoreStatsDTO {
+  sent: number;
+  answered: number;
+  /** answered ÷ sent × 100, rounded; null when nothing was sent. */
+  responseRate: number | null;
+  /** Average score, one decimal; null without answers. */
+  average: number | null;
+  nps: number | null;
+  promoters: number;
+  passives: number;
+  detractors: number;
+}
+
+/** Relatórios › Pesquisa de satisfação — only the 0–10 (NPS) surveys of the period. */
+export interface SatisfactionReportDTO {
+  totals: SatisfactionScoreStatsDTO & {
+    /** Answers per score — index is the score (0 to 10). */
+    distribution: number[];
+    /** Sent and still waiting for the customer's score. */
+    awaiting: number;
+  };
+  byAgent: (SatisfactionScoreStatsDTO & { agentId: string | null; agentName: string; lowest: number | null; highest: number | null })[];
+  byConnection: (SatisfactionScoreStatsDTO & { connectionId: string; connectionName: string; connectionColor: string })[];
+  /** Day by day (or week by week, for periods longer than a month), oldest first. */
+  trend: { start: string; label: string; answered: number; average: number | null; nps: number | null }[];
+  /** Every survey of the period, newest first (answered or not). */
+  responses: SatisfactionResponseDTO[];
+}
+
+export type SatisfactionCategory = "promoter" | "passive" | "detractor";
+
+export interface SatisfactionResponseDTO {
+  surveyId: string;
+  conversationId: string;
+  sentAt: string;
+  answeredAt: string | null;
+  contactName: string | null;
+  contactPhone: string | null;
+  agentName: string | null;
+  connectionName: string;
+  surveyName: string | null;
+  question: string | null;
+  score: number | null;
+  category: SatisfactionCategory | null;
+  /** answered, awaiting (still inside the answer window) or expired (the customer never answered). */
+  status: "answered" | "awaiting" | "expired";
+}
+
 export interface SatisfactionSummaryDTO {
   sent: number;
   answered: number;

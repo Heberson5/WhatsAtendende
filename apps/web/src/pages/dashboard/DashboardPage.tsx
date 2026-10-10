@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { CheckCircle2, Clock, Inbox, MessageSquare, Presentation, Timer, Users } from "lucide-react";
 import { toast } from "sonner";
-import { PERMISSION, type PresenceByHourDTO, type SatisfactionSummaryDTO } from "@whatsatendende/types";
+import { PERMISSION, type PresenceByHourDTO, type SatisfactionReportDTO, type SatisfactionSummaryDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
 import { PeriodFilter, type PeriodValue } from "../../components/common/PeriodFilter";
@@ -190,6 +190,27 @@ export default function DashboardPage() {
           : selectedNames.length === connectionIds.length && selectedNames.length <= 3
             ? `${selectedNames.length === 1 ? "Conexão" : "Conexões"}: ${selectedNames.join(", ")}`
             : `${connectionIds.length} conexões`;
+      // The satisfaction detail (per attendant, over time, low scores) — for whoever can open Relatórios. If it
+      // can't be read, the presentation still goes out with the Dashboard's own satisfaction slide.
+      let satisfactionReport: SatisfactionReportDTO | null = null;
+      if (permissions?.[PERMISSION.RELATORIOS_ACESSAR]) {
+        try {
+          satisfactionReport = (
+            await api.get<SatisfactionReportDTO>("/reports/satisfaction", {
+              params: {
+                period: period.period,
+                from: period.from,
+                to: period.to,
+                agentId: agentId === "all" ? undefined : agentId,
+                connectionId: connectionIds.length ? connectionIds : undefined,
+                tzOffsetMinutes: new Date().getTimezoneOffset(),
+              },
+            })
+          ).data;
+        } catch {
+          satisfactionReport = null;
+        }
+      }
       const agentText = agentId === "all" ? "todos os atendentes" : `atendente: ${agents?.find((a) => a.id === agentId)?.displayName ?? "1 atendente"}`;
       await exportDashboardPptx({
         data,
@@ -197,6 +218,7 @@ export default function DashboardPage() {
         branding: exportBranding ?? null,
         scopeLabel: `${connectionsText} · ${agentText}`,
         satisfaction: satisfaction ?? null,
+        satisfactionReport,
         team: team ?? null,
         wordCloud: wordCloud ?? [],
         presenceByHour: presenceByHour ?? null,

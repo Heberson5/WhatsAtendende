@@ -1,5 +1,5 @@
 import type PptxGenJS from "pptxgenjs";
-import type { PresenceByHourDTO, SatisfactionQuestionSummaryDTO, SatisfactionSummaryDTO } from "@whatsatendende/types";
+import type { PresenceByHourDTO, SatisfactionQuestionSummaryDTO, SatisfactionReportDTO, SatisfactionSummaryDTO } from "@whatsatendende/types";
 import type { TeamData } from "../components/dashboard/TeamCards";
 import type { HourRange } from "../components/dashboard/PresenceByHourChart";
 import { darken, lighten } from "./chart-theme";
@@ -50,6 +50,8 @@ export interface PresentationInput {
   scopeLabel: string;
   data: DashboardSnapshot;
   satisfaction: SatisfactionSummaryDTO | null;
+  /** Relatórios › Pesquisa de satisfação for the same period — per attendant, over time, per connection, the low scores. */
+  satisfactionReport?: SatisfactionReportDTO | null;
   team: TeamData | null;
   wordCloud: { word: string; count: number }[];
   presenceByHour: PresenceByHourDTO | null;
@@ -671,6 +673,153 @@ export function buildDashboardPresentation(PptxGen: typeof PptxGenJS, input: Pre
         `Pergunta enviada: ${nps.question}`,
       ].join("\n")
     );
+  }
+
+  // ---- 6b-6e. Satisfação em detalhe (Relatórios › Pesquisa de satisfação) ----
+  const report = input.satisfactionReport;
+  if (report && report.totals.answered > 0) {
+    if (!nps) pptx.addSection({ title: "Satisfação" });
+    const npsColor = (value: number | null) => (value === null ? MUTED : { success: GREEN, primary: C.brand, warning: AMBER, danger: RED }[npsZone(value).tone]);
+    const headCell = (h: string, i: number) => ({
+      text: h,
+      options: { bold: true, color: WHITE, fill: { color: C.deep }, align: i === 0 ? ("left" as const) : ("right" as const), fontSize: 13 },
+    });
+    const tableOptions = (rows: number, colW: number[], name: string): PptxGenJS.TableProps => ({
+      x: M,
+      y: CONTENT_TOP,
+      w: CONTENT_W,
+      colW,
+      rowH: Math.min(0.55, Math.max(0.4, (CONTENT_BOTTOM - CONTENT_TOP) / (rows + 1))),
+      fontFace: FONT,
+      valign: "middle",
+      margin: [0.04, 0.12, 0.04, 0.12],
+      border: { type: "solid", pt: 0.5, color: LINE },
+      autoPage: false,
+      objectName: name,
+    });
+    const average = (v: number | null) => (v === null ? "-" : v.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }));
+
+    // 6b. Por atendente — who the customers rate best, with the full NPS breakdown.
+    const agents = report.byAgent.filter((a) => a.sent > 0);
+    const agentPages = Math.ceil(agents.length / AGENT_ROWS_PER_SLIDE);
+    for (let page = 0; page < agentPages; page++) {
+      const rows = agents.slice(page * AGENT_ROWS_PER_SLIDE, (page + 1) * AGENT_ROWS_PER_SLIDE);
+      const slide = contentSlide("Satisfação", "Satisfação dos clientes", agentPages > 1 ? `Satisfação por atendente (${page + 1} de ${agentPages})` : "Satisfação por atendente");
+      const header = ["Atendente", "Pesquisas", "Respostas", "Taxa", "Nota média", "NPS", "Promotores", "Neutros", "Detratores"];
+      const body = rows.map((a, r) => {
+        const fill = { color: r % 2 === 0 ? WHITE : "F8FAFC" };
+        const values = [
+          a.agentName,
+          formatNumber(a.sent),
+          formatNumber(a.answered),
+          a.responseRate === null ? "-" : `${a.responseRate}%`,
+          average(a.average),
+          a.nps === null ? "-" : formatNps(a.nps),
+          formatNumber(a.promoters),
+          formatNumber(a.passives),
+          formatNumber(a.detractors),
+        ];
+        return values.map((value, i) => ({
+          text: value,
+          options: {
+            fill,
+            color: i === 0 ? INK : i === 5 ? npsColor(a.nps) : BODY,
+            bold: i === 0 || i === 5,
+            align: i === 0 ? ("left" as const) : ("right" as const),
+            fontSize: 13,
+          },
+        }));
+      });
+      slide.addTable([header.map(headCell), ...body], tableOptions(rows.length, [3.0, 1.1, 1.15, 0.95, 1.25, 1.0, 1.25, 1.1, 1.33], "Tabela de satisfação por atendente"));
+      slide.addNotes(
+        "Uma linha por atendente, do NPS mais alto para o mais baixo. Taxa é quantas pesquisas enviadas o cliente respondeu. " +
+          "O NPS de quem tem poucas respostas muda muito com uma nota só: olhe junto com a coluna Respostas."
+      );
+    }
+
+    // 6c. Ao longo do período.
+    if (report.trend.length >= 2) {
+      const slide = contentSlide("Satisfação", "Satisfação dos clientes", "Evolução da satisfação no período");
+      card(slide, M, CONTENT_TOP, CONTENT_W, CONTENT_BOTTOM - CONTENT_TOP, "Evolução do NPS");
+      const labels = report.trend.map((t) => t.label);
+      slide.addChart(
+        pptx.ChartType.line,
+        [{ name: "NPS", labels, values: report.trend.map((t) => t.nps ?? 0) }],
+        {
+          x: M + 0.3,
+          y: CONTENT_TOP + 0.25,
+          w: CONTENT_W - 0.6,
+          h: CONTENT_BOTTOM - CONTENT_TOP - 0.5,
+          chartColors: [C.brand],
+          lineSize: 3,
+          lineDataSymbol: "circle",
+          lineDataSymbolSize: 9,
+          showLegend: false,
+          showValue: true,
+          dataLabelPosition: "t",
+          dataLabelFormatCode: "+0;-0;0",
+          valAxisMinVal: -100,
+          valAxisMaxVal: 100,
+          ...chartText,
+          ...quietAxes,
+          catAxisLabelFontSize: labels.length > 16 ? 10 : 12,
+          dataLabelColor: INK,
+          objectName: "Gráfico da evolução do NPS",
+        }
+      );
+      slide.addNotes(
+        report.trend.map((t) => `${t.label}: NPS ${t.nps === null ? "-" : formatNps(t.nps)}, nota média ${average(t.average)}, ${formatNumber(t.answered)} respostas`).join("\n")
+      );
+    }
+
+    // 6d. Por conexão, quando há mais de uma.
+    if (report.byConnection.length > 1) {
+      const slide = contentSlide("Satisfação", "Satisfação dos clientes", "Satisfação por conexão");
+      const rows = report.byConnection.slice(0, AGENT_ROWS_PER_SLIDE);
+      const header = ["Conexão", "Pesquisas", "Respostas", "Taxa", "Nota média", "NPS", "Promotores", "Neutros", "Detratores"];
+      const body = rows.map((c, r) => {
+        const fill = { color: r % 2 === 0 ? WHITE : "F8FAFC" };
+        return [
+          c.connectionName,
+          formatNumber(c.sent),
+          formatNumber(c.answered),
+          c.responseRate === null ? "-" : `${c.responseRate}%`,
+          average(c.average),
+          c.nps === null ? "-" : formatNps(c.nps),
+          formatNumber(c.promoters),
+          formatNumber(c.passives),
+          formatNumber(c.detractors),
+        ].map((value, i) => ({
+          text: value,
+          options: { fill, color: i === 0 ? INK : i === 5 ? npsColor(c.nps) : BODY, bold: i === 0 || i === 5, align: i === 0 ? ("left" as const) : ("right" as const), fontSize: 13 },
+        }));
+      });
+      slide.addTable([header.map(headCell), ...body], tableOptions(rows.length, [3.0, 1.1, 1.15, 0.95, 1.25, 1.0, 1.25, 1.1, 1.33], "Tabela de satisfação por conexão"));
+      slide.addNotes("Uma linha por número de WhatsApp, do NPS mais alto para o mais baixo.");
+    }
+
+    // 6e. As notas baixas, com o cliente — o que a diretoria vai querer ver resolvido.
+    const low = report.responses.filter((r) => r.category === "detractor").slice(0, 10);
+    if (low.length > 0) {
+      const slide = contentSlide("Satisfação", "Satisfação dos clientes", "Avaliações que pedem atenção");
+      const when = (iso: string | null) =>
+        iso ? new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "-";
+      const body = low.map((r, i) => {
+        const fill = { color: i % 2 === 0 ? WHITE : "F8FAFC" };
+        return [when(r.answeredAt), r.contactName ?? r.contactPhone ?? "-", r.agentName ?? "-", r.connectionName, String(r.score)].map((value, c) => ({
+          text: value,
+          options: { fill, color: c === 4 ? RED : c === 1 ? INK : BODY, bold: c === 1 || c === 4, align: c === 4 ? ("right" as const) : ("left" as const), fontSize: 13 },
+        }));
+      });
+      slide.addTable(
+        [["Data", "Cliente", "Atendente", "Conexão", "Nota"].map((h, i) => ({ ...headCell(h, i === 4 ? 1 : 0) })), ...body],
+        tableOptions(low.length, [2.0, 3.9, 2.6, 2.4, 1.23], "Tabela das avaliações com nota de 0 a 6")
+      );
+      slide.addNotes(
+        `As ${low.length === 1 ? "última avaliação" : `${low.length} últimas avaliações`} com nota de 0 a 6 (detratores) no período. ` +
+          "Cada uma pode ser aberta em Relatórios › Pesquisa de satisfação › Ver conversa, para entender o que aconteceu."
+      );
+    }
   }
 
   // ---- 7-9. Equipe ----

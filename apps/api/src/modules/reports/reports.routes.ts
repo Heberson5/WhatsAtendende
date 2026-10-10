@@ -11,6 +11,7 @@ import { resolveAllowedConnectionIds } from "../../lib/connection-access";
 import { env } from "../../config/env";
 import { getExportBranding } from "../settings/settings.service";
 import * as service from "./reports.service";
+import { agentsToRows, getSatisfactionReport, responsesToRows } from "../satisfaction/satisfaction-report.service";
 
 /** The exports' own logo/cor/nome — configured in Configurações >
  * Exportações, independent from the app's Identidade visual. See PROMPT:
@@ -125,5 +126,34 @@ reportsRouter.get(
     if (query.format === "json") return res.json(data);
     // The other export formats need rows, not a single stats object — wrap it as one row.
     await respond(res, [data], query.format, "relatorio-mensagens", "Relatório de Mensagens", query.tzOffsetMinutes);
+  })
+);
+
+// Relatórios › Pesquisa de satisfação. JSON for the screen; the exports are the answers (table=responses, default)
+// or each attendant's numbers (table=agents).
+const satisfactionQuerySchema = querySchema.extend({ table: z.enum(["responses", "agents"]).default("responses") });
+reportsRouter.get(
+  "/satisfaction",
+  asyncHandler(async (req, res) => {
+    const query = satisfactionQuerySchema.parse(req.query);
+    const { from, to } = resolvePeriod(query.period, query.from, query.to, query.tzOffsetMinutes);
+    const report = await getSatisfactionReport({
+      from,
+      to,
+      agentId: query.agentId,
+      connectionIds: await resolveAllowedConnectionIds(req.auth!, parseListParam(query.connectionId)),
+      tzOffsetMinutes: query.tzOffsetMinutes,
+    });
+    if (query.format === "json") return res.json(report);
+    const agents = query.table === "agents";
+    await respond(
+      res,
+      agents ? agentsToRows(report) : responsesToRows(report, query.tzOffsetMinutes),
+      query.format,
+      agents ? "relatorio-pesquisa-por-atendente" : "relatorio-pesquisa-respostas",
+      agents ? "Pesquisa de satisfação por atendente" : "Pesquisa de satisfação — respostas",
+      query.tzOffsetMinutes,
+      parseListParam(query.columns)
+    );
   })
 );
