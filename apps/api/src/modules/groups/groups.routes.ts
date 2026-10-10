@@ -3,6 +3,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import rateLimit from "express-rate-limit";
 import { PERMISSION } from "@whatsatendende/types";
 import type { MessageType } from "@prisma/client";
 import { asyncHandler } from "../../lib/async-handler";
@@ -60,6 +61,21 @@ groupsRouter.get(
       .map((p) => ({ name: p.name ?? (p.phone ? `+${p.phone}` : "Participante"), phone: p.phone, isAdmin: p.isAdmin }))
       .sort((a, b) => Number(b.isAdmin) - Number(a.isAdmin) || a.name.localeCompare(b.name, "pt-BR"));
     res.json(participants);
+  })
+);
+
+// Same bound as a customer conversation's "mensagens anteriores": a handful of WhatsApp requests per minute.
+const historyBackfillLimiter = rateLimit({ windowMs: 60 * 1000, max: 5, standardHeaders: true, legacyHeaders: false, skip: () => env.NODE_ENV === "test" });
+
+/** "Carregar mensagens anteriores": asks WhatsApp for older messages; they arrive later (group:history). */
+groupsRouter.post(
+  "/:id/older-history",
+  historyBackfillLimiter,
+  asyncHandler(async (req, res) => {
+    const group = await service.getGroupForUser(req.params.id, req.auth!);
+    await whatsappService.requestOlderGroupHistory(group.id);
+    await writeAudit({ userId: req.auth!.userId, action: "WHATSAPP_HISTORY_BACKFILL_REQUESTED", entity: "Conversation", entityId: group.id, ipAddress: req.ip ?? null });
+    res.status(202).end();
   })
 );
 

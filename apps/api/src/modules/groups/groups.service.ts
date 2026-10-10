@@ -1,6 +1,6 @@
 import { Prisma, type MessageType, type Role } from "@prisma/client";
 import { PERMISSION, type GroupListItemDTO, type GroupReaderDTO, type GroupsSummaryDTO } from "@whatsatendende/types";
-import type { GroupInfo, InboundMessageEvent } from "@whatsatendende/whatsapp";
+import type { GroupInfo, HistoryMessageEvent, InboundMessageEvent } from "@whatsatendende/whatsapp";
 import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
 import { logger } from "../../lib/logger";
@@ -8,6 +8,7 @@ import { isPermissionAllowed } from "../../lib/permissions";
 import { getManagerConnectionIds } from "../../lib/connection-access";
 import { realtimeEvents } from "../../realtime/realtime";
 import { messageInclude } from "../messages/messages.service";
+import { addHistoricalAttachments } from "../conversations/conversations.service";
 import { toNotificationDTO } from "../notifications/notifications.mapper";
 
 /**
@@ -441,4 +442,93 @@ export async function announceGroupMessage(groupId: string, connectionId: string
     }
   }
   realtimeEvents.groupsChanged();
+}
+
+/** The oldest message stored for a group — older history is asked for from before it (null: nothing to start from yet). */
+export async function getOldestGroupAnchor(groupId: string) {
+  const message = await prisma.message.findFirst({
+    where: { conversationId: groupId, providerMessageId: { not: null }, deletedAt: null },
+    orderBy: { createdAt: "asc" },
+    select: { providerMessageId: true, direction: true, createdAt: true, senderParticipantJid: true },
+  });
+  if (!message?.providerMessageId) return null;
+  return {
+    providerMessageId: message.providerMessageId,
+    fromMe: message.direction === "OUTBOUND",
+    timestamp: message.createdAt,
+    participant: message.direction === "INBOUND" ? message.senderParticipantJid : null,
+  };
+}
+
+/**
+ * Older messages of groups the app already shows, from a WhatsApp history
+ * batch (see the "Carregar mensagens anteriores" button). They come in as
+ * already read — by everybody, and for WhatsApp's read receipt too — so an
+ * old conversation never turns into a pile of "não lidas". Messages of groups
+ * the app doesn't show (groups off, or a group it never saw) are left out.
+ * Returns how many were added per group.
+ */
+export async function importGroupHistory(connectionId: string, messages: HistoryMessageEvent[]): Promise<Map<string, number>> {
+  const added = new Map<string, number>();
+  if (messages.length === 0) return added;
+  const connection = await prisma.whatsAppConnection.findUnique({ where: { id: connectionId }, select: { groupsEnabled: true } });
+  if (!connection?.groupsEnabled) return added;
+
+  const chatIds = [...new Set(messages.map((m) => m.chatId))];
+  const groups = await prisma.conversation.findMany({
+    where: { status: "GROUP", whatsappConnectionId: connectionId, contact: { providerChatId: { in: chatIds } } },
+    select: { id: true, lastMessageAt: true, contact: { select: { providerChatId: true } } },
+  });
+  const groupByChat = new Map(groups.map((g) => [g.contact.providerChatId!, g]));
+  const known = new Set(
+    (await prisma.message.findMany({ where: { providerMessageId: { in: messages.map((m) => m.providerMessageId) } }, select: { providerMessageId: true } })).map((m) => m.providerMessageId)
+  );
+  const now = new Date();
+
+  for (const m of messages) {
+    const group = groupByChat.get(m.chatId);
+    if (!group || known.has(m.providerMessageId)) continue;
+    known.add(m.providerMessageId);
+    const participantName = m.group?.participantName ?? (m.group?.participantPhone ? await savedContactName(connectionId, m.group.participantPhone) : null);
+    const created = await prisma.message.create({
+      data: {
+        conversationId: group.id,
+        direction: m.fromMe ? "OUTBOUND" : "INBOUND",
+        type: m.type,
+        status: m.fromMe ? "SENT" : "DELIVERED",
+        body: m.body,
+        providerMessageId: m.providerMessageId,
+        createdAt: m.timestamp,
+        readAt: m.fromMe ? null : now,
+        ...(m.fromMe
+          ? {}
+          : {
+              senderParticipantJid: m.group?.participantJid || null,
+              senderParticipantName: participantName,
+              senderParticipantPhone: m.group?.participantPhone ?? null,
+            }),
+      },
+    });
+    await addHistoricalAttachments(created.id, m);
+    added.set(group.id, (added.get(group.id) ?? 0) + 1);
+  }
+
+  // An imported message newer than the group's last activity (one missed while the server was down) moves it up.
+  for (const group of groups) {
+    if (!added.has(group.id)) continue;
+    const latest = await prisma.message.findFirst({ where: { conversationId: group.id, deletedAt: null }, orderBy: { createdAt: "desc" }, select: { createdAt: true, direction: true } });
+    if (latest && latest.createdAt > group.lastMessageAt) {
+      await prisma.conversation.update({ where: { id: group.id }, data: { lastMessageAt: latest.createdAt, lastMessageDirection: latest.direction } });
+    }
+  }
+  for (const [groupId, count] of added) {
+    const group = await prisma.conversation.findUnique({ where: { id: groupId }, select: { whatsappConnectionId: true } });
+    const team = await groupTeam(group!.whatsappConnectionId!, groupId);
+    realtimeEvents.groupHistory(
+      team.map((t) => t.id),
+      groupId,
+      count
+    );
+  }
+  return added;
 }

@@ -101,6 +101,14 @@ export interface GroupInfo {
   participants: GroupParticipant[];
 }
 
+/** The oldest message the app has of a chat — older history is asked for from before it. `participant`: its author, in a group. */
+export interface OlderHistoryAnchor {
+  providerMessageId: string;
+  fromMe: boolean;
+  timestamp: Date;
+  participant?: string | null;
+}
+
 export interface DeliveryEvent {
   providerMessageId: string;
   chatId: string;
@@ -174,6 +182,8 @@ export interface HistoryMessageEvent {
   eventStartAt?: Date;
   eventJoinLink?: string;
   timestamp: Date;
+  /** Group chats only: who wrote it (see InboundMessageEvent.group). */
+  group?: GroupMessageSender;
 }
 
 /**
@@ -320,7 +330,7 @@ export interface WhatsAppProvider {
    * later through onHistorySync below, same as any other history batch —
    * this call only sends the request.
    */
-  fetchOlderHistory(chatId: string, anchor: { providerMessageId: string; fromMe: boolean; timestamp: Date }, count: number): Promise<void>;
+  fetchOlderHistory(chatId: string, anchor: OlderHistoryAnchor, count: number): Promise<void>;
 
   onConnectionUpdate(listener: (status: WhatsAppStatusSnapshot) => void): void;
   onMessage(listener: (event: InboundMessageEvent) => void): void;

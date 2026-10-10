@@ -22,6 +22,7 @@ import type {
   HistoryMessageEvent,
   HistorySyncEvent,
   InboundMessageEvent,
+  OlderHistoryAnchor,
   ReactionEvent,
   SendResult,
   SendTextOptions,
@@ -511,9 +512,12 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
         const converted: HistoryMessageEvent[] = [];
         for (const message of messages) {
           const chatId = message.key.remoteJid ?? "";
-          if (!chatId || isNonCustomerChat(chatId)) continue;
+          if (!chatId || isIgnoredChat(chatId)) continue;
           const entry = convertHistoryMessage(message, chatId);
-          if (entry) converted.push(entry);
+          if (!entry) continue;
+          // A group's history keeps who wrote each message; the app only stores it for groups it already shows.
+          const group = groupSenderFromBaileys(message.key, message.key.fromMe ? null : message.pushName);
+          converted.push(group ? { ...entry, group } : entry);
         }
         const unreadChats: HistoryChatInfo[] = chats
           .filter((c) => c.id && !isNonCustomerChat(c.id) && Number(c.unreadCount ?? 0) > 0)
@@ -843,11 +847,11 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
    * there is nothing else to do with the resolved requestId Baileys
    * returns, so it's discarded.
    */
-  async fetchOlderHistory(chatId: string, anchor: { providerMessageId: string; fromMe: boolean; timestamp: Date }, count: number): Promise<void> {
+  async fetchOlderHistory(chatId: string, anchor: OlderHistoryAnchor, count: number): Promise<void> {
     const socket = this.requireSocket();
     await socket.fetchMessageHistory(
       count,
-      { remoteJid: chatId, id: anchor.providerMessageId, fromMe: anchor.fromMe },
+      { remoteJid: chatId, id: anchor.providerMessageId, fromMe: anchor.fromMe, ...(anchor.participant ? { participant: anchor.participant } : {}) },
       Math.floor(anchor.timestamp.getTime() / 1000)
     );
   }
