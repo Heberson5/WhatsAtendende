@@ -1369,8 +1369,17 @@ export async function closeConversation(conversationId: string, agentId: string,
  * transfer/return-to-queue above, unlike closeConversation (agent-only,
  * requires ownership). See PROMPT: "Acrescente em gestão o botão de
  * encerrar".
+ *
+ * `silent`: "Encerrar sem enviar mensagem" — nothing goes to the customer, so
+ * the satisfaction survey isn't sent either (see PROMPT: "selecionado que não
+ * envia a mensagem de encerramento, também não é para ser enviado a pesquisa").
  */
-export async function closeConversationFromGestao(conversationId: string, initiatedById: string, closingMessage?: HeldClosingMessage) {
+export async function closeConversationFromGestao(
+  conversationId: string,
+  initiatedById: string,
+  closingMessage?: HeldClosingMessage,
+  options: { silent?: boolean } = {}
+) {
   const existing = await getConversationOrThrow(conversationId);
   if (!GESTAO_TRANSFERABLE_STATUSES.includes(existing.status)) {
     throw Errors.badRequest("Esta conversa nao pode ser encerrada neste status");
@@ -1386,7 +1395,7 @@ export async function closeConversationFromGestao(conversationId: string, initia
   await prisma.conversationEvent.create({
     data: { conversationId, type: "CLOSED", payload: { agentId: initiatedById, previousAgentId, previousStatus: existing.status } },
   });
-  scheduleCloseFollowUp(conversationId, closingMessage);
+  if (!options.silent) scheduleCloseFollowUp(conversationId, closingMessage);
 
   return { conversation: await getConversationOrThrow(conversationId), previousAgentId };
 }

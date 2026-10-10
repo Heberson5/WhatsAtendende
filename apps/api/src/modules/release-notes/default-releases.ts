@@ -11,6 +11,26 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.4.1",
+    date: "10 out 2026",
+    name: "Encerrar sem mensagem também não envia a pesquisa",
+    summary: "Na Gestão, encerrar sem enviar a mensagem de encerramento também não envia a pesquisa de satisfação.",
+    notes: [
+      {
+        type: "correcao",
+        area: "gestao",
+        title: "Encerrar sem enviar mensagem não envia a pesquisa",
+        text: "Ao encerrar um atendimento pela Gestão escolhendo “Encerrar sem enviar mensagem”, nada é enviado ao cliente: nem a mensagem de encerramento, nem a pesquisa de satisfação. Com “Encerrar e enviar mensagem”, a pesquisa continua sendo enviada normalmente, quando estiver ligada para a conexão.",
+        before: "Mesmo sem a mensagem de encerramento, a pesquisa de satisfação era enviada ao cliente.",
+        after: "Sem mensagem de encerramento, a pesquisa também não é enviada.",
+        steps: ["Na Gestão, clique em Encerrar no atendimento.", "Escolha Encerrar sem enviar mensagem {1}: o aviso abaixo {2} lembra que a pesquisa também não vai."],
+        where: "Gestão › Encerrar atendimento",
+        requires: [PERMISSION.GESTAO_GERENCIAR],
+        images: [{ src: "/notas-de-versao/gestao-encerrar-sem-pesquisa.webp", caption: "{1} Encerrar sem enviar mensagem · {2} A pesquisa também não é enviada", size: "small" }],
+      },
+    ],
+  },
+  {
     version: "2.4.0",
     date: "09 out 2026",
     name: "Grupos do WhatsApp no Atendimento",
