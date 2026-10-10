@@ -512,6 +512,7 @@ export default function GestaoPage() {
               >
                 Encerrar sem enviar mensagem
               </button>
+              <p className="-mt-1 text-center text-xs text-muted">Sem mensagem, a pesquisa de satisfação também não é enviada.</p>
               <button
                 onClick={() => setClosing(null)}
                 disabled={closeMutation.isPending}

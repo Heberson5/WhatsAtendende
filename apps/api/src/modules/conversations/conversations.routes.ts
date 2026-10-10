@@ -486,7 +486,10 @@ conversationsRouter.post(
       }
     }
 
-    const { conversation, previousAgentId } = await service.closeConversationFromGestao(req.params.id, req.auth!.userId, heldClosingMessage);
+    // "Encerrar sem enviar mensagem": nothing goes to the customer — no closing message and no survey.
+    const { conversation, previousAgentId } = await service.closeConversationFromGestao(req.params.id, req.auth!.userId, heldClosingMessage, {
+      silent: !sendClosingMessage,
+    });
     await writeAudit({
       userId: req.auth!.userId,
       action: "CONVERSATION_CLOSED_BY_MANAGER",
