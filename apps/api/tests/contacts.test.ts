@@ -70,10 +70,42 @@ describe("Contatos e etiquetas", () => {
     expect(await prisma.contactTag.count()).toBe(0);
   });
 
-  it("um atendente não acessa Contatos por padrão", async () => {
+  it("o atendente acessa Contatos por padrão, só da própria conexão, e não importa nem exporta", async () => {
+    const other = await createTestConnection("Vendas");
+    await prisma.contact.create({ data: { phone: "5511900000010", name: "Da Suporte", whatsappConnectionId: connectionId } });
+    await prisma.contact.create({ data: { phone: "5511900000011", name: "Da Vendas", whatsappConnectionId: other.id } });
     await createTestUser({ email: "agente@test.dev", role: "AGENT", whatsappConnectionId: connectionId });
     const agentToken = await loginAs("agente@test.dev");
+    const list = await request(app).get("/api/contacts").set("Authorization", `Bearer ${agentToken}`);
+    expect(list.status).toBe(200);
+    expect(list.body.items.map((c: { name: string }) => c.name)).toEqual(["Da Suporte"]);
+    expect(list.body.items[0].whatsappConnectionId).toBe(connectionId);
+    expect((await request(app).get("/api/contacts/export").set("Authorization", `Bearer ${agentToken}`)).status).toBe(403);
+    // Still something an administrator can take away in Perfis de acesso.
+    await prisma.rolePermission.create({ data: { role: "AGENT", permission: "contatos.acessar", allowed: false } });
     expect((await request(app).get("/api/contacts").set("Authorization", `Bearer ${agentToken}`)).status).toBe(403);
+  });
+
+  it("ordena cada coluna pelo tipo do dado: nome A–Z, telefone, conexão, conversas e datas", async () => {
+    const vendas = await createTestConnection("Atacado");
+    const day = (d: number) => new Date(`2026-10-0${d}T12:00:00Z`);
+    const carla = await prisma.contact.create({ data: { phone: "5511900000300", name: "Carla", whatsappConnectionId: connectionId, firstConversationAt: day(3), lastInteractionAt: day(5) } });
+    const ana = await prisma.contact.create({ data: { phone: "5511900000100", name: "ana", whatsappConnectionId: vendas.id, firstConversationAt: day(1), lastInteractionAt: day(9) } });
+    const bruno = await prisma.contact.create({ data: { phone: "5511900000200", name: "Bruno", whatsappConnectionId: connectionId, firstConversationAt: day(2), lastInteractionAt: day(7) } });
+    const semNome = await prisma.contact.create({ data: { phone: "5511900000050", name: null, whatsappConnectionId: connectionId, firstConversationAt: day(4), lastInteractionAt: day(1) } });
+    for (let i = 0; i < 2; i++) await prisma.conversation.create({ data: { contactId: bruno.id, whatsappConnectionId: connectionId, status: "CLOSED" } });
+    await prisma.conversation.create({ data: { contactId: carla.id, whatsappConnectionId: connectionId, status: "CLOSED" } });
+
+    const order = async (sort: string, dir: string) =>
+      (await request(app).get("/api/contacts").query({ sort, dir }).set("Authorization", `Bearer ${token}`)).body.items.map((c: { id: string }) => c.id);
+    expect(await order("name", "asc")).toEqual([ana.id, bruno.id, carla.id, semNome.id]); // A–Z ignoring case, no name last
+    expect(await order("name", "desc")).toEqual([carla.id, bruno.id, ana.id, semNome.id]);
+    expect(await order("phone", "asc")).toEqual([semNome.id, ana.id, bruno.id, carla.id]);
+    expect((await order("connection", "asc"))[0]).toBe(ana.id); // "Atacado" before "Suporte"
+    expect((await order("conversations", "desc")).slice(0, 2)).toEqual([bruno.id, carla.id]);
+    expect(await order("firstConversationAt", "asc")).toEqual([ana.id, bruno.id, carla.id, semNome.id]);
+    expect(await order("lastInteractionAt", "desc")).toEqual([ana.id, bruno.id, carla.id, semNome.id]);
+    expect((await request(app).get("/api/contacts").query({ sort: "tags" }).set("Authorization", `Bearer ${token}`)).status).toBe(400);
   });
 
   it("normaliza telefones com e sem DDI", () => {

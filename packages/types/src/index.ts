@@ -1077,9 +1077,9 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     key: PERMISSION.CONTATOS_ACESSAR,
     group: "Contatos",
     label: "Contatos — acessar",
-    description: "Abrir a tela de Contatos, buscar clientes e ver o histórico de conversas de cada um.",
+    description: "Abrir a tela de Contatos, buscar clientes, ver o histórico de conversas de cada um e iniciar uma conversa. O atendente vê só os contatos da própria conexão.",
     editableRoles: ["AGENT", "MANAGER"],
-    defaultAllowed: { AGENT: false, MANAGER: true },
+    defaultAllowed: { AGENT: true, MANAGER: true },
   },
   {
     key: PERMISSION.CONTATOS_EDITAR,
@@ -1500,11 +1500,17 @@ export interface ContactListItemDTO {
   phone: string | null;
   channel: Channel;
   connectionName: string | null;
+  /** WhatsApp connection of the contact — where "Iniciar conversa" starts it. */
+  whatsappConnectionId: string | null;
   tags: TagDTO[];
   conversationCount: number;
   firstConversationAt: string;
   lastInteractionAt: string;
 }
+
+/** Columns the Contatos list can be ordered by — text A–Z, numbers and dates in their own order. */
+export const CONTACT_SORT_FIELDS = ["name", "phone", "connection", "conversations", "firstConversationAt", "lastInteractionAt"] as const;
+export type ContactSortField = (typeof CONTACT_SORT_FIELDS)[number];
 
 export interface ContactDetailDTO extends ContactListItemDTO {
   conversations: {

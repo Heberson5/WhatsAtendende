@@ -1,6 +1,6 @@
 import { Router, type Request } from "express";
 import { z } from "zod";
-import { PERMISSION } from "@whatsatendende/types";
+import { CONTACT_SORT_FIELDS, PERMISSION } from "@whatsatendende/types";
 import { asyncHandler } from "../../lib/async-handler";
 import { requireAuth } from "../../middleware/auth";
 import { requirePermission } from "../../lib/permissions";
@@ -37,13 +37,18 @@ async function parseFilters(req: Request): Promise<service.ContactFilters> {
   return { search: query.search, tagId: query.tagId, connectionIds: await visibleConnectionIds(req, parseListParam(query.connectionId)) };
 }
 
-const pageSchema = z.object({ page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(50) });
+const pageSchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(50),
+  sort: z.enum(CONTACT_SORT_FIELDS).default("lastInteractionAt"),
+  dir: z.enum(["asc", "desc"]).default("desc"),
+});
 
 contactsRouter.get(
   "/",
   asyncHandler(async (req, res) => {
-    const { page, pageSize } = pageSchema.parse(req.query);
-    res.json(await service.listContacts(await parseFilters(req), page, pageSize));
+    const { page, pageSize, sort, dir } = pageSchema.parse(req.query);
+    res.json(await service.listContacts(await parseFilters(req), page, pageSize, { field: sort, dir }));
   })
 );
 
