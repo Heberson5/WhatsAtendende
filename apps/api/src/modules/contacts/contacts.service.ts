@@ -1,6 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { DEFAULT_PHONE_SETTINGS, brazilianPhoneVariants, normalizeTypedPhone } from "@whatsatendende/types";
-import type { ContactDetailDTO, ContactImportResultDTO, ContactListItemDTO, ManagedTagDTO, PhoneSettingsDTO, TagDTO } from "@whatsatendende/types";
+import type { ContactDetailDTO, ContactImportResultDTO, ContactListItemDTO, ContactSortField, ManagedTagDTO, PhoneSettingsDTO, TagDTO } from "@whatsatendende/types";
 import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
 import { findOrCreateTag, toTagDTO } from "../client-panel/client-panel.service";
@@ -37,6 +37,7 @@ function toListItem(row: ContactRow): ContactListItemDTO {
     phone: row.phone,
     channel: row.channel,
     connectionName: row.whatsappConnection?.name ?? row.metaConnection?.name ?? null,
+    whatsappConnectionId: row.whatsappConnectionId,
     tags: row.tags.map((t) => toTagDTO(t.tag)),
     conversationCount: row._count.conversations,
     firstConversationAt: row.firstConversationAt.toISOString(),
@@ -58,10 +59,52 @@ function buildWhere(filters: ContactFilters): Prisma.ContactWhereInput {
   };
 }
 
-export async function listContacts(filters: ContactFilters, page: number, pageSize: number) {
+export interface ContactSort {
+  field: ContactSortField;
+  dir: "asc" | "desc";
+}
+
+/** The ORDER BY of a column; ties (same name, same date...) always fall back to the most recent interaction, then the id. */
+function orderByFor({ field, dir }: ContactSort): Prisma.ContactOrderByWithRelationInput[] {
+  // name and connection are ordered in Portuguese by listContactsByText.
+  const primary: Prisma.ContactOrderByWithRelationInput = {
+    phone: { phone: { sort: dir, nulls: "last" as const } },
+    conversations: { conversations: { _count: dir } },
+    firstConversationAt: { firstConversationAt: dir },
+    lastInteractionAt: { lastInteractionAt: dir },
+  }[field as Exclude<ContactSortField, "name" | "connection">];
+  return [primary, ...(field === "lastInteractionAt" ? [] : [{ lastInteractionAt: "desc" as const }]), { id: "asc" }];
+}
+
+// Names in Portuguese order: "ana" with "Ana", "Álvaro" before "Bruno" — the database's own collation
+// (C on the server's Postgres image) would put every capital first and every accent after "z".
+const ptCollator = new Intl.Collator("pt-BR", { sensitivity: "base", numeric: true });
+
+/** One page of contacts ordered by a text column (name, connection) in Portuguese order; contacts with no value go last. */
+async function listContactsByText(where: Prisma.ContactWhereInput, page: number, pageSize: number, sort: ContactSort) {
+  const keys = await prisma.contact.findMany({
+    where,
+    select: { id: true, name: true, lastInteractionAt: true, whatsappConnection: { select: { name: true } }, metaConnection: { select: { name: true } } },
+  });
+  const text = (k: (typeof keys)[number]) => (sort.field === "name" ? k.name : (k.whatsappConnection?.name ?? k.metaConnection?.name ?? null))?.trim() || null;
+  const sign = sort.dir === "asc" ? 1 : -1;
+  keys.sort((a, b) => {
+    const ta = text(a);
+    const tb = text(b);
+    if (ta === null || tb === null) return ta === tb ? 0 : ta === null ? 1 : -1;
+    return sign * ptCollator.compare(ta, tb) || b.lastInteractionAt.getTime() - a.lastInteractionAt.getTime() || a.id.localeCompare(b.id);
+  });
+  const ids = keys.slice((page - 1) * pageSize, page * pageSize).map((k) => k.id);
+  const rows = await prisma.contact.findMany({ where: { id: { in: ids } }, include: listInclude });
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  return { items: ids.map((id) => toListItem(byId.get(id)!)), total: keys.length };
+}
+
+export async function listContacts(filters: ContactFilters, page: number, pageSize: number, sort: ContactSort = { field: "lastInteractionAt", dir: "desc" }) {
   const where = buildWhere(filters);
+  if (sort.field === "name" || sort.field === "connection") return listContactsByText(where, page, pageSize, sort);
   const [rows, total] = await Promise.all([
-    prisma.contact.findMany({ where, include: listInclude, orderBy: { lastInteractionAt: "desc" }, skip: (page - 1) * pageSize, take: pageSize }),
+    prisma.contact.findMany({ where, include: listInclude, orderBy: orderByFor(sort), skip: (page - 1) * pageSize, take: pageSize }),
     prisma.contact.count({ where }),
   ]);
   return { items: rows.map(toListItem), total };
