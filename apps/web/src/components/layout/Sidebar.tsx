@@ -200,7 +200,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
       {mobileOpen && <div className="fixed inset-0 z-30 bg-black/40 md:hidden" onClick={onMobileClose} aria-hidden />}
       <aside
         className={clsx(
-          "shadow-soft fixed inset-y-0 left-0 z-40 flex h-screen w-64 flex-col overflow-hidden rounded-r-card bg-side text-side-text transition-transform duration-200 md:relative md:inset-auto md:z-10 md:h-full md:translate-x-0 md:rounded-card md:transition-all",
+          "shadow-soft fixed inset-y-0 left-0 z-40 flex h-dvh w-64 flex-col overflow-hidden rounded-r-card bg-side text-side-text transition-transform duration-200 md:relative md:inset-auto md:z-10 md:h-full md:translate-x-0 md:rounded-card md:transition-all",
           mobileOpen ? "translate-x-0" : "-translate-x-full",
           isCollapsed ? "md:w-[68px]" : "md:w-60"
         )}

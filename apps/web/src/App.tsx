@@ -50,7 +50,7 @@ export default function App() {
   const hydrated = useAuthStore((s) => s.hydrated);
 
   if (!hydrated) {
-    return <div className="flex h-screen items-center justify-center text-muted">Carregando...</div>;
+    return <div className="flex h-dvh items-center justify-center text-muted">Carregando...</div>;
   }
 
   return (
