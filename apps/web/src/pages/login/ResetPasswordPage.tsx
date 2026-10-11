@@ -37,7 +37,7 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[var(--color-bg)] px-4">
+    <div className="flex min-h-dvh items-center justify-center bg-[var(--color-bg)] px-4">
       <div className="shadow-soft w-full max-w-md rounded-card border border-border bg-surface p-8">
         <div className="mb-8 flex flex-col items-center gap-3 text-center">
           {branding?.logoUrl ? (

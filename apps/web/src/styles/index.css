@@ -123,6 +123,21 @@ body {
   overscroll-behavior: none;
 }
 
+/* On phones the page is pinned too: with a plain overflow:hidden, iOS and
+   Android still let a drag at the end of a list (or inside a drawer/modal)
+   move the whole system. Fixed positioning on body removes that, and
+   contain keeps every inner scroller's drag from chaining to the page. */
+body {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+}
+
+.overflow-y-auto,
+.overflow-auto {
+  overscroll-behavior-y: contain;
+}
+
 #root {
   height: 100%;
   overflow-y: auto;

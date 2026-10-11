@@ -76,7 +76,7 @@ export default function LoginPage() {
   // which is exactly the flash the user should never see.
   if (maintenanceLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[var(--color-bg)]">
+      <div className="flex min-h-dvh items-center justify-center bg-[var(--color-bg)]">
         <Loader2 className="h-6 w-6 animate-spin text-muted" />
       </div>
     );
@@ -105,7 +105,7 @@ export default function LoginPage() {
   const logoSize = landingPage?.loginLogoSizePx ?? 64;
 
   return (
-    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-[var(--color-bg)] px-4 py-10">
+    <div className="relative flex min-h-dvh flex-col items-center justify-center overflow-hidden bg-[var(--color-bg)] px-4 py-10">
       <InstallPromptModal />
 
       {/* The glow blobs drift slowly (see GLOW_SPOTS); a faint dot texture
