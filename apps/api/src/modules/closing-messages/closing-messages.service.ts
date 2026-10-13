@@ -1,5 +1,6 @@
 import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
+import { assertCaptionFits, deleteReplyMediaFile, type ReplyMediaColumns } from "../../lib/reply-media";
 import { assertScopeConnectionsExist, scopeData, withScopeConnections, type ConnectionScopeInput } from "../../lib/connection-scope";
 
 const withAssignedUsers = {
@@ -55,7 +56,8 @@ export async function createClosingMessage(input: ClosingMessageInput) {
 }
 
 export async function updateClosingMessage(id: string, input: Partial<ClosingMessageInput>) {
-  await getClosingMessage(id);
+  const current = await getClosingMessage(id);
+  if (input.text !== undefined) assertCaptionFits(input.text, Boolean(current.mediaStorageKey));
   if (input.userIds) await assertUsersExist(input.userIds);
   if (input.connectionScope) await assertScopeConnectionsExist(input.connectionScope);
   await prisma.closingMessage.update({
@@ -67,8 +69,19 @@ export async function updateClosingMessage(id: string, input: Partial<ClosingMes
 }
 
 export async function deleteClosingMessage(id: string) {
-  await getClosingMessage(id);
+  const current = await getClosingMessage(id);
   await prisma.closingMessage.delete({ where: { id } });
+  // Closings already scheduled keep their own copy (see copyReplyMediaFile) — only this row's file goes.
+  deleteReplyMediaFile(current.mediaStorageKey);
+}
+
+/** Attaches (or with NO_REPLY_MEDIA, removes) the closing message's image, video or PDF — the file it had before is deleted. */
+export async function setClosingMessageMedia(id: string, media: ReplyMediaColumns) {
+  const current = await getClosingMessage(id);
+  if (media.mediaStorageKey) assertCaptionFits(current.text, true);
+  await prisma.closingMessage.update({ where: { id }, data: media });
+  if (current.mediaStorageKey !== media.mediaStorageKey) deleteReplyMediaFile(current.mediaStorageKey);
+  return getClosingMessage(id);
 }
 
 /** The message to auto-send when this user closes a conversation of this connection — null if they have none assigned, theirs is inactive or doesn't cover the connection. */

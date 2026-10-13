@@ -1,8 +1,10 @@
 import { useState, type FormEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { X, AlertTriangle } from "lucide-react";
-import type { ClosingMessageDTO } from "@whatsatendende/types";
+import { PERMISSION, REPLY_MEDIA_CAPTION_MAX, type ClosingMessageDTO } from "@whatsatendende/types";
 import { api } from "../../lib/api";
+import { useAuthStore } from "../../store/auth-store";
+import { ReplyMediaField, captionTooLong, hasReplyMedia, type ReplyMediaChange } from "./ReplyMediaField";
 import { AutoMessagePreview } from "./AutoMessagePreview";
 import { ConnectionScopePicker, toConnectionScopeValue, type ConnectionScopeValue } from "./ConnectionScopePicker";
 import { fillAutoMessageTags, AGENT_EXAMPLE, CLIENT_EXAMPLE_NAME } from "../../lib/auto-message-tags";
@@ -43,8 +45,10 @@ export function EncerramentoFormModal({
   /** Every other cadastro — used only to warn when checking a user already assigned elsewhere; see PROMPT: "se habilitar o usuário no recente, irá sair do anterior". */
   allClosingMessages: ClosingMessageDTO[];
   onClose: () => void;
-  onSubmit: (values: EncerramentoFormValues) => Promise<void>;
+  onSubmit: (values: EncerramentoFormValues, media: ReplyMediaChange) => Promise<void>;
 }) {
+  const canEditMedia = Boolean(useAuthStore((s) => s.permissions)?.[PERMISSION.RESPOSTAS_MIDIA_GERENCIAR]);
+  const [media, setMedia] = useState<ReplyMediaChange>({ kind: "keep" });
   const { data: users } = useQuery({
     queryKey: ["agents-transfer-targets-all"],
     queryFn: async () => (await api.get<AssignableUser[]>("/agents/transfer-targets", { params: { excludeSelf: false } })).data,
@@ -109,9 +113,13 @@ export function EncerramentoFormModal({
       setError("Escolha pelo menos uma conexão ou marque todas as conexões");
       return;
     }
+    if (captionTooLong(values.text, closingMessage?.media, media)) {
+      setError(`Com anexo, o texto vai como legenda e pode ter até ${REPLY_MEDIA_CAPTION_MAX.toLocaleString("pt-BR")} caracteres.`);
+      return;
+    }
     setLoading(true);
     try {
-      await onSubmit(values);
+      await onSubmit(values, media);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao salvar encerramento");
@@ -168,7 +176,20 @@ export function EncerramentoFormModal({
               className="focus-ring w-full resize-none rounded-card border border-border bg-transparent px-3 py-2 text-sm"
             />
             <p className="mt-1 text-xs text-muted">Use *asterisco* pra negrito. A mensagem é enviada em nome de quem clicar em Encerrar.</p>
+            {hasReplyMedia(closingMessage?.media, media) && (
+              <p className={`mt-1 text-xs ${values.text.length > REPLY_MEDIA_CAPTION_MAX ? "text-danger" : "text-muted"}`}>
+                Legenda do anexo: {values.text.length.toLocaleString("pt-BR")} de {REPLY_MEDIA_CAPTION_MAX.toLocaleString("pt-BR")} caracteres
+              </p>
+            )}
           </div>
+
+          <ReplyMediaField
+            current={closingMessage?.media}
+            previewPath={closingMessage ? `/closing-messages/${closingMessage.id}/media` : null}
+            canEdit={canEditMedia}
+            change={media}
+            onChange={setMedia}
+          />
 
           <AutoMessagePreview senderName={AGENT_EXAMPLE.fullName} text={previewText} />
 

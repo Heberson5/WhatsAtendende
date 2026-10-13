@@ -366,6 +366,12 @@ model QuickReply {
   // in the same connection — enforced in quick-replies.service.ts.
   allConnections Boolean              @default(false)
   connections    WhatsAppConnection[] @relation("QuickReplyConnections")
+  // The one image, video or PDF sent with the text (the text is its caption) — added only by Gestor/Administrador
+  // (Perfis de acesso › "Respostas — Incluir imagem, vídeo ou PDF"). The file lives in UPLOAD_DIR, see lib/reply-media.ts.
+  mediaStorageKey String?
+  mediaFileName   String?
+  mediaMimeType   String?
+  mediaSizeBytes  Int?
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt
 
@@ -448,6 +454,12 @@ model ClosingMessage {
   // connections (or from any, when allConnections).
   allConnections Boolean              @default(true)
   connections    WhatsAppConnection[] @relation("ClosingMessageConnections")
+  // The one image, video or PDF sent with the text (the text is its caption) — added only by Gestor/Administrador
+  // (Perfis de acesso › "Respostas — Incluir imagem, vídeo ou PDF"). The file lives in UPLOAD_DIR, see lib/reply-media.ts.
+  mediaStorageKey String?
+  mediaFileName   String?
+  mediaMimeType   String?
+  mediaSizeBytes  Int?
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt
 }
@@ -1304,6 +1316,8 @@ model SatisfactionSurvey {
   closingText       String?
   closingSenderId   String?
   closingSenderName String?
+  // The closing message's attachment, copied for this conversation when it was closed (see HeldClosingMessage).
+  closingMedia      Json?
   closingDueAt      DateTime?
   // Set once it was sent or dropped; closingOutcome says which (SENT, FAILED, CANCELED_*).
   closingResolvedAt DateTime?

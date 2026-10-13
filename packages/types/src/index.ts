@@ -191,12 +191,44 @@ export interface PresenceByHourDTO {
   hours: PresenceByHourPoint[];
 }
 
+/** The one image, video or PDF a quick reply or closing message can carry — its text goes along as the caption. */
+export interface ReplyMediaDTO {
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  kind: "IMAGE" | "VIDEO" | "DOCUMENT";
+}
+
+/** Largest file accepted per kind, in MB — what WhatsApp takes from the system as is, never compressed. */
+export interface ReplyMediaLimitsDTO {
+  imageMb: number;
+  videoMb: number;
+  documentMb: number;
+}
+
+/** WhatsApp cuts a media caption around here — with an attachment, the reply's text is limited to it. */
+export const REPLY_MEDIA_CAPTION_MAX = 1024;
+
+const REPLY_MEDIA_KINDS: Record<string, ReplyMediaDTO["kind"]> = {
+  "image/jpeg": "IMAGE",
+  "image/png": "IMAGE",
+  "image/webp": "IMAGE",
+  "video/mp4": "VIDEO",
+  "application/pdf": "DOCUMENT",
+};
+
+/** The kind of an attachment by its type, or null when it can't be one (only JPG, PNG, WEBP, MP4 and PDF). */
+export function replyMediaKind(mimeType: string): ReplyMediaDTO["kind"] | null {
+  return REPLY_MEDIA_KINDS[mimeType] ?? null;
+}
+
 export interface QuickReplyDTO {
   id: string;
   name: string;
   /** Without the leading "/" — see the QuickReply Prisma model comment. */
   shortcut: string;
   text: string;
+  media: ReplyMediaDTO | null;
   /** Which WhatsApp connections a reply, automatic message or closing message applies to. */
   connectionScope: ConnectionScopeDTO;
   createdAt: string;
@@ -213,6 +245,7 @@ export interface ClosingMessageDTO {
   id: string;
   name: string;
   text: string;
+  media: ReplyMediaDTO | null;
   active: boolean;
   /** Users who get this message auto-sent when they click Encerrar — a user appears in at most one ClosingMessage's list at a time. */
   assignedUsers: { id: string; displayName: string }[];
@@ -890,6 +923,8 @@ export const PERMISSION = {
   RESPOSTAS_ENCERRAMENTO_ADICIONAR: "respostas_encerramento.adicionar",
   RESPOSTAS_ENCERRAMENTO_EDITAR: "respostas_encerramento.editar",
   RESPOSTAS_ENCERRAMENTO_EXCLUIR: "respostas_encerramento.excluir",
+  // The image, video or PDF of a quick reply or closing message — Gestor and Administrador only (never offered to Atendente).
+  RESPOSTAS_MIDIA_GERENCIAR: "respostas.midia",
   RESPOSTAS_TRANSFERENCIA_VISUALIZAR: "respostas_transferencia.visualizar",
   RESPOSTAS_TRANSFERENCIA_ADICIONAR: "respostas_transferencia.adicionar",
   RESPOSTAS_TRANSFERENCIA_EDITAR: "respostas_transferencia.editar",
@@ -1303,6 +1338,14 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     label: "Respostas — Encerramento (excluir)",
     description: "Excluir uma mensagem de encerramento automático.",
     editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.RESPOSTAS_MIDIA_GERENCIAR,
+    group: "Respostas",
+    label: "Respostas — Incluir imagem, vídeo ou PDF",
+    description: "Incluir, trocar ou remover o anexo (imagem, vídeo ou PDF) das respostas rápidas e das mensagens de encerramento. Só para Gestor e Administrador.",
+    editableRoles: ["MANAGER"],
     defaultAllowed: { AGENT: false, MANAGER: true },
   },
   {

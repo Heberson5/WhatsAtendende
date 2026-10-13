@@ -8,6 +8,7 @@ import { writeAudit } from "../../lib/audit";
 import { connectionScopeSchema } from "../../lib/connection-scope";
 import { toClosingMessageDTO } from "./closing-messages.mapper";
 import * as service from "./closing-messages.service";
+import { NO_REPLY_MEDIA, deleteReplyMediaFile, replyMediaUpload, sendReplyMedia, storeReplyMedia } from "../../lib/reply-media";
 
 export const closingMessagesRouter = Router();
 
@@ -78,5 +79,48 @@ closingMessagesRouter.delete(
     await service.deleteClosingMessage(req.params.id);
     await writeAudit({ userId: req.auth!.userId, action: "CLOSING_MESSAGE_DELETED", entity: "ClosingMessage", entityId: req.params.id, ipAddress: req.ip ?? null });
     res.status(204).end();
+  })
+);
+
+/** The attachment, for the form's preview. */
+closingMessagesRouter.get(
+  "/:id/media",
+  requirePermission(PERMISSION.RESPOSTAS_ENCERRAMENTO_VISUALIZAR),
+  asyncHandler(async (req, res) => {
+    sendReplyMedia(req, res, await service.getClosingMessage(req.params.id));
+  })
+);
+
+// Adding, replacing or removing it: Gestor and Administrador only (RESPOSTAS_MIDIA_GERENCIAR is never offered to Atendente).
+closingMessagesRouter.post(
+  "/:id/media",
+  requirePermission(PERMISSION.RESPOSTAS_MIDIA_GERENCIAR),
+  replyMediaUpload.single("file"),
+  asyncHandler(async (req, res) => {
+    await service.getClosingMessage(req.params.id);
+    const media = storeReplyMedia(req.file);
+    const row = await service.setClosingMessageMedia(req.params.id, media).catch((err) => {
+      deleteReplyMediaFile(media.mediaStorageKey);
+      throw err;
+    });
+    await writeAudit({
+      userId: req.auth!.userId,
+      action: "CLOSING_MESSAGE_MEDIA_SET",
+      entity: "ClosingMessage",
+      entityId: row.id,
+      ipAddress: req.ip ?? null,
+      metadata: { fileName: media.mediaFileName, mimeType: media.mediaMimeType, sizeBytes: media.mediaSizeBytes },
+    });
+    res.json(toClosingMessageDTO(row));
+  })
+);
+
+closingMessagesRouter.delete(
+  "/:id/media",
+  requirePermission(PERMISSION.RESPOSTAS_MIDIA_GERENCIAR),
+  asyncHandler(async (req, res) => {
+    const row = await service.setClosingMessageMedia(req.params.id, NO_REPLY_MEDIA);
+    await writeAudit({ userId: req.auth!.userId, action: "CLOSING_MESSAGE_MEDIA_REMOVED", entity: "ClosingMessage", entityId: row.id, ipAddress: req.ip ?? null });
+    res.json(toClosingMessageDTO(row));
   })
 );

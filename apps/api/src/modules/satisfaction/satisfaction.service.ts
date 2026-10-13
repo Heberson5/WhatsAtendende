@@ -1,12 +1,16 @@
+import fs from "node:fs";
+import path from "node:path";
 import type { Prisma, SatisfactionSurveyConfig } from "@prisma/client";
-import { CONVERSATION_UNDO_WINDOW_MS, type SatisfactionQuestionSummaryDTO, type SatisfactionSummaryDTO, type SatisfactionSurveyDTO } from "@whatsatendende/types";
+import { CONVERSATION_UNDO_WINDOW_MS, replyMediaKind, type SatisfactionQuestionSummaryDTO, type SatisfactionSummaryDTO, type SatisfactionSurveyDTO } from "@whatsatendende/types";
 import { prisma } from "../../lib/prisma";
 import { logger } from "../../lib/logger";
 import { Errors } from "../../lib/http-error";
 import { appliesToConnection, assertScopeConnectionsExist, scopeData, toConnectionScopeDTO, withScopeConnections, type ConnectionScopeInput } from "../../lib/connection-scope";
 import { realtimeEvents } from "../../realtime/realtime";
 import * as whatsappService from "../whatsapp/whatsapp.service";
-import { createSystemOutboundMessage } from "../messages/messages.service";
+import { env } from "../../config/env";
+import type { HeldReplyMedia } from "../../lib/reply-media";
+import { addAttachment, createSystemOutboundMessage } from "../messages/messages.service";
 import { isGratitudeMessage } from "./gratitude";
 
 /**
@@ -193,6 +197,37 @@ export interface HeldClosingMessage {
   text: string;
   senderId: string;
   senderDisplayName: string;
+  /** The closing message's image, video or PDF — this conversation's own copy; the text goes as its caption. */
+  media?: HeldReplyMedia | null;
+}
+
+/** The type of the message a closing message becomes: the attachment's kind, or a plain text. */
+export function closingMessageType(media: HeldReplyMedia | null | undefined): "TEXT" | "IMAGE" | "VIDEO" | "DOCUMENT" {
+  return (media && replyMediaKind(media.mimeType)) || "TEXT";
+}
+
+/**
+ * Sends a closing message's attachment, with the text as the caption, for the message row already created — the
+ * file is attached to that row first, so it shows in the conversation's history like any file an agent sends.
+ */
+export async function sendClosingMedia(
+  whatsappConnectionId: string,
+  messageId: string,
+  phone: string,
+  media: HeldReplyMedia,
+  caption: string,
+  senderDisplayName: string
+) {
+  await addAttachment(messageId, { fileName: media.fileName, mimeType: media.mimeType, sizeBytes: media.sizeBytes, storageKey: media.storageKey, kind: closingMessageType(media) });
+  const buffer = fs.readFileSync(path.join(env.UPLOAD_DIR, media.storageKey));
+  return whatsappService.sendOutboundFile(whatsappConnectionId, messageId, phone, buffer, media.fileName, media.mimeType, senderDisplayName, caption);
+}
+
+function heldMediaOf(value: Prisma.JsonValue | null | undefined): HeldReplyMedia | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const media = value as Record<string, unknown>;
+  if (typeof media.storageKey !== "string" || typeof media.fileName !== "string" || typeof media.mimeType !== "string") return null;
+  return { storageKey: media.storageKey, fileName: media.fileName, mimeType: media.mimeType, sizeBytes: Number(media.sizeBytes) || 0 };
 }
 
 /**
@@ -211,8 +246,12 @@ async function hasConversationSince(contactId: string, since: Date): Promise<boo
 
 async function sendHeldClosingMessage(conversation: SurveyConversation, closing: HeldClosingMessage): Promise<void> {
   if (!conversation.whatsappConnectionId || !conversation.contact.phone) return;
-  const message = await createSystemOutboundMessage({ conversationId: conversation.id, type: "TEXT", body: closing.text, agentId: closing.senderId, allowClosed: true });
-  await whatsappService.sendOutboundText(conversation.whatsappConnectionId, message.id, conversation.contact.phone, closing.text, closing.senderDisplayName);
+  const message = await createSystemOutboundMessage({ conversationId: conversation.id, type: closingMessageType(closing.media), body: closing.text, agentId: closing.senderId, allowClosed: true });
+  if (closing.media) {
+    await sendClosingMedia(conversation.whatsappConnectionId, message.id, conversation.contact.phone, closing.media, closing.text, closing.senderDisplayName);
+  } else {
+    await whatsappService.sendOutboundText(conversation.whatsappConnectionId, message.id, conversation.contact.phone, closing.text, closing.senderDisplayName);
+  }
   realtimeEvents.newMessage(conversation.id, conversation.assignedAgentId);
 }
 
@@ -254,7 +293,12 @@ export async function sendCloseFollowUp(conversationId: string, closingMessage?:
         expiresAt: new Date(now.getTime() + survey.answerWindowHours * 60 * 60 * 1000),
         // Even with no closing message to send, this is how long a "obrigado" from the customer still counts as part of the wait.
         closingDueAt: new Date(now.getTime() + waitMinutes * 60 * 1000),
-        ...(closingMessage && { closingText: closingMessage.text, closingSenderId: closingMessage.senderId, closingSenderName: closingMessage.senderDisplayName }),
+        ...(closingMessage && {
+          closingText: closingMessage.text,
+          closingSenderId: closingMessage.senderId,
+          closingSenderName: closingMessage.senderDisplayName,
+          ...(closingMessage.media && { closingMedia: { ...closingMessage.media } }),
+        }),
       },
     });
     await sendSurveyText({ id: conversationId, whatsappConnectionId: conversation.whatsappConnectionId! }, conversation.contact.phone!, survey.question);
@@ -299,6 +343,7 @@ async function deliverClosingMessage(surveyId: string, now: Date): Promise<strin
         closingText: true,
         closingSenderId: true,
         closingSenderName: true,
+        closingMedia: true,
         conversation: { select: { id: true, status: true, whatsappConnectionId: true, assignedAgentId: true, contact: { select: { phone: true } } } },
       },
     });
@@ -309,14 +354,12 @@ async function deliverClosingMessage(surveyId: string, now: Date): Promise<strin
 
     // The agent may have been removed since the conversation was closed — the message still goes out, just without their name on the row.
     const sender = survey.closingSenderId ? await prisma.user.findUnique({ where: { id: survey.closingSenderId }, select: { id: true } }) : null;
-    const message = await createSystemOutboundMessage({ conversationId: conversation.id, type: "TEXT", body: survey.closingText, agentId: sender?.id, allowClosed: true });
-    const sent = await whatsappService.sendOutboundText(
-      conversation.whatsappConnectionId,
-      message.id,
-      conversation.contact.phone,
-      survey.closingText,
-      survey.closingSenderName ?? "Atendimento"
-    );
+    const media = heldMediaOf(survey.closingMedia);
+    const message = await createSystemOutboundMessage({ conversationId: conversation.id, type: closingMessageType(media), body: survey.closingText, agentId: sender?.id, allowClosed: true });
+    const senderName = survey.closingSenderName ?? "Atendimento";
+    const sent = media
+      ? await sendClosingMedia(conversation.whatsappConnectionId, message.id, conversation.contact.phone, media, survey.closingText, senderName)
+      : await whatsappService.sendOutboundText(conversation.whatsappConnectionId, message.id, conversation.contact.phone, survey.closingText, senderName);
     realtimeEvents.newMessage(conversation.id, conversation.assignedAgentId);
     return await finish(sent?.status === "FAILED" ? CLOSING_FAILED : CLOSING_SENT);
   } catch (err) {

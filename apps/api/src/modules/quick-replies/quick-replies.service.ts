@@ -1,5 +1,6 @@
 import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
+import { assertCaptionFits, deleteReplyMediaFile, type ReplyMediaColumns } from "../../lib/reply-media";
 import { appliesToConnection, assertScopeConnectionsExist, scopeData, withScopeConnections, type ConnectionScopeInput } from "../../lib/connection-scope";
 
 /** Normalizes a user-entered shortcut into the canonical stored form: lowercase, no leading "/", no surrounding whitespace. */
@@ -57,6 +58,7 @@ export async function updateQuickReply(
   if (input.connectionScope) await assertScopeConnectionsExist(input.connectionScope);
   const shortcut = input.shortcut !== undefined ? normalizeShortcut(input.shortcut) : current.shortcut;
   await assertShortcutAvailable(shortcut, scope, id);
+  if (input.text !== undefined) assertCaptionFits(input.text, Boolean(current.mediaStorageKey));
   return prisma.quickReply.update({
     where: { id },
     data: { name: input.name, shortcut, text: input.text, ...(input.connectionScope && scopeData(input.connectionScope, "set")) },
@@ -65,6 +67,16 @@ export async function updateQuickReply(
 }
 
 export async function deleteQuickReply(id: string) {
-  await getQuickReply(id);
+  const current = await getQuickReply(id);
   await prisma.quickReply.delete({ where: { id } });
+  deleteReplyMediaFile(current.mediaStorageKey);
+}
+
+/** Attaches (or with NO_REPLY_MEDIA, removes) the reply's image, video or PDF — the file it had before is deleted. */
+export async function setQuickReplyMedia(id: string, media: ReplyMediaColumns) {
+  const current = await getQuickReply(id);
+  if (media.mediaStorageKey) assertCaptionFits(current.text, true);
+  const row = await prisma.quickReply.update({ where: { id }, data: media, include: withScopeConnections });
+  if (current.mediaStorageKey !== media.mediaStorageKey) deleteReplyMediaFile(current.mediaStorageKey);
+  return row;
 }

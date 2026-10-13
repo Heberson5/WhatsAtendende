@@ -1,7 +1,9 @@
 import { useState, type FormEvent } from "react";
 import { X } from "lucide-react";
-import type { QuickReplyDTO } from "@whatsatendende/types";
+import { PERMISSION, REPLY_MEDIA_CAPTION_MAX, type QuickReplyDTO } from "@whatsatendende/types";
+import { useAuthStore } from "../../store/auth-store";
 import { ConnectionScopePicker, toConnectionScopeValue, type ConnectionScopeValue } from "./ConnectionScopePicker";
+import { ReplyMediaField, captionTooLong, hasReplyMedia, type ReplyMediaChange } from "./ReplyMediaField";
 
 export interface QuickReplyFormValues {
   name: string;
@@ -17,8 +19,10 @@ export function QuickReplyFormModal({
 }: {
   quickReply: QuickReplyDTO | null;
   onClose: () => void;
-  onSubmit: (values: QuickReplyFormValues) => Promise<void>;
+  onSubmit: (values: QuickReplyFormValues, media: ReplyMediaChange) => Promise<void>;
 }) {
+  const canEditMedia = Boolean(useAuthStore((s) => s.permissions)?.[PERMISSION.RESPOSTAS_MIDIA_GERENCIAR]);
+  const [media, setMedia] = useState<ReplyMediaChange>({ kind: "keep" });
   const [values, setValues] = useState<QuickReplyFormValues>({
     name: quickReply?.name ?? "",
     shortcut: quickReply?.shortcut ?? "",
@@ -35,9 +39,13 @@ export function QuickReplyFormModal({
       setError("Escolha pelo menos uma conexão ou marque todas as conexões");
       return;
     }
+    if (captionTooLong(values.text, quickReply?.media, media)) {
+      setError(`Com anexo, o texto vai como legenda e pode ter até ${REPLY_MEDIA_CAPTION_MAX.toLocaleString("pt-BR")} caracteres.`);
+      return;
+    }
     setLoading(true);
     try {
-      await onSubmit(values);
+      await onSubmit(values, media);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao salvar resposta rápida");
@@ -96,7 +104,20 @@ export function QuickReplyFormModal({
               placeholder="Texto que será inserido no campo de mensagem..."
               className="focus-ring w-full resize-none rounded-card border border-border bg-transparent px-3 py-2 text-sm"
             />
+            {hasReplyMedia(quickReply?.media, media) && (
+              <p className={`mt-1 text-xs ${values.text.length > REPLY_MEDIA_CAPTION_MAX ? "text-danger" : "text-muted"}`}>
+                Legenda do anexo: {values.text.length.toLocaleString("pt-BR")} de {REPLY_MEDIA_CAPTION_MAX.toLocaleString("pt-BR")} caracteres
+              </p>
+            )}
           </Field>
+
+          <ReplyMediaField
+            current={quickReply?.media}
+            previewPath={quickReply ? `/quick-replies/${quickReply.id}/media` : null}
+            canEdit={canEditMedia}
+            change={media}
+            onChange={setMedia}
+          />
         </div>
 
         {error && <p className="mt-3 rounded-card bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}

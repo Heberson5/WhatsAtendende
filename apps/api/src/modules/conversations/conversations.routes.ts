@@ -21,7 +21,8 @@ import { sendMetaMessage } from "../meta/meta.service";
 import { createOutboundMessage, createSystemOutboundMessage } from "../messages/messages.service";
 import { getActiveClosingMessageForAgent } from "../closing-messages/closing-messages.service";
 import { resolveNumberToStart } from "../phone-numbers/resolve-number.service";
-import { willSendSurveyOnClose, type HeldClosingMessage } from "../satisfaction/satisfaction.service";
+import { closingMessageType, sendClosingMedia, willSendSurveyOnClose, type HeldClosingMessage } from "../satisfaction/satisfaction.service";
+import { copyReplyMediaFile } from "../../lib/reply-media";
 import { getActiveTemplateFor, renderAutoMessageTemplate, ROLE_LABEL } from "../auto-message-templates/auto-message-templates.service";
 import { createNotification } from "../notifications/notifications.service";
 import { toNotificationDTO } from "../notifications/notifications.mapper";
@@ -476,11 +477,14 @@ conversationsRouter.post(
           atendenteCargo: ROLE_LABEL[req.auth!.role],
           cliente: existing.contact.name ?? existing.contact.phone ?? "",
         });
+        // Its attachment (WhatsApp only), copied for this conversation — the text goes as the caption.
+        const media = existing.channel === "WHATSAPP" ? copyReplyMediaFile(closingMessage) : null;
         if (await willSendSurveyOnClose(existing.id)) {
-          heldClosingMessage = { text, senderId: req.auth!.userId, senderDisplayName: req.auth!.displayName };
+          heldClosingMessage = { text, senderId: req.auth!.userId, senderDisplayName: req.auth!.displayName, media };
         } else {
-          const outboundMessage = await createSystemOutboundMessage({ conversationId: existing.id, type: "TEXT", body: text, agentId: req.auth!.userId });
-          await sendOutboundTextViaChannel(existing, outboundMessage.id, text, req.auth!.displayName);
+          const outboundMessage = await createSystemOutboundMessage({ conversationId: existing.id, type: closingMessageType(media), body: text, agentId: req.auth!.userId });
+          if (media) await sendClosingMedia(existing.whatsappConnectionId!, outboundMessage.id, existing.contact.phone!, media, text, req.auth!.displayName);
+          else await sendOutboundTextViaChannel(existing, outboundMessage.id, text, req.auth!.displayName);
           realtimeEvents.newMessage(existing.id, existing.assignedAgentId);
         }
       }
@@ -578,17 +582,20 @@ conversationsRouter.post(
         atendenteCargo: ROLE_LABEL[req.auth!.role],
         cliente: existing.contact.name ?? existing.contact.phone ?? "",
       });
+      // Its attachment (WhatsApp only), copied for this conversation — the text goes as the caption.
+      const media = existing.channel === "WHATSAPP" ? copyReplyMediaFile(closingMessage) : null;
       if (await willSendSurveyOnClose(existing.id)) {
-        heldClosingMessage = { text, senderId: req.auth!.userId, senderDisplayName: req.auth!.displayName };
+        heldClosingMessage = { text, senderId: req.auth!.userId, senderDisplayName: req.auth!.displayName, media };
       } else {
         const outboundMessage = await createOutboundMessage({
           conversationId: existing.id,
           agentId: req.auth!.userId,
-          type: "TEXT",
+          type: closingMessageType(media),
           body: text,
           automatic: true,
         });
-        await sendOutboundTextViaChannel(existing, outboundMessage.id, text, req.auth!.displayName);
+        if (media) await sendClosingMedia(existing.whatsappConnectionId!, outboundMessage.id, existing.contact.phone!, media, text, req.auth!.displayName);
+        else await sendOutboundTextViaChannel(existing, outboundMessage.id, text, req.auth!.displayName);
         realtimeEvents.newMessage(existing.id, req.auth!.userId);
       }
     }

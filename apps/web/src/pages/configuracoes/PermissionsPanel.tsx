@@ -109,12 +109,19 @@ export function PermissionsPanel() {
                       </td>
                       {EDITABLE_ROLES.map(({ role }) => (
                         <td key={role} className="px-2 py-2.5 text-center">
-                          <input
-                            type="checkbox"
-                            checked={draft[role][def.key]}
-                            onChange={() => toggle(role, def.key)}
-                            aria-label={`${def.label} - ${role}`}
-                          />
+                          {def.editableRoles.includes(role) ? (
+                            <input
+                              type="checkbox"
+                              checked={draft[role][def.key]}
+                              onChange={() => toggle(role, def.key)}
+                              aria-label={`${def.label} - ${role}`}
+                            />
+                          ) : (
+                            // Not offered to this profile at all (e.g. media in Respostas is for Gestor and Administrador only).
+                            <span className="text-xs text-muted" title="Não disponível para este perfil">
+                              —
+                            </span>
+                          )}
                         </td>
                       ))}
                       <td className="px-2 py-2.5 text-center">
