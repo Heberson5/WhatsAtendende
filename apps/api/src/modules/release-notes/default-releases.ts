@@ -11,6 +11,24 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.8.2",
+    date: "13 out 2026",
+    name: "Colar imagem na conversa",
+    summary: "Uma imagem copiada (um print, \"Copiar imagem\" do navegador) ou arquivos copiados no Explorador podem ser colados com Ctrl+V no campo da mensagem e entram como anexo, como no WhatsApp Web.",
+    notes: [
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "Ctrl+V de imagem vira anexo",
+        text: "Copie uma imagem — um print de tela (PrintScreen ou Win+Shift+S), \"Copiar imagem\" no navegador — ou arquivos no Explorador do Windows, e cole com Ctrl+V no campo da mensagem. Eles entram na prévia de anexo, como pelo clipe, e o texto que você já tinha digitado vira a legenda. Colar de novo com a prévia aberta acrescenta mais um. Nada é enviado sozinho: confira e clique em Enviar. Cópias do Word e do Excel continuam sendo coladas como texto. Vale também nos Grupos.",
+        steps: ["Copie a imagem ou o print.", "Na conversa, clique no campo da mensagem e cole com Ctrl+V {1}.", "O texto digitado vira a legenda {2}; clique em Enviar."],
+        where: "Atendimento › conversa",
+        requires: [PERMISSION.ATENDIMENTO_ACESSAR],
+        images: [{ src: "/notas-de-versao/colar-imagem.webp", caption: "{1} A imagem colada, como anexo · {2} O texto digitado, como legenda" }],
+      },
+    ],
+  },
+  {
     version: "2.8.1",
     date: "13 out 2026",
     name: "O código de conexão pelo número fica na tela",
