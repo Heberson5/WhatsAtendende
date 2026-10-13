@@ -130,7 +130,7 @@ describe("reading a conversation from the linked phone (markConversationReadFrom
       expect((await conversationsService.listQueue([connectionId])).find((c) => c.contact.id === contact.id)).toBeUndefined();
     });
 
-    it("uma @menção nessa mensagem não tira a conversa do celular", async () => {
+    it("uma @menção nessa mensagem leva a conversa do celular para a pessoa citada", async () => {
       const { contact, conversation } = await createWaitingConversation("5511990004444", connectionId);
       const agent = await createTestUser({
         email: "agente-reopen-mention@test.dev",
@@ -143,11 +143,11 @@ describe("reading a conversation from the linked phone (markConversationReadFrom
 
       const result = await conversationsService.findOrOpenConversationForInboundMessage(connectionId, contact.id, "Oi, pode ser a @Fernanda de novo?");
       expect(result.isNewConversation).toBe(false);
-      expect(result.autoAssignedAgentId).toBeNull();
+      expect(result.autoAssignedAgentId).toBe(agent.id);
       const row = await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } });
-      expect(row.status).toBe("HANDLED_EXTERNALLY");
-      expect(row.assignedAgentId).toBeNull();
-      expect((await conversationsService.listMyConversations(agent.id)).find((c) => c.id === conversation.id)).toBeUndefined();
+      expect(row.status).toBe("IN_PROGRESS");
+      expect(row.assignedAgentId).toBe(agent.id);
+      expect((await conversationsService.listMyConversations(agent.id)).find((c) => c.id === conversation.id)).toBeDefined();
     });
 
     it("aceita por um atendente na plataforma: continua na plataforma, mesmo aberta ou respondida no celular", async () => {

@@ -11,6 +11,32 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.6.1",
+    date: "13 out 2026",
+    name: "@ do cliente leva a conversa a quem atende",
+    summary: "Quando o cliente escreve @ e o nome de quem atende, a conversa vai direto para essa pessoa em mais situações: também com o cliente esperando na fila ou atendido pelo celular, pelo primeiro nome, e para gestores e administradores daquela conexão.",
+    notes: [
+      {
+        type: "melhoria",
+        area: "atendimento",
+        title: "O @ funciona também com o cliente esperando",
+        text: "Antes o @ só valia na primeira mensagem de uma conversa nova. Agora, se o cliente já está na fila, ainda no Fluxo ou numa conversa Atendido pelo celular e escreve @ e o nome, a conversa sai de onde está e vai para Meus atendimentos dessa pessoa, com o aviso de nova mensagem. Se a conversa já está com um atendente, ela não muda de dono. Como antes, a pessoa precisa estar Online; em pausa ou offline, a conversa segue na fila.",
+        before: "Com o cliente já na fila ou atendido pelo celular, o @ era ignorado.",
+        after: "O @ leva a conversa para a pessoa citada sempre que ninguém está atendendo.",
+        where: "Atendimento › Meus atendimentos",
+      },
+      {
+        type: "melhoria",
+        area: "atendimento",
+        title: "Reconhece pelo primeiro nome, só entre quem atende aquele número",
+        text: "@João encontra João Silva. Se duas pessoas têm o mesmo primeiro nome, a conversa vai para a fila, sem adivinhar. Pequenos erros de digitação continuam reconhecidos (@gleici encontra Gleicy). O @ agora só encontra quem atende a conexão em que o cliente escreveu: os atendentes dela, os gestores que recebem conversas dela e o administrador vinculado a ela. Um nome de outra conexão não leva a conversa embora.",
+        before: "Só o nome de exibição inteiro, só atendentes e de qualquer conexão.",
+        after: "Nome inteiro ou primeiro nome, de atendentes, gestores e administradores daquela conexão.",
+        where: "Atendimento",
+      },
+    ],
+  },
+  {
     version: "2.6.0",
     date: "13 out 2026",
     name: "Horário de expediente",
