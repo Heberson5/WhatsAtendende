@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, Columns3, Download, FileSpreadsheet, FileText } from "lucide-react";
 import { api } from "../../lib/api";
@@ -85,6 +85,8 @@ export default function RelatoriosPage() {
         format,
         columns: allColumns.length && !satisfactionTable ? visibleColumns.join(",") : undefined,
         table: satisfactionTable,
+        // The export is what is on screen: the attendant chosen next to the period, too.
+        agentId: satisfactionTable && satisfactionAgentId !== "all" ? satisfactionAgentId : undefined,
         tzOffsetMinutes: new Date().getTimezoneOffset(),
       },
       responseType: "blob",
@@ -98,6 +100,18 @@ export default function RelatoriosPage() {
     link.remove();
     window.URL.revokeObjectURL(url);
   }
+
+  // Pesquisa de satisfação: the attendant filter sits next to the period. It lists whoever was rated, and keeps the
+  // one selected while the report narrows to them.
+  const [satisfactionAgentId, setSatisfactionAgentId] = useState("all");
+  const [satisfactionAgents, setSatisfactionAgents] = useState<{ id: string; name: string }[]>([]);
+  const rememberSatisfactionAgents = useCallback((agents: { id: string; name: string }[]) => {
+    setSatisfactionAgents((prev) => {
+      const merged = new Map([...prev, ...agents].map((a) => [a.id, a]));
+      if (merged.size === prev.length) return prev;
+      return [...merged.values()].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+    });
+  }, []);
 
   return (
     <div className="flex h-full flex-col overflow-hidden p-3 sm:p-6">
@@ -116,6 +130,21 @@ export default function RelatoriosPage() {
 
         <div className="flex flex-wrap items-center gap-3">
           <PeriodFilter value={period} onChange={setPeriod} />
+          {tab === "satisfaction" && (
+            <select
+              value={satisfactionAgentId}
+              onChange={(e) => setSatisfactionAgentId(e.target.value)}
+              aria-label="Filtrar por atendente"
+              className="focus-ring rounded-card border border-border bg-surface px-3 py-2 text-sm"
+            >
+              <option value="all">Todos os atendentes</option>
+              {satisfactionAgents.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          )}
           <ConnectionFilter value={connectionIds} onChange={setConnectionIds} />
           {tab !== "messages" && tab !== "satisfaction" && allColumns.length > 0 && (
             <div ref={columnsMenuRef} className="relative">
@@ -199,7 +228,9 @@ export default function RelatoriosPage() {
         </div>
       )}
 
-      {tab === "satisfaction" && <SatisfactionReport period={period} connectionIds={connectionIds} />}
+      {tab === "satisfaction" && (
+        <SatisfactionReport period={period} connectionIds={connectionIds} agentId={satisfactionAgentId} onAgentsLoaded={rememberSatisfactionAgents} />
+      )}
 
       {tab !== "messages" && tab !== "satisfaction" && (
         <div className="shadow-soft flex-1 overflow-auto rounded-card border border-border bg-surface">

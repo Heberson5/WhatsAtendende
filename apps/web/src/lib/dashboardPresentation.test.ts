@@ -23,11 +23,23 @@ function snapshot(overrides: Partial<DashboardSnapshot> = {}): DashboardSnapshot
 }
 
 const SATISFACTION: PresentationInput["satisfaction"] = {
-  sent: 1102,
-  answered: 412,
-  questions: [
-    { questionId: "q1", question: "De 0 a 10, o quanto você recomendaria?", current: true, scaleMax: 10, sent: 1102, answered: 412, average: 8.7, distribution: [6, 2, 3, 4, 5, 9, 12, 24, 49, 98, 200], promoters: 298, passives: 73, detractors: 41, nps: 62 },
-  ],
+  totals: {
+    sent: 1102,
+    answered: 412,
+    responseRate: 37,
+    average: 8.7,
+    nps: 81,
+    promoters: 298,
+    passives: 73,
+    detractors: 41,
+    distribution: [6, 2, 3, 4, 5, 9, 12, 24, 49, 98, 200],
+    awaiting: 0,
+  },
+  previous: { from: "2026-09-01T03:00:00.000Z", to: "2026-10-01T02:59:59.000Z", nps: 75, average: 8.4, answered: 380, responseRate: 35 },
+  currentQuestion: "*Pesquisa* 😊\nDe _0 a 10_, o quanto você recomendaria?",
+  settings: { npsGoal: 80, presentationCustomer: "full" },
+  byAgent: null,
+  latest: null,
 };
 
 function input(overrides: Partial<PresentationInput> = {}): PresentationInput {
@@ -158,7 +170,7 @@ describe("apresentação do Dashboard", () => {
     expect(slides[titleIndex(slides, "O período em resumo")]).toContain("conversas encerradas");
   });
 
-  it("com o relatório da pesquisa: satisfação por atendente, evolução, por conexão e as notas baixas com o cliente", async () => {
+  it("com o relatório da pesquisa: satisfação por atendente, evolução, por conexão e as últimas 5 de cada grupo, com o cliente", async () => {
     const stats = (sent: number, answered: number, nps: number | null, promoters: number, passives: number, detractors: number, average: number | null) => ({
       sent,
       answered,
@@ -187,44 +199,68 @@ describe("apresentação do Dashboard", () => {
     const report: NonNullable<PresentationInput["satisfactionReport"]> = {
       totals: { ...stats(20, 12, 25, 6, 3, 3, 7.8), distribution: [0, 0, 1, 1, 0, 0, 1, 1, 2, 3, 3], awaiting: 2 },
       byAgent: [
-        { ...stats(12, 8, 50, 5, 2, 1, 8.4), agentId: "a1", agentName: "Ana Souza", lowest: 3, highest: 10 },
-        { ...stats(8, 4, -25, 1, 1, 2, 6.5), agentId: "a2", agentName: "Bruno Lima", lowest: 2, highest: 9 },
+        { ...stats(12, 8, 75, 5, 2, 1, 8.4), agentId: "a1", agentName: "Ana Souza", lowest: 3, highest: 10, previousNps: 69 },
+        { ...stats(8, 4, 38, 1, 1, 2, 6.5), agentId: "a2", agentName: "Bruno Lima", lowest: 2, highest: 9, previousNps: 45 },
       ],
       byConnection: [
-        { ...stats(14, 9, 33, 5, 2, 2, 8.0), connectionId: "s", connectionName: "Suporte", connectionColor: "#0097B4" },
-        { ...stats(6, 3, 0, 1, 1, 1, 7.0), connectionId: "v", connectionName: "Vendas", connectionColor: "#7C3AED" },
+        { ...stats(14, 9, 67, 5, 2, 2, 8.0), connectionId: "s", connectionName: "Suporte", connectionColor: "#0097B4" },
+        { ...stats(6, 3, 50, 1, 1, 1, 7.0), connectionId: "v", connectionName: "Vendas", connectionColor: "#7C3AED" },
       ],
       trend: [
-        { start: "2026-10-01T03:00:00.000Z", label: "01/10", answered: 5, average: 8.2, nps: 40 },
-        { start: "2026-10-02T03:00:00.000Z", label: "02/10", answered: 7, average: 7.5, nps: 14 },
+        { start: "2026-10-01T03:00:00.000Z", label: "01/10", answered: 5, average: 8.2, nps: 70 },
+        { start: "2026-10-02T03:00:00.000Z", label: "02/10", answered: 7, average: 7.5, nps: 57 },
       ],
       responses: [response("Marina Alves", "Ana Souza", 10), response("Rita Prado", "Bruno Lima", 3), response("Carlos Dias", "Bruno Lima", 2)],
+      previous: SATISFACTION!.previous,
+      currentQuestion: SATISFACTION!.currentQuestion,
+      settings: { npsGoal: 80, presentationCustomer: "full" },
     };
     const { slides, notes } = await open(input({ satisfactionReport: report }));
     const byAgent = titleIndex(slides, "Satisfação por atendente");
     const trend = titleIndex(slides, "Evolução da satisfação no período");
     const byConnection = titleIndex(slides, "Satisfação por conexão");
-    const attention = titleIndex(slides, "Avaliações que pedem atenção");
+    const attention = titleIndex(slides, "Últimas avaliações de cada grupo");
     const npsSlide = titleIndex(slides, "Como os clientes avaliam o atendimento");
     expect([npsSlide, byAgent, trend, byConnection, attention].every((i) => i > 0)).toBe(true);
     expect(npsSlide < byAgent && byAgent < trend && trend < byConnection && byConnection < attention).toBe(true);
     expect(slides[byAgent]).toContain("Ana Souza");
-    expect(slides[byAgent]).toContain("+50");
-    expect(slides[byAgent]).toContain("-25");
-    expect(slides[attention]).toContain("Rita Prado");
+    expect(slides[byAgent]).toContain("NPS (0–100)");
+    expect(slides[byAgent]).toContain("▲ 6 pontos");
+    expect(slides[byAgent]).toContain("▼ 7 pontos");
+    expect(slides[byAgent]).toContain("Bruno Lima *"); // amostra pequena
+    // Name and number of the customer, in each group.
+    expect(slides[attention]).toContain("Rita Prado · (65) 99999-0000");
     expect(slides[attention]).toContain("Carlos Dias");
-    expect(slides[attention]).not.toContain("Marina Alves");
+    expect(slides[attention]).toContain("Marina Alves");
+    expect(slides[attention]).toContain("Promotores");
     expect(notes.length).toBe(slides.length);
+    // Nothing on the −100…+100 scale anywhere.
+    expect(slides.join(" ")).not.toMatch(/-100|\+100|−100/);
+
+    // Only the initials when the survey settings say so.
+    const initials = await open(input({ satisfactionReport: { ...report, settings: { npsGoal: null, presentationCustomer: "initials" } }, satisfaction: { ...SATISFACTION!, settings: { npsGoal: null, presentationCustomer: "initials" } } }));
+    const latest = initials.slides[titleIndex(initials.slides, "Últimas avaliações de cada grupo")];
+    expect(latest).toContain("R. P.");
+    expect(latest).not.toContain("Rita Prado");
 
     // Without answers in the period, none of these slides.
-    const empty = await open(input({ satisfactionReport: { ...report, totals: { ...report.totals, answered: 0 } } }));
+    const empty = await open(input({ satisfaction: { ...SATISFACTION!, totals: { ...SATISFACTION!.totals, answered: 0, nps: null } }, satisfactionReport: report }));
     expect(titleIndex(empty.slides, "Satisfação por atendente")).toBe(-1);
   });
 
-  it("a pesquisa antiga (1 a 5) não vira NPS", async () => {
-    const legacy = { sent: 10, answered: 5, questions: [{ ...SATISFACTION!.questions[0], questionId: null, scaleMax: 5 as const, nps: null }] };
-    const { slides } = await open(input({ satisfaction: legacy }));
-    expect(titleIndex(slides, "Como os clientes avaliam o atendimento")).toBe(-1);
+  it("o slide de NPS traz 0 a 100, a comparação, a meta e a pergunta formatada como o cliente recebe", async () => {
+    const { slides, xmlParts } = await open(input());
+    const nps = slides[titleIndex(slides, "Como os clientes avaliam o atendimento")];
+    expect(nps).toContain("NPS do período (0 a 100)");
+    expect(nps).toContain("81");
+    expect(nps).toContain("▲ 6 pontos");
+    expect(nps).toContain("Meta 80: acima");
+    // *Pesquisa* in bold, _0 a 10_ in italic — the marks themselves don't show.
+    expect(nps).not.toContain("*Pesquisa*");
+    expect(nps).not.toContain("_0 a 10_");
+    const xml = xmlParts.map(([, x]) => x).find((x) => x.includes("<a:t>Pesquisa</a:t>") && x.includes("recomendaria"))!;
+    expect(xml).toMatch(/<a:rPr[^>]*b="1"[^>]*>(?:(?!<\/a:r>).)*<a:t>Pesquisa<\/a:t>/s);
+    expect(xml).toMatch(/<a:rPr[^>]*i="1"[^>]*>(?:(?!<\/a:r>).)*<a:t>0 a 10<\/a:t>/s);
   });
 
   it("período sem movimento: sem jornada, sem equipe, sem presença e sem palavras — só o que tem número", async () => {
@@ -311,7 +347,7 @@ describe("o período em resumo", () => {
     expect(items.map((h) => `${h.value} ${h.title} — ${h.detail}`)).toEqual([
       "1.284 conversas recebidas — 12% a mais que no período anterior · 1.031 clientes diferentes",
       "3 min até a 1ª resposta, em média — 25% mais rápido que no período anterior",
-      "+62 de NPS (satisfação dos clientes) — Zona de qualidade · 412 respostas",
+      "81 de NPS, de 0 a 100 (satisfação dos clientes) — Zona de qualidade · 412 respostas · ▲ 6 pontos vs. período anterior",
       "312 conversas com Ana Souza — Quem mais atendeu: 38% das conversas da equipe",
     ]);
   });

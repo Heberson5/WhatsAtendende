@@ -87,3 +87,27 @@ satisfactionRouter.delete(
     res.status(204).end();
   })
 );
+
+/** Relatórios e apresentação: the NPS goal and how the presentation names customers (one setting for every survey). */
+satisfactionRouter.get(
+  "/settings",
+  requirePermission(PERMISSION.RESPOSTAS_PESQUISA_VISUALIZAR),
+  asyncHandler(async (_req, res) => {
+    res.json(await service.getSatisfactionSettings());
+  })
+);
+
+const settingsSchema = z.object({
+  npsGoal: z.number().int().min(0).max(100).nullable(),
+  presentationCustomer: z.enum(["full", "initials"]),
+});
+
+satisfactionRouter.put(
+  "/settings",
+  requirePermission(PERMISSION.RESPOSTAS_PESQUISA_EDITAR),
+  asyncHandler(async (req, res) => {
+    const settings = await service.saveSatisfactionSettings(settingsSchema.parse(req.body));
+    await writeAudit({ userId: req.auth!.userId, action: "SATISFACTION_SETTINGS_UPDATED", entity: "SystemSetting", entityId: "satisfaction.settings", ipAddress: req.ip ?? null, metadata: { ...settings } });
+    res.json(settings);
+  })
+);

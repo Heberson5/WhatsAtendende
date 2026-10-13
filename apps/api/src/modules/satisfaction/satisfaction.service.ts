@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Prisma, SatisfactionSurveyConfig } from "@prisma/client";
-import { CONVERSATION_UNDO_WINDOW_MS, replyMediaKind, type SatisfactionQuestionSummaryDTO, type SatisfactionSummaryDTO, type SatisfactionSurveyDTO } from "@whatsatendende/types";
+import { CONVERSATION_UNDO_WINDOW_MS, npsFromCounts, replyMediaKind, type SatisfactionSettingsDTO, type SatisfactionQuestionSummaryDTO, type SatisfactionSummaryDTO, type SatisfactionSurveyDTO } from "@whatsatendende/types";
 import { prisma } from "../../lib/prisma";
 import { logger } from "../../lib/logger";
 import { Errors } from "../../lib/http-error";
@@ -488,7 +488,7 @@ interface NpsBreakdown {
   promoters: number;
   passives: number;
   detractors: number;
-  /** (promoters − detractors) ÷ answered × 100, rounded; null while nobody answered. */
+  /** NPS from 0 to 100 (npsFromCounts); null while nobody answered. */
   nps: number | null;
 }
 
@@ -499,7 +499,7 @@ export function calculateNps(distribution: number[]): NpsBreakdown {
   const passives = count(PASSIVE_MIN_SCORE, PROMOTER_MIN_SCORE - 1);
   const detractors = count(0, PASSIVE_MIN_SCORE - 1);
   const answered = promoters + passives + detractors;
-  return { answered, promoters, passives, detractors, nps: answered ? Math.round(((promoters - detractors) / answered) * 100) : null };
+  return { answered, promoters, passives, detractors, nps: npsFromCounts(promoters, detractors, answered) };
 }
 
 function summarizeQuestion(
@@ -567,7 +567,7 @@ export async function getSatisfactionSummary(params: { from: Date; to: Date; age
   };
 }
 
-/** NPS and number of answers per rated agent (0–10 scale only) — for Relatórios › Por atendente. */
+/** NPS (0 a 100) and number of answers per rated agent (0–10 scale only) — for Relatórios › Por atendente. */
 export async function getSatisfactionByAgent(params: { from: Date; to: Date; connectionIds?: string[] }) {
   const rows = await prisma.satisfactionSurvey.groupBy({
     by: ["agentId", "score"],
@@ -590,4 +590,31 @@ export async function getSatisfactionByAgent(params: { from: Date; to: Date; con
     const { answered, nps } = calculateNps(distribution);
     return [agentId, { answered, nps }] as const;
   }));
+}
+
+// ---------------------------------------------------------------------------
+// Respostas › Pesquisa › Relatórios e apresentação — one setting for every survey.
+
+const SETTINGS_KEY = "satisfaction.settings";
+const DEFAULT_SETTINGS: SatisfactionSettingsDTO = { npsGoal: null, presentationCustomer: "full" };
+
+export async function getSatisfactionSettings(): Promise<SatisfactionSettingsDTO> {
+  const row = await prisma.systemSetting.findUnique({ where: { key: SETTINGS_KEY } });
+  const value = (row?.value ?? {}) as Partial<SatisfactionSettingsDTO>;
+  return {
+    npsGoal: typeof value.npsGoal === "number" ? value.npsGoal : DEFAULT_SETTINGS.npsGoal,
+    presentationCustomer: value.presentationCustomer === "initials" ? "initials" : DEFAULT_SETTINGS.presentationCustomer,
+  };
+}
+
+export async function saveSatisfactionSettings(input: SatisfactionSettingsDTO): Promise<SatisfactionSettingsDTO> {
+  const value = { npsGoal: input.npsGoal, presentationCustomer: input.presentationCustomer };
+  await prisma.systemSetting.upsert({ where: { key: SETTINGS_KEY }, create: { key: SETTINGS_KEY, value }, update: { value } });
+  return getSatisfactionSettings();
+}
+
+/** The question being asked now: the one of a survey that is switched on (the most recently changed, if several). */
+export async function getCurrentQuestion(): Promise<string | null> {
+  const survey = await prisma.satisfactionSurveyConfig.findFirst({ where: { active: true }, orderBy: { updatedAt: "desc" }, select: { question: true } });
+  return survey?.question ?? null;
 }

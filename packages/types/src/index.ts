@@ -489,7 +489,7 @@ export interface SatisfactionQuestionSummaryDTO {
   promoters: number;
   passives: number;
   detractors: number;
-  /** (promoters − detractors) ÷ answered × 100, rounded. null without answers, and for the old 1–5 scale. */
+  /** NPS from 0 to 100 (see npsFromCounts). null without answers, and for the old 1–5 scale. */
   nps: number | null;
 }
 
@@ -501,10 +501,54 @@ export interface SatisfactionScoreStatsDTO {
   responseRate: number | null;
   /** Average score, one decimal; null without answers. */
   average: number | null;
+  /** NPS from 0 to 100 (see npsFromCounts); null without answers. */
   nps: number | null;
   promoters: number;
   passives: number;
   detractors: number;
+}
+
+/**
+ * NPS on the 0 to 100 scale the system shows everywhere: the share of promoters (9–10) minus the share of
+ * detractors (0–6), taken from −100…+100 to 0…100 — 0 when every answer is a detractor, 50 when promoters
+ * and detractors are even, 100 when every answer is a promoter. null without answers.
+ */
+export function npsFromCounts(promoters: number, detractors: number, answered: number): number | null {
+  if (!answered) return null;
+  return Math.round(50 + ((promoters - detractors) / answered) * 50);
+}
+
+/** The NPS zones on the 0–100 scale — the usual reading (excelência, qualidade, aperfeiçoamento, crítica). */
+export const NPS_ZONES = [
+  { min: 88, label: "Zona de excelência", tone: "success" },
+  { min: 75, label: "Zona de qualidade", tone: "primary" },
+  { min: 50, label: "Zona de aperfeiçoamento", tone: "warning" },
+  { min: 0, label: "Zona crítica", tone: "danger" },
+] as const;
+
+export function npsZoneOf(nps: number): (typeof NPS_ZONES)[number] {
+  return NPS_ZONES.find((z) => nps >= z.min) ?? NPS_ZONES[NPS_ZONES.length - 1];
+}
+
+/** Below this many answers, one score moves an NPS a lot — shown, but flagged "amostra pequena". */
+export const NPS_SMALL_SAMPLE = 5;
+
+/** Respostas › Pesquisa › Relatórios e apresentação: the NPS goal and how the presentation names customers. */
+export interface SatisfactionSettingsDTO {
+  /** NPS goal from 0 to 100 — a line on the charts and "acima/abaixo da meta"; null = no goal. */
+  npsGoal: number | null;
+  /** In the presentation (PPT): the customer's name and number, or only the initials. */
+  presentationCustomer: "full" | "initials";
+}
+
+/** The same numbers for the period right before, with the same length — for "▲ 6 pontos". */
+export interface SatisfactionPreviousDTO {
+  from: string;
+  to: string;
+  nps: number | null;
+  average: number | null;
+  answered: number;
+  responseRate: number | null;
 }
 
 /** Relatórios › Pesquisa de satisfação — only the 0–10 (NPS) surveys of the period. */
@@ -515,12 +559,38 @@ export interface SatisfactionReportDTO {
     /** Sent and still waiting for the customer's score. */
     awaiting: number;
   };
-  byAgent: (SatisfactionScoreStatsDTO & { agentId: string | null; agentName: string; lowest: number | null; highest: number | null })[];
+  byAgent: (SatisfactionScoreStatsDTO & {
+    agentId: string | null;
+    agentName: string;
+    lowest: number | null;
+    highest: number | null;
+    /** Their NPS in the period before (null when they had no answers then). */
+    previousNps: number | null;
+  })[];
   byConnection: (SatisfactionScoreStatsDTO & { connectionId: string; connectionName: string; connectionColor: string })[];
   /** Day by day (or week by week, for periods longer than a month), oldest first. */
   trend: { start: string; label: string; answered: number; average: number | null; nps: number | null }[];
   /** Every survey of the period, newest first (answered or not). */
   responses: SatisfactionResponseDTO[];
+  /** The period right before, same length. */
+  previous: SatisfactionPreviousDTO;
+  /** The question being asked now (the one of a survey that is on), as the customer gets it — null when none is on. */
+  currentQuestion: string | null;
+  settings: SatisfactionSettingsDTO;
+}
+
+/**
+ * Dashboard › Pesquisa de satisfação: the same numbers as Relatórios › Pesquisa de satisfação (both count every
+ * 0–10 survey of the period). `byAgent` and `latest` (5 detractors, 5 passives, 5 promoters) come only for
+ * Gestor and Administrador — they name customers.
+ */
+export interface SatisfactionOverviewDTO {
+  totals: SatisfactionReportDTO["totals"];
+  previous: SatisfactionPreviousDTO;
+  currentQuestion: string | null;
+  settings: SatisfactionSettingsDTO;
+  byAgent: SatisfactionReportDTO["byAgent"] | null;
+  latest: Record<SatisfactionCategory, SatisfactionResponseDTO[]> | null;
 }
 
 export type SatisfactionCategory = "promoter" | "passive" | "detractor";

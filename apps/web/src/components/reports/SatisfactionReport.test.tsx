@@ -17,7 +17,7 @@ vi.mock("../gestao/ReadOnlyConversationDrawer", () => ({
   ReadOnlyConversationDrawer: ({ conversation }: { conversation: { id: string } }) => <p>Conversa aberta: {conversation.id}</p>,
 }));
 
-const stats = { sent: 4, answered: 3, responseRate: 75, average: 6.3, nps: 0, promoters: 1, passives: 1, detractors: 1 };
+const stats = { sent: 4, answered: 3, responseRate: 75, average: 6.3, nps: 50, promoters: 1, passives: 1, detractors: 1 };
 const response = (id: string, contactName: string, score: number | null, category: "promoter" | "passive" | "detractor" | null) => ({
   surveyId: id,
   conversationId: `conv-${id}`,
@@ -35,16 +35,21 @@ const response = (id: string, contactName: string, score: number | null, categor
 });
 const REPORT: SatisfactionReportDTO = {
   totals: { ...stats, distribution: [0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1], awaiting: 1 },
-  byAgent: [{ ...stats, agentId: "lucas", agentName: "Lucas", lowest: 3, highest: 10 }],
+  byAgent: [{ ...stats, agentId: "lucas", agentName: "Lucas", lowest: 3, highest: 10, previousNps: 44 }],
   byConnection: [{ ...stats, connectionId: "s", connectionName: "Suporte", connectionColor: "#0097B4" }],
   trend: [],
   responses: [response("1", "Marina Alves", 10, "promoter"), response("2", "Rita Souza", 3, "detractor"), response("3", "Paulo Lima", 8, "passive"), response("4", "Sem Resposta", null, null)],
+  previous: { from: "2026-09-01T00:00:00.000Z", to: "2026-09-30T23:59:59.000Z", nps: 47, average: 6.0, answered: 5, responseRate: 80 },
+  currentQuestion: "De 0 a 10?",
+  settings: { npsGoal: 60, presentationCustomer: "full" },
 };
+
+const onAgentsLoaded = vi.fn();
 
 function renderReport() {
   return render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <SatisfactionReport period={{ period: "month" }} connectionIds={[]} />
+      <SatisfactionReport period={{ period: "month" }} connectionIds={[]} agentId="all" onAgentsLoaded={onAgentsLoaded} />
     </QueryClientProvider>
   );
 }
@@ -61,11 +66,19 @@ describe("Relatórios › Pesquisa de satisfação", () => {
   it("mostra NPS, média, respostas e as notas de cada atendente", async () => {
     renderReport();
     expect(await screen.findByText("Zona de aperfeiçoamento")).toBeInTheDocument();
+    // NPS de 0 a 100, comparado ao período anterior e à meta — nada da escala de −100 a +100.
+    expect(screen.getByText("NPS (0 a 100)")).toBeInTheDocument();
+    expect(screen.getByText("▲ 3 pontos")).toBeInTheDocument();
+    expect(screen.getByText("abaixo da meta (60)")).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/100 a \+?100|−100|-100/);
+    expect(onAgentsLoaded).toHaveBeenCalledWith([{ id: "lucas", name: "Lucas" }]);
     expect(screen.getAllByText("6,3").length).toBeGreaterThan(0);
     expect(screen.getByText(/de 4 enviadas · 75% · 1 aguardando/)).toBeInTheDocument();
     const agents = screen.getByRole("region", { name: "Notas por atendente" });
     expect(within(agents).getByText("Lucas")).toBeInTheDocument();
     expect(within(agents).getByText("3 / 10")).toBeInTheDocument();
+    expect(within(agents).getByText("▲ 6 pontos")).toBeInTheDocument();
+    expect(within(agents).getByText("amostra pequena")).toBeInTheDocument();
   });
 
   it("filtra as respostas por classificação e cliente, e abre a conversa avaliada", async () => {

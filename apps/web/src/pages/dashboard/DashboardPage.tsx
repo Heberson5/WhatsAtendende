@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { CheckCircle2, Clock, Inbox, MessageSquare, Presentation, Timer, Users } from "lucide-react";
 import { toast } from "sonner";
-import { PERMISSION, type PresenceByHourDTO, type SatisfactionReportDTO, type SatisfactionSummaryDTO } from "@whatsatendende/types";
+import { PERMISSION, type PresenceByHourDTO, type SatisfactionOverviewDTO, type SatisfactionReportDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
 import { PeriodFilter, type PeriodValue } from "../../components/common/PeriodFilter";
@@ -14,6 +14,7 @@ import { DistributionChartCard } from "../../components/dashboard/DistributionCh
 import { SeriesChartCard } from "../../components/dashboard/SeriesChartCard";
 import { WordCloudCard } from "../../components/dashboard/WordCloudCard";
 import { SatisfactionCard } from "../../components/dashboard/SatisfactionCard";
+import { SatisfactionDetailSection } from "../../components/dashboard/SatisfactionDetailSection";
 import { PresenceByHourChart, type HourRange } from "../../components/dashboard/PresenceByHourChart";
 import { useBranding } from "../../hooks/useBranding";
 import { useExportBranding } from "../../hooks/useExportBranding";
@@ -121,17 +122,19 @@ export default function DashboardPage() {
       ).data,
   });
 
+  // The same numbers as Relatórios › Pesquisa de satisfação; per attendant and the latest evaluations only come for Gestor/Administrador.
   const { data: satisfaction, isLoading: isSatisfactionLoading } = useQuery({
-    queryKey: ["dashboard-satisfaction", period, agentId, connectionIds],
+    queryKey: ["dashboard-satisfaction-overview", period, agentId, connectionIds],
     queryFn: async () =>
       (
-        await api.get<SatisfactionSummaryDTO>("/dashboard/satisfaction", {
+        await api.get<SatisfactionOverviewDTO>("/dashboard/satisfaction-overview", {
           params: {
             period: period.period,
             from: period.from,
             to: period.to,
             agentId: agentId === "all" ? undefined : agentId,
             connectionId: connectionIds.length ? connectionIds : undefined,
+            tzOffsetMinutes: new Date().getTimezoneOffset(),
           },
         })
       ).data,
@@ -387,8 +390,10 @@ export default function DashboardPage() {
 
           <section className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
             <WordCloudCard words={wordCloud} isLoading={isWordCloudLoading} />
-            <SatisfactionCard summary={satisfaction} isLoading={isSatisfactionLoading} />
+            <SatisfactionCard overview={satisfaction} isLoading={isSatisfactionLoading} />
           </section>
+
+          {satisfaction?.byAgent && satisfaction.totals.answered > 0 && <SatisfactionDetailSection overview={satisfaction} />}
 
           <section>
             <h2 className="mb-3 text-sm font-semibold text-muted">Tempos médios de atendimento</h2>

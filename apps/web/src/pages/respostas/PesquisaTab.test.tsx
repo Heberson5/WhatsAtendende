@@ -7,7 +7,7 @@ import { api } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
 
 vi.mock("../../lib/api", () => ({
-  api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
+  api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn(), put: vi.fn() },
   getApiErrorMessage: () => "erro",
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
@@ -34,7 +34,10 @@ const SURVEYS = [
 type Perms = Partial<Record<"ADICIONAR" | "EDITAR" | "EXCLUIR", boolean>>;
 
 function renderTab(perms: Perms = { ADICIONAR: true, EDITAR: true, EXCLUIR: true }) {
-  vi.mocked(api.get).mockImplementation(((url: string) => Promise.resolve({ data: url === "/satisfaction-survey/surveys" ? SURVEYS : [] })) as never);
+  vi.mocked(api.get).mockImplementation(((url: string) =>
+    Promise.resolve({
+      data: url === "/satisfaction-survey/surveys" ? SURVEYS : url === "/satisfaction-survey/settings" ? { npsGoal: null, presentationCustomer: "full" } : [],
+    })) as never);
   vi.mocked(api.post).mockImplementation(((_url: string, body: object) => Promise.resolve({ data: { ...survey({}), ...body, id: "novo" } })) as never);
   vi.mocked(api.patch).mockImplementation(((_url: string, body: object) => Promise.resolve({ data: { ...survey({}), ...body } })) as never);
   useAuthStore.setState({
@@ -128,5 +131,19 @@ describe("Respostas › Pesquisa: lista de pesquisas", () => {
     expect(screen.queryByRole("button", { name: "Nova pesquisa" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Duplicar/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Excluir/ })).not.toBeInTheDocument();
+  });
+
+  it("relatórios e apresentação: salva a meta de NPS e o cliente só com iniciais no PPT", async () => {
+    vi.mocked(api.put).mockImplementation(((_url: string, body: object) => Promise.resolve({ data: body })) as never);
+    renderTab();
+    const goal = await screen.findByLabelText(/Meta de NPS \(0 a 100\)/);
+    await waitFor(() => expect(screen.getByRole("radio", { name: /Nome e número/ })).toBeChecked());
+    fireEvent.change(goal, { target: { value: "120" } });
+    expect(screen.getByText("Informe um número inteiro de 0 a 100.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Salvar configurações" })).toBeDisabled();
+    fireEvent.change(goal, { target: { value: "80" } });
+    fireEvent.click(screen.getByRole("radio", { name: /Só as iniciais/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Salvar configurações" }));
+    await waitFor(() => expect(api.put).toHaveBeenCalledWith("/satisfaction-survey/settings", { npsGoal: 80, presentationCustomer: "initials" }));
   });
 });

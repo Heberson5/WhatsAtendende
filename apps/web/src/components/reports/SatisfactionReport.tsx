@@ -1,18 +1,32 @@
-import { useMemo, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Eye, Search } from "lucide-react";
 import clsx from "clsx";
 import { toast } from "sonner";
-import type { ConversationListItemDTO, SatisfactionCategory, SatisfactionReportDTO, SatisfactionResponseDTO } from "@whatsatendende/types";
+import { NPS_SMALL_SAMPLE, type ConversationListItemDTO, type SatisfactionCategory, type SatisfactionReportDTO, type SatisfactionResponseDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { formatPhone } from "../../lib/format-phone";
-import { npsZone } from "../../lib/dashboardMetrics";
+import { npsDelta, npsZone } from "../../lib/dashboardMetrics";
 import { CHART_CARD_SHADOW, CHART_TOOLTIP_PROPS } from "../../lib/chart-theme";
 import { ReadOnlyConversationDrawer } from "../gestao/ReadOnlyConversationDrawer";
 import type { PeriodValue } from "../common/PeriodFilter";
 
-const formatNps = (nps: number | null) => (nps === null ? "–" : nps > 0 ? `+${nps}` : String(nps));
+const formatNps = (nps: number | null) => (nps === null ? "–" : String(nps));
+const DELTA_TONE = { up: "text-success", down: "text-danger", same: "text-muted" } as const;
+
+/** "▲ 6 pontos" against the period before, colored — nothing when either side had no answers. */
+function Delta({ current, previous, className }: { current: number | null; previous: number | null; className?: string }) {
+  const delta = npsDelta(current, previous);
+  if (!delta) return null;
+  return (
+    <span className={clsx("whitespace-nowrap font-semibold", DELTA_TONE[delta.tone], className)} title={`Período anterior: ${previous}`}>
+      {delta.text}
+    </span>
+  );
+}
+
+const shortDate = (iso: string) => new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
 const formatAverage = (v: number | null) => (v === null ? "–" : v.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }));
 const percent = (part: number, whole: number) => (whole ? Math.round((part / whole) * 100) : 0);
 
@@ -37,12 +51,13 @@ function when(iso: string | null) {
   return iso ? new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" }) : "–";
 }
 
-function Kpi({ label, value, detail, tone }: { label: string; value: string; detail?: string; tone?: string }) {
+function Kpi({ label, value, detail, tone, extra }: { label: string; value: string; detail?: string; tone?: string; extra?: ReactNode }) {
   return (
     <div className={clsx("rounded-card border border-border bg-surface p-4", CHART_CARD_SHADOW)}>
       <p className="text-xs font-medium uppercase tracking-wide text-muted">{label}</p>
       <p className={clsx("mt-1 text-3xl font-semibold tabular-nums", tone)}>{value}</p>
       {detail && <p className="mt-0.5 text-xs text-muted">{detail}</p>}
+      {extra && <div className="mt-1 text-xs">{extra}</div>}
     </div>
   );
 }
@@ -53,8 +68,21 @@ function Kpi({ label, value, detail, tone }: { label: string; value: string; det
  * was rated. See PROMPT: "relatório somente das pesquisas, podendo saber de qual cliente foi a nota e poder
  * olhar a conversa avaliada, poder saber as notas que cada atendente recebe".
  */
-export function SatisfactionReport({ period, connectionIds }: { period: PeriodValue; connectionIds: string[] }) {
-  const [agentId, setAgentId] = useState<string>("all");
+/**
+ * The attendant filter lives in the page's top bar, next to the period (see RelatoriosPage) — this reports who was
+ * rated in the period through `onAgentsLoaded`, so the list keeps whoever is selected.
+ */
+export function SatisfactionReport({
+  period,
+  connectionIds,
+  agentId,
+  onAgentsLoaded,
+}: {
+  period: PeriodValue;
+  connectionIds: string[];
+  agentId: string;
+  onAgentsLoaded: (agents: { id: string; name: string }[]) => void;
+}) {
   const [filter, setFilter] = useState<ResponseFilter>("answered");
   const [search, setSearch] = useState("");
   const [openConversation, setOpenConversation] = useState<ConversationListItemDTO | null>(null);
@@ -76,13 +104,10 @@ export function SatisfactionReport({ period, connectionIds }: { period: PeriodVa
       ).data,
     placeholderData: (previous) => previous,
   });
-  // The attendant filter lists everyone who was rated in the period (kept while one is selected).
-  const [knownAgents, setKnownAgents] = useState<{ id: string; name: string }[]>([]);
-  const agentOptions = useMemo(() => {
-    const fromData = (data?.byAgent ?? []).filter((a) => a.agentId).map((a) => ({ id: a.agentId!, name: a.agentName }));
-    const merged = new Map([...knownAgents, ...fromData].map((a) => [a.id, a]));
-    return [...merged.values()].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
-  }, [data, knownAgents]);
+  useEffect(() => {
+    const rated = (data?.byAgent ?? []).filter((a) => a.agentId).map((a) => ({ id: a.agentId!, name: a.agentName }));
+    if (rated.length) onAgentsLoaded(rated);
+  }, [data, onAgentsLoaded]);
 
   const openMutation = useMutation({
     mutationFn: async (conversationId: string) => (await api.get<ConversationListItemDTO>(`/conversations/${conversationId}`)).data,
@@ -104,39 +129,44 @@ export function SatisfactionReport({ period, connectionIds }: { period: PeriodVa
     return <p className="py-10 text-center text-sm text-muted">Nenhuma pesquisa de satisfação enviada no período selecionado.</p>;
   }
 
-  const { totals } = data;
+  const { totals, previous, settings } = data;
+  const goal = settings.npsGoal;
   const zone = totals.nps === null ? null : npsZone(totals.nps);
   const distribution = totals.distribution.map((count, score) => ({ score: String(score), count, category: (score >= 9 ? "promoter" : score >= 7 ? "passive" : "detractor") as SatisfactionCategory }));
 
   return (
     <div className="flex-1 space-y-4 overflow-y-auto pb-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <select
-          value={agentId}
-          onChange={(e) => {
-            setKnownAgents(agentOptions);
-            setAgentId(e.target.value);
-          }}
-          aria-label="Filtrar por atendente"
-          className="focus-ring rounded-card border border-border bg-surface px-3 py-2 text-sm"
-        >
-          <option value="all">Todos os atendentes</option>
-          {agentOptions.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name}
-            </option>
-          ))}
-        </select>
-        <p className="text-xs text-muted">Só as pesquisas de nota de 0 a 10 (NPS). As de 1 a 5, de antes do NPS, ficam fora da conta.</p>
-      </div>
+      <p className="text-xs text-muted">
+        NPS de 0 a 100: 0 quando todos são detratores, 50 quando promotores e detratores empatam, 100 quando todos são promotores. Comparado com o
+        período anterior de mesmo tamanho ({shortDate(data.previous.from)} a {shortDate(data.previous.to)}). Só as pesquisas de nota de 0 a 10.
+      </p>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Kpi label="NPS" value={formatNps(totals.nps)} detail={zone?.label ?? "sem respostas"} tone={npsTone(totals.nps)} />
-        <Kpi label="Nota média" value={formatAverage(totals.average)} detail="de 0 a 10" />
+        <Kpi
+          label="NPS (0 a 100)"
+          value={formatNps(totals.nps)}
+          detail={zone?.label ?? "sem respostas"}
+          tone={npsTone(totals.nps)}
+          extra={
+            <span className="flex flex-wrap gap-x-2">
+              <Delta current={totals.nps} previous={previous.nps} />
+              {goal !== null && totals.nps !== null && (
+                <span className={totals.nps >= goal ? "text-success" : "text-danger"}>
+                  {totals.nps >= goal ? "acima" : "abaixo"} da meta ({goal})
+                </span>
+              )}
+            </span>
+          }
+        />
+        <Kpi
+          label="Nota média"
+          value={formatAverage(totals.average)}
+          detail={`de 0 a 10 · antes ${formatAverage(previous.average)}`}
+        />
         <Kpi
           label="Respostas"
           value={totals.answered.toLocaleString("pt-BR")}
-          detail={`de ${totals.sent.toLocaleString("pt-BR")} enviadas · ${totals.responseRate ?? 0}%${totals.awaiting ? ` · ${totals.awaiting} aguardando` : ""}`}
+          detail={`de ${totals.sent.toLocaleString("pt-BR")} enviadas · ${totals.responseRate ?? 0}%${totals.awaiting ? ` · ${totals.awaiting} aguardando` : ""} · antes ${previous.answered.toLocaleString("pt-BR")}`}
         />
         <div className={clsx("rounded-card border border-border bg-surface p-4", CHART_CARD_SHADOW)}>
           <p className="text-xs font-medium uppercase tracking-wide text-muted">Promotores · Neutros · Detratores</p>
@@ -185,11 +215,18 @@ export function SatisfactionReport({ period, connectionIds }: { period: PeriodVa
                 <LineChart data={data.trend} margin={{ top: 16, right: 12, left: -20, bottom: 0 }}>
                   <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--color-border)" />
                   <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-                  <YAxis domain={[-100, 100]} ticks={[-100, -50, 0, 50, 100]} tick={{ fontSize: 11 }} />
-                  <ReferenceLine y={0} stroke="var(--color-border)" />
+                  <YAxis domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} tick={{ fontSize: 11 }} />
+                  {goal !== null && (
+                    <ReferenceLine
+                      y={goal}
+                      stroke="var(--color-success)"
+                      strokeDasharray="6 4"
+                      label={{ value: `Meta ${goal}`, position: "insideTopLeft", fontSize: 11, fill: "var(--color-success)" }}
+                    />
+                  )}
                   <Tooltip
                     {...CHART_TOOLTIP_PROPS}
-                    formatter={(v: number, name: string) => (name === "nps" ? [formatNps(v), "NPS"] : [v, name])}
+                    formatter={(v: number, name: string) => (name === "nps" ? [formatNps(v), "NPS (0 a 100)"] : [v, name])}
                   />
                   <Line type="linear" dataKey="nps" stroke="var(--color-primary)" strokeWidth={2.5} dot={{ r: 3.5 }} />
                 </LineChart>
@@ -210,7 +247,8 @@ export function SatisfactionReport({ period, connectionIds }: { period: PeriodVa
                 <th className="px-4 py-2.5 text-right">Respostas</th>
                 <th className="px-4 py-2.5 text-right">Taxa</th>
                 <th className="px-4 py-2.5 text-right">Nota média</th>
-                <th className="px-4 py-2.5 text-right">NPS</th>
+                <th className="px-4 py-2.5 text-right">NPS (0–100)</th>
+                <th className="px-4 py-2.5 text-right">Variação</th>
                 <th className="px-4 py-2.5 text-right">Promotores</th>
                 <th className="px-4 py-2.5 text-right">Neutros</th>
                 <th className="px-4 py-2.5 text-right">Detratores</th>
@@ -220,12 +258,22 @@ export function SatisfactionReport({ period, connectionIds }: { period: PeriodVa
             <tbody>
               {data.byAgent.map((a) => (
                 <tr key={a.agentId ?? "none"} className="border-t border-border">
-                  <td className="px-4 py-2.5 font-medium">{a.agentName}</td>
+                  <td className="px-4 py-2.5 font-medium">
+                    {a.agentName}
+                    {a.answered > 0 && a.answered < NPS_SMALL_SAMPLE && (
+                      <span className="ml-1.5 whitespace-nowrap rounded bg-surface-alt px-1 text-[10px] font-normal text-muted" title="Com poucas respostas, uma nota muda muito o NPS">
+                        amostra pequena
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{a.sent}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{a.answered}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{a.responseRate === null ? "–" : `${a.responseRate}%`}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{formatAverage(a.average)}</td>
                   <td className={clsx("px-4 py-2.5 text-right font-semibold tabular-nums", npsTone(a.nps))}>{formatNps(a.nps)}</td>
+                  <td className="px-4 py-2.5 text-right text-xs tabular-nums">
+                    <Delta current={a.nps} previous={a.previousNps} />
+                  </td>
                   <td className="px-4 py-2.5 text-right tabular-nums text-success">{a.promoters}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums text-warning">{a.passives}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums text-danger">{a.detractors}</td>

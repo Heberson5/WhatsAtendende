@@ -1,3 +1,5 @@
+import { npsZoneOf } from "@whatsatendende/types";
+
 /**
  * Number helpers shared by the Dashboard cards and the PowerPoint presentation built from them —
  * kept free of React so the presentation builder (and its tests) can use them as they are.
@@ -38,8 +40,17 @@ export function formatNumber(value: number): string {
   return value.toLocaleString("pt-BR");
 }
 
+/** NPS from 0 to 100, as the server sends it. */
 export function formatNps(nps: number): string {
-  return nps > 0 ? `+${nps}` : String(nps);
+  return String(nps);
+}
+
+/** Change against the period before, in points: "▲ 6", "▼ 3", "= 0" — null when either side has no NPS. */
+export function npsDelta(current: number | null, previous: number | null): { text: string; tone: "up" | "down" | "same" } | null {
+  if (current === null || previous === null) return null;
+  const diff = current - previous;
+  if (diff === 0) return { text: "= igual", tone: "same" };
+  return { text: `${diff > 0 ? "▲" : "▼"} ${Math.abs(diff)} ${Math.abs(diff) === 1 ? "ponto" : "pontos"}`, tone: diff > 0 ? "up" : "down" };
 }
 
 /** Share of `part` in `whole`, as a whole percentage (0 when there is no whole). */
@@ -47,15 +58,10 @@ export function percentOf(part: number, whole: number): number {
   return whole ? Math.round((part / whole) * 100) : 0;
 }
 
-/**
- * The usual NPS reading in Brazil (the zones of the Net Promoter System): 75 or more is
- * excellence, 50–74 quality, 0–49 improvement, below 0 critical.
- */
+/** The NPS zone on the 0–100 scale: 88 or more excellence, 75–87 quality, 50–74 improvement, below 50 critical. */
 export function npsZone(nps: number): { label: string; tone: "success" | "primary" | "warning" | "danger" } {
-  if (nps >= 75) return { label: "Zona de excelência", tone: "success" };
-  if (nps >= 50) return { label: "Zona de qualidade", tone: "primary" };
-  if (nps >= 0) return { label: "Zona de aperfeiçoamento", tone: "warning" };
-  return { label: "Zona crítica", tone: "danger" };
+  const zone = npsZoneOf(nps);
+  return { label: zone.label, tone: zone.tone };
 }
 
 export type PeriodKey = "today" | "yesterday" | "last7days" | "month" | "lastMonth" | "custom" | "all";
