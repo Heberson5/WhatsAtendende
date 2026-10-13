@@ -10,6 +10,7 @@ import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
 import { getMetaSettings } from "../settings/settings.service";
 import { processWebhookPayload, verifyWebhookSignature } from "./meta.service";
+import { assertWorkScheduleExists } from "../work-schedules/work-schedules.service";
 
 export const metaRouter = Router();
 
@@ -108,6 +109,20 @@ metaRouter.post(
     });
     await writeAudit({ userId: req.auth!.userId, action: "META_CONNECTION_CREATED", entity: "MetaConnection", entityId: connection.id, ipAddress: req.ip ?? null, metadata: { channel, name } });
     res.status(201).json(connection);
+  })
+);
+
+const updateConnectionSchema = z.object({ workScheduleId: z.string().uuid().nullable() });
+
+metaRouter.patch(
+  "/connections/:id",
+  requirePermission(PERMISSION.CONEXOES_GERENCIAR),
+  asyncHandler(async (req, res) => {
+    const { workScheduleId } = updateConnectionSchema.parse(req.body);
+    if (workScheduleId) await assertWorkScheduleExists(workScheduleId);
+    const connection = await prisma.metaConnection.update({ where: { id: req.params.id }, data: { workScheduleId } });
+    await writeAudit({ userId: req.auth!.userId, action: "META_CONNECTION_UPDATED", entity: "MetaConnection", entityId: connection.id, ipAddress: req.ip ?? null, metadata: { workScheduleId } });
+    res.json(connection);
   })
 );
 

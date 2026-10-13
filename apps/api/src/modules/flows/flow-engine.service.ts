@@ -7,6 +7,7 @@ import { realtimeEvents } from "../../realtime/realtime";
 import { createNotification } from "../notifications/notifications.service";
 import { toNotificationDTO } from "../notifications/notifications.mapper";
 import * as whatsappService from "../whatsapp/whatsapp.service";
+import { getConnectionSchedule, isWorkScheduleOpen } from "../work-schedules/work-schedules.service";
 
 /**
  * Fluxo execution engine. A new conversation on a connection with an active
@@ -58,12 +59,26 @@ export function matchMenuOption(options: FlowMenuOption[], answer: string | null
   return options.find((o) => normalize(o.label) === wanted) ?? null;
 }
 
-export function isWithinBusinessHours(data: FlowBusinessHoursData, now: Date): boolean {
+export function isWithinBusinessHours(data: Required<Omit<FlowBusinessHoursData, "workScheduleId">>, now: Date): boolean {
   const local = resolveLocalNow(now, data.tzOffsetMinutes);
   if (!data.days.includes(WEEKDAYS.indexOf(local.weekday))) return false;
   const [sh, sm] = data.start.split(":").map(Number);
   const [eh, em] = data.end.split(":").map(Number);
   return local.minutesOfDay >= sh * 60 + sm && local.minutesOfDay < eh * 60 + em;
+}
+
+/**
+ * The hours node's verdict. A connection that follows a Horário de expediente decides on its own (it sends the out-of-hours notice and never
+ * starts the flow while closed), so the node stays "open" there. Otherwise the node's chosen schedule applies; a node with none chosen is
+ * always open — except a node saved before schedules existed, which keeps its own days and hours.
+ */
+async function isNodeOpen(conversation: FlowConversation, data: Partial<FlowBusinessHoursData> & { workScheduleId?: string | null }, now: Date): Promise<boolean> {
+  if (await getConnectionSchedule("WHATSAPP", conversation.whatsappConnectionId)) return true;
+  if (data.workScheduleId) {
+    const schedule = await prisma.workSchedule.findUnique({ where: { id: data.workScheduleId } });
+    return schedule ? isWorkScheduleOpen(schedule, now) : true;
+  }
+  return data.days && data.start && data.end && data.tzOffsetMinutes !== undefined ? isWithinBusinessHours({ days: data.days, start: data.start, end: data.end, tzOffsetMinutes: data.tzOffsetMinutes }, now) : true;
 }
 
 async function sendBotText(conversation: FlowConversation, text: string): Promise<void> {
@@ -146,7 +161,7 @@ async function advance(conversation: FlowConversation, sessionId: string, graph:
         nodeId = nextNodeId(graph, node.id, null);
         break;
       case "BUSINESS_HOURS":
-        nodeId = nextNodeId(graph, node.id, isWithinBusinessHours(data as unknown as FlowBusinessHoursData, new Date()) ? FLOW_HOURS_OPEN : FLOW_HOURS_CLOSED);
+        nodeId = nextNodeId(graph, node.id, (await isNodeOpen(conversation, data, new Date())) ? FLOW_HOURS_OPEN : FLOW_HOURS_CLOSED);
         break;
       case "MENU":
         await sendBotText(conversation, render(renderFlowMenuText(data as unknown as { prompt?: string; options: FlowMenuOption[] }), conversation));

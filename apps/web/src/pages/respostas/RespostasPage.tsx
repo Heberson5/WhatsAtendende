@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Slash, LogOut, ArrowRightLeft, UserCheck, PauseCircle, FileText, Star } from "lucide-react";
+import { Slash, LogOut, ArrowRightLeft, UserCheck, PauseCircle, FileText, Star, Clock } from "lucide-react";
 import { PERMISSION, type Permission } from "@whatsatendende/types";
 import { useAuthStore } from "../../store/auth-store";
 import { RespostasRapidasTab } from "./RespostasRapidasTab";
@@ -8,8 +8,9 @@ import { AutoMessageTab } from "./AutoMessageTab";
 import { MotivoPausaTab } from "./MotivoPausaTab";
 import { TemplatesTab } from "./TemplatesTab";
 import { PesquisaTab } from "./PesquisaTab";
+import { ExpedienteTab } from "./ExpedienteTab";
 
-type Tab = "rapidas" | "encerramento" | "transferencia" | "aceite" | "motivo-pausa" | "templates" | "pesquisa";
+type Tab = "rapidas" | "encerramento" | "transferencia" | "aceite" | "motivo-pausa" | "templates" | "pesquisa" | "expediente";
 
 // Reaching /respostas at all already requires the RESPOSTAS_RAPIDAS_GERENCIAR
 // umbrella (see Sidebar's MENU_ITEMS) — each tab below additionally sits
@@ -24,6 +25,7 @@ const TAB_PERMISSION: Partial<Record<Tab, Permission>> = {
   "motivo-pausa": PERMISSION.RESPOSTAS_MOTIVO_PAUSA_VISUALIZAR,
   templates: PERMISSION.RESPOSTAS_TEMPLATES_VISUALIZAR,
   pesquisa: PERMISSION.RESPOSTAS_PESQUISA_VISUALIZAR,
+  expediente: PERMISSION.RESPOSTAS_EXPEDIENTE_VISUALIZAR,
 };
 
 const TABS: { key: Tab; label: string; icon: typeof Slash }[] = [
@@ -34,6 +36,7 @@ const TABS: { key: Tab; label: string; icon: typeof Slash }[] = [
   { key: "motivo-pausa", label: "Motivo de Pausa", icon: PauseCircle },
   { key: "templates", label: "Templates", icon: FileText },
   { key: "pesquisa", label: "Pesquisa", icon: Star },
+  { key: "expediente", label: "Horário de expediente", icon: Clock },
 ];
 
 export default function RespostasPage() {
@@ -80,6 +83,7 @@ export default function RespostasPage() {
         {tab === "motivo-pausa" && <MotivoPausaTab />}
         {tab === "templates" && <TemplatesTab />}
         {tab === "pesquisa" && <PesquisaTab />}
+        {tab === "expediente" && <ExpedienteTab />}
       </div>
     </div>
   );

@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { PERMISSION } from "@whatsatendende/types";
 import { useAuthStore } from "../../store/auth-store";
 import { api, getApiErrorMessage } from "../../lib/api";
+import { WorkScheduleSelect } from "./WorkScheduleSelect";
 
 interface OfficialConnectionSummary {
   id: string;
@@ -14,6 +15,7 @@ interface OfficialConnectionSummary {
   state: "DISCONNECTED" | "CONNECTING" | "CONNECTED";
   connectedNumber: string | null;
   agentCount: number;
+  workScheduleId: string | null;
   phoneNumberId: string | null;
   wabaId: string | null;
   hasAccessToken: boolean;
@@ -129,6 +131,15 @@ export function WhatsAppOfficialConnectionPanel() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["whatsapp-connections"] }),
   });
 
+  const workScheduleMutation = useMutation({
+    mutationFn: ({ id, workScheduleId }: { id: string; workScheduleId: string | null }) => api.patch(`/whatsapp/connections/${id}`, { workScheduleId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["whatsapp-connections"] });
+      queryClient.invalidateQueries({ queryKey: ["work-schedules"] });
+    },
+    onError: (err) => toast.error(getApiErrorMessage(err)),
+  });
+
   const colorMutation = useMutation({
     mutationFn: ({ id, color }: { id: string; color: string }) => api.patch(`/whatsapp/connections/${id}`, { color }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["whatsapp-connections"] }),
@@ -242,6 +253,15 @@ export function WhatsAppOfficialConnectionPanel() {
                   </button>
                 )}
               </div>
+            </div>
+
+            <div className="mb-3">
+              <WorkScheduleSelect
+                value={connection.workScheduleId}
+                disabled={!canEditar}
+                label={`Horário de expediente de ${connection.name}`}
+                onChange={(workScheduleId) => workScheduleMutation.mutate({ id: connection.id, workScheduleId })}
+              />
             </div>
 
             {editingId === connection.id ? (

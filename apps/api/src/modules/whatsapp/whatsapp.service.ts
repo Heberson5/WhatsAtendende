@@ -26,6 +26,7 @@ import * as conversationsService from "../conversations/conversations.service";
 import * as messagesService from "../messages/messages.service";
 import * as satisfaction from "../satisfaction/satisfaction.service";
 import * as flowEngine from "../flows/flow-engine.service";
+import { assertWorkScheduleExists } from "../work-schedules/work-schedules.service";
 import * as groupsService from "../groups/groups.service";
 import { toMessageDTO } from "../messages/messages.mapper";
 import { getManagerConnectionIds } from "../../lib/connection-access";
@@ -441,7 +442,7 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
       const surveyBody = event.type === "TEXT" ? event.body ?? null : null;
       if (await satisfaction.captureSurveyAnswer(connectionId, contact, { body: surveyBody, providerMessageId: event.providerMessageId })) return;
 
-      const { conversation, isNewConversation, autoAssignedAgentId, flowId } = await conversationsService.findOrOpenConversationForInboundMessage(
+      const { conversation, isNewConversation, autoAssignedAgentId, flowId, closedMessage } = await conversationsService.findOrOpenConversationForInboundMessage(
         connectionId,
         contact.id,
         event.body
@@ -463,6 +464,9 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
       });
 
       await addAttachmentsFromEvent(message.id, event);
+
+      // The connection is outside its Horário de expediente: the notice goes out once, with the conversation that just opened.
+      if (closedMessage) await sendClosedHoursNotice(conversation.id, connectionId, event.phone, contact.name, closedMessage);
 
       // An active Fluxo is still talking to this customer — the engine
       // answers, and only hands the conversation to people when it's done.
@@ -833,6 +837,8 @@ async function persistConnectionStatus(connectionId: string, status: WhatsAppSta
 }
 
 export interface ConnectionSummaryDTO {
+  /** Respostas › Horário de expediente this connection follows; null = open 24 hours. */
+  workScheduleId: string | null;
   id: string;
   name: string;
   color: string;
@@ -888,6 +894,7 @@ function toConnectionSummary(row: {
   contactsSyncedAt: Date | null;
   _count: { agents: number; conversations: number };
   groupsEnabled: boolean;
+  workScheduleId: string | null;
   createdByUser: { id: string; displayName: string } | null;
   phoneNumberId: string | null;
   wabaId: string | null;
@@ -912,6 +919,7 @@ function toConnectionSummary(row: {
     contactsSyncedAt: row.contactsSyncedAt?.toISOString() ?? null,
     agentCount: row._count.agents,
     groupsEnabled: row.groupsEnabled,
+    workScheduleId: row.workScheduleId,
     groupsCount: row._count.conversations,
     createdByUserId: row.createdByUser?.id ?? null,
     createdByUserName: row.createdByUser?.displayName ?? null,
@@ -991,17 +999,19 @@ export async function createConnection(
 
 export async function updateConnection(
   connectionId: string,
-  patch: { name?: string; color?: string; official?: Partial<OfficialCredentialsInput> }
+  patch: { name?: string; color?: string; workScheduleId?: string | null; official?: Partial<OfficialCredentialsInput> }
 ): Promise<ConnectionSummaryDTO> {
   if (patch.name) {
     const clash = await prisma.whatsAppConnection.findUnique({ where: { name: patch.name } });
     if (clash && clash.id !== connectionId) throw Errors.conflict("Ja existe uma conexao com este nome");
   }
+  if (patch.workScheduleId) await assertWorkScheduleExists(patch.workScheduleId);
   const row = await prisma.whatsAppConnection.update({
     where: { id: connectionId },
     data: {
       name: patch.name,
       color: patch.color,
+      workScheduleId: patch.workScheduleId,
       ...(patch.official
         ? {
             phoneNumberId: patch.official.phoneNumberId,
@@ -1281,6 +1291,16 @@ export async function sendOutboundText(
 }
 
 /** A message written by the system itself (Fluxo, pesquisa de satisfação) — sent as-is, without the "*Nome:*" agent prefix. */
+/** The out-of-hours notice of a connection's Horário de expediente — {{cliente}} is the customer's name (or number). */
+async function sendClosedHoursNotice(conversationId: string, connectionId: string, phone: string, contactName: string | null, text: string): Promise<void> {
+  const body = text.replace(/\{\{\s*cliente\s*\}\}/gi, contactName ?? phone);
+  const message = await prisma.message.create({
+    data: { conversationId, direction: "OUTBOUND", type: "TEXT", status: "PENDING", body, automatedBy: "WORK_SCHEDULE" },
+  });
+  await sendAutomatedText(connectionId, message.id, phone, body);
+  realtimeEvents.newMessage(conversationId, null);
+}
+
 export async function sendAutomatedText(connectionId: string, messageId: string, contactPhone: string, text: string) {
   return sendWithTimeoutGuard(messageId, "text", () => getProvider(connectionId).sendText(toChatId(contactPhone), text, {}));
 }

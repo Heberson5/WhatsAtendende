@@ -267,6 +267,9 @@ model WhatsAppConnection {
   // where everybody's "não lidas" start counting from.
   groupsEnabled      Boolean                  @default(false)
   groupsEnabledAt    DateTime?
+  // Respostas › Horário de expediente this connection follows — null = open 24 hours, never sends the out-of-hours notice.
+  workSchedule       WorkSchedule?            @relation(fields: [workScheduleId], references: [id], onDelete: Restrict)
+  workScheduleId     String?
   // --- OFFICIAL_API only (all null for a QRCODE connection) ---
   // Meta Cloud API identifiers for this WABA's phone number — see
   // developers.facebook.com/docs/whatsapp/cloud-api/get-started.
@@ -405,6 +408,26 @@ model AutoMessageTemplate {
   updatedAt      DateTime             @updatedAt
 
   @@index([trigger])
+}
+
+// Respostas › Horário de expediente. A connection picks at most one (WhatsAppConnection/MetaConnection.workScheduleId);
+// one schedule can serve several connections. `state`/`city` decide the time zone and which holidays apply.
+model WorkSchedule {
+  id                  String               @id @default(uuid())
+  name                String
+  // UF — also decides the time zone (see packages/types BR_STATE_UTC_OFFSET_MINUTES).
+  state               String
+  city                String
+  // WorkScheduleDays: a weekday missing from it is closed; { allDay: true } is open 24h.
+  days                Json
+  // Holidays are closed all day, except the dates listed here: [{ date: "YYYY-MM-DD", start, end }].
+  partialHolidays     Json                 @default("[]")
+  // Sent once per conversation when the customer writes outside the hours; supports {{cliente}}.
+  closedMessage       String
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  whatsappConnections WhatsAppConnection[]
+  metaConnections     MetaConnection[]
 }
 
 // Auto-sent to the customer when one of its assigned users clicks Encerrar
@@ -552,6 +575,8 @@ model MetaConnection {
   // Facebook Page id (MESSENGER) or Instagram Business Account id
   // (INSTAGRAM) — whichever `channel` this row is.
   externalPageId String?
+  workSchedule   WorkSchedule?        @relation(fields: [workScheduleId], references: [id], onDelete: Restrict)
+  workScheduleId String?
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt
 

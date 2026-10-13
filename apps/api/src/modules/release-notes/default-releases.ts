@@ -11,6 +11,49 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.6.0",
+    date: "13 out 2026",
+    name: "Horário de expediente",
+    summary: "Respostas ganha a aba Horário de expediente. Cada conexão escolhe o horário que segue e, fora dele ou em feriado, o cliente recebe a mensagem de fora do expediente.",
+    notes: [
+      {
+        type: "novo",
+        area: "respostas",
+        title: "Horário de expediente",
+        text: "Cadastre quantos horários precisar. Cada um tem o estado e a cidade (o estado define o fuso e a cidade, os feriados), os dias da semana com início e término — ou Atender 24h — e a mensagem de fora do expediente, que é obrigatória e aceita a tag {{cliente}}. Nos feriados da cidade o expediente fica fechado o dia todo; para abrir só em uma data, desmarque Dia todo e informe o horário daquele feriado.",
+        steps: ["Abra Respostas › Horário de expediente e clique em Novo horário.", "Escolha o estado e a cidade e marque os dias, com o horário de cada um.", "Se quiser abrir em algum feriado, desmarque Dia todo (fechado) nele e informe o horário.", "Escreva a mensagem de fora do expediente e salve."],
+        where: "Respostas › Horário de expediente",
+        requires: [PERMISSION.RESPOSTAS_EXPEDIENTE_VISUALIZAR],
+        images: [
+          { src: "/notas-de-versao/expediente-lista.webp", caption: "Os horários cadastrados, com a cidade, os dias e as conexões que usam cada um" },
+          { src: "/notas-de-versao/expediente-cadastro-dias.webp", caption: "Estado, cidade e os dias com o início e o término", size: "small" },
+          { src: "/notas-de-versao/expediente-cadastro-feriados.webp", caption: "Os feriados da cidade e a mensagem de fora do expediente", size: "small" },
+        ],
+      },
+      {
+        type: "novo",
+        area: "conexoes",
+        title: "Cada conexão escolhe o seu horário",
+        text: "Nos cartões das conexões (WhatsApp, WhatsApp Oficial, Instagram e Facebook) aparece o campo Horário de expediente, onde se escolhe um único horário. Fora dele, ou em feriado, o cliente que escreve recebe a mensagem de fora do expediente, uma vez por conversa, e a conversa continua na fila. Se um atendente já está conversando, nada é enviado. Conexão sem horário atende 24 horas e não envia a mensagem. Um horário em uso não pode ser excluído.",
+        steps: ["Abra Conexões e, no cartão da conexão, escolha o Horário de expediente.", "Para atender 24 horas, deixe Sem horário."],
+        where: "Conexões › cartão da conexão",
+        requires: [PERMISSION.CONEXOES_GERENCIAR],
+        images: [{ src: "/notas-de-versao/expediente-conexao.webp", caption: "Uma conexão seguindo o horário da Matriz e a outra sem horário (24 horas)", size: "small" }],
+      },
+      {
+        type: "melhoria",
+        area: "fluxo",
+        title: "O nó de horário usa os horários de expediente",
+        text: "O passo Horário de atendimento do Fluxo agora escolhe um dos horários cadastrados em Respostas, em vez de ter dias e horas próprios. Se a conexão do fluxo já tem um horário de expediente, o da conexão vale e o do passo é ignorado. Passos antigos continuam funcionando com os dias e horas que já tinham, até você escolher um horário.",
+        before: "Cada passo de horário tinha seus próprios dias e horas.",
+        after: "O passo escolhe um horário de expediente já cadastrado, sem repetir o cadastro.",
+        where: "Fluxo › passo Horário de atendimento",
+        requires: [PERMISSION.FLUXO_VISUALIZAR],
+        images: [{ src: "/notas-de-versao/expediente-fluxo.webp", caption: "O passo de horário escolhendo um horário de expediente", size: "small" }],
+      },
+    ],
+  },
+  {
     version: "2.5.0",
     date: "10 out 2026",
     name: "Relatório das pesquisas de satisfação",

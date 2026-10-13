@@ -31,6 +31,7 @@ import {
   type FlowNodeDTO,
   type FlowNodeType,
   type FlowBusinessHoursData,
+  type WorkScheduleOptionDTO,
   FLOW_HOURS_CLOSED,
   FLOW_HOURS_OPEN,
   FLOW_MENU_DEFAULT_PROMPT,
@@ -78,7 +79,7 @@ const PALETTE: { category: string; items: { type: FlowNodeType; defaultData: Flo
     items: [
       {
         type: "BUSINESS_HOURS",
-        defaultData: { days: [1, 2, 3, 4, 5], start: "08:00", end: "18:00", tzOffsetMinutes: new Date().getTimezoneOffset() },
+        defaultData: { workScheduleId: null },
         hint: "Separa dentro e fora do horário",
       },
       { type: "END", defaultData: {}, hint: "Encerra a conversa" },
@@ -99,7 +100,7 @@ function menuOptions(node: FlowNodeDTO) {
   return (node.data as { options?: { id: string; label: string }[] }).options ?? [];
 }
 
-function nodePreview(node: FlowNodeDTO, agentsById: Map<string, AgentOption>): string {
+function nodePreview(node: FlowNodeDTO, agentsById: Map<string, AgentOption>, schedulesById: Map<string, string>): string {
   if (node.type === "TEXT_MESSAGE") {
     const text = (node.data as { text?: string }).text;
     return text ? text : "Sem texto definido";
@@ -118,7 +119,10 @@ function nodePreview(node: FlowNodeDTO, agentsById: Map<string, AgentOption>): s
   if (node.type === "START") return "Primeira mensagem do cliente";
   if (node.type === "BUSINESS_HOURS") {
     const data = node.data as FlowBusinessHoursData;
-    return `${describeDays(data.days ?? [])} · ${data.start}–${data.end}`;
+    if (data.workScheduleId) return schedulesById.get(data.workScheduleId) ?? "Horário de expediente";
+    // A node saved before schedules existed keeps its own days and hours until one is picked.
+    if (data.days) return `${describeDays(data.days)} · ${data.start}–${data.end}`;
+    return "Sem horário — sempre aberto";
   }
   return "Encerra a conversa";
 }
@@ -202,6 +206,11 @@ export default function FlowEditorPage() {
     queryFn: async () => (await api.get<AgentOption[]>("/agents/transfer-targets", { params: { excludeSelf: false } })).data,
   });
   const agentsById = useMemo(() => new Map((agents ?? []).map((a) => [a.id, a])), [agents]);
+  const { data: workSchedules } = useQuery({
+    queryKey: ["work-schedule-options"],
+    queryFn: async () => (await api.get<WorkScheduleOptionDTO[]>("/work-schedules/options")).data,
+  });
+  const schedulesById = useMemo(() => new Map((workSchedules ?? []).map((w) => [w.id, w.name])), [workSchedules]);
 
   // Fit the whole drawing in view.
   const fitToScreen = useCallback((target: FlowNodeDTO[] = nodes) => {
@@ -892,7 +901,7 @@ export default function FlowEditorPage() {
               const meta = NODE_META[node.type];
               const outputs = outputAnchors(node);
               const nodeIssues = issuesByNode.get(node.id);
-              const preview = nodePreview(node, agentsById);
+              const preview = nodePreview(node, agentsById, schedulesById);
               const selected = selectedNodeId === node.id;
               return (
                 <div
@@ -1011,6 +1020,7 @@ export default function FlowEditorPage() {
           <NodeInspector
             node={selectedNode}
             agents={agents ?? []}
+            workSchedules={workSchedules ?? []}
             disabled={!canEdit}
             issues={issuesByNode.get(selectedNode.id) ?? []}
             onChange={(data, field) => updateNodeData(selectedNode.id, data, field)}
@@ -1025,6 +1035,7 @@ export default function FlowEditorPage() {
 function NodeInspector({
   node,
   agents,
+  workSchedules,
   disabled,
   issues,
   onChange,
@@ -1032,6 +1043,7 @@ function NodeInspector({
 }: {
   node: FlowNodeDTO;
   agents: AgentOption[];
+  workSchedules: WorkScheduleOptionDTO[];
   disabled: boolean;
   issues: string[];
   onChange: (data: FlowNodeData, field?: string) => void;
@@ -1209,48 +1221,35 @@ function NodeInspector({
         {node.type === "BUSINESS_HOURS" &&
           (() => {
             const data = node.data as FlowBusinessHoursData;
-            const days = data.days ?? [];
-            const set = (patch: Partial<FlowBusinessHoursData>, field: string) =>
-              onChange({ ...data, ...patch, tzOffsetMinutes: new Date().getTimezoneOffset() }, field);
+            const legacy = !data.workScheduleId && data.days;
             return (
               <div className="space-y-3">
                 <p className="text-xs text-muted">
-                  Dentro do horário, o cliente segue pela saída <strong className="text-success">Aberto</strong>; fora dele, pela saída <strong>Fechado</strong>. O horário usado é o do seu computador.
+                  Dentro do horário, o cliente segue pela saída <strong className="text-success">Aberto</strong>; fora dele, pela saída <strong>Fechado</strong>. Escolha um horário
+                  de expediente já cadastrado em Respostas.
                 </p>
-                <div>
-                  <span className="mb-1.5 block text-xs font-medium text-muted">Dias de atendimento</span>
-                  <div className="flex flex-wrap gap-1">
-                    {WEEKDAY_SHORT.map((label, day) => {
-                      const on = days.includes(day);
-                      return (
-                        <button
-                          key={label}
-                          type="button"
-                          disabled={disabled}
-                          aria-pressed={on}
-                          onClick={() => set({ days: on ? days.filter((d) => d !== day) : [...days, day].sort() }, "days")}
-                          className={clsx("focus-ring rounded-lg border px-2.5 py-1 text-xs font-medium", on ? "border-primary bg-primary/10 text-primary" : "border-border text-muted")}
-                        >
-                          {label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {(["start", "end"] as const).map((key) => (
-                    <label key={key} className="block">
-                      <span className="mb-1 block text-xs font-medium text-muted">{key === "start" ? "Abre às" : "Fecha às"}</span>
-                      <input
-                        type="time"
-                        disabled={disabled}
-                        value={data[key]}
-                        onChange={(e) => set({ [key]: e.target.value }, key)}
-                        className="focus-ring w-full rounded-lg border border-border bg-surface px-2.5 py-1.5 text-sm"
-                      />
-                    </label>
-                  ))}
-                </div>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-medium text-muted">Horário de expediente</span>
+                  <select
+                    disabled={disabled}
+                    value={data.workScheduleId ?? ""}
+                    onChange={(e) => onChange({ workScheduleId: e.target.value || null }, "workScheduleId")}
+                    className="focus-ring w-full rounded-lg border border-border bg-surface px-2.5 py-1.5 text-sm"
+                  >
+                    <option value="">{legacy ? "Horário próprio deste nó" : "Sem horário (sempre aberto)"}</option>
+                    {workSchedules.map((w) => (
+                      <option key={w.id} value={w.id}>
+                        {w.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {legacy && (
+                  <p className="rounded-lg bg-surface-alt px-2.5 py-2 text-xs text-muted">
+                    Este nó usa um horário próprio ({describeDays(data.days ?? [])}, {data.start}–{data.end}). Escolha um horário de expediente para substituí-lo.
+                  </p>
+                )}
+                <p className="text-xs text-muted">Se a conexão do fluxo já tem um horário de expediente em Conexões, o da conexão vale e este é ignorado.</p>
               </div>
             );
           })()}
