@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { CONVERSATION_UNDO_WINDOW_MS, brazilianPhoneVariants } from "@whatsatendende/types";
 import { prisma } from "../../lib/prisma";
 import { endFlowSession } from "../flows/flow-engine.service";
+import { getClosedMessageForConnection } from "../work-schedules/work-schedules.service";
 import { scheduleCloseFollowUp, type HeldClosingMessage } from "../satisfaction/satisfaction.service";
 import { Errors } from "../../lib/http-error";
 import { writeAudit } from "../../lib/audit";
@@ -546,7 +547,7 @@ export async function findOrOpenConversationForInboundMessage(
   // phone (HANDLED_EXTERNALLY) included, see findActiveConversationForContact.
   const active = await findActiveConversationForContact(contactId);
   if (active) {
-    return { conversation: active, isNewConversation: false, autoAssignedAgentId: null as string | null, flowId: null as string | null };
+    return { conversation: active, isNewConversation: false, autoAssignedAgentId: null as string | null, flowId: null as string | null, closedMessage: null as string | null };
   }
 
   // Only bypasses the queue when the mentioned agent is actually ONLINE
@@ -560,10 +561,14 @@ export async function findOrOpenConversationForInboundMessage(
   const mentionedAgent = rawMentionedAgent?.presence === "ONLINE" ? rawMentionedAgent : null;
   const now = new Date();
 
+  // Outside the hours of the schedule this connection follows (Respostas › Horário de expediente), the customer gets the
+  // schedule's notice instead of the Fluxo — once, with the conversation that opens now. Nobody is notified who asked for a named online agent.
+  const closedMessage = mentionedAgent ? null : await getClosedMessageForConnection(channel, connectionId, now);
+
   // An active Fluxo on this connection talks to the customer first (see
   // flow-engine.service.ts) — unless they asked for an online agent by name.
   const flowId =
-    !mentionedAgent && channel === "WHATSAPP"
+    !mentionedAgent && !closedMessage && channel === "WHATSAPP"
       ? ((await prisma.flowConnection.findFirst({ where: { whatsappConnectionId: connectionId, flow: { active: true } }, select: { flowId: true } }))?.flowId ?? null)
       : null;
 
@@ -597,7 +602,7 @@ export async function findOrOpenConversationForInboundMessage(
     });
   }
 
-  return { conversation, isNewConversation: true, autoAssignedAgentId: mentionedAgent?.id ?? null, flowId };
+  return { conversation, isNewConversation: true, autoAssignedAgentId: mentionedAgent?.id ?? null, flowId, closedMessage };
 }
 
 /**

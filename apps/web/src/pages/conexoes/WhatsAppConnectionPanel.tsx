@@ -7,6 +7,7 @@ import { PERMISSION, type ConversationListItemDTO } from "@whatsatendende/types"
 import { useAuthStore } from "../../store/auth-store";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { getSocket } from "../../lib/socket";
+import { WorkScheduleSelect } from "./WorkScheduleSelect";
 
 interface ConnectionSummary {
   id: string;
@@ -15,6 +16,7 @@ interface ConnectionSummary {
   connectionMode: "QRCODE" | "OFFICIAL_API";
   groupsEnabled: boolean;
   groupsCount: number;
+  workScheduleId: string | null;
   state: "DISCONNECTED" | "CONNECTING" | "QR_PENDING" | "CODE_PENDING" | "CONNECTED";
   qrCodeDataUrl: string | null;
   pairingCode: string | null;
@@ -122,6 +124,15 @@ export function WhatsAppConnectionPanel() {
     mutationFn: ({ id, phoneNumber }: { id: string; phoneNumber?: string }) => api.post(`/whatsapp/connections/${id}/connect`, phoneNumber ? { phoneNumber } : {}),
     onError: (err) => toast.error(getApiErrorMessage(err)),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["whatsapp-connections"] }),
+  });
+
+  const workScheduleMutation = useMutation({
+    mutationFn: ({ id, workScheduleId }: { id: string; workScheduleId: string | null }) => api.patch(`/whatsapp/connections/${id}`, { workScheduleId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["whatsapp-connections"] });
+      queryClient.invalidateQueries({ queryKey: ["work-schedules"] });
+    },
+    onError: (err) => toast.error(getApiErrorMessage(err)),
   });
 
   const colorMutation = useMutation({
@@ -312,6 +323,15 @@ export function WhatsAppConnectionPanel() {
                   </button>
                 )}
               </div>
+            </div>
+
+            <div className="mb-3">
+              <WorkScheduleSelect
+                value={connection.workScheduleId}
+                disabled={!canEditar}
+                label={`Horário de expediente de ${connection.name}`}
+                onChange={(workScheduleId) => workScheduleMutation.mutate({ id: connection.id, workScheduleId })}
+              />
             </div>
 
             {connection.state === "CONNECTED" ? (

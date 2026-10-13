@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { CheckCircle2, Plus, Trash2, XCircle } from "lucide-react";
 import { api, getApiErrorMessage } from "../../lib/api";
+import { WorkScheduleSelect } from "./WorkScheduleSelect";
 
 interface MetaSettings {
   appId: string;
@@ -19,6 +20,7 @@ interface MetaConnectionRow {
   color: string;
   status: "DISCONNECTED" | "CONNECTED";
   externalPageId: string | null;
+  workScheduleId: string | null;
 }
 
 /**
@@ -86,6 +88,14 @@ export function MetaConnectionPanel({ channel }: { channel: "INSTAGRAM" | "MESSE
       setNewName("");
       setNewExternalId("");
       toast.success("Conexão adicionada.");
+    },
+    onError: (err) => toast.error(getApiErrorMessage(err)),
+  });
+  const workScheduleMutation = useMutation({
+    mutationFn: ({ id, workScheduleId }: { id: string; workScheduleId: string | null }) => api.patch(`/meta/connections/${id}`, { workScheduleId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["meta-connections"] });
+      queryClient.invalidateQueries({ queryKey: ["work-schedules"] });
     },
     onError: (err) => toast.error(getApiErrorMessage(err)),
   });
@@ -165,7 +175,8 @@ export function MetaConnectionPanel({ channel }: { channel: "INSTAGRAM" | "MESSE
 
         <div className="mb-4 space-y-2">
           {channelConnections.map((c) => (
-            <div key={c.id} className="flex items-center gap-3 rounded-card border border-border px-3 py-2">
+            <div key={c.id} className="rounded-card border border-border px-3 py-2">
+              <div className="flex items-center gap-3">
               <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: c.color }} />
               <span className="flex-1 text-sm font-medium">{c.name}</span>
               <span className="font-mono text-xs text-muted">{c.externalPageId}</span>
@@ -176,6 +187,14 @@ export function MetaConnectionPanel({ channel }: { channel: "INSTAGRAM" | "MESSE
               <button onClick={() => deleteMutation.mutate(c.id)} className="focus-ring rounded-full p-1.5 text-muted hover:bg-danger-soft hover:text-danger">
                 <Trash2 className="h-4 w-4" />
               </button>
+              </div>
+              <div className="mt-2">
+                <WorkScheduleSelect
+                  value={c.workScheduleId}
+                  label={`Horário de expediente de ${c.name}`}
+                  onChange={(workScheduleId) => workScheduleMutation.mutate({ id: c.id, workScheduleId })}
+                />
+              </div>
             </div>
           ))}
           {channelConnections.length === 0 && <p className="text-sm text-muted">Nenhuma conexão cadastrada ainda.</p>}

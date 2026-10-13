@@ -265,12 +265,17 @@ export type FlowNodeType = "START" | "TEXT_MESSAGE" | "MENU" | "TRANSFER_TO_AGEN
 export const FLOW_HOURS_OPEN = "open";
 export const FLOW_HOURS_CLOSED = "closed";
 
-/** BUSINESS_HOURS config: weekdays (0 = domingo) and the HH:mm window, in the editor's own UTC offset (minutes, as Date.getTimezoneOffset reports it). */
+/**
+ * BUSINESS_HOURS config: the Horário de expediente picked in Respostas (none = always open). `days`/`start`/`end`/`tzOffsetMinutes`
+ * (weekdays, 0 = domingo, the HH:mm window, and the editor's own UTC offset in minutes as Date.getTimezoneOffset reports it) only exist on
+ * nodes saved before schedules did, and keep working until a schedule is picked.
+ */
 export interface FlowBusinessHoursData {
-  days: number[];
-  start: string;
-  end: string;
-  tzOffsetMinutes: number;
+  workScheduleId?: string | null;
+  days?: number[];
+  start?: string;
+  end?: string;
+  tzOffsetMinutes?: number;
 }
 
 export const FLOW_MENU_DEFAULT_PROMPT = "Escolha uma opção respondendo com o número:";
@@ -365,8 +370,11 @@ export function validateFlowGraph(input: { nodes: FlowNodeDTO[]; edges: Pick<Flo
     }
     if (node.type === "BUSINESS_HOURS") {
       const data = node.data as Partial<FlowBusinessHoursData>;
-      if (!data.days?.length) issues.push({ nodeId: node.id, message: "Horário sem dias da semana" });
-      if (!data.start || !data.end || data.start >= data.end) issues.push({ nodeId: node.id, message: "Horário de início deve ser antes do fim" });
+      // Only a node still on its own (pre-schedule) hours has anything to check; one with a schedule — or none — is valid.
+      if (!data.workScheduleId && data.days) {
+        if (!data.days.length) issues.push({ nodeId: node.id, message: "Horário sem dias da semana" });
+        if (!data.start || !data.end || data.start >= data.end) issues.push({ nodeId: node.id, message: "Horário de início deve ser antes do fim" });
+      }
       if (!hasExit(node.id, FLOW_HOURS_OPEN)) issues.push({ nodeId: node.id, message: "Horário sem destino para “Aberto”" });
       if (!hasExit(node.id, FLOW_HOURS_CLOSED)) issues.push({ nodeId: node.id, message: "Horário sem destino para “Fechado”" });
     }
@@ -522,6 +530,57 @@ export interface AutoMessageTemplateDTO {
   updatedAt: string;
 }
 
+/** One open window of a weekday — `allDay` is "Atender 24h"; otherwise `start`/`end` are HH:mm with start before end. */
+export type WorkScheduleWindowDTO = { allDay: true } | { allDay?: false; start: string; end: string };
+
+/** A weekday missing from the map is closed. */
+export type WorkScheduleDaysDTO = Partial<Record<WeekdayKey, WorkScheduleWindowDTO>>;
+
+/** A holiday that opens part of the day; every other holiday stays closed all day. */
+export interface WorkSchedulePartialHolidayDTO {
+  /** YYYY-MM-DD */
+  date: string;
+  start: string;
+  end: string;
+}
+
+/** Respostas › Horário de expediente. `state` sets the time zone, `state` + `city` the holidays that apply. */
+export interface WorkScheduleDTO {
+  id: string;
+  name: string;
+  state: string;
+  city: string;
+  days: WorkScheduleDaysDTO;
+  partialHolidays: WorkSchedulePartialHolidayDTO[];
+  /** Sent once per conversation when the customer writes outside the hours; supports {{cliente}}. */
+  closedMessage: string;
+  /** The connections that follow this schedule. */
+  connections: { id: string; name: string }[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Id + name, for the pickers in Conexões and in the Fluxo's hours node. */
+export interface WorkScheduleOptionDTO {
+  id: string;
+  name: string;
+}
+
+/** A holiday that applies to a schedule's state/city — what "feriado parcial" is picked from. */
+export interface WorkScheduleHolidayDTO {
+  /** YYYY-MM-DD */
+  date: string;
+  name: string;
+}
+
+/** Minutes WEST of UTC (what Date.getTimezoneOffset reports) by state: the west of the country is UTC−4/−5, the rest Brasília time. Brazil has no daylight saving. */
+export const BR_STATE_UTC_OFFSET_MINUTES: Record<string, number> = { AC: 300, AM: 240, MT: 240, MS: 240, RO: 240, RR: 240 };
+export const BR_DEFAULT_UTC_OFFSET_MINUTES = 180;
+
+export function stateUtcOffsetMinutes(state: string): number {
+  return BR_STATE_UTC_OFFSET_MINUTES[state] ?? BR_DEFAULT_UTC_OFFSET_MINUTES;
+}
+
 export interface UserScopeDTO {
   allUsers: boolean;
   /** Empty when allUsers. */
@@ -532,6 +591,8 @@ export interface WhatsAppConnectionSummaryDTO {
   id: string;
   name: string;
   color: string;
+  /** Respostas › Horário de expediente this connection follows; null = open 24 hours. */
+  workScheduleId: string | null;
   state: WhatsAppConnectionStatus;
   qrCodeDataUrl: string | null;
   pairingCode: string | null;
@@ -858,6 +919,10 @@ export const PERMISSION = {
   RESPOSTAS_PESQUISA_EDITAR: "respostas_pesquisa.editar",
   RESPOSTAS_PESQUISA_ADICIONAR: "respostas_pesquisa.adicionar",
   RESPOSTAS_PESQUISA_EXCLUIR: "respostas_pesquisa.excluir",
+  RESPOSTAS_EXPEDIENTE_VISUALIZAR: "respostas_expediente.visualizar",
+  RESPOSTAS_EXPEDIENTE_ADICIONAR: "respostas_expediente.adicionar",
+  RESPOSTAS_EXPEDIENTE_EDITAR: "respostas_expediente.editar",
+  RESPOSTAS_EXPEDIENTE_EXCLUIR: "respostas_expediente.excluir",
   // Standalone top-level menu (not nested under CONFIGURACOES_GERENCIAR) —
   // see PROMPT: "planeje um novo menu chamado landing page". Single record
   // to edit (no list), so only visualizar/editar.
@@ -1402,6 +1467,38 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     group: "Respostas",
     label: "Respostas — Pesquisa de satisfação (excluir)",
     description: "Excluir uma pesquisa de satisfação. As notas já recebidas continuam no Dashboard.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.RESPOSTAS_EXPEDIENTE_VISUALIZAR,
+    group: "Respostas",
+    label: "Respostas — Horário de expediente (visualizar)",
+    description: "Ver os horários de expediente cadastrados (aba Horário de expediente).",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.RESPOSTAS_EXPEDIENTE_ADICIONAR,
+    group: "Respostas",
+    label: "Respostas — Horário de expediente (adicionar)",
+    description: "Cadastrar um novo horário de expediente.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.RESPOSTAS_EXPEDIENTE_EDITAR,
+    group: "Respostas",
+    label: "Respostas — Horário de expediente (editar)",
+    description: "Editar dias, horários, feriados parciais e a mensagem de fora do expediente.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.RESPOSTAS_EXPEDIENTE_EXCLUIR,
+    group: "Respostas",
+    label: "Respostas — Horário de expediente (excluir)",
+    description: "Excluir um horário de expediente que nenhuma conexão esteja usando.",
     editableRoles: ["AGENT", "MANAGER"],
     defaultAllowed: { AGENT: false, MANAGER: true },
   },

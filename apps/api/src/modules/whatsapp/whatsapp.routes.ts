@@ -87,7 +87,7 @@ const officialSchema = z.object({
 });
 const officialPatchSchema = officialSchema.extend({ accessToken: z.string().trim().min(1).optional() });
 const createSchema = z.object({ name: z.string().trim().min(1).max(60), color: colorSchema.optional(), official: officialSchema.optional() });
-const updateSchema = z.object({ name: z.string().trim().min(1).max(60).optional(), color: colorSchema.optional(), official: officialPatchSchema.optional() });
+const updateSchema = z.object({ name: z.string().trim().min(1).max(60).optional(), color: colorSchema.optional(), workScheduleId: z.string().uuid().nullable().optional(), official: officialPatchSchema.optional() });
 
 // A MANAGER may only manage (update/delete/connect/disconnect) a connection
 // they created themselves or were explicitly granted "view/edit" on — see
@@ -135,7 +135,7 @@ whatsappRouter.patch(
       entityId: connection.id,
       ipAddress: req.ip ?? null,
       // Never audit-log the raw secrets themselves — just which fields changed.
-      metadata: { name: patch.name, color: patch.color, officialFieldsChanged: patch.official ? Object.keys(patch.official) : undefined },
+      metadata: { name: patch.name, color: patch.color, workScheduleId: patch.workScheduleId, officialFieldsChanged: patch.official ? Object.keys(patch.official) : undefined },
     });
     res.json(connection);
   })

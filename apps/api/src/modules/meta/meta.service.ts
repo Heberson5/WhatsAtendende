@@ -96,7 +96,7 @@ async function handleInboundEvent(channel: Channel, pageId: string, event: MetaM
 
   const body = event.message!.text ?? null;
   const contact = await findOrCreateMetaContact(connection.id, channel, event.sender.id, null);
-  const { conversation, isNewConversation, autoAssignedAgentId } = await conversationsService.findOrOpenConversationForInboundMessage(
+  const { conversation, isNewConversation, autoAssignedAgentId, closedMessage } = await conversationsService.findOrOpenConversationForInboundMessage(
     connection.id,
     contact.id,
     body,
@@ -109,6 +109,14 @@ async function handleInboundEvent(channel: Channel, pageId: string, event: MetaM
     type: "TEXT",
     body,
   });
+
+  // The connection is outside its Horário de expediente: the notice goes out once, with the conversation that just opened.
+  if (closedMessage) {
+    const text = closedMessage.replace(/\{\{\s*cliente\s*\}\}/gi, contact.name ?? "Contato");
+    const notice = await prisma.message.create({ data: { conversationId: conversation.id, direction: "OUTBOUND", type: "TEXT", status: "PENDING", body: text, automatedBy: "WORK_SCHEDULE" } });
+    await sendMetaMessage(channel, notice.id, event.sender.id, text);
+    realtimeEvents.newMessage(conversation.id, null);
+  }
 
   const contactLabel = contact.name ?? "Contato";
   if (isNewConversation) {
