@@ -3,6 +3,7 @@ import ExcelJS from "exceljs";
 import PDFDocument from "pdfkit";
 import { imageSize } from "image-size";
 import { prisma } from "../../lib/prisma";
+import { firstResponseDiffs, firstResponseMs } from "../../lib/conversation-timings";
 import { getSatisfactionByAgent } from "../satisfaction/satisfaction.service";
 
 /** Same identity used across the app's other exports (PowerPoint) — see PROMPT: "o layout de exportação dos relatórios". */
@@ -77,7 +78,7 @@ export async function getAttendanceReport({ from, to, agentId, connectionIds, tz
     const received = c.messages.filter((m) => m.direction === "INBOUND").length;
     const sent = c.messages.filter((m) => m.direction === "OUTBOUND").length;
     const acceptMs = c.acceptedAt ? c.acceptedAt.getTime() - c.enteredQueueAt.getTime() : null;
-    const firstResponseMs = c.acceptedAt && c.firstResponseAt ? c.firstResponseAt.getTime() - c.acceptedAt.getTime() : null;
+    const firstResponse = firstResponseMs(c);
     const totalMs = c.closedAt ? c.closedAt.getTime() - c.enteredQueueAt.getTime() : null;
 
     return {
@@ -89,7 +90,7 @@ export async function getAttendanceReport({ from, to, agentId, connectionIds, tz
       "Entrada na fila": formatDateTime(c.enteredQueueAt, tzOffsetMinutes),
       Aceite: formatDateTime(c.acceptedAt, tzOffsetMinutes),
       "Até aceite (min)": minutes(acceptMs),
-      "Até 1ª resposta (min)": minutes(firstResponseMs),
+      "Até 1ª resposta (min)": minutes(firstResponse),
       Encerramento: formatDateTime(c.closedAt, tzOffsetMinutes),
       "Duração total (min)": minutes(totalMs),
       "Mensagens recebidas": received,
@@ -125,9 +126,6 @@ export async function getPerAgentReport({ from, to, connectionIds }: ReportParam
       });
 
       const acceptDiffs = conversations.filter((c) => c.acceptedAt).map((c) => c.acceptedAt!.getTime() - c.enteredQueueAt.getTime());
-      const firstResponseDiffs = conversations
-        .filter((c) => c.acceptedAt && c.firstResponseAt)
-        .map((c) => c.firstResponseAt!.getTime() - c.acceptedAt!.getTime());
       const handlingDiffs = conversations.filter((c) => c.acceptedAt && c.closedAt).map((c) => c.closedAt!.getTime() - c.acceptedAt!.getTime());
 
       const avg = (arr: number[]): number | string => (arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length / 60000) : "-");
@@ -137,7 +135,7 @@ export async function getPerAgentReport({ from, to, connectionIds }: ReportParam
         Conversas: conversations.length,
         "Mensagens enviadas": messagesSent,
         "Tempo médio até aceite (min)": avg(acceptDiffs),
-        "Tempo médio até 1ª resposta (min)": avg(firstResponseDiffs),
+        "Tempo médio até 1ª resposta (min)": avg(firstResponseDiffs(conversations)),
         "Tempo médio de atendimento (min)": avg(handlingDiffs),
         "Transferências recebidas": transfersReceived,
         "Transferências realizadas": transfersMade,

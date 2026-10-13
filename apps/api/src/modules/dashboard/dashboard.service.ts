@@ -1,4 +1,5 @@
 import { prisma } from "../../lib/prisma";
+import { firstResponseDiffs } from "../../lib/conversation-timings";
 
 function avgMs(diffs: number[]): number | null {
   if (diffs.length === 0) return null;
@@ -77,9 +78,6 @@ export async function getDashboard({ from, to, agentId, connectionIds }: Dashboa
   const acceptDiffs = conversationsInPeriod
     .filter((c) => c.acceptedAt)
     .map((c) => c.acceptedAt!.getTime() - c.enteredQueueAt.getTime());
-  const firstResponseDiffs = conversationsInPeriod
-    .filter((c) => c.acceptedAt && c.firstResponseAt)
-    .map((c) => c.firstResponseAt!.getTime() - c.acceptedAt!.getTime());
   const handlingDiffs = conversationsInPeriod
     .filter((c) => c.acceptedAt && c.closedAt)
     .map((c) => c.closedAt!.getTime() - c.acceptedAt!.getTime());
@@ -112,7 +110,7 @@ export async function getDashboard({ from, to, agentId, connectionIds }: Dashboa
     messages: { received, sent, total: received + sent },
     timings: {
       avgAcceptMs: avgMs(acceptDiffs),
-      avgFirstResponseMs: avgMs(firstResponseDiffs),
+      avgFirstResponseMs: avgMs(firstResponseDiffs(conversationsInPeriod)),
       avgHandlingMs: avgMs(handlingDiffs),
       avgClosingMs: avgMs(closingDiffs),
     },
@@ -142,9 +140,7 @@ async function getPeriodTotals({ from, to, agentId, connectionIds }: DashboardPa
     unique: new Set(conversations.map((c) => c.contactId)).size,
     closed: conversations.filter((c) => c.status === "CLOSED").length,
     messagesTotal,
-    avgFirstResponseMs: avgMs(
-      conversations.filter((c) => c.acceptedAt && c.firstResponseAt).map((c) => c.firstResponseAt!.getTime() - c.acceptedAt!.getTime())
-    ),
+    avgFirstResponseMs: avgMs(firstResponseDiffs(conversations)),
   };
 }
 

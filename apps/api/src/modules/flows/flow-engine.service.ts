@@ -115,7 +115,7 @@ async function transfer(conversation: FlowConversation, sessionId: string, data:
       const now = new Date();
       await prisma.conversation.update({
         where: { id: conversation.id },
-        data: { status: "IN_PROGRESS", assignedAgentId: agent.id, enteredQueueAt: now, acceptedAt: now, assignedAgentReadAt: null },
+        data: { status: "IN_PROGRESS", assignedAgentId: agent.id, enteredQueueAt: now, acceptedAt: now, firstResponseAt: null, assignedAgentReadAt: null },
       });
       await prisma.$transaction([
         prisma.conversationAssignment.create({ data: { conversationId: conversation.id, toAgentId: agent.id, reason: "FLOW" } }),

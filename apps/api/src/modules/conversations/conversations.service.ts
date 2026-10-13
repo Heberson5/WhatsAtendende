@@ -629,7 +629,7 @@ export async function findOrOpenConversationForInboundMessage(
     const [conversation] = await prisma.$transaction([
       prisma.conversation.update({
         where: { id: active.id },
-        data: { status: "IN_PROGRESS", assignedAgentId: mentionedAgent.id, acceptedAt: now, assignedAgentReadAt: null },
+        data: { status: "IN_PROGRESS", assignedAgentId: mentionedAgent.id, acceptedAt: now, firstResponseAt: null, assignedAgentReadAt: null },
       }),
       prisma.conversationAssignment.create({
         data: { conversationId: active.id, fromAgentId: active.assignedAgentId, toAgentId: mentionedAgent.id, reason: "MENTION" },
@@ -1251,7 +1251,7 @@ export async function acceptConversation(conversationId: string, agentId: string
   const now = new Date();
   const result = await prisma.conversation.updateMany({
     where: { id: conversationId, status: { in: ["NEW", "WAITING"] }, assignedAgentId: null },
-    data: { status: "IN_PROGRESS", assignedAgentId: agentId, acceptedAt: now },
+    data: { status: "IN_PROGRESS", assignedAgentId: agentId, acceptedAt: now, firstResponseAt: null },
   });
 
   if (result.count === 0) {
@@ -1308,7 +1308,7 @@ export async function transferConversation(
     where: { id: conversationId, assignedAgentId: fromAgentId, status: { in: ["IN_PROGRESS", "TRANSFERRED"] } },
     // The new agent hasn't read anything yet — clearing assignedAgentReadAt
     // makes every message (including history) count toward their unread badge again.
-    data: { status: "TRANSFERRED", assignedAgentId: toAgentId, acceptedAt: new Date(), assignedAgentReadAt: null, pendingTransferDeadline },
+    data: { status: "TRANSFERRED", assignedAgentId: toAgentId, acceptedAt: new Date(), firstResponseAt: null, assignedAgentReadAt: null, pendingTransferDeadline },
   });
   if (result.count === 0) throw Errors.conflict("Nao foi possivel transferir: conversa ja foi alterada");
 
@@ -1371,6 +1371,8 @@ export async function assignConversationFromGestao(conversationId: string, toAge
       status: previousAgentId ? "TRANSFERRED" : "IN_PROGRESS",
       assignedAgentId: toAgentId,
       acceptedAt: new Date(),
+      // "1ª resposta" is counted from this acceptance: the new agent's own first reply.
+      firstResponseAt: null,
       // The new agent hasn't read anything yet — same as transferConversation.
       assignedAgentReadAt: null,
       pendingTransferDeadline,
@@ -1426,6 +1428,7 @@ export async function returnConversationToQueue(conversationId: string, initiate
       status: "WAITING",
       assignedAgentId: null,
       acceptedAt: null,
+      firstResponseAt: null,
       assignedAgentReadAt: null,
       pendingTransferDeadline: null,
       enteredQueueAt: new Date(),
@@ -1533,7 +1536,7 @@ export async function undoLastConversationAction(conversationId: string, userId:
     const now = new Date();
     await prisma.conversation.update({
       where: { id: conversationId },
-      data: { status: restoredStatus, assignedAgentId: payload.previousAgentId, acceptedAt: now },
+      data: { status: restoredStatus, assignedAgentId: payload.previousAgentId, acceptedAt: now, firstResponseAt: null },
     });
   }
   await prisma.conversationEvent.create({ data: { conversationId, type: "ACTION_UNDONE", payload: { undone: event.type, by: userId } } });
