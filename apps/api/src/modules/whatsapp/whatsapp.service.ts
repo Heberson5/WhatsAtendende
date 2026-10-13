@@ -848,6 +848,9 @@ export interface ConnectionSummaryDTO {
   state: string;
   qrCodeDataUrl: string | null;
   pairingCode: string | null;
+  /** While a pairing code is on screen: when it stops being valid (a new one replaces it) and the number it is for. */
+  pairingCodeExpiresAt: string | null;
+  pairingPhoneNumber: string | null;
   connectedNumber: string | null;
   // The number this connection was first ever linked to — see PROMPT:
   // "reconectar somente no mesmo número que já estava antes". Null only for
@@ -915,6 +918,8 @@ function toConnectionSummary(row: {
     state: runtime?.state ?? row.status,
     qrCodeDataUrl: runtime?.qrCodeDataUrl ?? null,
     pairingCode: runtime?.pairingCode ?? null,
+    pairingCodeExpiresAt: runtime?.pairingCode ? (runtime.pairingCodeExpiresAt?.toISOString() ?? null) : null,
+    pairingPhoneNumber: runtime?.pairingCode ? (runtime.pairingPhoneNumber ?? null) : null,
     connectedNumber: runtime?.connectedNumber ?? row.connectedNumber,
     linkedNumber: row.linkedNumber,
     lastConnectedAt: (runtime?.lastConnectedAt ?? row.lastConnectedAt)?.toISOString?.() ?? null,

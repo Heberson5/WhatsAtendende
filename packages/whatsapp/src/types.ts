@@ -7,6 +7,10 @@ export interface WhatsAppStatusSnapshot {
   // code the operator types into Settings > Linked Devices > Link with phone
   // number, as an alternative to scanning a QR code.
   pairingCode: string | null;
+  /** When the pairing code on screen stops being valid — a new one replaces it then, straight away. */
+  pairingCodeExpiresAt?: Date | null;
+  /** The number the pairing code was requested for (to ask for a new one). */
+  pairingPhoneNumber?: string | null;
   connectedNumber: string | null;
   lastConnectedAt: Date | null;
 }

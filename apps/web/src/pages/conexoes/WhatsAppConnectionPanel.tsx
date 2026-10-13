@@ -20,6 +20,8 @@ interface ConnectionSummary {
   state: "DISCONNECTED" | "CONNECTING" | "QR_PENDING" | "CODE_PENDING" | "CONNECTED";
   qrCodeDataUrl: string | null;
   pairingCode: string | null;
+  pairingCodeExpiresAt: string | null;
+  pairingPhoneNumber: string | null;
   connectedNumber: string | null;
   linkedNumber: string | null;
   lastConnectedAt: string | null;
@@ -60,6 +62,10 @@ export function WhatsAppConnectionPanel() {
   const [renameValue, setRenameValue] = useState("");
   const [connectMode, setConnectMode] = useState<Record<string, "qr" | "code">>({});
   const [phoneInput, setPhoneInput] = useState<Record<string, string>>({});
+  // The last pairing code shown per connection: a status read caught in the middle of WhatsApp's own reconnect
+  // (it closes the socket right after handing out a code) comes without it — the code stays on screen
+  // instead of flashing away. It goes once the phone links, or a new attempt starts.
+  const [heldCodes, setHeldCodes] = useState<Record<string, HeldPairingCode>>({});
 
   const { data: connections } = useQuery({
     queryKey: ["whatsapp-connections"],
@@ -70,6 +76,24 @@ export function WhatsAppConnectionPanel() {
       return settling ? 2000 : false;
     },
   });
+
+  useEffect(() => {
+    if (!connections) return;
+    setHeldCodes((prev) => {
+      let next = prev;
+      for (const c of connections) {
+        const held = prev[c.id];
+        if (c.pairingCode && (held?.code !== c.pairingCode || held.expiresAt !== c.pairingCodeExpiresAt)) {
+          next = { ...next, [c.id]: { code: c.pairingCode, expiresAt: c.pairingCodeExpiresAt, phoneNumber: c.pairingPhoneNumber, lost: false } };
+        } else if (!c.pairingCode && held && c.state === "CONNECTED") {
+          next = withoutKey(next, c.id);
+        } else if (!c.pairingCode && held && !held.lost && c.state === "DISCONNECTED") {
+          next = { ...next, [c.id]: { ...held, lost: true } };
+        }
+      }
+      return next;
+    });
+  }, [connections]);
 
   useEffect(() => {
     const socket = getSocket();
@@ -122,6 +146,8 @@ export function WhatsAppConnectionPanel() {
 
   const connectMutation = useMutation({
     mutationFn: ({ id, phoneNumber }: { id: string; phoneNumber?: string }) => api.post(`/whatsapp/connections/${id}/connect`, phoneNumber ? { phoneNumber } : {}),
+    // A new attempt: the code kept from the previous one goes.
+    onMutate: ({ id }) => setHeldCodes((prev) => withoutKey(prev, id)),
     onError: (err) => toast.error(getApiErrorMessage(err)),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["whatsapp-connections"] }),
   });
@@ -403,12 +429,25 @@ export function WhatsAppConnectionPanel() {
                     )}
                     <p className="text-center text-sm text-muted">Abra o WhatsApp no celular, toque em Aparelhos conectados e escaneie o código.</p>
                   </div>
-                ) : connection.pairingCode ? (
-                  <div className="flex flex-col items-center gap-3 rounded-card border border-dashed border-border p-6">
-                    <p className="font-mono text-3xl font-bold tracking-[0.2em] text-primary">{connection.pairingCode}</p>
-                    <p className="text-center text-sm text-muted">
-                      No celular: WhatsApp &gt; Aparelhos conectados &gt; Conectar um aparelho &gt; Conectar com número de telefone, e digite este código.
-                    </p>
+                ) : heldCodes[connection.id] && !heldCodes[connection.id].lost && connection.state !== "QR_PENDING" ? (
+                  <PairingCodeCard
+                    held={heldCodes[connection.id]}
+                    canRegenerate={Boolean(canEditar && heldCodes[connection.id].phoneNumber)}
+                    regenerating={connectMutation.isPending && connectMutation.variables?.id === connection.id}
+                    onRegenerate={() => connectMutation.mutate({ id: connection.id, phoneNumber: heldCodes[connection.id].phoneNumber ?? undefined })}
+                  />
+                ) : heldCodes[connection.id]?.lost ? (
+                  <div className="space-y-2 rounded-card border border-dashed border-warning/50 bg-warning-soft/40 p-4 text-center text-sm">
+                    <p>O WhatsApp encerrou esta tentativa antes do código ser digitado no celular.</p>
+                    {canEditar && heldCodes[connection.id].phoneNumber && (
+                      <button
+                        onClick={() => connectMutation.mutate({ id: connection.id, phoneNumber: heldCodes[connection.id].phoneNumber ?? undefined })}
+                        disabled={connectMutation.isPending}
+                        className="focus-ring inline-flex items-center gap-1.5 rounded-card bg-primary px-3 py-1.5 text-xs font-semibold text-primary-fg disabled:opacity-60"
+                      >
+                        <RefreshCw className="h-3.5 w-3.5" /> Gerar novo código
+                      </button>
+                    )}
                   </div>
                 ) : (
                   <div className="rounded-card border border-dashed border-border p-6 text-center text-sm text-muted">
@@ -416,7 +455,7 @@ export function WhatsAppConnectionPanel() {
                   </div>
                 )}
 
-                {canEditar && (
+                {canEditar && !(heldCodes[connection.id] && !heldCodes[connection.id].lost) && (
                 <div className="flex gap-1 rounded-card border border-border p-1 text-xs font-medium">
                   <button
                     onClick={() => setConnectMode((m) => ({ ...m, [connection.id]: "qr" }))}
@@ -433,7 +472,7 @@ export function WhatsAppConnectionPanel() {
                 </div>
                 )}
 
-                {canEditar && (connectMode[connection.id] === "code" ? (
+                {canEditar && !(heldCodes[connection.id] && !heldCodes[connection.id].lost) && (connectMode[connection.id] === "code" ? (
                   <div className="flex gap-2">
                     <input
                       value={phoneInput[connection.id] ?? ""}
@@ -509,4 +548,100 @@ function GroupsToggle({ connection }: { connection: ConnectionSummary }) {
       )}
     </div>
   );
+}
+
+interface HeldPairingCode {
+  code: string;
+  expiresAt: string | null;
+  phoneNumber: string | null;
+  /** The attempt ended (WhatsApp gave up) while this code was on screen. */
+  lost: boolean;
+}
+
+/**
+ * The pairing code, as WhatsApp Web shows it: it stays on screen with the time it is still valid for, and when it
+ * expires the next one takes its place — no blank in between.
+ */
+function PairingCodeCard({
+  held,
+  canRegenerate,
+  regenerating,
+  onRegenerate,
+}: {
+  held: HeldPairingCode;
+  canRegenerate: boolean;
+  regenerating: boolean;
+  onRegenerate: () => void;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  const secondsLeft = held.expiresAt ? Math.max(0, Math.ceil((new Date(held.expiresAt).getTime() - now) / 1000)) : null;
+  const clock = secondsLeft === null ? null : `${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, "0")}`;
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(held.code.replace("-", ""));
+      toast.success("Código copiado.");
+    } catch {
+      toast.error("Não foi possível copiar — digite o código no celular.");
+    }
+  }
+
+  return (
+    <div className="flex flex-col items-center gap-3 rounded-card border border-dashed border-border p-5" data-testid="pairing-code">
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted">Código de conexão</p>
+      <div className="flex gap-1" role="text" aria-label={`Código ${held.code}`}>
+        {held.code.split("").map((ch, i) =>
+          ch === "-" ? (
+            <span key={i} className="self-center px-0.5 text-xl font-bold text-muted" aria-hidden>
+              –
+            </span>
+          ) : (
+            <span key={i} className="flex h-10 w-7 items-center justify-center rounded-md border border-border bg-surface-alt font-mono text-xl font-bold text-primary" aria-hidden>
+              {ch}
+            </span>
+          )
+        )}
+      </div>
+      {clock !== null && (
+        <p className="text-center text-xs text-muted" aria-live="polite">
+          {secondsLeft! > 0 ? (
+            <>
+              Válido por mais <strong className="tabular-nums text-[var(--color-text)]">{clock}</strong> — quando acabar, um novo código aparece aqui no lugar deste.
+            </>
+          ) : (
+            "Trocando pelo próximo código..."
+          )}
+        </p>
+      )}
+      <div className="flex flex-wrap justify-center gap-2">
+        <button onClick={copy} className="focus-ring rounded-card border border-border px-3 py-1.5 text-xs font-medium hover:bg-surface-alt">
+          Copiar código
+        </button>
+        {canRegenerate && (
+          <button
+            onClick={onRegenerate}
+            disabled={regenerating}
+            className="focus-ring rounded-card border border-border px-3 py-1.5 text-xs font-medium hover:bg-surface-alt disabled:opacity-60"
+          >
+            {regenerating ? "Gerando..." : "Gerar novo código"}
+          </button>
+        )}
+      </div>
+      <ol className="list-decimal space-y-0.5 pl-5 text-left text-sm text-muted">
+        <li>No celular, abra o WhatsApp &gt; Aparelhos conectados &gt; Conectar um aparelho.</li>
+        <li>Toque em Conectar com número de telefone.</li>
+        <li>Digite este código no celular.</li>
+      </ol>
+    </div>
+  );
+}
+
+function withoutKey<T>(record: Record<string, T>, key: string): Record<string, T> {
+  const copy = { ...record };
+  delete copy[key];
+  return copy;
 }
