@@ -84,7 +84,13 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
     if (options?.phoneNumber) {
       // WhatsApp-Web-style "link with phone number" — a short code instead of a QR scan.
       const fakeCode = randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase();
-      this.setStatus({ ...this.status, state: "CODE_PENDING", pairingCode: `${fakeCode.slice(0, 4)}-${fakeCode.slice(4)}` });
+      this.setStatus({
+        ...this.status,
+        state: "CODE_PENDING",
+        pairingCode: `${fakeCode.slice(0, 4)}-${fakeCode.slice(4)}`,
+        pairingCodeExpiresAt: new Date(Date.now() + 60_000),
+        pairingPhoneNumber: options.phoneNumber.replace(/\D/g, ""),
+      });
     } else {
       const fakeQr = `MOCK-QR-${randomUUID()}`;
       this.setStatus({ ...this.status, state: "QR_PENDING", qrCodeDataUrl: fakeQr });

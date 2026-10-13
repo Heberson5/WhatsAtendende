@@ -36,6 +36,8 @@ import { groupSenderFromBaileys, isGroupChat } from "./group-message";
 export interface BaileysProviderOptions {
   /** Directory where Baileys persists the multi-device auth/session state. */
   authStateDir: string;
+  /** Tests only: builds the socket instead of Baileys' makeWASocket (a fake that never reaches WhatsApp). */
+  socketFactory?: (config: Parameters<typeof makeWASocket>[0]) => WASocket;
 }
 
 /**
@@ -93,6 +95,12 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
   // whatsapp.service.ts deleteConnection).
   private reconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  // Swaps the pairing code on screen for a new one when it expires — straight from one code to the next, as
+  // WhatsApp Web does, never through an empty "Gerando..." in between.
+  private pairingRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+  // Why WhatsApp closed the socket during a pairing attempt, always logged (the main logger is silent by
+  // default): the one thing needed to tell a normal restart from WhatsApp refusing the attempt.
+  private pairingLogger = pino({ level: process.env.WHATSAPP_PAIRING_LOG_LEVEL ?? "info" });
   // Set only by endForShutdown() — makes the "connection: close" handler
   // below a no-op instead of running its normal status/reconnect logic,
   // since the process is exiting right after and must not persist a
@@ -197,7 +205,55 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
     return { count: this.contacts.size };
   }
 
+  /** A connect someone asked for ("Conectar", "Gerar código", "Gerar novo código"): always a fresh attempt. */
   async connect(connectOptions?: ConnectOptions): Promise<void> {
+    // A new code is what was asked for — never the one from an earlier attempt.
+    this.pairingCodeIssuedAt = null;
+    return this.start(connectOptions, false);
+  }
+
+  private clearPairingRefresh() {
+    if (this.pairingRefreshTimer) {
+      clearTimeout(this.pairingRefreshTimer);
+      this.pairingRefreshTimer = null;
+    }
+  }
+
+  /** Puts a pairing code on screen, valid until PAIRING_CODE_TTL_MS after it was issued, and schedules its replacement. */
+  private showPairingCode(socket: WASocket, phoneNumber: string, rawCode: string) {
+    const issuedAt = this.pairingCodeIssuedAt ?? Date.now();
+    const expiresAt = new Date(issuedAt + BaileysWhatsAppProvider.PAIRING_CODE_TTL_MS);
+    this.setStatus({
+      ...this.status,
+      state: "CODE_PENDING",
+      qrCodeDataUrl: null,
+      pairingCode: `${rawCode.slice(0, 4)}-${rawCode.slice(4)}`,
+      pairingCodeExpiresAt: expiresAt,
+      pairingPhoneNumber: phoneNumber,
+    });
+    this.clearPairingRefresh();
+    this.pairingRefreshTimer = setTimeout(() => void this.refreshPairingCode(socket, phoneNumber), Math.max(1000, expiresAt.getTime() - Date.now()));
+  }
+
+  /** The code on screen expired: ask WhatsApp for the next one on the same socket; the old one stays until it arrives. */
+  private async refreshPairingCode(socket: WASocket, phoneNumber: string) {
+    this.pairingRefreshTimer = null;
+    if (this.socket !== socket || this.status.state !== "CODE_PENDING") return;
+    try {
+      const rawCode = await socket.requestPairingCode(phoneNumber);
+      this.pairingCodeIssuedAt = Date.now();
+      if (this.socket === socket && this.status.state === "CODE_PENDING") this.showPairingCode(socket, phoneNumber, rawCode);
+    } catch (err) {
+      // The socket couldn't take the request — start over (the code on screen stays until the new one is there).
+      this.pairingLogger.warn({ err }, "could not renew the WhatsApp pairing code on the open socket; reconnecting for a new one");
+      this.pairingCodeIssuedAt = null;
+      this.start(this.lastConnectOptions, true).catch((e) => this.logger.error({ err: e }, "WhatsApp reconnect attempt failed"));
+    }
+  }
+
+  /** `isRetry`: an automatic reconnect — a pairing code already on screen stays there while it runs. */
+  private async start(connectOptions: ConnectOptions | undefined, isRetry: boolean): Promise<void> {
+    this.clearPairingRefresh();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -232,13 +288,21 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
     // qrCodeDataUrl before pairingCode, so a stale QR value from an earlier
     // attempt kept winning and the newly-generated pairing code never
     // rendered at all, even though it had, in fact, been generated.
-    this.setStatus({ ...this.status, state: "CONNECTING", qrCodeDataUrl: null, pairingCode: null });
+    //
+    // Except on an automatic reconnect in the middle of a pairing-code attempt: WhatsApp itself closes the
+    // socket right after handing out a code ("restart required"), and wiping the code for that reconnect is
+    // what made it flash on screen and vanish. It stays until a new one replaces it, the phone links, or the
+    // attempt is given up.
+    const keepShownCode = isRetry && Boolean(connectOptions?.phoneNumber) && this.status.state === "CODE_PENDING" && Boolean(this.status.pairingCode);
+    if (!keepShownCode) {
+      this.setStatus({ ...this.status, state: "CONNECTING", qrCodeDataUrl: null, pairingCode: null, pairingCodeExpiresAt: null, pairingPhoneNumber: null });
+    }
 
     try {
       const { state, saveCreds } = await useMultiFileAuthState(this.options.authStateDir);
       const wasAlreadyLinked = Boolean(state.creds.registered);
 
-      const socket = makeWASocket({
+      const socket = (this.options.socketFactory ?? makeWASocket)({
         auth: state,
         logger: this.logger as any,
         // REVERTED to false: turning this on destabilized an already-linked
@@ -326,10 +390,9 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
             rawCode = await socket.requestPairingCode(connectOptions.phoneNumber.replace(/\D/g, ""));
             this.pairingCodeIssuedAt = Date.now();
           }
-          // Formatted to match WhatsApp's own on-phone display convention
+          // Formatted (in showPairingCode) to match WhatsApp's own on-phone display convention
           // (and this project's MockWhatsAppProvider) — Baileys itself
           // returns the 8 characters with no separator.
-          const code = `${rawCode.slice(0, 4)}-${rawCode.slice(4)}`;
           // Mirrors the QR flow's own "qr" handler below, which resets this
           // on every successful QR render — reaching CODE_PENDING here is
           // real, successful progress and must clear whatever retry count
@@ -342,8 +405,10 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
           // restart-required close, and the freshly generated code never
           // even reached the UI before being wiped again: "Gerando..." was
           // all that ever showed.
-          this.reconnectAttempts = 0;
-          this.setStatus({ ...this.status, state: "CODE_PENDING", pairingCode: code });
+          // Only a genuinely new code counts as progress: reusing the one already on screen after one more
+          // close must not reset the budget, or a WhatsApp that keeps refusing would be retried forever.
+          if (!codeStillFresh) this.reconnectAttempts = 0;
+          this.showPairingCode(socket, connectOptions.phoneNumber.replace(/\D/g, ""), rawCode);
         } catch (err) {
           this.logger.error({ err }, "failed to request WhatsApp pairing code");
           // A transient hiccup here (the raw WebSocket never finished
@@ -369,7 +434,7 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
             BaileysWhatsAppProvider.MAX_RECONNECT_DELAY_MS
           );
           this.reconnectTimer = setTimeout(() => {
-            this.connect(connectOptions).catch((retryErr) => this.logger.error({ err: retryErr }, "WhatsApp reconnect attempt failed"));
+            this.start(connectOptions, true).catch((retryErr) => this.logger.error({ err: retryErr }, "WhatsApp reconnect attempt failed"));
           }, delay);
           return;
         }
@@ -396,10 +461,13 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
           // number recorded the first time this connection was paired.
           const ownIdentity = socket.user?.jid ?? socket.user?.id ?? null;
           const connectedNumber = ownIdentity ? ownIdentity.split(":")[0].split("@")[0] : null;
+          this.clearPairingRefresh();
           this.setStatus({
             state: "CONNECTED",
             qrCodeDataUrl: null,
             pairingCode: null,
+            pairingCodeExpiresAt: null,
+            pairingPhoneNumber: null,
             connectedNumber,
             lastConnectedAt: new Date(),
           });
@@ -425,9 +493,12 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
           // CONNECTING reset takes over once the reconnect actually runs
           // moments later and requests a fresh code. QR-code connects are
           // unaffected — this only applies to a phone-number attempt.
+          //
+          // Any other close WhatsApp may still recover from, during the same attempt, gets the same treatment:
+          // the code stays on screen while the reconnect runs, and only goes once the retries are spent.
+          this.clearPairingRefresh();
           const isExpectedPairingRestart =
             shouldReconnect &&
-            statusCode === DisconnectReason.restartRequired &&
             Boolean(connectOptions?.phoneNumber) &&
             !wasAlreadyLinked &&
             this.status.state === "CODE_PENDING";
@@ -442,8 +513,8 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
             // pairing-code requests in a short time, which surfaces as a
             // *different* statusCode here, not 515). Set
             // WHATSAPP_LOG_LEVEL=info (or lower) to see it.
-            this.logger.warn(
-              { statusCode, isExpectedPairingRestart, reconnectAttempts: this.reconnectAttempts },
+            this.pairingLogger.warn(
+              { statusCode, keepsCodeOnScreen: isExpectedPairingRestart, reconnectAttempts: this.reconnectAttempts },
               "WhatsApp connection closed during a pairing-code attempt"
             );
           }
@@ -492,7 +563,7 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
             BaileysWhatsAppProvider.MAX_RECONNECT_DELAY_MS
           );
           this.reconnectTimer = setTimeout(() => {
-            this.connect(this.lastConnectOptions).catch((err) => this.logger.error({ err }, "WhatsApp reconnect attempt failed"));
+            this.start(this.lastConnectOptions, true).catch((err) => this.logger.error({ err }, "WhatsApp reconnect attempt failed"));
           }, delay);
         }
       });
@@ -587,10 +658,13 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
     // pairing attempt that ran out of retries) must always request a
     // genuinely new one rather than treating that leftover as reusable.
     this.pairingCodeIssuedAt = null;
+    this.clearPairingRefresh();
     this.setStatus({
       state: "DISCONNECTED",
       qrCodeDataUrl: null,
       pairingCode: null,
+      pairingCodeExpiresAt: null,
+      pairingPhoneNumber: null,
       connectedNumber: null,
       lastConnectedAt: this.status.lastConnectedAt,
     });
@@ -619,6 +693,7 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
 
   async endForShutdown(): Promise<void> {
     this.shuttingDown = true;
+    this.clearPairingRefresh();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;

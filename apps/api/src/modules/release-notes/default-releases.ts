@@ -11,6 +11,26 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.8.1",
+    date: "13 out 2026",
+    name: "O código de conexão pelo número fica na tela",
+    summary: "Ao conectar um WhatsApp pelo número, o código não pisca mais: fica na tela com o tempo de validade e é trocado direto pelo próximo, como no WhatsApp Web.",
+    notes: [
+      {
+        type: "correcao",
+        area: "conexoes",
+        title: "Código de conexão visível até o próximo",
+        text: "Logo depois de entregar o código, o próprio WhatsApp reinicia a conexão — e o sistema apagava o código nesse momento, então ele aparecia por um instante e sumia. Agora o código fica na tela durante essas reconexões, mostra por quanto tempo ainda vale e, quando vence, o próximo aparece direto no lugar. Os botões Copiar código e Gerar novo código ficam ao lado. Se o WhatsApp encerrar a tentativa de vez, aparece o aviso com o botão para gerar um novo código.",
+        before: "O código piscava e sumia.",
+        after: "O código fica na tela, com o tempo de validade, até o próximo substituí-lo.",
+        steps: ["Em Conexões, escolha Conectar com número, informe o número e clique em Gerar código.", "Veja o tempo de validade {1}; se precisar, use Gerar novo código {2}.", "No celular: Aparelhos conectados › Conectar um aparelho › Conectar com número de telefone, e digite o código."],
+        where: "Conexões › WhatsApp",
+        requires: [PERMISSION.CONEXOES_GERENCIAR],
+        images: [{ src: "/notas-de-versao/pareamento-codigo.webp", caption: "{1} Por quanto tempo o código ainda vale · {2} Gerar um novo código", size: "small" }],
+      },
+    ],
+  },
+  {
     version: "2.8.0",
     date: "13 out 2026",
     name: "NPS de 0 a 100, com comparação e meta",

@@ -699,6 +699,8 @@ export interface WhatsAppConnectionSummaryDTO {
   state: WhatsAppConnectionStatus;
   qrCodeDataUrl: string | null;
   pairingCode: string | null;
+  pairingCodeExpiresAt?: string | null;
+  pairingPhoneNumber?: string | null;
   connectedNumber: string | null;
   lastConnectedAt: string | null;
   agentCount: number;
