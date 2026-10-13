@@ -11,6 +11,32 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.8.3",
+    date: "13 out 2026",
+    name: "Mensagens sem \"Aguardando mensagem\"",
+    summary: "Correções na entrega das mensagens pelo WhatsApp: o reenvio pedido pelo celular do cliente passa a funcionar mesmo depois de reinícios, e clientes com identificador oculto recebem a resposta no endereço certo.",
+    notes: [
+      {
+        type: "correcao",
+        area: "atendimento",
+        title: "\"Aguardando mensagem\" no celular do cliente",
+        text: "Quando o celular do cliente não consegue abrir uma mensagem, ele pede para o sistema reenviá-la. O sistema só guardava as últimas mensagens na memória, então depois de uma atualização, de um reinício ou num dia de muito movimento o pedido não era atendido e a mensagem ficava em \"Aguardando mensagem\". Agora cada conexão guarda as mensagens enviadas dos últimos 14 dias para atender esses pedidos, controla as tentativas de reenvio e mantém as chaves de criptografia de cada cliente sincronizadas mesmo com várias mensagens seguidas. Vale para todas as conexões, cada uma com a sua própria sessão.",
+        before: "Alguns clientes ficavam com \"Aguardando mensagem\".",
+        after: "O reenvio pedido pelo celular do cliente é atendido.",
+        where: "Atendimento",
+        requires: [PERMISSION.ATENDIMENTO_ACESSAR],
+      },
+      {
+        type: "correcao",
+        area: "atendimento",
+        title: "Cliente com identificador oculto recebe a resposta",
+        text: "Alguns clientes escrevem por um identificador oculto do WhatsApp, sem mostrar o número. A resposta era montada como se esse identificador fosse um telefone e ia para o endereço errado. Agora ela volta pelo mesmo endereço de onde o cliente escreveu — textos, arquivos, áudios, localização, reações e confirmação de leitura.",
+        where: "Atendimento",
+        requires: [PERMISSION.ATENDIMENTO_ACESSAR],
+      },
+    ],
+  },
+  {
     version: "2.8.2",
     date: "13 out 2026",
     name: "Colar imagem na conversa",

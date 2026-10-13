@@ -5,6 +5,7 @@ import * as QRCode from "qrcode";
 import pino from "pino";
 import makeWASocket, {
   DisconnectReason,
+  makeCacheableSignalKeyStore,
   useMultiFileAuthState,
   downloadMediaMessage,
   proto,
@@ -123,38 +124,91 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
   // lifetime (it shows a countdown and swaps to a new code once it lapses).
   private static readonly PAIRING_CODE_TTL_MS = 60_000;
 
-  // Recently-sent messages, keyed by their own provider message id — backs
-  // getMessage() below. WhatsApp's multi-device protocol has every
-  // recipient device request a decryption retry whenever it can't decrypt a
-  // message the first time (routine — happens on a device's first message
-  // from this session, or after any session/key desync), and Baileys can
-  // only honor that retry (re-encrypt and resend) if it can look the
-  // original content back up; left unconfigured, getMessage defaults to
-  // "always undefined", so EVERY retry silently goes nowhere and the
-  // recipient's client is left stuck forever on "Aguardando mensagem" for
-  // that message. This is a known Baileys requirement (its own
-  // messages-recv.js has a "todo: implement a cache... copy whatsmeow"
-  // comment on exactly this) — not something specific to any one message
-  // or send path in this app; see PROMPT: "Isso não pode acontecer em
-  // nenhum momento e para nenhuma mensagem enviada para o cliente". Bounded
-  // and in-memory only: a retry only ever targets a message from the
-  // current/recent session, never something from before a restart.
-  private sentMessageCache = new Map<string, proto.IMessage>();
-  private static readonly SENT_MESSAGE_CACHE_SIZE = 256;
+  // Every message this connection sent, keyed by its provider message id — backs getMessage() below.
+  // WhatsApp's multi-device protocol has a recipient device ask for a decryption retry whenever it
+  // can't decrypt a message (its first message from this session, or after any key desync), and
+  // Baileys can only honor it (re-encrypt and resend) if it can look the original content back up;
+  // when it can't, the customer is left on "Aguardando mensagem" for that message for good. The
+  // retry can come long after the send — after a deploy, a restart, a busy day — so this is kept on
+  // disk (sent-messages.json in the session folder) for SENT_MESSAGE_RETENTION_MS, not only the last
+  // few hundred in memory as before. Only the message itself is kept (media is a link with its key,
+  // not the file), so it stays small.
+  private sentMessages = new Map<string, { at: number; message: string }>();
+  private sentMessagesPath: string;
+  private sentMessagesPersistTimer: ReturnType<typeof setTimeout> | null = null;
+  private static readonly SENT_MESSAGE_RETENTION_MS = 14 * 24 * 60 * 60_000;
+  private static readonly SENT_MESSAGE_MAX = 20_000;
+  // Baileys' own count of retries per message — without it, a retry can fail silently or loop, and
+  // the customer's session key is never renewed (its docs ask for one "to avoid a message decryption loop").
+  private msgRetryCounterCache = new TtlCache(60 * 60_000);
+  // Decryption retries asked by customers' phones, always logged (the main logger is silent by
+  // default): which message, and whether it could be resent — what tells if "Aguardando mensagem" is fixed.
+  private deliveryLogger = pino({ level: process.env.WHATSAPP_DELIVERY_LOG_LEVEL ?? "info" });
 
   private cacheSentMessage(sent: WAMessage | undefined): void {
     const id = sent?.key.id;
     if (!id || !sent.message) return;
-    if (this.sentMessageCache.size >= BaileysWhatsAppProvider.SENT_MESSAGE_CACHE_SIZE) {
-      const oldestKey = this.sentMessageCache.keys().next().value;
-      if (oldestKey !== undefined) this.sentMessageCache.delete(oldestKey);
+    const encoded = Buffer.from(proto.Message.encode(sent.message).finish()).toString("base64");
+    this.sentMessages.set(id, { at: Date.now(), message: encoded });
+    this.scheduleSentMessagesPersist();
+  }
+
+  /** The content of a message this connection sent, for a recipient's decryption retry. */
+  private lookupSentMessage(id: string | null | undefined): proto.IMessage | undefined {
+    if (!id) return undefined;
+    const entry = this.sentMessages.get(id);
+    this.deliveryLogger.info({ providerMessageId: id, resent: Boolean(entry) }, entry ? "a customer's phone asked to resend a message — resending" : "a customer's phone asked to resend a message this connection no longer has");
+    if (!entry) return undefined;
+    try {
+      return proto.Message.decode(Buffer.from(entry.message, "base64"));
+    } catch {
+      return undefined;
     }
-    this.sentMessageCache.set(id, sent.message);
+  }
+
+  private loadSentMessages() {
+    try {
+      const raw = JSON.parse(fs.readFileSync(this.sentMessagesPath, "utf-8")) as { id: string; at: number; message: string }[];
+      const cutoff = Date.now() - BaileysWhatsAppProvider.SENT_MESSAGE_RETENTION_MS;
+      for (const e of raw) if (e.at >= cutoff) this.sentMessages.set(e.id, { at: e.at, message: e.message });
+    } catch {
+      // Nothing kept yet (or an unreadable file) — starts empty.
+    }
+  }
+
+  // Written a moment after a send (a burst of sends is one write), dropping what is past retention.
+  private scheduleSentMessagesPersist() {
+    if (this.sentMessagesPersistTimer) return;
+    this.sentMessagesPersistTimer = setTimeout(() => {
+      this.sentMessagesPersistTimer = null;
+      this.persistSentMessages();
+    }, 2000);
+    this.sentMessagesPersistTimer.unref?.();
+  }
+
+  private persistSentMessages() {
+    const cutoff = Date.now() - BaileysWhatsAppProvider.SENT_MESSAGE_RETENTION_MS;
+    for (const [id, e] of this.sentMessages) if (e.at < cutoff) this.sentMessages.delete(id);
+    while (this.sentMessages.size > BaileysWhatsAppProvider.SENT_MESSAGE_MAX) {
+      const oldest = this.sentMessages.keys().next().value;
+      if (oldest === undefined) break;
+      this.sentMessages.delete(oldest);
+    }
+    try {
+      fs.mkdirSync(path.dirname(this.sentMessagesPath), { recursive: true });
+      const tmp = `${this.sentMessagesPath}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify(Array.from(this.sentMessages, ([id, e]) => ({ id, ...e }))));
+      fs.renameSync(tmp, this.sentMessagesPath);
+    } catch (err) {
+      this.logger.error({ err }, "failed to persist the sent-messages store to disk");
+    }
   }
 
   constructor(private options: BaileysProviderOptions) {
     this.contactsCachePath = path.join(options.authStateDir, "contacts-cache.json");
+    this.sentMessagesPath = path.join(options.authStateDir, "sent-messages.json");
     this.loadContactsCache();
+    this.loadSentMessages();
   }
 
   private loadContactsCache() {
@@ -303,7 +357,12 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
       const wasAlreadyLinked = Boolean(state.creds.registered);
 
       const socket = (this.options.socketFactory ?? makeWASocket)({
-        auth: state,
+        // The Signal keys behind a cache, as Baileys recommends: the keys of a customer who gets several
+        // messages in a row used to be read and written straight to their files on every one, and two
+        // writes crossing could leave that customer's session out of step — their phone then can't
+        // decrypt ("Aguardando mensagem"). Baileys itself serializes key writes in transactions on top.
+        auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, this.logger as any) },
+        msgRetryCounterCache: this.msgRetryCounterCache,
         logger: this.logger as any,
         // REVERTED to false: turning this on destabilized an already-linked
         // real account (sending/receiving/contacts all broke) — the
@@ -344,10 +403,10 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
         // Baileys session: suppress the QR event entirely when a phone number
         // was given, since we're about to request a code instead.
         printQRInTerminal: false,
-        // See sentMessageCache's own comment above — without this, a
+        // See sentMessages' own comment above — without this, a
         // recipient device's decryption-retry request can never be
         // fulfilled and that message is stuck on their end forever.
-        getMessage: async (key) => (key.id ? this.sentMessageCache.get(key.id) : undefined),
+        getMessage: async (key) => this.lookupSentMessage(key.id),
       });
       this.socket = socket;
 
@@ -688,12 +747,18 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
     // entirely, so the cached address book must not bleed into it either.
     fs.rmSync(this.options.authStateDir, { recursive: true, force: true });
     fs.rmSync(this.contactsCachePath, { force: true });
+    this.sentMessages.clear();
     this.settleDisconnected();
   }
 
   async endForShutdown(): Promise<void> {
     this.shuttingDown = true;
     this.clearPairingRefresh();
+    if (this.sentMessagesPersistTimer) {
+      clearTimeout(this.sentMessagesPersistTimer);
+      this.sentMessagesPersistTimer = null;
+      this.persistSentMessages();
+    }
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -1305,4 +1370,32 @@ function convertHistoryMessage(message: WAMessage, chatId: string): HistoryMessa
   if (content.audioMessage) return { ...base, type: "AUDIO", body: null };
   if (content.documentMessage) return { ...base, type: "DOCUMENT", body: content.documentMessage.title ?? null };
   return null;
+}
+
+/** A small in-memory cache with expiry — the shape Baileys asks for in msgRetryCounterCache. */
+class TtlCache {
+  private entries = new Map<string, { value: unknown; until: number }>();
+  constructor(private ttlMs: number) {}
+  get<T>(key: string): T | undefined {
+    const entry = this.entries.get(key);
+    if (!entry) return undefined;
+    if (entry.until < Date.now()) {
+      this.entries.delete(key);
+      return undefined;
+    }
+    return entry.value as T;
+  }
+  set<T>(key: string, value: T): void {
+    if (this.entries.size > 10_000) {
+      const now = Date.now();
+      for (const [k, e] of this.entries) if (e.until < now) this.entries.delete(k);
+    }
+    this.entries.set(key, { value, until: Date.now() + this.ttlMs });
+  }
+  del(key: string): void {
+    this.entries.delete(key);
+  }
+  flushAll(): void {
+    this.entries.clear();
+  }
 }
