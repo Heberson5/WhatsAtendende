@@ -13,9 +13,19 @@ export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
     version: "2.8.4",
     date: "13 out 2026",
-    name: "1ª resposta sem tempo negativo",
-    summary: "O tempo médio da 1ª resposta no Dashboard e nos Relatórios não fica mais negativo quando a conversa passa de um atendente para outro.",
+    name: "@menção pelo nome e 1ª resposta sem tempo negativo",
+    summary: "O cliente que escreve \"@\" com o nome do atendente vai direto para ele mesmo quando o nome está cadastrado com prefixo (\"Atendente - Gislaine\"), e a 1ª resposta não fica mais negativa depois de uma transferência.",
     notes: [
+      {
+        type: "correcao",
+        area: "atendimento",
+        title: "\"@nome\" do cliente com nome cadastrado com prefixo",
+        text: "Com o nome cadastrado como \"Atendente - Gislaine\", o sistema comparava o \"@Gislaine\" do cliente com o nome inteiro ou só com a primeira palavra (\"Atendente\", igual para todos) e a conversa caía na fila. Agora vale qualquer parte do nome: \"@Gislaine\", \"@Atendente Gislaine\" ou um sobrenome que só uma pessoa tem, com pequenos erros de digitação. Uma palavra que várias pessoas têm, como \"@Atendente\", continua indo para a fila, sem adivinhar. A pessoa precisa estar Online e atender aquela conexão.",
+        before: "\"@Gislaine\" caía na fila para todos.",
+        after: "\"@Gislaine\" vai direto para Meus atendimentos da Gislaine.",
+        where: "Atendimento",
+        requires: [PERMISSION.ATENDIMENTO_ACESSAR],
+      },
       {
         type: "correcao",
         area: "dashboard",
