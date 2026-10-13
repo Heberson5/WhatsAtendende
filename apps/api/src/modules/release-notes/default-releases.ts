@@ -11,6 +11,24 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.8.4",
+    date: "13 out 2026",
+    name: "1ª resposta sem tempo negativo",
+    summary: "O tempo médio da 1ª resposta no Dashboard e nos Relatórios não fica mais negativo quando a conversa passa de um atendente para outro.",
+    notes: [
+      {
+        type: "correcao",
+        area: "dashboard",
+        title: "1ª resposta negativa depois de transferência",
+        text: "Quando a conversa mudava de atendente (transferência, @menção do cliente, devolução para a fila), o horário do aceite era renovado, mas a 1ª resposta continuava sendo a do atendente anterior, que veio antes. A conta dava negativa. Agora a 1ª resposta é contada a partir do aceite de quem está com a conversa, até a primeira mensagem que essa pessoa escreve. As conversas antigas que tinham esse problema ficam fora da média.",
+        before: "A 1ª resposta podia aparecer como \"-260 s\".",
+        after: "Sempre um tempo positivo, de quem está com a conversa.",
+        where: "Dashboard e Relatórios",
+        requires: [PERMISSION.DASHBOARD_ACESSAR],
+      },
+    ],
+  },
+  {
     version: "2.8.3",
     date: "13 out 2026",
     name: "Mensagens sem \"Aguardando mensagem\"",

@@ -4,6 +4,7 @@ import { createApp } from "../src/app";
 import { prisma } from "../src/lib/prisma";
 import { createAutoMessageTemplate } from "../src/modules/auto-message-templates/auto-message-templates.service";
 import { createClosingMessage } from "../src/modules/closing-messages/closing-messages.service";
+import { transferConversation } from "../src/modules/conversations/conversations.service";
 import { resetDatabase, createTestUser, createWaitingConversation, TEST_PASSWORD } from "./helpers";
 
 const app = createApp();
@@ -85,5 +86,31 @@ describe("Dashboard › 1ª resposta: só conta o que o atendente escreve", () =
 
     expect((await outbound(conversationId)).map((m) => m.body)).toEqual(["Olá! Sou Ana e vou te atender.", "Obrigado pelo contato!"]);
     expect((await prisma.conversation.findUniqueOrThrow({ where: { id: conversationId } })).firstResponseAt).toBeNull();
+  }, 15000);
+
+  it("transferida: a 1ª resposta conta a partir do novo aceite, nunca fica negativa", async () => {
+    const bruno = await createTestUser({ email: "bruno-1a-resposta@test.dev", role: "AGENT", displayName: "Bruno", whatsappConnectionId: connectionId });
+    const conversationId = await accept("5511990007003");
+    await request(app).post(`/api/messages/conversations/${conversationId}/text`).set("Authorization", `Bearer ${agentToken}`).send({ body: "Já te passo para o financeiro" });
+    expect((await prisma.conversation.findUniqueOrThrow({ where: { id: conversationId } })).firstResponseAt).not.toBeNull();
+
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await transferConversation(conversationId, agentId, bruno.id, agentId, undefined);
+    const transferred = await prisma.conversation.findUniqueOrThrow({ where: { id: conversationId } });
+    expect(transferred.firstResponseAt).toBeNull(); // Bruno hasn't answered yet
+
+    const brunoToken = await loginAs("bruno-1a-resposta@test.dev");
+    await request(app).post(`/api/messages/conversations/${conversationId}/text`).set("Authorization", `Bearer ${brunoToken}`).send({ body: "Oi, sou o Bruno" });
+    const answered = await prisma.conversation.findUniqueOrThrow({ where: { id: conversationId } });
+    expect(answered.firstResponseAt!.getTime()).toBeGreaterThanOrEqual(answered.acceptedAt!.getTime());
+    expect(await avgFirstResponseMs()).toBeGreaterThanOrEqual(0);
+  }, 15000);
+
+  it("conversas antigas com a resposta antes do aceite ficam fora da média", async () => {
+    await prisma.conversation.updateMany({ data: { firstResponseAt: null } });
+    const conversationId = await accept("5511990007004");
+    const { acceptedAt } = await prisma.conversation.findUniqueOrThrow({ where: { id: conversationId } });
+    await prisma.conversation.update({ where: { id: conversationId }, data: { firstResponseAt: new Date(acceptedAt!.getTime() - 260_000) } });
+    expect(await avgFirstResponseMs()).toBeNull();
   }, 15000);
 });
