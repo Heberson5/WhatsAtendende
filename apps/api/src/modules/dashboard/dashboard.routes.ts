@@ -9,6 +9,7 @@ import { parseListParam } from "../../lib/parse-list-param";
 import { resolveAllowedConnectionIds } from "../../lib/connection-access";
 import { getDashboard, getPresenceByHour, getTeam, getWordCloud } from "./dashboard.service";
 import { getSatisfactionSummary } from "../satisfaction/satisfaction.service";
+import { getSatisfactionOverview } from "../satisfaction/satisfaction-report.service";
 
 export const dashboardRouter = Router();
 dashboardRouter.use(requireAuth, requirePermission(PERMISSION.DASHBOARD_ACESSAR));
@@ -70,5 +71,20 @@ dashboardRouter.get(
     const { from, to } = resolvePeriod(query.period, query.from, query.to, query.tzOffsetMinutes);
     const connectionIds = await resolveAllowedConnectionIds(req.auth!, parseListParam(query.connectionId));
     res.json(await getSatisfactionSummary({ from, to, agentId: query.agentId, connectionIds }));
+  })
+);
+
+/**
+ * The Dashboard's satisfaction card and section: the same numbers as Relatórios › Pesquisa de satisfação. Each
+ * attendant's NPS and the latest evaluations (they name customers) only for Gestor and Administrador.
+ */
+dashboardRouter.get(
+  "/satisfaction-overview",
+  asyncHandler(async (req, res) => {
+    const query = querySchema.parse(req.query);
+    const { from, to } = resolvePeriod(query.period, query.from, query.to, query.tzOffsetMinutes);
+    const connectionIds = await resolveAllowedConnectionIds(req.auth!, parseListParam(query.connectionId));
+    const withDetail = req.auth!.role === "ADMIN" || req.auth!.role === "MANAGER";
+    res.json(await getSatisfactionOverview({ from, to, agentId: query.agentId, connectionIds, tzOffsetMinutes: query.tzOffsetMinutes }, withDetail));
   })
 );

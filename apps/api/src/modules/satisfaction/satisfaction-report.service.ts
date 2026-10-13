@@ -1,6 +1,13 @@
-import type { SatisfactionCategory, SatisfactionReportDTO, SatisfactionResponseDTO, SatisfactionScoreStatsDTO } from "@whatsatendende/types";
+import type {
+  SatisfactionCategory,
+  SatisfactionOverviewDTO,
+  SatisfactionPreviousDTO,
+  SatisfactionReportDTO,
+  SatisfactionResponseDTO,
+  SatisfactionScoreStatsDTO,
+} from "@whatsatendende/types";
 import { prisma } from "../../lib/prisma";
-import { calculateNps } from "./satisfaction.service";
+import { calculateNps, getCurrentQuestion, getSatisfactionSettings } from "./satisfaction.service";
 
 /**
  * Relatórios › Pesquisa de satisfação: the 0–10 (NPS) surveys sent in the
@@ -49,8 +56,35 @@ function stats(sent: number, scores: number[]): SatisfactionScoreStatsDTO {
 
 const two = (n: number) => String(n).padStart(2, "0");
 
+/**
+ * The period right before, with the same length (e.g. the 13 days before "Este mês" on the 13th) — the totals and
+ * each attendant's NPS, for "▲ 6 pontos em relação ao período anterior".
+ */
+async function previousPeriod(params: SatisfactionReportParams): Promise<{ previous: SatisfactionPreviousDTO; npsByAgent: Map<string, number | null> }> {
+  const to = new Date(params.from.getTime() - 1);
+  const from = new Date(params.from.getTime() - (params.to.getTime() - params.from.getTime()) - 1);
+  const rows = await prisma.satisfactionSurvey.findMany({
+    where: {
+      sentAt: { gte: from, lte: to },
+      questionId: { not: null },
+      ...(params.agentId && { agentId: params.agentId }),
+      ...(params.connectionIds && { whatsappConnectionId: { in: params.connectionIds } }),
+    },
+    select: { score: true, agentId: true },
+  });
+  const scores = rows.filter((r) => r.score !== null).map((r) => r.score!);
+  const totals = stats(rows.length, scores);
+  const perAgent = new Map<string, number[]>();
+  for (const r of rows) if (r.agentId && r.score !== null) perAgent.set(r.agentId, [...(perAgent.get(r.agentId) ?? []), r.score]);
+  return {
+    previous: { from: from.toISOString(), to: to.toISOString(), nps: totals.nps, average: totals.average, answered: totals.answered, responseRate: totals.responseRate },
+    npsByAgent: new Map([...perAgent].map(([agentId, s]) => [agentId, stats(s.length, s).nps])),
+  };
+}
+
 export async function getSatisfactionReport(params: SatisfactionReportParams): Promise<SatisfactionReportDTO> {
   const now = new Date();
+  const [{ previous, npsByAgent }, currentQuestion, settings] = await Promise.all([previousPeriod(params), getCurrentQuestion(), getSatisfactionSettings()]);
   const rows = await prisma.satisfactionSurvey.findMany({
     where: {
       sentAt: { gte: params.from, lte: params.to },
@@ -157,11 +191,37 @@ export async function getSatisfactionReport(params: SatisfactionReportParams): P
         agentName: a.agentName,
         lowest: a.scores.length ? Math.min(...a.scores) : null,
         highest: a.scores.length ? Math.max(...a.scores) : null,
+        previousNps: a.agentId ? (npsByAgent.get(a.agentId) ?? null) : null,
       }))
       .sort(sortByNps),
     byConnection: [...byConnection.values()].map((c) => ({ ...stats(c.sent, c.scores), connectionId: c.connectionId, connectionName: c.connectionName, connectionColor: c.connectionColor })).sort(sortByNps),
     trend,
     responses,
+    previous,
+    currentQuestion,
+    settings,
+  };
+}
+
+/**
+ * Dashboard › Pesquisa de satisfação: built from the same report, so its numbers are always the ones of
+ * Relatórios. Each attendant's numbers and the latest 5 of each group name customers — only for whoever
+ * `withDetail` (Gestor and Administrador).
+ */
+export async function getSatisfactionOverview(params: SatisfactionReportParams, withDetail: boolean): Promise<SatisfactionOverviewDTO> {
+  const report = await getSatisfactionReport(params);
+  const latestOf = (category: SatisfactionCategory) =>
+    report.responses
+      .filter((r) => r.category === category)
+      .sort((a, b) => (b.answeredAt ?? "").localeCompare(a.answeredAt ?? ""))
+      .slice(0, 5);
+  return {
+    totals: report.totals,
+    previous: report.previous,
+    currentQuestion: report.currentQuestion,
+    settings: report.settings,
+    byAgent: withDetail ? report.byAgent : null,
+    latest: withDetail ? { detractor: latestOf("detractor"), passive: latestOf("passive"), promoter: latestOf("promoter") } : null,
   };
 }
 
@@ -197,7 +257,8 @@ export function agentsToRows(report: SatisfactionReportDTO): Record<string, unkn
     Respostas: a.answered,
     "Taxa de resposta (%)": a.responseRate ?? "-",
     "Nota média": a.average ?? "-",
-    "NPS (-100 a 100)": a.nps ?? "-",
+    "NPS (0 a 100)": a.nps ?? "-",
+    "NPS no período anterior": a.previousNps ?? "-",
     Promotores: a.promoters,
     Neutros: a.passives,
     Detratores: a.detractors,

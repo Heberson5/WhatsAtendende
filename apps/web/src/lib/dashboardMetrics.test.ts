@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { compareWithPrevious, describePeriod, formatMinutes, npsZone, percentOf } from "./dashboardMetrics";
+import { compareWithPrevious, describePeriod, formatMinutes, npsDelta, npsZone, percentOf } from "./dashboardMetrics";
 
 // Thursday 8 Oct 2026, 17:42 local time.
 const NOW = new Date(2026, 9, 8, 17, 42);
@@ -28,18 +28,27 @@ describe("describePeriod — o período por extenso, com os mesmos dias que a AP
   });
 });
 
-describe("npsZone — as zonas usuais do NPS", () => {
+describe("npsZone — as zonas usuais do NPS, na escala de 0 a 100", () => {
   it.each([
     [100, "Zona de excelência"],
-    [75, "Zona de excelência"],
-    [74, "Zona de qualidade"],
-    [50, "Zona de qualidade"],
-    [49, "Zona de aperfeiçoamento"],
-    [0, "Zona de aperfeiçoamento"],
-    [-1, "Zona crítica"],
-    [-100, "Zona crítica"],
+    [88, "Zona de excelência"],
+    [87, "Zona de qualidade"],
+    [75, "Zona de qualidade"],
+    [74, "Zona de aperfeiçoamento"],
+    [50, "Zona de aperfeiçoamento"],
+    [49, "Zona crítica"],
+    [0, "Zona crítica"],
   ])("NPS %i → %s", (nps, label) => {
     expect(npsZone(nps).label).toBe(label);
+  });
+});
+
+describe("npsDelta — comparação com o período anterior", () => {
+  it("diz quantos pontos subiu ou caiu", () => {
+    expect(npsDelta(78, 72)).toEqual({ text: "▲ 6 pontos", tone: "up" });
+    expect(npsDelta(70, 71)).toEqual({ text: "▼ 1 ponto", tone: "down" });
+    expect(npsDelta(70, 70)).toEqual({ text: "= igual", tone: "same" });
+    expect(npsDelta(70, null)).toBeNull();
   });
 });
 

@@ -130,7 +130,7 @@ describe("Pesquisa de satisfação (NPS)", () => {
     const [question] = (await getSatisfactionSummary(PERIOD())).questions;
     expect(question.distribution[0]).toBe(1);
     expect(question.distribution[10]).toBe(1);
-    expect(question).toMatchObject({ answered: 2, average: 5, promoters: 1, detractors: 1, nps: 0 });
+    expect(question).toMatchObject({ answered: 2, average: 5, promoters: 1, detractors: 1, nps: 50 });
   });
 
   it("não envia em conexão fora da lista", async () => {
@@ -170,9 +170,12 @@ describe("Pesquisa de satisfação (NPS)", () => {
     it("calcula promotores (9–10), neutros (7–8) e detratores (0–6)", () => {
       // 0, 6, 8, 9, 9, 10 → 3 promotores, 1 neutro, 2 detratores
       const distribution = [1, 0, 0, 0, 0, 0, 1, 0, 1, 2, 1];
-      expect(calculateNps(distribution)).toEqual({ answered: 6, promoters: 3, passives: 1, detractors: 2, nps: 17 });
+      expect(calculateNps(distribution)).toEqual({ answered: 6, promoters: 3, passives: 1, detractors: 2, nps: 58 });
       expect(calculateNps(Array(11).fill(0))).toEqual({ answered: 0, promoters: 0, passives: 0, detractors: 0, nps: null });
-      expect(calculateNps([0, 0, 0, 0, 0, 0, 0, 5, 5, 0, 0]).nps).toBe(0);
+      expect(calculateNps([0, 0, 0, 0, 0, 0, 0, 5, 5, 0, 0]).nps).toBe(50);
+      // 0 a 100: só detratores é 0, só promotores é 100.
+      expect(calculateNps([3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).nps).toBe(0);
+      expect(calculateNps([0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1]).nps).toBe(100);
     });
 
     it("mostra o NPS de cada pergunta e mantém a anterior no histórico quando o texto muda", async () => {
@@ -187,7 +190,7 @@ describe("Pesquisa de satisfação (NPS)", () => {
       const summary = await getSatisfactionSummary(PERIOD());
       expect(summary).toMatchObject({ sent: 4, answered: 4 });
       expect(summary.questions.map((q) => ({ question: q.question, current: q.current, answered: q.answered, nps: q.nps }))).toEqual([
-        { question: NEW_QUESTION, current: true, answered: 2, nps: -50 },
+        { question: NEW_QUESTION, current: true, answered: 2, nps: 25 },
         { question: QUESTION, current: false, answered: 2, nps: 100 },
       ]);
       expect(await prisma.satisfactionQuestion.count()).toBe(2);
@@ -202,7 +205,7 @@ describe("Pesquisa de satisfação (NPS)", () => {
 
       const summary = await getSatisfactionSummary(PERIOD());
       expect(summary.questions).toHaveLength(1);
-      expect(summary.questions[0]).toMatchObject({ question: QUESTION, current: true, answered: 2, nps: 0 });
+      expect(summary.questions[0]).toMatchObject({ question: QUESTION, current: true, answered: 2, nps: 50 });
       expect(await prisma.satisfactionQuestion.count()).toBe(1); // the other wording was never sent, so it left no question behind
     });
 
@@ -241,7 +244,7 @@ describe("Pesquisa de satisfação (NPS)", () => {
       await closeAndAnswer("5511900000071", "2");
       await closeAndAnswer("5511900000072", "9");
       const byAgent = await getSatisfactionByAgent(PERIOD());
-      expect(byAgent.get(agentId)).toEqual({ answered: 3, nps: 33 });
+      expect(byAgent.get(agentId)).toEqual({ answered: 3, nps: 67 });
     });
   });
 

@@ -7,6 +7,7 @@ import { api, getApiErrorMessage } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
 import { describeConnectionScope } from "./ConnectionScopePicker";
 import { PesquisaFormModal, toPesquisaFormValues, type PesquisaFormValues } from "./PesquisaFormModal";
+import { SatisfactionSettingsCard } from "./SatisfactionSettingsCard";
 
 const QUERY_KEY = ["satisfaction-surveys"];
 
@@ -69,8 +70,8 @@ export function PesquisaTab() {
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div className="max-w-3xl space-y-2 text-sm text-muted">
           <p>
-            Ao encerrar uma conversa atendida, o cliente recebe a pergunta da pesquisa e responde com uma nota de 0 a 10. A nota alimenta o NPS: o
-            Dashboard mostra o de cada pergunta e Relatórios › Por atendente, o de cada pessoa. Na API Oficial, só é enviada se o cliente escreveu nas
+            Ao encerrar uma conversa atendida, o cliente recebe a pergunta da pesquisa e responde com uma nota de 0 a 10. A nota alimenta o NPS, de 0
+            a 100, no Dashboard, em Relatórios › Pesquisa de satisfação e na apresentação. Na API Oficial, só é enviada se o cliente escreveu nas
             últimas 24 horas.
           </p>
           <p>
@@ -89,6 +90,8 @@ export function PesquisaTab() {
           </button>
         )}
       </div>
+
+      <SatisfactionSettingsCard canEdit={Boolean(canEditar)} />
 
       {surveys && (
         <p className="mb-2 text-xs font-medium text-muted" role="status">
