@@ -7,6 +7,8 @@ import { useAuthStore } from "../../store/auth-store";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { describeConnectionScope } from "./ConnectionScopePicker";
 import { EncerramentoFormModal, type EncerramentoFormValues } from "./EncerramentoFormModal";
+import { saveReplyMediaOrWarn, type ReplyMediaChange } from "./ReplyMediaField";
+import { MediaBadge } from "./RespostasRapidasTab";
 
 /** Cadastro de mensagens de encerramento automático — ver PROMPT: "Encerramento, o cadastro deverá ser similar com a resposta rápida, mas com alguns diferenciais." */
 export function EncerramentoTab() {
@@ -23,20 +25,23 @@ export function EncerramentoTab() {
     queryFn: async () => (await api.get<ClosingMessageDTO[]>("/closing-messages")).data,
   });
 
+  // The row first, then its attachment (a new one only has an id once it is saved).
   const createMutation = useMutation({
-    mutationFn: (values: EncerramentoFormValues) => api.post("/closing-messages", values),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["closing-messages"] });
-      toast.success("Encerramento criado.");
+    mutationFn: async ({ values, media }: { values: EncerramentoFormValues; media: ReplyMediaChange }) => {
+      const { data } = await api.post<ClosingMessageDTO>("/closing-messages", values);
+      await saveReplyMediaOrWarn("/closing-messages", data.id, media);
     },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["closing-messages"] }),
+    onSuccess: () => toast.success("Encerramento criado."),
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, values }: { id: string; values: EncerramentoFormValues }) => api.patch(`/closing-messages/${id}`, values),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["closing-messages"] });
-      toast.success("Encerramento atualizado.");
+    mutationFn: async ({ id, values, media }: { id: string; values: EncerramentoFormValues; media: ReplyMediaChange }) => {
+      await api.patch(`/closing-messages/${id}`, values);
+      await saveReplyMediaOrWarn("/closing-messages", id, media);
     },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["closing-messages"] }),
+    onSuccess: () => toast.success("Encerramento atualizado."),
   });
 
   const deleteMutation = useMutation({
@@ -49,12 +54,12 @@ export function EncerramentoTab() {
     onError: (err) => toast.error(getApiErrorMessage(err)),
   });
 
-  async function handleSubmit(values: EncerramentoFormValues) {
+  async function handleSubmit(values: EncerramentoFormValues, media: ReplyMediaChange) {
     try {
       if (modalTarget && modalTarget !== "new") {
-        await updateMutation.mutateAsync({ id: modalTarget.id, values });
+        await updateMutation.mutateAsync({ id: modalTarget.id, values, media });
       } else {
-        await createMutation.mutateAsync(values);
+        await createMutation.mutateAsync({ values, media });
       }
     } catch (err) {
       throw new Error(getApiErrorMessage(err));
@@ -107,8 +112,11 @@ export function EncerramentoTab() {
             {closingMessages?.map((cm) => (
               <tr key={cm.id} className="border-t border-border hover:bg-surface-alt">
                 <td className="px-4 py-3 font-medium">{cm.name}</td>
-                <td className="max-w-xs truncate px-4 py-3 text-muted" title={cm.text}>
-                  {cm.text}
+                <td className="max-w-xs px-4 py-3 text-muted" title={cm.text}>
+                  <span className="flex items-center gap-1.5">
+                    {cm.media && <MediaBadge kind={cm.media.kind} />}
+                    <span className="truncate">{cm.text}</span>
+                  </span>
                 </td>
                 <td className="px-4 py-3 text-muted">
                   {cm.assignedUsers.length === 0 ? "-" : cm.assignedUsers.map((u) => u.displayName).join(", ")}

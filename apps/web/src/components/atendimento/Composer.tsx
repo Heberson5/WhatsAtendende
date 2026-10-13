@@ -1,7 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import clsx from "clsx";
-import { Mic, Paperclip, Pause, Play, Plus, Send, Trash2, X, MapPin, Bold, Italic, Strikethrough, Code, Wand2 } from "lucide-react";
-import type { MessageDTO } from "@whatsatendende/types";
+import { Mic, Paperclip, Pause, Play, Plus, Send, Trash2, X, MapPin, Bold, Italic, Strikethrough, Code, Wand2, FileText, Image as ImageIcon, Video } from "lucide-react";
+import type { MessageDTO, ReplyMediaDTO } from "@whatsatendende/types";
 import { api } from "../../lib/api";
 
 // How long to wait after the agent stops typing before asking for a writing
@@ -103,6 +103,8 @@ export interface QuickReplyOption {
   name: string;
   shortcut: string;
   text: string;
+  /** An image, video or PDF registered with the reply — staged in the preview with the text as its caption. */
+  media?: ReplyMediaDTO | null;
 }
 
 /** One file staged for sending, alongside the caption typed for it specifically — see the pendingFiles filmstrip below. */
@@ -248,6 +250,10 @@ export const Composer = forwardRef<
   }
 
   function selectQuickReply(reply: QuickReplyOption) {
+    if (reply.media) {
+      void stageQuickReplyMedia(reply, reply.media);
+      return;
+    }
     setText(reply.text);
     requestAnimationFrame(() => {
       const el = textareaRef.current;
@@ -255,6 +261,21 @@ export const Composer = forwardRef<
       el.focus();
       el.setSelectionRange(el.value.length, el.value.length);
     });
+  }
+
+  // A reply with an attachment goes to the preview — file plus its text as the caption — for the agent to review and send,
+  // same as a file picked by hand; nothing goes out by itself. The "/atalho" typed so far is cleared.
+  async function stageQuickReplyMedia(reply: QuickReplyOption, media: ReplyMediaDTO) {
+    setText("");
+    try {
+      const { data } = await api.get<Blob>(`/quick-replies/${reply.id}/media`, { responseType: "blob" });
+      const file = new File([data], media.fileName, { type: media.mimeType });
+      setActiveFileIndex(pendingFiles.length);
+      setPendingFiles((prev) => [...prev, { file, caption: reply.text }]);
+    } catch {
+      // The attachment couldn't be loaded — at least the text is there to send.
+      setText(reply.text);
+    }
   }
 
   // Closes the emoji panel on any click outside it — it was staying open and
@@ -1007,6 +1028,7 @@ export const Composer = forwardRef<
                 )}
               >
                 <span className="flex items-center gap-2">
+                  {qr.media && <MediaKindIcon kind={qr.media.kind} />}
                   <span className="font-medium">{qr.name}</span>
                   <code className="rounded bg-surface px-1 text-xs text-muted">/{qr.shortcut}</code>
                 </span>
@@ -1138,3 +1160,9 @@ export const Composer = forwardRef<
     </>
   );
 });
+
+function MediaKindIcon({ kind }: { kind: ReplyMediaDTO["kind"] }) {
+  const label = kind === "IMAGE" ? "Com imagem" : kind === "VIDEO" ? "Com vídeo" : "Com PDF";
+  const Icon = kind === "IMAGE" ? ImageIcon : kind === "VIDEO" ? Video : FileText;
+  return <Icon className="h-3.5 w-3.5 shrink-0 text-primary" aria-label={label} />;
+}

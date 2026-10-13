@@ -11,6 +11,54 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.7.0",
+    date: "13 out 2026",
+    name: "Imagem, vídeo ou PDF nas respostas",
+    summary: "As respostas rápidas e as mensagens de encerramento podem levar uma imagem, um vídeo ou um PDF, com o texto como legenda. Só o Administrador e o Gestor incluem o anexo.",
+    notes: [
+      {
+        type: "novo",
+        area: "respostas",
+        title: "Anexo nas respostas rápidas",
+        text: "No cadastro da resposta rápida há o campo Anexo: uma imagem (JPG, PNG ou WEBP), um vídeo (MP4) ou um PDF. O texto vai junto, como legenda, e com anexo fica limitado a 1.024 caracteres. Antes de escolher, o aviso mostra os limites do WhatsApp para envio pelo sistema — imagem até 5 MB, vídeo até 16 MB e PDF até o limite de anexos do sistema. O arquivo vai como está, sem compressão, para não perder qualidade; por isso um arquivo maior é recusado com o aviso. Na lista, um ícone mostra as respostas que têm anexo.",
+        steps: ["Abra Respostas › Respostas rápidas e clique em Nova resposta rápida (ou edite uma).", "Escreva o texto — ele será a legenda.", "Leia os limites {1} e clique em Incluir imagem, vídeo ou PDF {2}.", "Salve."],
+        where: "Respostas › Respostas rápidas",
+        requires: [PERMISSION.RESPOSTAS_MIDIA_GERENCIAR],
+        images: [
+          { src: "/notas-de-versao/respostas-midia-cadastro.webp", caption: "{1} Os limites do WhatsApp, antes de escolher · {2} O anexo da resposta", size: "small" },
+          { src: "/notas-de-versao/respostas-midia-lista.webp", caption: "{1} O ícone das respostas que têm anexo" },
+        ],
+      },
+      {
+        type: "novo",
+        area: "respostas",
+        title: "Anexo na mensagem de encerramento",
+        text: "A mensagem de encerramento também pode levar uma imagem, um vídeo ou um PDF, com o texto (e as tags, como {{cliente}}) como legenda. Ela sai do mesmo jeito que o texto saía: na hora do Encerrar, ou — com a pesquisa de satisfação ligada — depois da nota do cliente ou do tempo de espera. Na Gestão, Encerrar sem enviar mensagem não envia nada, nem o anexo. A conversa guarda a própria cópia do arquivo, então trocar ou remover o anexo depois não afeta o que já foi enviado.",
+        where: "Respostas › Encerramento",
+        requires: [PERMISSION.RESPOSTAS_MIDIA_GERENCIAR],
+        images: [{ src: "/notas-de-versao/encerramento-midia-cadastro.webp", caption: "{1} A imagem que vai com a mensagem de encerramento", size: "small" }],
+      },
+      {
+        type: "melhoria",
+        area: "atendimento",
+        title: "Usar uma resposta rápida com anexo",
+        text: "Ao escolher pelo / uma resposta com anexo, o arquivo fica preparado para envio, com o texto como legenda — confira, ajuste a legenda se quiser e clique em Enviar. Nada sai sozinho, como já acontece com as respostas só de texto.",
+        steps: ["Na conversa, digite / e o atalho.", "Escolha a resposta: o anexo {1} e a legenda {2} ficam prontos.", "Clique em Enviar."],
+        where: "Atendimento › conversa",
+        images: [{ src: "/notas-de-versao/atendimento-resposta-midia.webp", caption: "{1} O anexo da resposta · {2} O texto como legenda, para revisar antes de enviar" }],
+      },
+      {
+        type: "novo",
+        area: "configuracoes",
+        title: "Quem pode incluir o anexo",
+        text: "A nova permissão Respostas — Incluir imagem, vídeo ou PDF vem marcada para o Gestor e não existe para o Atendente (aparece como —): mesmo com permissão de editar respostas, o atendente muda só o texto e vê o anexo sem poder trocar ou remover. O Administrador sempre pode.",
+        where: "Configurações › Permissões",
+        roles: ["ADMIN"],
+        images: [{ src: "/notas-de-versao/respostas-midia-permissao.webp", caption: "{1} Atendente: — (não disponível) · Gestor: marcado" }],
+      },
+    ],
+  },
+  {
     version: "2.6.1",
     date: "13 out 2026",
     name: "@ do cliente leva a conversa a quem atende",

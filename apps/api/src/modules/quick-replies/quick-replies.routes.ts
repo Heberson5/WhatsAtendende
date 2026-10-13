@@ -9,6 +9,7 @@ import { getConversationOrThrow, assertAgentCanAccessConversation } from "../con
 import { connectionScopeSchema } from "../../lib/connection-scope";
 import { toQuickReplyDTO } from "./quick-replies.mapper";
 import * as service from "./quick-replies.service";
+import { NO_REPLY_MEDIA, deleteReplyMediaFile as deleteReplyMediaFileQuietly, replyMediaLimits, replyMediaUpload, sendReplyMedia, storeReplyMedia } from "../../lib/reply-media";
 
 export const quickRepliesRouter = Router();
 
@@ -32,6 +33,56 @@ quickRepliesRouter.get(
     if (!conversation.whatsappConnectionId) return res.json([]);
     const rows = await service.listQuickRepliesForConnection(conversation.whatsappConnectionId);
     res.json(rows.map(toQuickReplyDTO));
+  })
+);
+
+/** What the attachment of a quick reply or closing message may be — shown before choosing the file. */
+quickRepliesRouter.get("/media-limits", (_req, res) => {
+  res.json(replyMediaLimits());
+});
+
+// The reply's attachment — for the form's preview and for the composer, which stages it when an agent picks the
+// reply. Like the "/" picker above, open to anyone who attends, not only to who curates the replies.
+quickRepliesRouter.get(
+  "/:id/media",
+  asyncHandler(async (req, res) => {
+    sendReplyMedia(req, res, await service.getQuickReply(req.params.id));
+  })
+);
+
+// Adding, replacing or removing it: Gestor and Administrador only (RESPOSTAS_MIDIA_GERENCIAR is never offered to Atendente).
+const requireMediaPermission = [requirePermission(PERMISSION.RESPOSTAS_RAPIDAS_GERENCIAR), requirePermission(PERMISSION.RESPOSTAS_MIDIA_GERENCIAR)];
+
+quickRepliesRouter.post(
+  "/:id/media",
+  ...requireMediaPermission,
+  replyMediaUpload.single("file"),
+  asyncHandler(async (req, res) => {
+    await service.getQuickReply(req.params.id);
+    const media = storeReplyMedia(req.file);
+    const quickReply = await service.setQuickReplyMedia(req.params.id, media).catch((err) => {
+      deleteReplyMediaFileQuietly(media.mediaStorageKey);
+      throw err;
+    });
+    await writeAudit({
+      userId: req.auth!.userId,
+      action: "QUICK_REPLY_MEDIA_SET",
+      entity: "QuickReply",
+      entityId: quickReply.id,
+      ipAddress: req.ip ?? null,
+      metadata: { fileName: media.mediaFileName, mimeType: media.mediaMimeType, sizeBytes: media.mediaSizeBytes },
+    });
+    res.json(toQuickReplyDTO(quickReply));
+  })
+);
+
+quickRepliesRouter.delete(
+  "/:id/media",
+  ...requireMediaPermission,
+  asyncHandler(async (req, res) => {
+    const quickReply = await service.setQuickReplyMedia(req.params.id, NO_REPLY_MEDIA);
+    await writeAudit({ userId: req.auth!.userId, action: "QUICK_REPLY_MEDIA_REMOVED", entity: "QuickReply", entityId: quickReply.id, ipAddress: req.ip ?? null });
+    res.json(toQuickReplyDTO(quickReply));
   })
 );
 

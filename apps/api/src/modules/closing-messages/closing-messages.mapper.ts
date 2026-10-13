@@ -1,7 +1,8 @@
 import type { ClosingMessageDTO } from "@whatsatendende/types";
 import { toConnectionScopeDTO } from "../../lib/connection-scope";
+import { toReplyMediaDTO, type ReplyMediaColumns } from "../../lib/reply-media";
 
-interface ClosingMessageRow {
+interface ClosingMessageRow extends ReplyMediaColumns {
   id: string;
   name: string;
   text: string;
@@ -18,6 +19,7 @@ export function toClosingMessageDTO(row: ClosingMessageRow): ClosingMessageDTO {
     id: row.id,
     name: row.name,
     text: row.text,
+    media: toReplyMediaDTO(row),
     active: row.active,
     assignedUsers: row.assignedUsers,
     connectionScope: toConnectionScopeDTO(row),

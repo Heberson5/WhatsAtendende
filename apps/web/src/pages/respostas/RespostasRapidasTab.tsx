@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { FileText, Image as ImageIcon, Pencil, Plus, Trash2, Video } from "lucide-react";
 import { toast } from "sonner";
 import { PERMISSION, type QuickReplyDTO } from "@whatsatendende/types";
 import { useAuthStore } from "../../store/auth-store";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { describeConnectionScope } from "./ConnectionScopePicker";
 import { QuickReplyFormModal, type QuickReplyFormValues } from "./QuickReplyFormModal";
+import { saveReplyMediaOrWarn, type ReplyMediaChange } from "./ReplyMediaField";
 
 export function RespostasRapidasTab() {
   const queryClient = useQueryClient();
@@ -22,18 +23,23 @@ export function RespostasRapidasTab() {
     queryFn: async () => (await api.get<QuickReplyDTO[]>("/quick-replies")).data,
   });
 
+  // The row first, then its attachment (a new reply only has an id once it is saved).
   const createMutation = useMutation({
-    mutationFn: (values: QuickReplyFormValues) => api.post("/quick-replies", values),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["quick-replies"] });
-      toast.success("Resposta rápida criada.");
+    mutationFn: async ({ values, media }: { values: QuickReplyFormValues; media: ReplyMediaChange }) => {
+      const { data } = await api.post<QuickReplyDTO>("/quick-replies", values);
+      await saveReplyMediaOrWarn("/quick-replies", data.id, media);
     },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["quick-replies"] }),
+    onSuccess: () => toast.success("Resposta rápida criada."),
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, values }: { id: string; values: QuickReplyFormValues }) => api.patch(`/quick-replies/${id}`, values),
+    mutationFn: async ({ id, values, media }: { id: string; values: QuickReplyFormValues; media: ReplyMediaChange }) => {
+      await api.patch(`/quick-replies/${id}`, values);
+      await saveReplyMediaOrWarn("/quick-replies", id, media);
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["quick-replies"] }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["quick-replies"] });
       toast.success("Resposta rápida atualizada.");
     },
   });
@@ -48,12 +54,12 @@ export function RespostasRapidasTab() {
     onError: (err) => toast.error(getApiErrorMessage(err)),
   });
 
-  async function handleSubmit(values: QuickReplyFormValues) {
+  async function handleSubmit(values: QuickReplyFormValues, media: ReplyMediaChange) {
     try {
       if (modalQuickReply && modalQuickReply !== "new") {
-        await updateMutation.mutateAsync({ id: modalQuickReply.id, values });
+        await updateMutation.mutateAsync({ id: modalQuickReply.id, values, media });
       } else {
-        await createMutation.mutateAsync(values);
+        await createMutation.mutateAsync({ values, media });
       }
     } catch (err) {
       throw new Error(getApiErrorMessage(err));
@@ -111,8 +117,11 @@ export function RespostasRapidasTab() {
                 <td className="max-w-[14rem] truncate px-4 py-3 text-muted" title={describeConnectionScope(qr.connectionScope)}>
                   {describeConnectionScope(qr.connectionScope)}
                 </td>
-                <td className="max-w-xs truncate px-4 py-3 text-muted" title={qr.text}>
-                  {qr.text}
+                <td className="max-w-xs px-4 py-3 text-muted" title={qr.text}>
+                  <span className="flex items-center gap-1.5">
+                    {qr.media && <MediaBadge kind={qr.media.kind} />}
+                    <span className="truncate">{qr.text}</span>
+                  </span>
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex justify-end gap-1">
@@ -170,5 +179,16 @@ export function RespostasRapidasTab() {
         </div>
       )}
     </div>
+  );
+}
+
+/** Small icon telling the reply carries an attachment — shared with Encerramento. */
+export function MediaBadge({ kind }: { kind: "IMAGE" | "VIDEO" | "DOCUMENT" }) {
+  const label = kind === "IMAGE" ? "Com imagem" : kind === "VIDEO" ? "Com vídeo" : "Com PDF";
+  const Icon = kind === "IMAGE" ? ImageIcon : kind === "VIDEO" ? Video : FileText;
+  return (
+    <span title={label} aria-label={label} className="shrink-0 text-primary">
+      <Icon className="h-4 w-4" />
+    </span>
   );
 }
