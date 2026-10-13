@@ -417,63 +417,113 @@ function stripDiacritics(text: string): string {
   return text.normalize("NFD").replace(/[̀-ͯ]/g, "");
 }
 
+type MentionCandidate = { id: string; displayName: string; presence: AgentPresence };
+
 /**
- * "@<nome de exibição>" anywhere in a customer's first message routes the
- * new conversation straight to that agent's "Meus atendimentos" — skipping
- * the queue entirely — see PROMPT: "se caso o cliente enviar uma mensagem
- * com arroba [nome], irá direcionar diretamente para meus atendimentos".
- * Case/accent-insensitive substring match against every active AGENT's
- * displayName (never MANAGER/ADMIN — explicitly agent-only per that same
- * conversation), scored so the longest matching name wins when one name is
- * a prefix of another (e.g. "@Joao" alongside a "João Silva" on the roster).
- * Requires a non-letter/digit right after the matched name (or end of
- * string) so "@Joao" doesn't false-match into "@Joaozinho". Zero or
- * genuinely ambiguous (same-length tie) matches fall through to
- * findMentionedAgentByTypo below rather than returning null outright — see
- * PROMPT: "o cliente digita @gleici, mas no sistema o nome do atendente
- * está Gleicy... existe estes erros dos clientes que devem estar mapeados".
+ * Who a customer can name with "@" on this connection: its agents, the
+ * managers who receive its conversations (created it, or were granted
+ * "receber conversas"), and an admin who works it — the same people who
+ * could accept this conversation from the queue. A name from another
+ * connection never pulls the customer over to someone who doesn't work
+ * this number. Instagram/Messenger have no per-user connection, so there
+ * it stays every active agent, as before.
+ */
+async function mentionCandidates(channel: Channel, connectionId: string | null): Promise<MentionCandidate[]> {
+  const select = { id: true, displayName: true, presence: true } as const;
+  if (channel !== "WHATSAPP" || !connectionId) {
+    return prisma.user.findMany({ where: { role: "AGENT", status: "ACTIVE" }, select });
+  }
+  return prisma.user.findMany({
+    where: {
+      status: "ACTIVE",
+      OR: [
+        { role: "AGENT", whatsappConnectionId: connectionId },
+        { role: "ADMIN", whatsappConnectionId: connectionId },
+        {
+          role: "MANAGER",
+          OR: [
+            { createdConnections: { some: { id: connectionId } } },
+            { connectionGrants: { some: { whatsappConnectionId: connectionId, canReceiveConversations: true } } },
+          ],
+        },
+      ],
+    },
+    select,
+  });
+}
+
+/**
+ * "@<nome>" anywhere in a customer's message routes the conversation
+ * straight to that person's "Meus atendimentos" — skipping the queue — see
+ * PROMPT: "se caso o cliente enviar uma mensagem com arroba [nome], irá
+ * direcionar diretamente para meus atendimentos". Matched only among
+ * mentionCandidates (who works this connection), case/accent-insensitive:
+ *  1. the whole display name ("@João Silva"), the longest one winning when
+ *     one name is a prefix of another; a non-letter/digit must follow, so
+ *     "@Joao" doesn't false-match into "@Joaozinho";
+ *  2. otherwise the first name alone ("@João" for "João Silva") — only when
+ *     exactly one candidate has it, two "João" go to the queue, never a guess;
+ *  3. otherwise a small typo (findMentionedAgentByTypo) — see PROMPT: "o
+ *     cliente digita @gleici, mas no sistema o nome do atendente está Gleicy".
  *
  * Returns whoever was named regardless of presence — findOrOpenConversationForInboundMessage
- * is the one that decides whether that's enough to actually skip the queue
- * (see PROMPT: "só irá para a fila se o atendente estiver offline" — a
- * mention pointing at someone who isn't online right now to see it must not
- * silently strand the conversation assigned to them with nobody watching).
+ * decides whether that's enough to skip the queue (see PROMPT: "só irá para a
+ * fila se o atendente estiver offline").
  */
 export async function findMentionedAgent(
-  body: string | null | undefined
-): Promise<{ id: string; displayName: string; presence: AgentPresence } | null> {
+  body: string | null | undefined,
+  channel: Channel = "WHATSAPP",
+  connectionId: string | null = null
+): Promise<MentionCandidate | null> {
   if (!body || !body.includes("@")) return null;
 
-  const agents = await prisma.user.findMany({
-    where: { role: "AGENT", status: "ACTIVE" },
-    select: { id: true, displayName: true, presence: true },
-  });
+  const agents = await mentionCandidates(channel, connectionId);
   if (agents.length === 0) return null;
 
   const normalizedBody = stripDiacritics(body).toLowerCase();
-  let best: { id: string; displayName: string; presence: AgentPresence } | null = null;
+  const exact = matchMentionedName(normalizedBody, agents, (a) => a.displayName);
+  if (exact !== undefined) return exact;
+  const byFirstName = matchMentionedName(normalizedBody, agents, (a) => a.displayName.trim().split(/\s+/)[0] ?? "");
+  if (byFirstName !== undefined) return byFirstName;
+  return findMentionedAgentByTypo(normalizedBody, agents);
+}
+
+/**
+ * "@<name>" substring match, the longest name winning. undefined = nobody
+ * matched (try the next rule); null = a tie between two people (stop: never guess).
+ */
+function matchMentionedName(normalizedBody: string, agents: MentionCandidate[], nameOf: (a: MentionCandidate) => string): MentionCandidate | null | undefined {
+  let best: MentionCandidate | null = null;
   let bestLength = -1;
   let tied = false;
 
   for (const agent of agents) {
-    const needle = "@" + stripDiacritics(agent.displayName).toLowerCase();
-    const idx = normalizedBody.indexOf(needle);
-    if (idx === -1) continue;
-    const nextChar = normalizedBody[idx + needle.length];
-    if (nextChar && /[a-z0-9]/i.test(nextChar)) continue; // e.g. "@Joaozinho" must not match agent "Joao"
+    const name = stripDiacritics(nameOf(agent)).toLowerCase().trim();
+    if (!name) continue;
+    const needle = "@" + name;
+    let idx = normalizedBody.indexOf(needle);
+    let found = false;
+    while (idx !== -1) {
+      const nextChar = normalizedBody[idx + needle.length];
+      if (!nextChar || !/[a-z0-9]/i.test(nextChar)) {
+        found = true;
+        break;
+      }
+      idx = normalizedBody.indexOf(needle, idx + 1);
+    }
+    if (!found) continue;
 
     if (needle.length > bestLength) {
       best = agent;
       bestLength = needle.length;
       tied = false;
-    } else if (needle.length === bestLength) {
+    } else if (needle.length === bestLength && best?.id !== agent.id) {
       tied = true;
     }
   }
 
-  if (tied) return null; // ambiguous exact match (two agents share a name) — never guess
-  if (best) return best;
-  return findMentionedAgentByTypo(normalizedBody, agents);
+  if (tied) return null;
+  return best ?? undefined;
 }
 
 function levenshteinDistance(a: string, b: string): number {
@@ -503,22 +553,29 @@ function levenshteinDistance(a: string, b: string): number {
  */
 function findMentionedAgentByTypo(
   normalizedBody: string,
-  agents: { id: string; displayName: string; presence: AgentPresence }[]
-): { id: string; displayName: string; presence: AgentPresence } | null {
+  agents: MentionCandidate[]
+): MentionCandidate | null {
   const tokens = Array.from(normalizedBody.matchAll(/@([a-z0-9]+)/g), (m) => m[1]);
   if (tokens.length === 0) return null;
 
-  let best: { id: string; displayName: string; presence: AgentPresence } | null = null;
+  let best: MentionCandidate | null = null;
   let bestDistance = Infinity;
   let tied = false;
 
   for (const token of tokens) {
     for (const agent of agents) {
-      const name = stripDiacritics(agent.displayName).toLowerCase();
-      if (Math.abs(token.length - name.length) > 2) continue;
-      const distance = levenshteinDistance(token, name);
-      const maxAllowed = name.length <= 4 ? 1 : 2;
-      if (distance === 0 || distance > maxAllowed) continue; // 0 would already have matched exactly above
+      // The whole name, or the first name alone ("@gleici" for "Gleicy Souza").
+      const fullName = stripDiacritics(agent.displayName).toLowerCase().trim();
+      const names = new Set([fullName, fullName.split(/\s+/)[0] ?? fullName]);
+      let distance = Infinity;
+      for (const name of names) {
+        if (Math.abs(token.length - name.length) > 2) continue;
+        const d = levenshteinDistance(token, name);
+        const maxAllowed = name.length <= 4 ? 1 : 2;
+        if (d === 0 || d > maxAllowed) continue; // 0 would already have matched exactly above
+        distance = Math.min(distance, d);
+      }
+      if (distance === Infinity) continue;
 
       if (distance < bestDistance) {
         best = agent;
@@ -545,11 +602,6 @@ export async function findOrOpenConversationForInboundMessage(
   const connectionField = channel === "WHATSAPP" ? { whatsappConnectionId: connectionId } : { metaConnectionId: connectionId };
   // Any open conversation takes the message — one being handled on the linked
   // phone (HANDLED_EXTERNALLY) included, see findActiveConversationForContact.
-  const active = await findActiveConversationForContact(contactId);
-  if (active) {
-    return { conversation: active, isNewConversation: false, autoAssignedAgentId: null as string | null, flowId: null as string | null, closedMessage: null as string | null };
-  }
-
   // Only bypasses the queue when the mentioned agent is actually ONLINE
   // right now (not AWAY, not OFFLINE) — same bar the dashboard's own
   // "online agora" stat uses. Mentioning someone who isn't around to see it
@@ -557,8 +609,39 @@ export async function findOrOpenConversationForInboundMessage(
   // watching until they log back in — worse than just queuing it normally,
   // where any available agent (or a manager) can still pick it up. See
   // PROMPT: "só irá para a fila se o atendente estiver offline".
-  const rawMentionedAgent = await findMentionedAgent(body);
-  const mentionedAgent = rawMentionedAgent?.presence === "ONLINE" ? rawMentionedAgent : null;
+  const findOnlineMention = async () => {
+    const mentioned = await findMentionedAgent(body, channel, connectionId);
+    return mentioned?.presence === "ONLINE" ? mentioned : null;
+  };
+
+  const active = await findActiveConversationForContact(contactId);
+  if (active) {
+    // Nobody is with this customer yet — waiting in the queue, still in the Fluxo, or on the
+    // linked phone ("Atendido pelo celular") — so an "@nome" now still takes it to that person.
+    // One already with an agent (IN_PROGRESS/TRANSFERRED) never moves on a customer's say-so.
+    const unattended = active.status === "NEW" || active.status === "WAITING" || active.status === "IN_FLOW" || active.status === "HANDLED_EXTERNALLY";
+    const mentionedAgent = unattended ? await findOnlineMention() : null;
+    if (!mentionedAgent) {
+      return { conversation: active, isNewConversation: false, autoAssignedAgentId: null as string | null, flowId: null as string | null, closedMessage: null as string | null };
+    }
+    if (active.status === "IN_FLOW") await endFlowSession(active.id);
+    const now = new Date();
+    const [conversation] = await prisma.$transaction([
+      prisma.conversation.update({
+        where: { id: active.id },
+        data: { status: "IN_PROGRESS", assignedAgentId: mentionedAgent.id, acceptedAt: now, assignedAgentReadAt: null },
+      }),
+      prisma.conversationAssignment.create({
+        data: { conversationId: active.id, fromAgentId: active.assignedAgentId, toAgentId: mentionedAgent.id, reason: "MENTION" },
+      }),
+      prisma.conversationEvent.create({
+        data: { conversationId: active.id, type: "ACCEPTED", payload: { agentId: mentionedAgent.id, autoAssignedByMention: mentionedAgent.displayName, previousStatus: active.status } },
+      }),
+    ]);
+    return { conversation, isNewConversation: false, autoAssignedAgentId: mentionedAgent.id as string | null, flowId: null as string | null, closedMessage: null as string | null };
+  }
+
+  const mentionedAgent = await findOnlineMention();
   const now = new Date();
 
   // Outside the hours of the schedule this connection follows (Respostas › Horário de expediente), the customer gets the

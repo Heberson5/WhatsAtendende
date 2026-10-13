@@ -127,6 +127,7 @@ async function handleInboundEvent(channel: Channel, pageId: string, event: MetaM
     }
     return;
   }
+  if (autoAssignedAgentId) realtimeEvents.conversationAccepted(conversation.id, connection.id, autoAssignedAgentId);
   realtimeEvents.newMessage(conversation.id, conversation.assignedAgentId);
   if (conversation.assignedAgentId) {
     const preview = body ?? "Anexo recebido";

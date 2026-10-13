@@ -517,6 +517,8 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
           realtimeEvents.newQueueConversation(connectionId, conversation.id, contactLabel);
         }
       } else {
+        // "@<nome>" from a customer still waiting (queue, Fluxo, or on the phone) just took it to that person — the card leaves the queue.
+        if (autoAssignedAgentId) realtimeEvents.conversationAccepted(conversation.id, connectionId, autoAssignedAgentId);
         realtimeEvents.newMessage(conversation.id, conversation.assignedAgentId);
         if (conversation.assignedAgentId) await notifyAssignedAgent(conversation.assignedAgentId);
       }
