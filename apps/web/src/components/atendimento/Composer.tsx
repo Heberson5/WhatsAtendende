@@ -344,6 +344,25 @@ export const Composer = forwardRef<
     setPendingFiles((prev) => [...prev, ...files.map((file) => ({ file, caption: "" }))]);
   }
 
+  // Ctrl+V of an image (a screenshot, "Copiar imagem" in a browser) or of files copied in the file explorer:
+  // staged in the preview like the paperclip, the text typed so far becoming the caption — WhatsApp Web parity.
+  // A copy that also carries text (Word, Excel — they add a picture of the selection) is pasted as text, as always.
+  function handlePaste(e: React.ClipboardEvent) {
+    const data = e.clipboardData;
+    const files = Array.from(data.files ?? []);
+    if (files.length === 0 || data.getData("text/plain").trim()) return;
+    e.preventDefault();
+    // A pasted screenshot has no name of its own ("image.png") — it gets one with the moment it was pasted.
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "");
+    const named = files.map((f, i) =>
+      f.name && f.name !== "image.png" ? f : new File([f], `imagem-colada-${stamp}${files.length > 1 ? `-${i + 1}` : ""}.${f.type.split("/")[1] || "png"}`, { type: f.type })
+    );
+    const caption = pendingFiles.length === 0 ? text.trim() : "";
+    setActiveFileIndex(pendingFiles.length);
+    setPendingFiles((prev) => [...prev, ...named.map((file, i) => ({ file, caption: i === 0 ? caption : "" }))]);
+    if (caption) setText("");
+  }
+
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     addFiles(Array.from(e.target.files ?? []));
     e.target.value = "";
@@ -910,6 +929,7 @@ export const Composer = forwardRef<
             value={active?.caption ?? ""}
             onChange={(e) => updateActiveCaption(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && confirmSendFiles()}
+            onPaste={handlePaste}
             placeholder={pendingFiles.length > 1 ? "Adicionar legenda a este anexo (opcional)" : "Adicionar legenda (opcional)"}
             autoFocus
             className="focus-ring flex-1 rounded-full border border-border bg-transparent px-4 py-2 text-sm"
@@ -1129,6 +1149,7 @@ export const Composer = forwardRef<
             updateSelectionBubble();
           }}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           onSelect={updateSelectionBubble}
           onMouseUp={updateSelectionBubble}
           onBlur={() => setSelectionBubble(null)}
