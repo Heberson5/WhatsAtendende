@@ -452,17 +452,43 @@ async function mentionCandidates(channel: Channel, connectionId: string | null):
   });
 }
 
+/** Accents, case and punctuation out: "@Atendente - Gislaine," reads "@atendente gislaine". */
+function normalizeMentionText(text: string): string {
+  return stripDiacritics(text).toLowerCase().replace(/[^a-z0-9@]+/g, " ").trim();
+}
+
+/**
+ * The ways a customer can write a person's name in full: the whole display name, and each part of a name
+ * registered with a prefix or suffix ("Atendente - Gislaine", "Gislaine | Financeiro").
+ */
+function fullNameAliases(displayName: string): string[] {
+  const parts = displayName.split(/\s*[-–—|/:]\s*|\s*[()[\]]\s*/);
+  return [...new Set([displayName, ...parts].map(normalizeMentionText).filter(Boolean))];
+}
+
+/** Single words of the name: the first word of each part, and any other word of 3+ letters ("Silva"). */
+function nameWordAliases(displayName: string): string[] {
+  const words = new Set<string>();
+  for (const part of fullNameAliases(displayName)) {
+    part.split(" ").forEach((word, i) => {
+      if (i === 0 || word.length >= 3) words.add(word);
+    });
+  }
+  return [...words];
+}
+
 /**
  * "@<nome>" anywhere in a customer's message routes the conversation
  * straight to that person's "Meus atendimentos" — skipping the queue — see
  * PROMPT: "se caso o cliente enviar uma mensagem com arroba [nome], irá
  * direcionar diretamente para meus atendimentos". Matched only among
- * mentionCandidates (who works this connection), case/accent-insensitive:
- *  1. the whole display name ("@João Silva"), the longest one winning when
- *     one name is a prefix of another; a non-letter/digit must follow, so
- *     "@Joao" doesn't false-match into "@Joaozinho";
- *  2. otherwise the first name alone ("@João" for "João Silva") — only when
- *     exactly one candidate has it, two "João" go to the queue, never a guess;
+ * mentionCandidates (who works this connection), case/accent/punctuation-insensitive:
+ *  1. the whole display name ("@João Silva"), or a whole part of a name registered
+ *     with a prefix ("@Gislaine" for "Atendente - Gislaine"), the longest one winning;
+ *     a non-letter/digit must follow, so "@Joao" doesn't false-match into "@Joaozinho";
+ *  2. otherwise one word of the name ("@João" or "@Silva" for "João Silva") — only when
+ *     exactly one candidate has it: two "João" (or "@Atendente", shared by everyone)
+ *     go to the queue, never a guess;
  *  3. otherwise a small typo (findMentionedAgentByTypo) — see PROMPT: "o
  *     cliente digita @gleici, mas no sistema o nome do atendente está Gleicy".
  *
@@ -480,44 +506,44 @@ export async function findMentionedAgent(
   const agents = await mentionCandidates(channel, connectionId);
   if (agents.length === 0) return null;
 
-  const normalizedBody = stripDiacritics(body).toLowerCase();
-  const exact = matchMentionedName(normalizedBody, agents, (a) => a.displayName);
+  const normalizedBody = normalizeMentionText(body);
+  const exact = matchMentionedName(normalizedBody, agents, (a) => fullNameAliases(a.displayName));
   if (exact !== undefined) return exact;
-  const byFirstName = matchMentionedName(normalizedBody, agents, (a) => a.displayName.trim().split(/\s+/)[0] ?? "");
-  if (byFirstName !== undefined) return byFirstName;
+  const byWord = matchMentionedName(normalizedBody, agents, (a) => nameWordAliases(a.displayName));
+  if (byWord !== undefined) return byWord;
   return findMentionedAgentByTypo(normalizedBody, agents);
 }
 
 /**
- * "@<name>" substring match, the longest name winning. undefined = nobody
- * matched (try the next rule); null = a tie between two people (stop: never guess).
+ * "@<name>" match, the longest name winning. undefined = nobody matched (try
+ * the next rule); null = a tie between two people (stop: never guess).
  */
-function matchMentionedName(normalizedBody: string, agents: MentionCandidate[], nameOf: (a: MentionCandidate) => string): MentionCandidate | null | undefined {
+function matchMentionedName(normalizedBody: string, agents: MentionCandidate[], namesOf: (a: MentionCandidate) => string[]): MentionCandidate | null | undefined {
   let best: MentionCandidate | null = null;
   let bestLength = -1;
   let tied = false;
 
   for (const agent of agents) {
-    const name = stripDiacritics(nameOf(agent)).toLowerCase().trim();
-    if (!name) continue;
-    const needle = "@" + name;
-    let idx = normalizedBody.indexOf(needle);
-    let found = false;
-    while (idx !== -1) {
-      const nextChar = normalizedBody[idx + needle.length];
-      if (!nextChar || !/[a-z0-9]/i.test(nextChar)) {
-        found = true;
-        break;
+    let longest = -1;
+    for (const name of namesOf(agent)) {
+      const needle = "@" + name;
+      let idx = normalizedBody.indexOf(needle);
+      while (idx !== -1) {
+        const nextChar = normalizedBody[idx + needle.length];
+        if (!nextChar || !/[a-z0-9]/.test(nextChar)) {
+          longest = Math.max(longest, needle.length);
+          break;
+        }
+        idx = normalizedBody.indexOf(needle, idx + 1);
       }
-      idx = normalizedBody.indexOf(needle, idx + 1);
     }
-    if (!found) continue;
+    if (longest === -1) continue;
 
-    if (needle.length > bestLength) {
+    if (longest > bestLength) {
       best = agent;
-      bestLength = needle.length;
+      bestLength = longest;
       tied = false;
-    } else if (needle.length === bestLength && best?.id !== agent.id) {
+    } else if (longest === bestLength) {
       tied = true;
     }
   }
@@ -540,13 +566,13 @@ function levenshteinDistance(a: string, b: string): number {
 
 /**
  * Typo-tolerant fallback for findMentionedAgent, above — only reached when
- * no exact "@displayName" substring matched anywhere in the message. Scans
- * every "@word" token in the message against every active agent's
- * (already-normalized) displayName by edit distance, e.g. a customer typing
- * "@gleici" still resolves to an agent whose displayName is "Gleicy" (one
- * substitution). Bounded tightly (1 edit for names of 4 letters or fewer, 2
- * otherwise, and only compared against names within 2 characters of the
- * token's own length) so this stays a typo correction, not a loose fuzzy
+ * no exact name or name word matched anywhere in the message. Scans every
+ * "@word" token in the message against each word of every candidate's name
+ * by edit distance, e.g. a customer typing "@gleici" still resolves to an
+ * agent whose displayName is "Gleicy" (one substitution), and "@gislane" to
+ * "Atendente - Gislaine". Bounded tightly (1 edit for names of 4 letters or
+ * fewer, 2 otherwise, and only compared against names within 2 characters of
+ * the token's own length) so this stays a typo correction, not a loose fuzzy
  * search that could route a stranger's name to the wrong agent. Same
  * tie-breaks-to-null safety as the exact path: a typo close enough to two
  * different agents isn't a confident enough signal to skip the queue on.
@@ -564,11 +590,8 @@ function findMentionedAgentByTypo(
 
   for (const token of tokens) {
     for (const agent of agents) {
-      // The whole name, or the first name alone ("@gleici" for "Gleicy Souza").
-      const fullName = stripDiacritics(agent.displayName).toLowerCase().trim();
-      const names = new Set([fullName, fullName.split(/\s+/)[0] ?? fullName]);
       let distance = Infinity;
-      for (const name of names) {
+      for (const name of nameWordAliases(agent.displayName)) {
         if (Math.abs(token.length - name.length) > 2) continue;
         const d = levenshteinDistance(token, name);
         const maxAllowed = name.length <= 4 ? 1 : 2;
@@ -581,7 +604,7 @@ function findMentionedAgentByTypo(
         best = agent;
         bestDistance = distance;
         tied = false;
-      } else if (distance === bestDistance) {
+      } else if (distance === bestDistance && best?.id !== agent.id) {
         tied = true;
       }
     }

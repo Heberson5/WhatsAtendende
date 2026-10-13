@@ -315,4 +315,35 @@ describe("@menção do cliente direciona direto para quem atende a conexão, pul
     expect(conversation.id).toBe(existing.id);
     expect(conversation.assignedAgentId).toBe(agent.id); // unchanged — still Pedro, not Lucas
   });
+
+  it("nome cadastrado com prefixo (\"Atendente - Gislaine\"): \"@Gislaine\" vai direto para ela", async () => {
+    const gislaine = await createTestUser({ email: "gi@test.dev", role: "AGENT", displayName: "Atendente - Gislaine", whatsappConnectionId: connectionId, presence: "ONLINE" });
+    await createTestUser({ email: "ma@test.dev", role: "AGENT", displayName: "Atendente - Mariany", whatsappConnectionId: connectionId, presence: "ONLINE" });
+    const ana = await createTestUser({ email: "ap@test.dev", role: "AGENT", displayName: "Atendente - Ana Paula Souza", whatsappConnectionId: connectionId, presence: "ONLINE" });
+
+    const find = (body: string) => conversationsService.findMentionedAgent(body, "WHATSAPP", connectionId);
+    expect((await find("Quero falar com a @Gislaine"))?.id).toBe(gislaine.id);
+    expect((await find("@gislaine, bom dia"))?.id).toBe(gislaine.id);
+    expect((await find("@Atendente - Gislaine"))?.id).toBe(gislaine.id);
+    expect((await find("@Atendente Gislaine"))?.id).toBe(gislaine.id);
+    expect((await find("@Gislane por favor"))?.id).toBe(gislaine.id); // typo
+    expect((await find("falar com @Ana Paula"))?.id).toBe(ana.id);
+    expect((await find("falar com @ana"))?.id).toBe(ana.id);
+    // The word everyone shares names nobody.
+    expect(await find("@Atendente")).toBeNull();
+
+    const contact = await prisma.contact.create({ data: { phone: "5511900009999", whatsappConnectionId: connectionId } });
+    const { conversation } = await conversationsService.findOrOpenConversationForInboundMessage(connectionId, contact.id, "Oi @Gislaine");
+    expect(conversation.assignedAgentId).toBe(gislaine.id);
+    expect(conversation.status).toBe("IN_PROGRESS");
+  });
+
+  it("sobrenome único também serve; sobrenome repetido não adivinha", async () => {
+    const joao = await createTestUser({ email: "jsil@test.dev", role: "AGENT", displayName: "João Silva", whatsappConnectionId: connectionId, presence: "ONLINE" });
+    await createTestUser({ email: "msou@test.dev", role: "AGENT", displayName: "Maria Souza", whatsappConnectionId: connectionId, presence: "ONLINE" });
+    await createTestUser({ email: "psou@test.dev", role: "AGENT", displayName: "Pedro Souza", whatsappConnectionId: connectionId, presence: "ONLINE" });
+    const find = (body: string) => conversationsService.findMentionedAgent(body, "WHATSAPP", connectionId);
+    expect((await find("@Silva"))?.id).toBe(joao.id);
+    expect(await find("@Souza")).toBeNull();
+  });
 });
