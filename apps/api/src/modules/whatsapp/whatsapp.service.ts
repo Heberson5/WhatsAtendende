@@ -136,7 +136,7 @@ export async function syncReadReceiptToDevice(conversationId: string): Promise<v
     if (!conversation || conversation.channel !== "WHATSAPP" || !conversation.contact.whatsappConnectionId) return;
     const provider = providers.get(conversation.contact.whatsappConnectionId);
     if (!provider) return;
-    await provider.markRead(toChatId(conversation.contact.phone!), providerMessageIds);
+    await provider.markRead(await chatIdFor(conversation.contact.whatsappConnectionId, conversation.contact.phone!), providerMessageIds);
   } catch (err) {
     logger.error({ err, conversationId }, "failed to sync a WhatsApp read receipt to the linked phone");
   }
@@ -269,6 +269,23 @@ export async function shutdownAllConnections(): Promise<void> {
 
 function toChatId(phone: string): string {
   return phone.includes("@") ? phone : `${phone}@s.whatsapp.net`;
+}
+
+/**
+ * Where a message to this customer goes. Normally their number (…@s.whatsapp.net). But a customer whose
+ * WhatsApp never revealed their number — they write from a hidden id (@lid) and the contact holds those
+ * digits in place of a phone — must be answered at that same @lid: built as a "phone", it pointed at
+ * someone else entirely and the customer never got the message.
+ */
+async function chatIdFor(connectionId: string, contactPhone: string): Promise<string> {
+  if (contactPhone.includes("@")) return contactPhone;
+  const contact = await prisma.contact.findFirst({
+    where: { whatsappConnectionId: connectionId, phone: contactPhone },
+    select: { providerChatId: true },
+  });
+  const chatId = contact?.providerChatId;
+  if (chatId?.endsWith("@lid") && chatId.split("@")[0] === contactPhone) return chatId;
+  return toChatId(contactPhone);
 }
 
 // Multiple agents share the same connected WhatsApp number, so without this
@@ -1288,8 +1305,8 @@ export async function sendOutboundText(
   replyToText?: string | null,
   replyToParticipantJid?: string | null
 ) {
-  return sendWithTimeoutGuard(messageId, "text", () =>
-    getProvider(connectionId).sendText(toChatId(contactPhone), withSenderPrefix(senderDisplayName, text), {
+  return sendWithTimeoutGuard(messageId, "text", async () =>
+    getProvider(connectionId).sendText(await chatIdFor(connectionId, contactPhone), withSenderPrefix(senderDisplayName, text), {
       replyToProviderMessageId,
       replyToText,
       ...(replyToParticipantJid ? { replyToParticipantJid } : {}),
@@ -1309,7 +1326,7 @@ async function sendClosedHoursNotice(conversationId: string, connectionId: strin
 }
 
 export async function sendAutomatedText(connectionId: string, messageId: string, contactPhone: string, text: string) {
-  return sendWithTimeoutGuard(messageId, "text", () => getProvider(connectionId).sendText(toChatId(contactPhone), text, {}));
+  return sendWithTimeoutGuard(messageId, "text", async () => getProvider(connectionId).sendText(await chatIdFor(connectionId, contactPhone), text, {}));
 }
 
 /** Sends a Meta-approved template — only possible on an OFFICIAL_API connection (Cloud API). */
@@ -1329,9 +1346,9 @@ export async function sendOutboundFile(
   senderDisplayName: string,
   caption?: string
 ) {
-  return sendWithTimeoutGuard(messageId, "file", () =>
+  return sendWithTimeoutGuard(messageId, "file", async () =>
     getProvider(connectionId).sendFile(
-      toChatId(contactPhone),
+      await chatIdFor(connectionId, contactPhone),
       buffer,
       fileName,
       mimeType,
@@ -1342,16 +1359,16 @@ export async function sendOutboundFile(
 
 /** A recorded voice note (WhatsApp's PTT bubble) — distinct from sendOutboundFile, which sends ptt: false for an attached audio file. `buffer` must already be OGG/Opus-encoded by this point; see apps/api/src/lib/audio-transcode.ts. */
 export async function sendOutboundAudio(connectionId: string, messageId: string, contactPhone: string, buffer: Buffer, mimeType: string) {
-  return sendWithTimeoutGuard(messageId, "audio", () => getProvider(connectionId).sendAudio(toChatId(contactPhone), buffer, mimeType));
+  return sendWithTimeoutGuard(messageId, "audio", async () => getProvider(connectionId).sendAudio(await chatIdFor(connectionId, contactPhone), buffer, mimeType));
 }
 
 export async function sendOutboundLocation(connectionId: string, messageId: string, contactPhone: string, lat: number, lng: number) {
-  return sendWithTimeoutGuard(messageId, "location", () => getProvider(connectionId).sendLocation(toChatId(contactPhone), lat, lng));
+  return sendWithTimeoutGuard(messageId, "location", async () => getProvider(connectionId).sendLocation(await chatIdFor(connectionId, contactPhone), lat, lng));
 }
 
 /** `targetFromMe`: the message being reacted to is one WE sent (WhatsApp needs to know whose message the reaction is about). */
 export async function sendReaction(connectionId: string, contactPhone: string, providerMessageId: string, emoji: string | null, targetFromMe = false) {
-  await getProvider(connectionId).sendReaction(toChatId(contactPhone), providerMessageId, emoji, { targetFromMe });
+  await getProvider(connectionId).sendReaction(await chatIdFor(connectionId, contactPhone), providerMessageId, emoji, { targetFromMe });
 }
 
 interface MessageTemplateStatusUpdateValue {
