@@ -3,6 +3,7 @@ import request from "supertest";
 import { createApp } from "../src/app";
 import { prisma } from "../src/lib/prisma";
 import { __getProviderForTests, sendOutboundText, sendReaction } from "../src/modules/whatsapp/whatsapp.service";
+import { findOrCreateContact } from "../src/modules/conversations/conversations.service";
 import type { MockWhatsAppProvider } from "@whatsatendende/whatsapp";
 import { resetDatabase, createTestUser, TEST_PASSWORD } from "./helpers";
 
@@ -73,5 +74,18 @@ describe("resposta para cliente com identificador oculto (LID)", () => {
     }
     expect(provider.sentTexts.at(-1)?.chatId).toBe("5565933334444@s.whatsapp.net");
     expect((await prisma.message.findUniqueOrThrow({ where: { id: message.id } })).status).not.toBe("FAILED");
+  });
+
+  it("cliente cadastrado pelo número que passa a escrever pelo LID: a resposta vai para o LID", async () => {
+    // Registered back when their messages came from the number.
+    await findOrCreateContact(connectionId, "5565977776666", "Carla", "5565977776666@s.whatsapp.net");
+    // Now WhatsApp delivers their message from the hidden id (the number still resolved).
+    const contact = await findOrCreateContact(connectionId, "5565977776666", "Carla", "554433221100998@lid");
+    expect(contact.providerChatId).toBe("554433221100998@lid");
+
+    const conversation = await prisma.conversation.create({ data: { contactId: contact.id, whatsappConnectionId: connectionId, status: "IN_PROGRESS" } });
+    const message = await prisma.message.create({ data: { conversationId: conversation.id, direction: "OUTBOUND", type: "TEXT", status: "PENDING", body: "oi" } });
+    await sendOutboundText(connectionId, message.id, "5565977776666", "Olá!", "Ana");
+    expect(provider.sentTexts.at(-1)?.chatId).toBe("554433221100998@lid");
   });
 });

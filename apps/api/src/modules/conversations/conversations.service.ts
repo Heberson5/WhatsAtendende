@@ -168,7 +168,9 @@ export async function findOrCreateContact(
       data: {
         lastInteractionAt: new Date(),
         name: resolveName(existing.name, name),
-        providerChatId: existing.providerChatId ?? providerChatId ?? undefined,
+        // WhatsApp moving this customer to a hidden id (@lid) replaces the address kept from before: replies have
+        // to go there now (see whatsapp.service chatIdsFor). Any other id only fills a gap.
+        providerChatId: providerChatId?.endsWith("@lid") && !existing.providerChatId?.endsWith("@lid") ? providerChatId : (existing.providerChatId ?? providerChatId ?? undefined),
       },
     });
   }
