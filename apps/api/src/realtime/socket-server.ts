@@ -57,7 +57,9 @@ export function createSocketServer(httpServer: HttpServer): SocketIOServer {
     // from the previous session ending) — nothing told it the flip
     // happened, so the topbar kept showing the stale value. See PROMPT:
     // "não está aparecendo Online".
-    socket.emit("presence:self", { presence: "ONLINE" });
+    // A paused user stays paused across reconnects and new logins — tell the topbar what is actually saved.
+    const saved = await prisma.user.findUnique({ where: { id: auth.userId }, select: { presence: true } }).catch(() => null);
+    socket.emit("presence:self", { presence: saved?.presence === "AWAY" ? "AWAY" : "ONLINE" });
 
     if (auth.role === "AGENT") {
       // Looked up fresh on every connect (rather than trusted from the JWT)

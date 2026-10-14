@@ -147,7 +147,8 @@ export async function login(email: string, password: string, ip: string | null, 
     realtimeEvents.userForceLoggedOut(user.id, "NEW_LOGIN");
   }
 
-  await prisma.user.update({ where: { id: user.id }, data: { lastAccessAt: new Date(), presence: "ONLINE" } });
+  // A pause carries over a new login (the computer restarted during lunch): it ends only with Retomar.
+  await prisma.user.update({ where: { id: user.id }, data: { lastAccessAt: new Date(), ...(user.presence === "AWAY" ? {} : { presence: "ONLINE" }) } });
   await writeAudit({ userId: user.id, action: "LOGIN_SUCCESS", entity: "User", entityId: user.id, ipAddress: ip });
   // Logging in proves this agent is back — cancels the 2h auto-revert
   // countdown on any conversation transferred to them while offline.
@@ -171,7 +172,7 @@ export async function recordSessionActivity(sessionId: string) {
 async function endIdleSession(session: { id: string; userId: string }) {
   const ended = await prisma.refreshToken.updateMany({ where: { id: session.id, revokedAt: null }, data: { revokedAt: new Date() } });
   if (ended.count === 0) return; // logged out (or ended) in the meantime
-  await prisma.user.update({ where: { id: session.userId }, data: { presence: "OFFLINE" } }).catch(() => undefined);
+  await prisma.user.update({ where: { id: session.userId }, data: { presence: "OFFLINE", pauseReasonId: null, pausedAt: null } }).catch(() => undefined);
   await writeAudit({ userId: session.userId, action: "LOGOUT_INACTIVITY", entity: "User", entityId: session.userId });
   realtimeEvents.userForceLoggedOut(session.userId, "INACTIVITY");
 }
@@ -256,7 +257,7 @@ export async function logout(refreshToken: string | undefined, userId: string, i
       data: { revokedAt: new Date() },
     });
   }
-  await prisma.user.update({ where: { id: userId }, data: { presence: "OFFLINE" } }).catch(() => undefined);
+  await prisma.user.update({ where: { id: userId }, data: { presence: "OFFLINE", pauseReasonId: null, pausedAt: null } }).catch(() => undefined);
   await writeAudit({ userId, action: "LOGOUT", entity: "User", entityId: userId, ipAddress: ip });
 }
 

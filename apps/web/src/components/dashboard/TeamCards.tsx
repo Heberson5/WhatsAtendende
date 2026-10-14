@@ -46,9 +46,9 @@ function PresencePill({ presence, reason }: { presence: TeamData["agents"][numbe
       : presence === "AWAY"
         ? "bg-warning-soft text-warning"
         : "border border-border bg-surface-alt text-muted";
-  const label = presence === "ONLINE" ? "Online" : presence === "AWAY" ? (reason ?? "Pausado") : "Offline";
+  const label = presence === "ONLINE" ? "Online" : presence === "AWAY" ? (reason ? `Pausa · ${reason}` : "Pausado") : "Offline";
   return (
-    <span className={clsx("inline-flex max-w-full items-center gap-1 truncate rounded-full px-2 py-0.5 text-[11px] font-semibold", style)}>
+    <span className={clsx("inline-flex max-w-full items-center gap-1 truncate rounded-full px-2 py-0.5 text-[11px] font-semibold", style)} title={label}>
       <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-current" />
       {label}
     </span>

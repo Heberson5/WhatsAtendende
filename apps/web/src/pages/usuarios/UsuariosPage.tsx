@@ -210,12 +210,20 @@ export default function UsuariosPage() {
                   </span>
                 </td>
                 <td className="px-4 py-3">
-                  <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted">
-                    <span
-                      className={`h-2 w-2 rounded-full ${u.presence === "ONLINE" ? "bg-green-500" : u.presence === "AWAY" ? "bg-yellow-500" : "bg-gray-300"}`}
-                    />
-                    {u.presence === "AWAY" && u.pauseReasonName ? `Pausado — ${u.pauseReasonName}` : PRESENCE_LABEL[u.presence]}
-                  </span>
+                  {u.presence === "AWAY" ? (
+                    <span className="inline-flex flex-col items-start gap-0.5" title={u.pauseReasonName ? `Pausado — ${u.pauseReasonName}` : "Pausado"}>
+                      <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-warning-soft px-2 py-0.5 text-xs font-semibold text-warning">
+                        <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                        Pausado
+                      </span>
+                      {u.pauseReasonName && <span className="max-w-[160px] truncate pl-1 text-[11px] text-muted">{u.pauseReasonName}</span>}
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-medium text-muted">
+                      <span className={`h-2 w-2 rounded-full ${u.presence === "ONLINE" ? "bg-green-500" : "bg-gray-300"}`} />
+                      {PRESENCE_LABEL[u.presence]}
+                    </span>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-muted">{u.lastAccessAt ? format(new Date(u.lastAccessAt), "dd/MM/yyyy HH:mm") : "Nunca acessou"}</td>
                 <td className="px-4 py-3">
