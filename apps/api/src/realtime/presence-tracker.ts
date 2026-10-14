@@ -95,8 +95,13 @@ export function registerDisconnection(userId: string, socketId: string, graceMs:
     // cancelPendingOffline call already re-populated this set, so bail
     // rather than clobber a now-genuinely-online user.
     if (activeSocketsByUser.get(userId)?.size) return;
-    prisma.user.update({ where: { id: userId }, data: { presence: "OFFLINE" } }).catch(() => undefined);
-    recordPresenceTransition(userId, "OFFLINE").catch(() => undefined);
+    // A pause survives the tab closing or the laptop sleeping (lunch...): the person stays "Pausado — <motivo>"
+    // in Dashboard and Usuários until they click Retomar, log out, or are logged out for inactivity — it used to
+    // turn into Offline here and then into Online on their return, without them ever resuming.
+    void (async () => {
+      const { count } = await prisma.user.updateMany({ where: { id: userId, presence: { not: "AWAY" } }, data: { presence: "OFFLINE" } });
+      if (count > 0) await recordPresenceTransition(userId, "OFFLINE");
+    })().catch(() => undefined);
   }, graceMs);
   pendingOfflineTimers.set(userId, timer);
 }

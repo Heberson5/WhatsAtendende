@@ -13,7 +13,7 @@ export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
     version: "2.8.4",
     date: "13 out 2026",
-    name: "Mensagens para clientes com LID, @menção e 1ª resposta",
+    name: "Mensagens para clientes com LID, pausa visível, @menção e 1ª resposta",
     summary: "Clientes que o WhatsApp passou para o identificador oculto voltam a receber as mensagens (sem \"Aguardando mensagem\"), o cliente que escreve \"@\" com o nome do atendente vai direto para ele mesmo quando o nome está cadastrado com prefixo (\"Atendente - Gislaine\"), e a 1ª resposta não fica mais negativa depois de uma transferência.",
     notes: [
       {
@@ -25,6 +25,17 @@ export const DEFAULT_RELEASES: ReleaseContent[] = [
         after: "A mensagem chega no endereço que o WhatsApp usa para o cliente.",
         where: "Atendimento e Pesquisa de satisfação",
         requires: [PERMISSION.ATENDIMENTO_ACESSAR],
+      },
+      {
+        type: "correcao",
+        area: "dashboard",
+        title: "A pausa aparece no Dashboard e em Usuários, com o motivo",
+        text: "Quem pausava e fechava o sistema (o computador em repouso no almoço, a aba fechada) passava a aparecer como Offline, e ao voltar como Online, sem ter clicado em Retomar. Agora a pausa só termina no Retomar, no Sair ou no desligamento por inatividade: enquanto isso a pessoa aparece em pausa, com o motivo, na coluna Agora do Dashboard {1} e na coluna Presença de Usuários {2} — e continua pausada ao entrar de novo.",
+        before: "Atendente em pausa aparecia como Offline ou Online.",
+        after: "Aparece em pausa, com o motivo, até clicar em Retomar.",
+        where: "Dashboard › Atendentes e Usuários",
+        requires: [PERMISSION.DASHBOARD_ACESSAR],
+        images: [{ src: "/notas-de-versao/pausa-motivo.webp", caption: "{1} Dashboard › Atendentes, coluna Agora · {2} Usuários, coluna Presença" }],
       },
       {
         type: "correcao",
