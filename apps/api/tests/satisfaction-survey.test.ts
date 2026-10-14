@@ -28,6 +28,7 @@ import {
   processDueClosingMessages,
   sendCloseFollowUp,
   updateSurvey,
+  surveyThanksTiming,
   willSendSurveyOnClose,
 } from "../src/modules/satisfaction/satisfaction.service";
 import { closeConversation, undoLastConversationAction } from "../src/modules/conversations/conversations.service";
@@ -481,6 +482,21 @@ describe("Pesquisa de satisfação (NPS)", () => {
       expect(await reply(contact, null)).toBe(false);
       expect((await surveyOf(conversation.id)).closingOutcome).toBe("CANCELED_CUSTOMER_WROTE");
       expect(await sweepAfter(31 * 60_000)).toBe(0);
+    });
+
+    it("na conexão real, o agradecimento sai com uma pausa, fora do recebimento da nota", async () => {
+      const { contact } = await closedAndAsked("5511900000111");
+      surveyThanksTiming.delayMs = 3_000;
+      vi.useFakeTimers({ toFake: ["setTimeout"] });
+      try {
+        expect(await reply(contact, "9")).toBe(true);
+        expect(texts()).toEqual([]); // not in the same instant as the customer's message
+        await vi.advanceTimersByTimeAsync(3_000);
+        await vi.waitFor(() => expect(texts()).toEqual(["Obrigado!"]));
+      } finally {
+        vi.useRealTimers();
+        surveyThanksTiming.delayMs = 0;
+      }
     });
 
     it("nos 10 segundos depois da nota, agradecer ou repetir a nota mantém a mensagem de encerramento", async () => {
