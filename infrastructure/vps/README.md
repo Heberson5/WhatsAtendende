@@ -66,6 +66,22 @@ o do container `web` (corrigido aqui); outro número, como `nginx/1.24.0
 (Ubuntu)`, é o proxy da VPS — e lá é preciso colocar `client_max_body_size
 100m;` no `server` do site.
 
+## Cliente diz que não recebeu ("Aguardando mensagem")
+
+Rode o diagnóstico na pasta do projeto, na VPS (só lê, não altera nada):
+
+```bash
+bash infrastructure/vps/diagnostico-entrega.sh 2 99286623   # últimas 2 h, cliente com telefone terminado em 99286623
+bash infrastructure/vps/diagnostico-entrega.sh 24           # últimas 24 h, todos os clientes
+```
+
+Ele lista cada mensagem que o celular de um cliente não conseguiu abrir e pediu
+de novo (com o horário de Cuiabá, o texto, o cliente e o endereço do WhatsApp
+usado para ele) e, com um telefone, o cadastro desse cliente — se o sistema já
+conhece o identificador oculto (`@lid`) dele — e as últimas mensagens enviadas.
+Mensagens que ficaram em "Aguardando mensagem" não voltam sozinhas: reenvie as
+importantes.
+
 ## Backup e restauração completos
 
 Antes de qualquer atualização arriscada (ex.: trocar a versão do Baileys),
