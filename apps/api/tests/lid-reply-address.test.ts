@@ -45,13 +45,33 @@ describe("resposta para cliente com identificador oculto (LID)", () => {
     expect(provider.reactionsSent.at(-1)?.chatId).toBe("201234567890123@lid");
   });
 
-  it("cliente com número conhecido continua recebendo no número", async () => {
+  it("cliente já migrado para o LID recebe no LID, mesmo com o número conhecido", async () => {
+    // What production showed: the closing message and the survey question sent to the number of customers
+    // who write from an @lid came back as resend requests — their phone couldn't open them.
     const message = await outboundTo("5565988887777", "998877665544332@lid");
     await sendOutboundText(connectionId, message.id, "5565988887777", "Olá!", "Ana");
-    expect(provider.sentTexts.at(-1)?.chatId).toBe("5565988887777@s.whatsapp.net");
+    expect(provider.sentTexts.at(-1)?.chatId).toBe("998877665544332@lid");
+  });
 
+  it("sem LID conhecido, continua no número", async () => {
     const plain = await outboundTo("5565911112222", null);
     await sendOutboundText(connectionId, plain.id, "5565911112222", "Olá!", "Ana");
     expect(provider.sentTexts.at(-1)?.chatId).toBe("5565911112222@s.whatsapp.net");
+  });
+
+  it("se o WhatsApp recusar o envio para o LID, a mensagem sai pelo número", async () => {
+    const message = await outboundTo("5565933334444", "112233445566778@lid");
+    const original = provider.sendText.bind(provider);
+    provider.sendText = async (chatId, text, options) => {
+      if (chatId.endsWith("@lid")) throw new Error("recusado");
+      return original(chatId, text, options);
+    };
+    try {
+      await sendOutboundText(connectionId, message.id, "5565933334444", "Olá!", "Ana");
+    } finally {
+      provider.sendText = original;
+    }
+    expect(provider.sentTexts.at(-1)?.chatId).toBe("5565933334444@s.whatsapp.net");
+    expect((await prisma.message.findUniqueOrThrow({ where: { id: message.id } })).status).not.toBe("FAILED");
   });
 });

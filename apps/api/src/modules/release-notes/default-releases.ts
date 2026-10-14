@@ -13,9 +13,19 @@ export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
     version: "2.8.4",
     date: "13 out 2026",
-    name: "@menção pelo nome e 1ª resposta sem tempo negativo",
-    summary: "O cliente que escreve \"@\" com o nome do atendente vai direto para ele mesmo quando o nome está cadastrado com prefixo (\"Atendente - Gislaine\"), e a 1ª resposta não fica mais negativa depois de uma transferência.",
+    name: "Mensagens para clientes com LID, @menção e 1ª resposta",
+    summary: "Clientes que o WhatsApp passou para o identificador oculto voltam a receber as mensagens (sem \"Aguardando mensagem\"), o cliente que escreve \"@\" com o nome do atendente vai direto para ele mesmo quando o nome está cadastrado com prefixo (\"Atendente - Gislaine\"), e a 1ª resposta não fica mais negativa depois de uma transferência.",
     notes: [
+      {
+        type: "correcao",
+        area: "atendimento",
+        title: "\"Aguardando mensagem\" para clientes com identificador oculto",
+        text: "O WhatsApp está passando os clientes para um identificador oculto (LID). Para esses clientes o sistema ainda enviava as mensagens para o número, e o celular deles não conseguia abri-las: pedia o reenvio e ficava em \"Aguardando mensagem\". Foi o que aconteceu com a mensagem de encerramento e a pergunta da pesquisa. Agora as mensagens, arquivos, áudios, localizações e reações vão para o mesmo endereço de onde o cliente escreve. Se o WhatsApp recusar esse endereço, a mensagem sai pelo número, como antes.",
+        before: "Alguns clientes viam \"Aguardando mensagem\".",
+        after: "A mensagem chega no endereço que o WhatsApp usa para o cliente.",
+        where: "Atendimento e Pesquisa de satisfação",
+        requires: [PERMISSION.ATENDIMENTO_ACESSAR],
+      },
       {
         type: "correcao",
         area: "atendimento",
