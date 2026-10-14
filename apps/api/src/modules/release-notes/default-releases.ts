@@ -13,19 +13,9 @@ export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
     version: "2.8.4",
     date: "13 out 2026",
-    name: "Pesquisa, @menção e 1ª resposta",
-    summary: "O agradecimento da pesquisa sai com uma pausa depois da nota, o cliente que escreve \"@\" com o nome do atendente vai direto para ele mesmo quando o nome está cadastrado com prefixo (\"Atendente - Gislaine\"), e a 1ª resposta não fica mais negativa depois de uma transferência.",
+    name: "@menção pelo nome e 1ª resposta sem tempo negativo",
+    summary: "O cliente que escreve \"@\" com o nome do atendente vai direto para ele mesmo quando o nome está cadastrado com prefixo (\"Atendente - Gislaine\"), e a 1ª resposta não fica mais negativa depois de uma transferência.",
     notes: [
-      {
-        type: "correcao",
-        area: "atendimento",
-        title: "\"Aguardando mensagem\" depois da nota da pesquisa",
-        text: "Assim que o cliente mandava a nota, o agradecimento saía no mesmo instante, enquanto o WhatsApp ainda processava a mensagem dele. Para alguns clientes ele chegava como \"Aguardando mensagem\", e a mensagem de encerramento logo depois também. Agora o agradecimento sai 3 segundos depois da nota, e a mensagem de encerramento continua 10 segundos depois.",
-        before: "Depois da nota, o cliente via \"Aguardando mensagem\".",
-        after: "O agradecimento e a mensagem de encerramento chegam normalmente.",
-        where: "Pesquisa de satisfação",
-        requires: [PERMISSION.ATENDIMENTO_ACESSAR],
-      },
       {
         type: "correcao",
         area: "atendimento",
