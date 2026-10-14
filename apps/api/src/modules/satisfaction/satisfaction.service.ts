@@ -48,6 +48,13 @@ const PASSIVE_MIN_SCORE = 7;
 const LEGACY_QUESTION_LABEL = "Pesquisa anterior (nota de 1 a 5)";
 // For a score on a survey whose setup was deleted in the meantime.
 const DEFAULT_THANKS = "Obrigado pela sua avaliação!";
+/**
+ * The thanks follows the score after a short pause, outside the handling of the customer's message — never in the
+ * same instant. Sent in that very instant, while WhatsApp was still settling that message's encryption, it reached
+ * some customers as "Aguardando mensagem", and the closing message after it too. The mock provider has no
+ * encryption, so tests send it at once.
+ */
+export const surveyThanksTiming = { delayMs: env.WHATSAPP_PROVIDER === "baileys" ? 3_000 : 0 };
 
 type SurveyRow = SatisfactionSurveyConfig & { connections: { id: string; name: string }[] };
 
@@ -460,7 +467,16 @@ export async function captureSurveyAnswer(
     }
     await keepOnClosedConversation(survey.conversationId, message);
     const thanks = survey.config?.thanks ?? DEFAULT_THANKS;
-    if (contact.phone) await sendSurveyText({ id: survey.conversationId, whatsappConnectionId: connectionId }, contact.phone, thanks);
+    if (contact.phone) {
+      const send = () => sendSurveyText({ id: survey.conversationId, whatsappConnectionId: connectionId }, contact.phone!, thanks);
+      if (surveyThanksTiming.delayMs > 0) {
+        setTimeout(() => {
+          send().catch((err) => logger.error({ err, conversationId: survey.conversationId }, "failed to send the survey thanks"));
+        }, surveyThanksTiming.delayMs).unref();
+      } else {
+        await send();
+      }
+    }
     return true;
   }
 
