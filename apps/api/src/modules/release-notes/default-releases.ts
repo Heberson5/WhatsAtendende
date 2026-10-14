@@ -20,7 +20,7 @@ export const DEFAULT_RELEASES: ReleaseContent[] = [
         type: "correcao",
         area: "atendimento",
         title: "\"Aguardando mensagem\" para clientes com identificador oculto",
-        text: "O WhatsApp está passando os clientes para um identificador oculto (LID). Para esses clientes o sistema ainda enviava as mensagens para o número, e o celular deles não conseguia abri-las: pedia o reenvio e ficava em \"Aguardando mensagem\". Foi o que aconteceu com a mensagem de encerramento e a pergunta da pesquisa. Agora as mensagens, arquivos, áudios, localizações e reações vão para o mesmo endereço de onde o cliente escreve. Se o WhatsApp recusar esse endereço, a mensagem sai pelo número, como antes.",
+        text: "O WhatsApp está passando os clientes para um identificador oculto (LID). Para esses clientes o sistema ainda enviava as mensagens para o número, e o celular deles não conseguia abri-las: pedia o reenvio e ficava em \"Aguardando mensagem\". Foi o que aconteceu com a mensagem de encerramento e a pergunta da pesquisa. Agora as mensagens, arquivos, áudios, localizações e reações vão para o mesmo endereço de onde o cliente escreve. Vale também para clientes cadastrados antes, quando ainda escreviam pelo número: na próxima mensagem deles o sistema passa a usar o novo endereço. Se o WhatsApp recusar esse endereço, a mensagem sai pelo número, como antes.",
         before: "Alguns clientes viam \"Aguardando mensagem\".",
         after: "A mensagem chega no endereço que o WhatsApp usa para o cliente.",
         where: "Atendimento e Pesquisa de satisfação",
