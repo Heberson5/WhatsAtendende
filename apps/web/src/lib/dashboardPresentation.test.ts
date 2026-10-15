@@ -193,6 +193,9 @@ describe("apresentação do Dashboard", () => {
       surveyName: "Pesquisa",
       question: "De 0 a 10?",
       score,
+      answerText: String(score),
+      rereadScore: null,
+      correction: null,
       category: (score >= 9 ? "promoter" : score >= 7 ? "passive" : "detractor") as "promoter" | "passive" | "detractor",
       status: "answered" as const,
     });

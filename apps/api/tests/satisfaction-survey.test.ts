@@ -29,6 +29,7 @@ import {
   sendCloseFollowUp,
   updateSurvey,
   willSendSurveyOnClose,
+  SCORE_REASK_TEXT,
 } from "../src/modules/satisfaction/satisfaction.service";
 import { closeConversation, undoLastConversationAction } from "../src/modules/conversations/conversations.service";
 
@@ -164,6 +165,45 @@ describe("Pesquisa de satisfação (NPS)", () => {
     expect(parseSurveyScore("45")).toBeNull();
     expect(parseSurveyScore("de 3 a 4")).toBeNull();
     expect(parseSurveyScore("o pedido 1 chegou quebrado, quero trocar")).toBeNull();
+  });
+
+  it("entende notas escritas de outro jeito, sem adivinhar quando há dúvida", () => {
+    // Respostas reais de clientes.
+    expect(parseSurveyScore("Precisei primeira vez posso da 10")).toBe(10);
+    expect(parseSurveyScore("1o")).toBe(10);
+    for (const [text, score] of [
+      ["1O", 10], ["l0", 10], ["10!", 10], ["nota10", 10], ["10/10", 10], ["8 de 10", 8], ["de 0 a 10 dou 8", 8],
+      ["dez", 10], ["nota dez", 10], ["dou deiz", 10], ["Nove", 9], ["dou um 10", 10], ["gostei muito, nota dez", 10],
+      ["atendimento ótimo, dou 9 pro João", 9], ["10 obrigado pelo atendimento muito bom", 10], ["5 estrelas", 5],
+    ] as const) expect(parseSurveyScore(text), text).toBe(score);
+    for (const text of ["entre 7 e 8", "pedido 12345", "15", "ligo amanhã às 3 pra resolver o resto", "oi tudo bem?"]) expect(parseSurveyScore(text), text).toBeNull();
+  });
+
+  it("guarda o texto da resposta junto com a nota", async () => {
+    await configure([connectionId]);
+    const { conversation } = await closeAndAnswer("5511900000040", "Precisei primeira vez posso da 10");
+    const survey = await prisma.satisfactionSurvey.findUniqueOrThrow({ where: { conversationId: conversation.id } });
+    expect(survey).toMatchObject({ score: 10, answerText: "Precisei primeira vez posso da 10" });
+  });
+
+  it("pede a nota de novo uma vez quando a tentativa não dá para ler; na segunda, segue o caminho normal", async () => {
+    await configure([connectionId]);
+    const { contact, conversation } = await attendedConversation("5511900000041");
+    await closeConversation(conversation.id, agentId);
+    await sendCloseFollowUp(conversation.id);
+    sent.length = 0;
+
+    expect(await captureSurveyAnswer(connectionId, contact, { body: "nota máxima!", providerMessageId: "wamid-r1" })).toBe(true);
+    expect(sent.map((m) => m.text)).toEqual([SCORE_REASK_TEXT]);
+    expect(await captureSurveyAnswer(connectionId, contact, { body: "10", providerMessageId: "wamid-r2" })).toBe(true);
+    expect((await prisma.satisfactionSurvey.findUniqueOrThrow({ where: { conversationId: conversation.id } })).score).toBe(10);
+
+    // Another customer: the second unreadable answer is not asked again.
+    const other = await attendedConversation("5511900000042");
+    await closeConversation(other.conversation.id, agentId);
+    await sendCloseFollowUp(other.conversation.id);
+    expect(await captureSurveyAnswer(connectionId, other.contact, { body: "nota máxima", providerMessageId: "wamid-r3" })).toBe(true);
+    expect(await captureSurveyAnswer(connectionId, other.contact, { body: "nota boa", providerMessageId: "wamid-r4" })).toBe(false);
   });
 
   describe("NPS", () => {

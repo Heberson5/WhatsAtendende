@@ -9,6 +9,9 @@ import { resolvePeriod, optionalDateQueryParam } from "../../lib/period";
 import { parseListParam } from "../../lib/parse-list-param";
 import { resolveAllowedConnectionIds } from "../../lib/connection-access";
 import { env } from "../../config/env";
+import { prisma } from "../../lib/prisma";
+import { Errors } from "../../lib/http-error";
+import { writeAudit } from "../../lib/audit";
 import { getExportBranding } from "../settings/settings.service";
 import * as service from "./reports.service";
 import { agentsToRows, getSatisfactionReport, responsesToRows } from "../satisfaction/satisfaction-report.service";
@@ -155,5 +158,37 @@ reportsRouter.get(
       query.tzOffsetMinutes,
       parseListParam(query.columns)
     );
+  })
+);
+
+// Fixes a score read wrong from the customer's text ("1o" read as 1). Keeps what had been read the first time.
+const scoreCorrectionSchema = z.object({ score: z.number().int().min(0).max(10) });
+reportsRouter.patch(
+  "/satisfaction/:surveyId/score",
+  requirePermission(PERMISSION.RELATORIOS_PESQUISA_CORRIGIR),
+  asyncHandler(async (req, res) => {
+    const { score } = scoreCorrectionSchema.parse(req.body);
+    const survey = await prisma.satisfactionSurvey.findUnique({ where: { id: req.params.surveyId } });
+    if (!survey || survey.score === null) throw Errors.notFound("Avaliação não encontrada.");
+    const allowed = await resolveAllowedConnectionIds(req.auth!, [survey.whatsappConnectionId]);
+    if (allowed && !allowed.includes(survey.whatsappConnectionId)) throw Errors.forbidden();
+    await prisma.satisfactionSurvey.update({
+      where: { id: survey.id },
+      data: {
+        score,
+        originalScore: survey.scoreCorrectedAt ? survey.originalScore : survey.score,
+        scoreCorrectedAt: new Date(),
+        scoreCorrectedById: req.auth!.userId,
+      },
+    });
+    await writeAudit({
+      userId: req.auth!.userId,
+      action: "SATISFACTION_SCORE_CORRECTED",
+      entity: "SatisfactionSurvey",
+      entityId: survey.id,
+      ipAddress: req.ip ?? null,
+      metadata: { from: survey.score, to: score, answer: survey.answerText },
+    });
+    res.status(204).end();
   })
 );

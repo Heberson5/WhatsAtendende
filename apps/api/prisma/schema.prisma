@@ -110,11 +110,12 @@ model User {
   // instead of blocking the delete. See PROMPT: "Um usuário não poderá
   // estar em mais de um, portanto, se habilitar o usuário no recente, irá
   // sair do anterior."
-  closingMessage       ClosingMessage?       @relation(fields: [closingMessageId], references: [id], onDelete: SetNull)
-  satisfactionSurveys  SatisfactionSurvey[]
-  closingMessageId     String?
+  closingMessage        ClosingMessage?       @relation(fields: [closingMessageId], references: [id], onDelete: SetNull)
+  satisfactionSurveys   SatisfactionSurvey[]  @relation("SatisfactionSurveyAgent")
+  correctedSurveyScores SatisfactionSurvey[]  @relation("SatisfactionScoreCorrectedBy")
+  closingMessageId      String?
   // Acceptance messages chosen for this user ("Quem pode usar" in Respostas › Aceite) — a user can be in several.
-  autoMessageTemplates AutoMessageTemplate[] @relation("AutoMessageTemplateUsers")
+  autoMessageTemplates  AutoMessageTemplate[] @relation("AutoMessageTemplateUsers")
 
   // Set together with presence=AWAY when this agent pauses themselves from
   // the profile menu — both null again on resume. onDelete: Restrict so a
@@ -1311,7 +1312,7 @@ model SatisfactionSurvey {
   whatsappConnection   WhatsAppConnection        @relation(fields: [whatsappConnectionId], references: [id], onDelete: Cascade)
   whatsappConnectionId String
   // Who attended the conversation being rated.
-  agent                User?                     @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  agent                User?                     @relation("SatisfactionSurveyAgent", fields: [agentId], references: [id], onDelete: SetNull)
   agentId              String?
   // The question that was asked. Null only on surveys sent before the NPS
   // (0–10) scale existed — those scores are on the old 1–5 scale.
@@ -1322,6 +1323,15 @@ model SatisfactionSurvey {
   config               SatisfactionSurveyConfig? @relation(fields: [configId], references: [id], onDelete: SetNull)
   configId             String?
   score                Int?
+  // What the customer wrote as the answer, as it came — shown next to the score in Relatórios.
+  answerText           String?
+  // When "não entendi sua nota" was sent — only once per survey.
+  reaskedAt            DateTime?
+  // A manager fixed a score the system read wrong; originalScore is what had been read.
+  originalScore        Int?
+  scoreCorrectedAt     DateTime?
+  scoreCorrectedBy     User?                     @relation("SatisfactionScoreCorrectedBy", fields: [scoreCorrectedById], references: [id], onDelete: SetNull)
+  scoreCorrectedById   String?
   sentAt               DateTime                  @default(now())
   expiresAt            DateTime
   answeredAt           DateTime?
