@@ -76,7 +76,11 @@ async function assertWithinAccessWindow(
 }
 
 export async function login(email: string, password: string, ip: string | null, tzOffsetMinutes = 0) {
-  const user = await prisma.user.findUnique({ where: { email: email.toLowerCase() }, include: { whatsappConnection: true, pauseReason: true } });
+  // An e-mail repeats only across inactive users: the active one logs in; with none, the latest inactive gets "Usuario inativo".
+  const include = { whatsappConnection: true, pauseReason: true } as const;
+  const user =
+    (await prisma.user.findFirst({ where: { email: email.toLowerCase(), status: "ACTIVE" }, include })) ??
+    (await prisma.user.findFirst({ where: { email: email.toLowerCase() }, include, orderBy: { createdAt: "desc" } }));
   if (!user) {
     // Do the same bcrypt work a real lookup would, so a non-existent e-mail
     // doesn't respond measurably faster than a wrong password for a real
@@ -262,7 +266,7 @@ export async function logout(refreshToken: string | undefined, userId: string, i
 }
 
 export async function requestPasswordReset(email: string): Promise<{ token: string; emailSent: boolean } | null> {
-  const user = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+  const user = await prisma.user.findFirst({ where: { email: email.toLowerCase(), status: "ACTIVE" } });
   // Always behave the same way regardless of whether the user exists, to
   // avoid leaking which e-mails are registered (both in the response body
   // and, approximately, in timing — see the dummy work on the not-found path).

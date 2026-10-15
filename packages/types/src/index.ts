@@ -93,6 +93,12 @@ export const CHANNEL = {
 } as const;
 export type Channel = (typeof CHANNEL)[keyof typeof CHANNEL];
 
+/** Who already uses an e-mail typed in the user form: the active user (blocks saving) and the inactive ones that had it. */
+export interface UserEmailUseDTO {
+  active: string | null;
+  inactive: { name: string; deactivatedAt: string | null }[];
+}
+
 export interface UserDTO {
   id: string;
   fullName: string;
@@ -109,6 +115,9 @@ export interface UserDTO {
   // connection is disconnected" banner in Atendimento.
   whatsappConnectionStatus: WhatsAppConnectionStatus | null;
   createdAt: string;
+  /** When and by whom the user was last deactivated — null while active. */
+  deactivatedAt: string | null;
+  deactivatedByName: string | null;
   lastAccessAt: string | null;
   // Where this user works — drives which STATE/MUNICIPAL holidays block
   // their access automatically. Both null = only NATIONAL holidays (if

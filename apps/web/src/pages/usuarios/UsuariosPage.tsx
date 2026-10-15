@@ -208,6 +208,11 @@ export default function UsuariosPage() {
                   <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${u.status === "ACTIVE" ? "bg-success-soft text-success" : "border border-border bg-surface-alt text-muted"}`}>
                     {u.status === "ACTIVE" ? "Ativo" : "Inativo"}
                   </span>
+                  {u.status === "INACTIVE" && u.deactivatedAt && (
+                    <span className="mt-0.5 block whitespace-nowrap text-[11px] text-muted" title={u.deactivatedByName ? `Desativado por ${u.deactivatedByName}` : undefined}>
+                      desde {new Date(u.deactivatedAt).toLocaleDateString("pt-BR")}
+                    </span>
+                  )}
                 </td>
                 <td className="px-4 py-3">
                   {u.presence === "AWAY" ? (

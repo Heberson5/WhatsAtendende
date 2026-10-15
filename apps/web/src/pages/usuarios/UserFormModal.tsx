@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Camera, Trash2, X } from "lucide-react";
-import type { UserDTO, Role, ManagerConnectionAccessDTO, AccessSchedule, WeekdayKey } from "@whatsatendende/types";
+import { AlertTriangle, Camera, Info, Trash2, UserX, X } from "lucide-react";
+import type { UserDTO, Role, ManagerConnectionAccessDTO, AccessSchedule, WeekdayKey, UserEmailUseDTO } from "@whatsatendende/types";
 import { WEEKDAY_KEYS } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { StateCitySelect } from "../../components/common/StateCitySelect";
@@ -16,6 +16,19 @@ const WEEKDAY_LABELS: Record<WeekdayKey, string> = {
   SAT: "Sábado",
   SUN: "Domingo",
 };
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** "João  Silva" and "joao silva" are the same name: accents, case and spacing don't count as renaming someone. */
+function sameName(a: string, b: string): boolean {
+  const norm = (v: string) => v.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+  return norm(a) === norm(b);
+}
+
+function formatDateTime(iso: string): string {
+  const d = new Date(iso);
+  return `${d.toLocaleDateString("pt-BR")} às ${d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
+}
 
 export interface UserFormValues {
   fullName: string;
@@ -82,10 +95,32 @@ export function UserFormModal({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [changingPassword, setChangingPassword] = useState(false);
+  // Renaming someone into another person would rewrite their past reports — asked before saving.
+  const [confirmingRename, setConfirmingRename] = useState(false);
+  const renamed = Boolean(user && (!sameName(user.fullName, values.fullName) || !sameName(user.displayName, values.displayName)));
+
+  // Who already uses the typed e-mail: an active user blocks saving; inactive ones only inform.
+  const typedEmail = values.email.trim().toLowerCase();
+  const checkEmail = EMAIL_PATTERN.test(typedEmail) && typedEmail !== user?.email;
+  const { data: emailUse } = useQuery({
+    queryKey: ["user-email-use", typedEmail, user?.id],
+    queryFn: async () => (await api.get<UserEmailUseDTO>("/users/email-use", { params: { email: typedEmail, exceptUserId: user?.id } })).data,
+    enabled: checkEmail,
+  });
+  const emailTakenBy = checkEmail && (!user || user.status === "ACTIVE") ? (emailUse?.active ?? null) : null;
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    if (emailTakenBy) {
+      setError(`O e-mail ${typedEmail} já está em uso por "${emailTakenBy}" (ativo).`);
+      return;
+    }
+    if (renamed && !confirmingRename) {
+      setConfirmingRename(true);
+      return;
+    }
+    setConfirmingRename(false);
     const wantsPasswordChange = !user || changingPassword;
     if (wantsPasswordChange && (values.password || values.confirmPassword) && values.password !== values.confirmPassword) {
       setError("As senhas não coincidem");
@@ -141,6 +176,17 @@ export function UserFormModal({
         </div>
 
         <div className="flex-1 space-y-3 overflow-y-auto p-5">
+          {user?.status === "INACTIVE" && (
+            <div className="flex items-start gap-2 rounded-card border border-border bg-surface-alt px-3 py-2 text-xs text-muted">
+              <UserX className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>
+                <strong className="text-[var(--color-text)]">Usuário inativo.</strong>{" "}
+                {user.deactivatedAt
+                  ? `Desativado em ${formatDateTime(user.deactivatedAt)}${user.deactivatedByName ? ` por ${user.deactivatedByName}` : ""}.`
+                  : "Desativado antes do registro da data."}
+              </span>
+            </div>
+          )}
           <div className="flex items-center gap-4 rounded-card border border-dashed border-border bg-surface-alt p-3">
             <button
               type="button"
@@ -210,6 +256,19 @@ export function UserFormModal({
           </Field>
           <Field label="E-mail">
             <input required type="email" autoComplete="off" value={values.email} onChange={(e) => setValues((v) => ({ ...v, email: e.target.value }))} className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm" />
+            {emailTakenBy ? (
+              <p className="mt-1 flex items-start gap-1.5 text-xs text-danger">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> Este e-mail já está em uso por &quot;{emailTakenBy}&quot; (ativo). Use outro e-mail ou desative esse usuário antes.
+              </p>
+            ) : checkEmail && emailUse && emailUse.inactive.length > 0 ? (
+              <p className="mt-1 flex items-start gap-1.5 text-xs text-muted">
+                <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span>
+                  Este e-mail já foi usado por {emailUse.inactive.map((u) => `"${u.name}"${u.deactivatedAt ? ` (inativo desde ${new Date(u.deactivatedAt).toLocaleDateString("pt-BR")})` : " (inativo)"}`).join(", ")}. Será um
+                  usuário novo, com o histórico separado nos relatórios.
+                </span>
+              </p>
+            ) : null}
           </Field>
           <Field label="Perfil">
             <select
@@ -335,6 +394,39 @@ export function UserFormModal({
             </button>
           </div>
         </div>
+        {confirmingRename && user && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-4" role="alertdialog" aria-modal="true" aria-labelledby="rename-title">
+            <div className="w-full max-w-md rounded-card border border-border bg-surface p-5 shadow-elevated">
+              <h2 id="rename-title" className="flex items-center gap-2 text-base font-semibold">
+                <AlertTriangle className="h-5 w-5 text-warning" /> Alterar o nome do usuário?
+              </h2>
+              <div className="mt-3 space-y-1 rounded-card bg-surface-alt px-3 py-2 text-sm">
+                {!sameName(user.fullName, values.fullName) && (
+                  <p>
+                    Nome completo: <span className="text-muted line-through">{user.fullName}</span> → <strong>{values.fullName}</strong>
+                  </p>
+                )}
+                {!sameName(user.displayName, values.displayName) && (
+                  <p>
+                    Nome de exibição: <span className="text-muted line-through">{user.displayName}</span> → <strong>{values.displayName}</strong>
+                  </p>
+                )}
+              </div>
+              <p className="mt-3 text-sm text-muted">
+                Não altere o nome para outra pessoa: os relatórios, o Dashboard e o histórico de conversas deste usuário passariam a mostrar o novo nome. Para outra
+                pessoa, desative este usuário e cadastre um novo.
+              </p>
+              <div className="mt-5 flex gap-2">
+                <button type="button" onClick={() => setConfirmingRename(false)} className="focus-ring flex-1 rounded-card border border-border py-2 text-sm">
+                  Cancelar
+                </button>
+                <button type="submit" className="focus-ring flex-1 rounded-card bg-primary py-2 text-sm font-semibold text-primary-fg">
+                  É a mesma pessoa, salvar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </form>
     </div>
   );

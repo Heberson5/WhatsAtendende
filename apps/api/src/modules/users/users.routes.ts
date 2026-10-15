@@ -40,6 +40,18 @@ usersRouter.get(
   })
 );
 
+const emailUseSchema = z.object({ email: z.string().trim().email(), exceptUserId: z.string().uuid().optional() });
+
+// For the e-mail field of the user form: who already has it (an active user blocks saving).
+usersRouter.get(
+  "/email-use",
+  requirePermission(PERMISSION.USUARIOS_VISUALIZAR),
+  asyncHandler(async (req, res) => {
+    const { email, exceptUserId } = emailUseSchema.parse(req.query);
+    res.json(await usersService.describeEmailUse(email, exceptUserId));
+  })
+);
+
 const accessScheduleWindowSchema = z.object({
   start: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
   end: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
@@ -155,8 +167,8 @@ usersRouter.post(
   requirePermission(PERMISSION.USUARIOS_INATIVAR),
   asyncHandler(async (req, res) => {
     await assertNoAdminEscalation(req, req.params.id);
-    const user = await usersService.setUserStatus(req.params.id, "ACTIVE");
-    await writeAudit({ userId: req.auth!.userId, action: "USER_ACTIVATED", entity: "User", entityId: user.id, ipAddress: req.ip ?? null });
+    const user = await usersService.setUserStatus(req.params.id, "ACTIVE", req.auth!.userId);
+    await writeAudit({ userId: req.auth!.userId, action: "USER_ACTIVATED", entity: "User", entityId: user.id, ipAddress: req.ip ?? null, metadata: { name: user.fullName, email: user.email } });
     res.json(toUserDTO(user));
   })
 );
@@ -166,8 +178,8 @@ usersRouter.post(
   requirePermission(PERMISSION.USUARIOS_INATIVAR),
   asyncHandler(async (req, res) => {
     await assertNoAdminEscalation(req, req.params.id);
-    const user = await usersService.setUserStatus(req.params.id, "INACTIVE");
-    await writeAudit({ userId: req.auth!.userId, action: "USER_DEACTIVATED", entity: "User", entityId: user.id, ipAddress: req.ip ?? null });
+    const user = await usersService.setUserStatus(req.params.id, "INACTIVE", req.auth!.userId);
+    await writeAudit({ userId: req.auth!.userId, action: "USER_DEACTIVATED", entity: "User", entityId: user.id, ipAddress: req.ip ?? null, metadata: { name: user.fullName, email: user.email } });
     res.json(toUserDTO(user));
   })
 );

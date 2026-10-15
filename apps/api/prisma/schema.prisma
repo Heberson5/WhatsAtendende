@@ -29,19 +29,25 @@ enum AgentPresence {
 }
 
 model User {
-  id              String        @id @default(uuid())
-  fullName        String
-  displayName     String
-  email           String        @unique
-  passwordHash    String
-  role            Role          @default(AGENT)
-  status          UserStatus    @default(ACTIVE)
-  presence        AgentPresence @default(OFFLINE)
-  photoUrl        String?
-  themePreference String        @default("AUTO") // LIGHT | DARK | AUTO
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-  lastAccessAt    DateTime?
+  id               String        @id @default(uuid())
+  fullName         String
+  displayName      String
+  // Repeats only across inactive users: at most one ACTIVE user per e-mail (enforced in users.service — see assertEmailFreeForActive).
+  email            String
+  passwordHash     String
+  role             Role          @default(AGENT)
+  status           UserStatus    @default(ACTIVE)
+  // When, and by whom, this user was last deactivated — cleared on reactivation (the Auditoria keeps the history).
+  deactivatedAt    DateTime?
+  deactivatedBy    User?         @relation("UserDeactivatedBy", fields: [deactivatedById], references: [id], onDelete: SetNull)
+  deactivatedById  String?
+  deactivatedUsers User[]        @relation("UserDeactivatedBy")
+  presence         AgentPresence @default(OFFLINE)
+  photoUrl         String?
+  themePreference  String        @default("AUTO") // LIGHT | DARK | AUTO
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  lastAccessAt     DateTime?
 
   // Where this user works — drives which STATE/MUNICIPAL holidays block
   // their access automatically (a NATIONAL holiday always applies
@@ -133,6 +139,7 @@ model User {
   // there (not listed here) means a flow outlives its creator's account.
   createdFlows Flow[]
 
+  @@index([email])
   @@index([role])
   @@index([status])
   @@index([whatsappConnectionId])
