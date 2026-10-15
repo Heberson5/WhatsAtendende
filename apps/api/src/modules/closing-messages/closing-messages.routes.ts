@@ -30,6 +30,8 @@ const bodySchema = z.object({
   name: z.string().min(1).max(120),
   text: z.string().min(1).max(4096),
   active: z.boolean(),
+  // Left out by an older client: with the name, as always.
+  showSenderName: z.boolean().default(true),
   userIds: z.array(z.string().uuid()),
   connectionScope: connectionScopeSchema,
 });

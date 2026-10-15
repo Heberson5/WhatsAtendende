@@ -311,8 +311,9 @@ async function sendToContact<T>(connectionId: string, contactPhone: string, send
 // to the next — WhatsApp's own bold markdown (*text*) renders on the phone.
 // Only ever applied to the text actually sent over the wire; the stored
 // Message.body keeps exactly what the agent typed.
-export function withSenderPrefix(senderDisplayName: string, text: string): string {
-  return `*${senderDisplayName}:*\n\n${text}`;
+// Null = the message goes without it (an automatic message whose "Mostrar o nome do atendente no topo" is off).
+export function withSenderPrefix(senderDisplayName: string | null, text: string): string {
+  return senderDisplayName === null ? text : `*${senderDisplayName}:*\n\n${text}`;
 }
 
 /**
@@ -1318,7 +1319,7 @@ export async function sendOutboundText(
   messageId: string,
   contactPhone: string,
   text: string,
-  senderDisplayName: string,
+  senderDisplayName: string | null,
   replyToProviderMessageId?: string,
   replyToText?: string | null,
   replyToParticipantJid?: string | null
@@ -1363,7 +1364,7 @@ export async function sendOutboundFile(
   buffer: Buffer,
   fileName: string,
   mimeType: string,
-  senderDisplayName: string,
+  senderDisplayName: string | null,
   caption?: string
 ) {
   return sendWithTimeoutGuard(messageId, "file", () =>

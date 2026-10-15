@@ -65,7 +65,8 @@ export interface CreateOutboundMessageInput {
 export async function createOutboundMessage(input: CreateOutboundMessageInput) {
   const conversation = await prisma.conversation.findUnique({ where: { id: input.conversationId } });
   if (!conversation) throw Errors.notFound("Conversa nao encontrada");
-  if (conversation.assignedAgentId !== input.agentId) throw Errors.forbidden("Esta conversa pertence a outro atendente");
+  // During a Gestão intervention only the person intervening writes; otherwise the assigned agent.
+  if ((conversation.interventionById ?? conversation.assignedAgentId) !== input.agentId) throw Errors.forbidden("Esta conversa pertence a outro atendente");
   if (!["IN_PROGRESS", "TRANSFERRED"].includes(conversation.status)) {
     throw Errors.badRequest("Conversa nao esta em atendimento");
   }

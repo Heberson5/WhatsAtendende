@@ -58,6 +58,7 @@ describe("Respostas › Aceite: quem pode usar a mensagem", () => {
       trigger: "ACCEPT",
       name: "Do Bruno",
       text: "Oi",
+      showSenderName: true,
       active: true,
       connectionScope: { allConnections: true, connections: [] },
       userScope: { allUsers: false, users: [{ id: "u-bruno", displayName: "Bruno" }] },

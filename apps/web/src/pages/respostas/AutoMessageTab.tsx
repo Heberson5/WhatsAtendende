@@ -122,7 +122,10 @@ export function AutoMessageTab({ trigger, description, emptyMessage }: { trigger
             )}
             {templates?.map((t) => (
               <tr key={t.id} className="border-t border-border hover:bg-surface-alt">
-                <td className="px-4 py-3 font-medium">{t.name}</td>
+                <td className="px-4 py-3 font-medium">
+                  {t.name}
+                  <span className="block text-xs font-normal text-muted">{t.showSenderName ? "Com o nome do atendente" : "Sem o nome do atendente"}</span>
+                </td>
                 <td className="max-w-sm truncate px-4 py-3 text-muted" title={t.text}>
                   {t.text}
                 </td>

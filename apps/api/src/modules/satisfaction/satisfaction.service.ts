@@ -196,7 +196,8 @@ export async function willSendSurveyOnClose(conversationId: string): Promise<boo
 export interface HeldClosingMessage {
   text: string;
   senderId: string;
-  senderDisplayName: string;
+  /** Null when the closing message goes without the "*Nome:*" on top. */
+  senderDisplayName: string | null;
   /** The closing message's image, video or PDF — this conversation's own copy; the text goes as its caption. */
   media?: HeldReplyMedia | null;
 }
@@ -216,7 +217,7 @@ export async function sendClosingMedia(
   phone: string,
   media: HeldReplyMedia,
   caption: string,
-  senderDisplayName: string
+  senderDisplayName: string | null
 ) {
   await addAttachment(messageId, { fileName: media.fileName, mimeType: media.mimeType, sizeBytes: media.sizeBytes, storageKey: media.storageKey, kind: closingMessageType(media) });
   const buffer = fs.readFileSync(path.join(env.UPLOAD_DIR, media.storageKey));
@@ -356,7 +357,8 @@ async function deliverClosingMessage(surveyId: string, now: Date): Promise<strin
     const sender = survey.closingSenderId ? await prisma.user.findUnique({ where: { id: survey.closingSenderId }, select: { id: true } }) : null;
     const media = heldMediaOf(survey.closingMedia);
     const message = await createSystemOutboundMessage({ conversationId: conversation.id, type: closingMessageType(media), body: survey.closingText, agentId: sender?.id, allowClosed: true });
-    const senderName = survey.closingSenderName ?? "Atendimento";
+    // Null: the closing message was set to go without the agent's name on top.
+    const senderName = survey.closingSenderName;
     const sent = media
       ? await sendClosingMedia(conversation.whatsappConnectionId, message.id, conversation.contact.phone, media, survey.closingText, senderName)
       : await whatsappService.sendOutboundText(conversation.whatsappConnectionId, message.id, conversation.contact.phone, survey.closingText, senderName);

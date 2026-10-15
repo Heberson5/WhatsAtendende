@@ -23,8 +23,15 @@ export const DEFAULT_PHONE_SETTINGS: PhoneSettingsDTO = {
 
 /** Answer of the "does this number exist on WhatsApp" check made while typing a number in Nova conversa. */
 export interface PhoneLookupDTO {
-  /** null when WhatsApp could not be asked right now (connection down) — never blocks starting a conversation. */
+  /** null when WhatsApp could not be asked right now (connection down) — starting is then refused until it answers. */
   exists: boolean | null;
+  /**
+   * A WhatsApp Oficial connection can't ask WhatsApp itself: a connected QR Code connection is asked instead. True when
+   * there is none — the conversation may then start without the check.
+   */
+  unverifiable: boolean;
+  /** The QR Code connection that answered for a WhatsApp Oficial one. */
+  checkedByConnectionName: string | null;
   /** The number WhatsApp itself knows (and the conversation will use) — only when it exists. */
   phone: string | null;
   /** The typed number after the settings' rules, before asking WhatsApp. */

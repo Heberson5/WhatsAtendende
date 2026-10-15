@@ -37,6 +37,8 @@ export interface ClosingMessageInput {
   name: string;
   text: string;
   active: boolean;
+  // Left out: with the name on top (the default).
+  showSenderName?: boolean;
   userIds: string[];
   connectionScope: ConnectionScopeInput;
 }
@@ -50,7 +52,7 @@ async function assertUsersExist(userIds: string[]) {
 export async function createClosingMessage(input: ClosingMessageInput) {
   await assertUsersExist(input.userIds);
   await assertScopeConnectionsExist(input.connectionScope);
-  const row = await prisma.closingMessage.create({ data: { name: input.name, text: input.text, active: input.active, ...scopeData(input.connectionScope, "connect") } });
+  const row = await prisma.closingMessage.create({ data: { name: input.name, text: input.text, active: input.active, showSenderName: input.showSenderName, ...scopeData(input.connectionScope, "connect") } });
   await syncAssignedUsers(row.id, input.userIds);
   return getClosingMessage(row.id);
 }
@@ -62,7 +64,7 @@ export async function updateClosingMessage(id: string, input: Partial<ClosingMes
   if (input.connectionScope) await assertScopeConnectionsExist(input.connectionScope);
   await prisma.closingMessage.update({
     where: { id },
-    data: { name: input.name, text: input.text, active: input.active, ...(input.connectionScope && scopeData(input.connectionScope, "set")) },
+    data: { name: input.name, text: input.text, active: input.active, showSenderName: input.showSenderName, ...(input.connectionScope && scopeData(input.connectionScope, "set")) },
   });
   if (input.userIds) await syncAssignedUsers(id, input.userIds);
   return getClosingMessage(id);

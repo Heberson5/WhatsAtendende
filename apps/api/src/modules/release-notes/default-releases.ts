@@ -11,6 +11,60 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.9.0",
+    date: "15 out 2026",
+    name: "Intervir na conversa, nome nas mensagens automáticas e Nova conversa só com WhatsApp",
+    summary: "O gestor pode intervir em uma conversa pela Gestão e responder no lugar do atendente, as mensagens de Encerramento, Transferência e Aceite podem sair sem o nome do atendente no topo, e uma conversa nova só começa com um número que tem WhatsApp.",
+    notes: [
+      {
+        type: "novo",
+        area: "gestao",
+        title: "Intervir na conversa",
+        text: "Na Gestão, o botão Intervir assume as respostas de uma conversa em atendimento. Enquanto isso, só quem interveio responde ao cliente; o atendente acompanha em tempo real e pode deixar notas, que avisam o gestor no sino. A intervenção termina ao clicar em Devolver, Transferir ou Encerrar, e fica registrada na conversa e na Auditoria.",
+        steps: [
+          "Em Gestão, clique em Intervir na conversa em atendimento.",
+          "Responda ao cliente e deixe notas no painel que abre.",
+          "Para terminar, clique em Devolver (o atendente volta a responder), Transferir ou Encerrar.",
+        ],
+        where: "Gestão › Intervir",
+        requires: [PERMISSION.GESTAO_INTERVIR],
+        images: [
+          { src: "/notas-de-versao/intervir-gestor.webp", caption: "O gestor responde no lugar do atendente, com Devolver, Transferir e Encerrar" },
+          { src: "/notas-de-versao/intervir-nota.webp", caption: "As notas do atendente chegam na hora para o gestor", size: "small" },
+        ],
+      },
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "Conversa em intervenção: o atendente acompanha e deixa notas",
+        text: "Quando um gestor intervém em uma conversa sua, aparece o aviso de quem está intervindo. A aba Responder fica trancada, Transferir e Encerrar somem, e a Nota interna continua liberada para você alertar o gestor. Você recebe um aviso no sino quando a intervenção começa e quando a conversa volta para você.",
+        where: "Atendimento › conversa em intervenção",
+        images: [{ src: "/notas-de-versao/intervir-atendente.webp", caption: "O aviso da intervenção, com só a nota liberada", size: "small" }],
+      },
+      {
+        type: "melhoria",
+        area: "respostas",
+        title: "Mensagens automáticas com ou sem o nome do atendente",
+        text: "Encerramento, Transferência e Aceite ganharam a opção Mostrar o nome do atendente no topo. Desmarcada, o cliente recebe só o texto, sem o nome em negrito. Mensagens novas já vêm marcadas, e as que existiam continuam com o nome. As respostas rápidas continuam sempre com o nome de quem envia.",
+        where: "Respostas › Encerramento, Transferência e Aceite",
+        requires: [PERMISSION.RESPOSTAS_ENCERRAMENTO_VISUALIZAR],
+        images: [{ src: "/notas-de-versao/resposta-sem-nome.webp", caption: "Desmarcada, a prévia já mostra a mensagem sem o nome", size: "small" }],
+      },
+      {
+        type: "melhoria",
+        area: "atendimento",
+        title: "Nova conversa só com número que tem WhatsApp",
+        text: "Ao digitar o número em Nova conversa, o sistema confere no WhatsApp e só deixa iniciar quando o número tem WhatsApp. Se o WhatsApp não responder na hora, aparece Tentar de novo. Em uma conexão da API Oficial, a conferência é feita por uma conexão de QR Code conectada; se não houver nenhuma, a conversa pode começar sem conferência, com aviso. A regra vale para todo início de conversa, inclusive pela tela de Contatos.",
+        where: "Atendimento › Nova conversa › Novo número",
+        images: [
+          { src: "/notas-de-versao/nova-conversa-confirmado.webp", caption: "Número com WhatsApp: a conversa pode começar", size: "small" },
+          { src: "/notas-de-versao/nova-conversa-sem-whatsapp.webp", caption: "Número sem WhatsApp: o botão fica bloqueado", size: "small" },
+          { src: "/notas-de-versao/nova-conversa-oficial.webp", caption: "API Oficial: conferido pela conexão de QR Code", size: "small" },
+        ],
+      },
+    ],
+  },
+  {
     version: "2.8.4",
     date: "13 out 2026",
     name: "Mensagens para clientes com LID, pausa visível, @menção e 1ª resposta",

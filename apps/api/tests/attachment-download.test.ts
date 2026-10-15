@@ -1,4 +1,10 @@
-import { describe, it, expect, beforeEach, afterAll } from "vitest";
+import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
+
+// Starting a conversation now asks WhatsApp whether the number exists — answered "yes" here, these tests are about other things.
+vi.mock("../src/modules/whatsapp/whatsapp.service", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/modules/whatsapp/whatsapp.service")>();
+  return { ...actual, lookupNumber: vi.fn(async (_connectionId: string, phone: string) => ({ phone })) };
+});
 import request from "supertest";
 import { createApp } from "../src/app";
 import { prisma } from "../src/lib/prisma";

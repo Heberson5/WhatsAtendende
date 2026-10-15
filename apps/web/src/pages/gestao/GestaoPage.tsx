@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import clsx from "clsx";
-import { ArrowRightLeft, CheckCircle2, Eye, GitMerge, Inbox, Search, X } from "lucide-react";
+import { ArrowRightLeft, CheckCircle2, Eye, GitMerge, Hand, Inbox, Search, Undo2, X } from "lucide-react";
 import { PERMISSION, type ConversationListItemDTO, type ConversationStatus } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { contactDisplayName } from "../../lib/contact-display";
@@ -15,6 +15,7 @@ import { ConnectionFilter } from "../../components/common/ConnectionFilter";
 import { ReadOnlyConversationDrawer } from "../../components/gestao/ReadOnlyConversationDrawer";
 import { MergeConversationModal } from "../../components/gestao/MergeConversationModal";
 import { GestaoTransferModal } from "../../components/gestao/GestaoTransferModal";
+import { ChatPanel } from "../../components/atendimento/ChatPanel";
 import { useNow } from "../../hooks/useNow";
 import { formatActivity } from "../../lib/formatActivity";
 import { STATUS_COLOR, STATUS_LABEL } from "../../lib/conversationStatus";
@@ -24,6 +25,7 @@ import { toastWithUndo } from "../../lib/undoToast";
 // assignConversationFromGestao/returnConversationToQueue) — CLOSED/ABANDONED
 // are terminal, nothing to route there anymore.
 const ROUTABLE_STATUSES = new Set<ConversationStatus>(["IN_FLOW", "NEW", "WAITING", "IN_PROGRESS", "TRANSFERRED", "HANDLED_EXTERNALLY"]);
+const INTERVENABLE_STATUSES = new Set<ConversationStatus>(["IN_PROGRESS", "TRANSFERRED"]);
 const ALREADY_QUEUED_STATUSES = new Set<ConversationStatus>(["NEW", "WAITING"]);
 
 // Filter chips (each one a group of statuses), with live counts.
@@ -75,6 +77,11 @@ export default function GestaoPage() {
   // — see PROMPT: "Mapeie todos os menus e o que tem dentro dos menus e
   // inclua nas permissões".
   const canManage = useAuthStore((s) => s.permissions?.[PERMISSION.GESTAO_GERENCIAR]);
+  const canIntervene = useAuthStore((s) => s.permissions?.[PERMISSION.GESTAO_INTERVIR]);
+  const myId = useAuthStore((s) => s.user?.id);
+  // Gestão › Intervir: the conversation open with this manager replying in place of the agent.
+  const [interveningSnapshot, setInterveningSnapshot] = useState<ConversationListItemDTO | null>(null);
+  const interveningId = interveningSnapshot?.id ?? null;
   const queryClient = useQueryClient();
 
   // Deep link from the Dashboard's Aguardando/Em atendimento/Encerradas
@@ -138,6 +145,25 @@ export default function GestaoPage() {
     onError: (err) => toast.error(getApiErrorMessage(err)),
   });
 
+  const interveneMutation = useMutation({
+    mutationFn: async (conversationId: string) => (await api.post<ConversationListItemDTO>(`/conversations/${conversationId}/intervene`)).data,
+    onSuccess: (conversation) => {
+      setInterveningSnapshot(conversation);
+      queryClient.invalidateQueries({ queryKey: ["oversight"] });
+    },
+    onError: (err) => toast.error(getApiErrorMessage(err)),
+  });
+
+  const endInterventionMutation = useMutation({
+    mutationFn: (conversationId: string) => api.post(`/conversations/${conversationId}/intervention/end`),
+    onSuccess: () => {
+      toast.success("Conversa devolvida ao atendente.");
+      setInterveningSnapshot(null);
+      queryClient.invalidateQueries({ queryKey: ["oversight"] });
+    },
+    onError: (err) => toast.error(getApiErrorMessage(err)),
+  });
+
   const closeMutation = useMutation({
     mutationFn: ({ conversationId, sendClosingMessage }: { conversationId: string; sendClosingMessage: boolean }) =>
       api.post(`/conversations/${conversationId}/gestao-close`, { sendClosingMessage }),
@@ -145,6 +171,7 @@ export default function GestaoPage() {
       toastWithUndo("Atendimento encerrado.", conversationId, queryClient);
       queryClient.invalidateQueries({ queryKey: ["oversight"] });
       setClosing(null);
+      if (conversationId === interveningId) setInterveningSnapshot(null);
     },
     onError: (err) => toast.error(getApiErrorMessage(err)),
   });
@@ -169,6 +196,9 @@ export default function GestaoPage() {
         })
       ).data,
   });
+
+  // The live row (it refreshes on every oversight update), so the panel follows the conversation as it changes.
+  const intervening = interveningSnapshot ? ((conversations ?? []).find((c) => c.id === interveningSnapshot.id) ?? interveningSnapshot) : null;
 
   // Status is filtered here (not server-side) so every chip can show its count.
   const statusSet = status === "all" ? null : new Set(status.split(","));
@@ -379,7 +409,14 @@ export default function GestaoPage() {
                 <td className="px-3 py-3">
                   <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_COLOR[c.status]}`}>{STATUS_LABEL[c.status]}</span>
                 </td>
-                <td className="px-3 py-3">{c.assignedAgentName ?? <span className="text-muted">—</span>}</td>
+                <td className="px-3 py-3">
+                  {c.assignedAgentName ?? <span className="text-muted">—</span>}
+                  {c.intervention && (
+                    <span className="mt-0.5 flex items-center gap-1 whitespace-nowrap text-[11px] font-medium text-amber-600 dark:text-amber-400">
+                      <Hand className="h-3 w-3" /> Intervenção · {c.intervention.name}
+                    </span>
+                  )}
+                </td>
                 <td className="px-3 py-3">
                   <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs text-muted">
                     <span className="h-2 w-2 rounded-sm" style={{ backgroundColor: c.whatsappConnectionColor }} />
@@ -448,6 +485,23 @@ export default function GestaoPage() {
                         <span className="sr-only">Mesclar</span>
                       </button>
                     )}
+                    {canIntervene && INTERVENABLE_STATUSES.has(c.status) && c.assignedAgentId && c.assignedAgentId !== myId && (
+                      <button
+                        onClick={() => (c.intervention?.userId === myId ? setInterveningSnapshot(c) : interveneMutation.mutate(c.id))}
+                        disabled={Boolean(c.intervention && c.intervention.userId !== myId) || interveneMutation.isPending}
+                        className={clsx(
+                          "focus-ring ml-1 inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50",
+                          c.intervention?.userId === myId ? "bg-amber-500 text-white hover:bg-amber-600" : "text-amber-600 hover:bg-amber-500/10 dark:text-amber-400"
+                        )}
+                        title={
+                          c.intervention && c.intervention.userId !== myId
+                            ? `${c.intervention.name} já está intervindo nesta conversa`
+                            : "Assumir as respostas desta conversa — o atendente passa a só acompanhar e deixar notas"
+                        }
+                      >
+                        <Hand className="h-3.5 w-3.5" /> {c.intervention?.userId === myId ? "Abrir intervenção" : "Intervir"}
+                      </button>
+                    )}
                     <button onClick={() => setSelected(c)} className="focus-ring ml-1 inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-primary hover:bg-primary/10">
                       <Eye className="h-3.5 w-3.5" /> Visualizar
                     </button>
@@ -466,6 +520,57 @@ export default function GestaoPage() {
 
       {selected && <ReadOnlyConversationDrawer key={selected.id} conversation={selected} onClose={() => setSelected(null)} />}
 
+      {intervening && (
+        <div className="fixed inset-0 z-40 flex justify-end bg-black/30" onClick={() => setInterveningSnapshot(null)}>
+          <div className="flex h-full w-full max-w-3xl flex-col bg-surface shadow-elevated" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Intervenção na conversa">
+            <div className="flex items-center gap-2 border-b border-amber-300 bg-amber-50 px-4 py-2 text-xs text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100">
+              <Hand className="h-3.5 w-3.5 shrink-0" />
+              <span className="flex-1">
+                Você está intervindo nesta conversa. {intervening.assignedAgentName ?? "O atendente"} acompanha e pode deixar notas, mas só você responde ao cliente.
+              </span>
+              <button onClick={() => setInterveningSnapshot(null)} className="focus-ring rounded-full p-1 hover:bg-amber-100 dark:hover:bg-amber-500/20" aria-label="Fechar">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1">
+              <ChatPanel
+                key={intervening.id}
+                conversation={intervening}
+                onClosed={() => setInterveningSnapshot(null)}
+                headerActions={
+                  <>
+                    <button
+                      onClick={() => endInterventionMutation.mutate(intervening.id)}
+                      disabled={endInterventionMutation.isPending}
+                      className="focus-ring flex items-center gap-1.5 rounded-card border border-amber-400 px-2 py-1.5 text-xs font-semibold text-amber-700 hover:bg-amber-50 disabled:opacity-60 dark:text-amber-300 dark:hover:bg-amber-500/10 sm:px-3"
+                      title={`Devolver a conversa para ${intervening.assignedAgentName ?? "o atendente"}`}
+                    >
+                      <Undo2 className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Devolver</span>
+                    </button>
+                    {canManage && (
+                      <button
+                        onClick={() => setTransferring([intervening])}
+                        className="focus-ring flex items-center gap-1.5 rounded-card border border-border px-2 py-1.5 text-xs font-medium hover:bg-surface-alt sm:px-3"
+                      >
+                        <ArrowRightLeft className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Transferir</span>
+                      </button>
+                    )}
+                    {canManage && (
+                      <button
+                        onClick={() => setClosing(intervening)}
+                        className="focus-ring flex items-center gap-1.5 rounded-card bg-primary px-2 py-1.5 text-xs font-semibold text-primary-fg hover:opacity-90 sm:px-3"
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Encerrar</span>
+                      </button>
+                    )}
+                  </>
+                }
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       {merging && (
         <MergeConversationModal
           conversation={merging}
@@ -483,6 +588,7 @@ export default function GestaoPage() {
           }}
           onTransferred={() => {
             if (bulkTransferring) setSelectedIds(new Set());
+            if (transferring?.some((c) => c.id === interveningId)) setInterveningSnapshot(null);
             setTransferring(null);
             setBulkTransferring(false);
           }}

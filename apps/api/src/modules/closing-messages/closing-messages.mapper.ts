@@ -7,6 +7,7 @@ interface ClosingMessageRow extends ReplyMediaColumns {
   name: string;
   text: string;
   active: boolean;
+  showSenderName: boolean;
   assignedUsers: { id: string; displayName: string }[];
   allConnections: boolean;
   connections: { id: string; name: string }[];
@@ -21,6 +22,7 @@ export function toClosingMessageDTO(row: ClosingMessageRow): ClosingMessageDTO {
     text: row.text,
     media: toReplyMediaDTO(row),
     active: row.active,
+    showSenderName: row.showSenderName,
     assignedUsers: row.assignedUsers,
     connectionScope: toConnectionScopeDTO(row),
     createdAt: row.createdAt.toISOString(),

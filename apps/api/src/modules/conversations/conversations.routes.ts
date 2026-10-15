@@ -255,7 +255,7 @@ async function sendOutboundTextViaChannel(
   conversation: { channel: Channel; whatsappConnectionId: string | null; contact: { phone: string | null; externalUserId: string | null } },
   messageId: string,
   text: string,
-  senderDisplayName: string
+  senderDisplayName: string | null
 ) {
   if (conversation.channel === "WHATSAPP") {
     return sendOutboundText(conversation.whatsappConnectionId!, messageId, conversation.contact.phone!, text, senderDisplayName);
@@ -285,7 +285,7 @@ async function sendAutoMessage(
     cliente: conversation.contact.name ?? conversation.contact.phone ?? "",
   });
   const message = await createSystemOutboundMessage({ conversationId: conversation.id, type: "TEXT", body: text, agentId: sender.id });
-  await sendOutboundTextViaChannel(conversation, message.id, text, sender.name);
+  await sendOutboundTextViaChannel(conversation, message.id, text, template.showSenderName ? sender.name : null);
   realtimeEvents.newMessage(conversation.id, conversation.assignedAgentId);
 }
 
@@ -319,6 +319,7 @@ conversationsRouter.post(
   asyncHandler(async (req, res) => {
     const existing = await service.getConversationOrThrow(req.params.id);
     service.assertAgentCanAccessConversation(existing, req.auth!);
+    service.assertCanReplyToConversation(existing, req.auth!.userId);
     const { toAgentId, note } = transferSchema.parse(req.body);
     const conversation = await service.transferConversation(req.params.id, req.auth!.userId, toAgentId, req.auth!.userId, note);
     await writeAudit({ userId: req.auth!.userId, action: "CONVERSATION_TRANSFERRED", entity: "Conversation", entityId: conversation.id, ipAddress: req.ip ?? null, metadata: { toAgentId, note, offlineAtTransfer: conversation.pendingTransferDeadline !== null } });
@@ -443,6 +444,45 @@ conversationsRouter.post(
   })
 );
 
+// Gestão › Intervir: the manager takes over replying; "Devolver" hands it back. Transferring or closing from Gestão ends it too.
+conversationsRouter.post(
+  "/:id/intervene",
+  requirePermission(PERMISSION.GESTAO_ACESSAR),
+  requirePermission(PERMISSION.GESTAO_INTERVIR),
+  asyncHandler(async (req, res) => {
+    await assertManagerCanManageConversationConnection(req);
+    const conversation = await service.startIntervention(req.params.id, req.auth!.userId);
+    await writeAudit({
+      userId: req.auth!.userId,
+      action: "CONVERSATION_INTERVENTION_STARTED",
+      entity: "Conversation",
+      entityId: conversation.id,
+      ipAddress: req.ip ?? null,
+      metadata: { agentId: conversation.assignedAgentId },
+    });
+    res.json(toConversationListItemDTO(conversation, true));
+  })
+);
+
+conversationsRouter.post(
+  "/:id/intervention/end",
+  requirePermission(PERMISSION.GESTAO_ACESSAR),
+  requirePermission(PERMISSION.GESTAO_INTERVIR),
+  asyncHandler(async (req, res) => {
+    await assertManagerCanManageConversationConnection(req);
+    const conversation = await service.endIntervention(req.params.id, req.auth!.userId);
+    await writeAudit({
+      userId: req.auth!.userId,
+      action: "CONVERSATION_INTERVENTION_ENDED",
+      entity: "Conversation",
+      entityId: conversation.id,
+      ipAddress: req.ip ?? null,
+      metadata: { agentId: conversation.assignedAgentId },
+    });
+    res.json(toConversationListItemDTO(conversation, true));
+  })
+);
+
 const gestaoCloseSchema = z.object({ sendClosingMessage: z.boolean() });
 conversationsRouter.post(
   "/:id/gestao-close",
@@ -479,12 +519,13 @@ conversationsRouter.post(
         });
         // Its attachment (WhatsApp only), copied for this conversation — the text goes as the caption.
         const media = existing.channel === "WHATSAPP" ? copyReplyMediaFile(closingMessage) : null;
+        const senderName = closingMessage.showSenderName ? req.auth!.displayName : null;
         if (await willSendSurveyOnClose(existing.id)) {
-          heldClosingMessage = { text, senderId: req.auth!.userId, senderDisplayName: req.auth!.displayName, media };
+          heldClosingMessage = { text, senderId: req.auth!.userId, senderDisplayName: senderName, media };
         } else {
           const outboundMessage = await createSystemOutboundMessage({ conversationId: existing.id, type: closingMessageType(media), body: text, agentId: req.auth!.userId });
-          if (media) await sendClosingMedia(existing.whatsappConnectionId!, outboundMessage.id, existing.contact.phone!, media, text, req.auth!.displayName);
-          else await sendOutboundTextViaChannel(existing, outboundMessage.id, text, req.auth!.displayName);
+          if (media) await sendClosingMedia(existing.whatsappConnectionId!, outboundMessage.id, existing.contact.phone!, media, text, senderName);
+          else await sendOutboundTextViaChannel(existing, outboundMessage.id, text, senderName);
           realtimeEvents.newMessage(existing.id, existing.assignedAgentId);
         }
       }
@@ -558,6 +599,7 @@ conversationsRouter.post(
   asyncHandler(async (req, res) => {
     const existing = await service.getConversationOrThrow(req.params.id);
     service.assertAgentCanAccessConversation(existing, req.auth!);
+    service.assertCanReplyToConversation(existing, req.auth!.userId);
 
     // Auto-send this agent's assigned closing message, if any, BEFORE
     // actually closing — createOutboundMessage only accepts an
@@ -584,8 +626,9 @@ conversationsRouter.post(
       });
       // Its attachment (WhatsApp only), copied for this conversation — the text goes as the caption.
       const media = existing.channel === "WHATSAPP" ? copyReplyMediaFile(closingMessage) : null;
+        const senderName = closingMessage.showSenderName ? req.auth!.displayName : null;
       if (await willSendSurveyOnClose(existing.id)) {
-        heldClosingMessage = { text, senderId: req.auth!.userId, senderDisplayName: req.auth!.displayName, media };
+        heldClosingMessage = { text, senderId: req.auth!.userId, senderDisplayName: senderName, media };
       } else {
         const outboundMessage = await createOutboundMessage({
           conversationId: existing.id,
@@ -594,8 +637,8 @@ conversationsRouter.post(
           body: text,
           automatic: true,
         });
-        if (media) await sendClosingMedia(existing.whatsappConnectionId!, outboundMessage.id, existing.contact.phone!, media, text, req.auth!.displayName);
-        else await sendOutboundTextViaChannel(existing, outboundMessage.id, text, req.auth!.displayName);
+        if (media) await sendClosingMedia(existing.whatsappConnectionId!, outboundMessage.id, existing.contact.phone!, media, text, senderName);
+        else await sendOutboundTextViaChannel(existing, outboundMessage.id, text, senderName);
         realtimeEvents.newMessage(existing.id, req.auth!.userId);
       }
     }
