@@ -12,6 +12,8 @@ import { env } from "../../config/env";
 import type { HeldReplyMedia } from "../../lib/reply-media";
 import { addAttachment, createSystemOutboundMessage } from "../messages/messages.service";
 import { isGratitudeMessage } from "./gratitude";
+import { looksLikeScoreAttempt, parseSurveyScore } from "./survey-score";
+export { parseSurveyScore };
 
 /**
  * Pesquisa de satisfação (NPS). Respostas › Pesquisa holds a list of surveys
@@ -39,7 +41,6 @@ const OFFICIAL_FREE_TEXT_WINDOW_MS = 24 * 60 * 60 * 1000;
 const CLOSING_AFTER_ANSWER_MS = 10_000;
 export const DEFAULT_CLOSING_WAIT_MINUTES = 30;
 // A score answer is short ("10", "nota 9", "7 pontos") — anything longer is a new subject.
-const MAX_SCORE_ANSWER_LENGTH = 20;
 const MAX_SCORE = 10;
 // NPS buckets: 9–10 promoters, 7–8 passives, 0–6 detractors.
 const PROMOTER_MIN_SCORE = 9;
@@ -48,6 +49,7 @@ const PASSIVE_MIN_SCORE = 7;
 const LEGACY_QUESTION_LABEL = "Pesquisa anterior (nota de 1 a 5)";
 // For a score on a survey whose setup was deleted in the meantime.
 const DEFAULT_THANKS = "Obrigado pela sua avaliação!";
+export const SCORE_REASK_TEXT = "Não entendi sua nota. Responda só com um número de 0 a 10, por favor.";
 
 type SurveyRow = SatisfactionSurveyConfig & { connections: { id: string; name: string }[] };
 
@@ -126,16 +128,6 @@ async function resolveQuestionId(text: string): Promise<string> {
   const existing = await prisma.satisfactionQuestion.findFirst({ where: { text }, orderBy: { createdAt: "desc" }, select: { id: true } });
   if (existing) return existing.id;
   return (await prisma.satisfactionQuestion.create({ data: { text }, select: { id: true } })).id;
-}
-
-/** "10", "nota 9", "7 pontos" → the score (0–10); anything else → null. */
-export function parseSurveyScore(text: string | null | undefined): number | null {
-  const trimmed = text?.trim() ?? "";
-  if (!trimmed || trimmed.length > MAX_SCORE_ANSWER_LENGTH) return null;
-  const match = /^\D*(\d{1,2})\D*$/.exec(trimmed);
-  if (!match) return null;
-  const score = Number(match[1]);
-  return score <= MAX_SCORE ? score : null;
 }
 
 async function sendSurveyText(conversation: { id: string; whatsappConnectionId: string }, phone: string, text: string): Promise<void> {
@@ -447,7 +439,7 @@ export async function captureSurveyAnswer(
   const score = parseSurveyScore(message.body);
 
   if (score !== null && survey.answeredAt === null) {
-    const recorded = await prisma.satisfactionSurvey.updateMany({ where: { id: survey.id, answeredAt: null }, data: { score, answeredAt: now } });
+    const recorded = await prisma.satisfactionSurvey.updateMany({ where: { id: survey.id, answeredAt: null }, data: { score, answeredAt: now, answerText: message.body } });
     if (recorded.count === 0) {
       // The same answer arrived twice at once — the other one did the work.
       await keepOnClosedConversation(survey.conversationId, message);
@@ -471,6 +463,15 @@ export async function captureSurveyAnswer(
   // A repeated score ("10" again) counts as the answer it already is, like a plain "obrigado".
   if (waiting && (score !== null || isGratitudeMessage(message.body))) {
     await keepOnClosedConversation(survey.conversationId, message);
+    return true;
+  }
+
+  // Tried to give a score we could not read ("1o0", "nota máxima"): ask once for just the number instead of losing
+  // the rating. Anything else — a question, a complaint, a photo — is the customer wanting to talk, as before.
+  if (survey.answeredAt === null && survey.reaskedAt === null && looksLikeScoreAttempt(message.body)) {
+    const asked = await prisma.satisfactionSurvey.updateMany({ where: { id: survey.id, reaskedAt: null }, data: { reaskedAt: now } });
+    await keepOnClosedConversation(survey.conversationId, message);
+    if (asked.count > 0 && contact.phone) await sendSurveyText({ id: survey.conversationId, whatsappConnectionId: connectionId }, contact.phone, SCORE_REASK_TEXT);
     return true;
   }
 

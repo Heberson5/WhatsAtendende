@@ -125,6 +125,7 @@ export const COLUMN_SCREENS = {
       { key: "agent", label: "Atendente" },
       { key: "connection", label: "Conexão" },
       { key: "score", label: "Nota" },
+      { key: "answer", label: "Resposta do cliente" },
       { key: "category", label: "Classificação" },
     ],
   },

@@ -619,6 +619,12 @@ export interface SatisfactionResponseDTO {
   surveyName: string | null;
   question: string | null;
   score: number | null;
+  /** What the customer wrote (null on old surveys whose answer could not be found). */
+  answerText: string | null;
+  /** The score the current reading rules get from answerText, when it differs from score — a reading to review. */
+  rereadScore: number | null;
+  /** Set when a manager fixed the score: what had been read, and who fixed it. */
+  correction: { originalScore: number | null; byName: string | null; at: string } | null;
   category: SatisfactionCategory | null;
   /** answered, awaiting (still inside the answer window) or expired (the customer never answered). */
   status: "answered" | "awaiting" | "expired";
@@ -961,6 +967,8 @@ export const PERMISSION = {
   GESTAO_INTERVIR: "gestao.intervir",
   DASHBOARD_ACESSAR: "dashboard.acessar",
   RELATORIOS_ACESSAR: "relatorios.acessar",
+  // Fix a satisfaction score the system read wrong from the customer's text.
+  RELATORIOS_PESQUISA_CORRIGIR: "relatorios.pesquisa.corrigir",
   // Usuários — split from the old single USUARIOS_GERENCIAR into granular
   // visualizar/adicionar/editar/inativar. Hard delete (irreversible) stays
   // ADMIN-only via requireRole, same as before — never part of this matrix.
@@ -1169,6 +1177,14 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     description: "Visualizar e exportar relatórios (CSV, PDF, Excel).",
     editableRoles: ["AGENT", "MANAGER"],
     defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.RELATORIOS_PESQUISA_CORRIGIR,
+    group: "Relatórios",
+    label: "Pesquisa de satisfação — corrigir nota",
+    description: "Corrigir a nota que o sistema leu da resposta do cliente. Fica registrado na Auditoria.",
+    editableRoles: ["MANAGER"],
+    defaultAllowed: { MANAGER: false },
   },
   {
     key: PERMISSION.USUARIOS_VISUALIZAR,

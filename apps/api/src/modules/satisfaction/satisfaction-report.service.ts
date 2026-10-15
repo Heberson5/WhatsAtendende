@@ -8,6 +8,14 @@ import type {
 } from "@whatsatendende/types";
 import { prisma } from "../../lib/prisma";
 import { calculateNps, getCurrentQuestion, getSatisfactionSettings } from "./satisfaction.service";
+import { parseSurveyScore } from "./survey-score";
+
+/** A recorded score the current reading rules would read differently ("1o" once read as 1) — unless a manager already fixed it. */
+function rereadScore(r: { score: number | null; answerText: string | null; scoreCorrectedAt: Date | null }): number | null {
+  if (r.score === null || r.scoreCorrectedAt || !r.answerText) return null;
+  const reread = parseSurveyScore(r.answerText);
+  return reread !== null && reread !== r.score ? reread : null;
+}
 
 /**
  * Relatórios › Pesquisa de satisfação: the 0–10 (NPS) surveys sent in the
@@ -100,6 +108,10 @@ export async function getSatisfactionReport(params: SatisfactionReportParams): P
       answeredAt: true,
       expiresAt: true,
       score: true,
+      answerText: true,
+      originalScore: true,
+      scoreCorrectedAt: true,
+      scoreCorrectedBy: { select: { displayName: true } },
       agentId: true,
       agent: { select: { displayName: true } },
       whatsappConnection: { select: { id: true, name: true, color: true } },
@@ -175,6 +187,9 @@ export async function getSatisfactionReport(params: SatisfactionReportParams): P
     surveyName: r.config?.name ?? null,
     question: r.question?.text ?? null,
     score: r.score,
+    answerText: r.answerText,
+    rereadScore: rereadScore(r),
+    correction: r.scoreCorrectedAt ? { originalScore: r.originalScore, byName: r.scoreCorrectedBy?.displayName ?? null, at: r.scoreCorrectedAt.toISOString() } : null,
     category: r.score === null ? null : categoryOf(r.score),
     status: r.score !== null ? "answered" : r.expiresAt > now ? "awaiting" : "expired",
   }));
@@ -245,6 +260,7 @@ export function responsesToRows(report: SatisfactionReportDTO, tzOffsetMinutes: 
     Conexão: r.connectionName,
     Pesquisa: r.surveyName ?? "-",
     Nota: r.score ?? "-",
+    "Resposta do cliente": r.answerText ?? "-",
     Classificação: r.category ? CATEGORY_LABEL[r.category] : STATUS_LABEL[r.status],
   }));
 }

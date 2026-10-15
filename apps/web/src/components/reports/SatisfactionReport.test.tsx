@@ -30,6 +30,9 @@ const response = (id: string, contactName: string, score: number | null, categor
   surveyName: "Pesquisa",
   question: "De 0 a 10?",
   score,
+  answerText: score === null ? null : String(score),
+  rereadScore: null,
+  correction: null,
   category,
   status: score === null ? ("awaiting" as const) : ("answered" as const),
 });

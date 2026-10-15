@@ -1,10 +1,10 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Eye, Search } from "lucide-react";
 import clsx from "clsx";
 import { toast } from "sonner";
-import { NPS_SMALL_SAMPLE, columnLabel, type ConversationListItemDTO, type SatisfactionCategory, type SatisfactionReportDTO, type SatisfactionResponseDTO } from "@whatsatendende/types";
+import { NPS_SMALL_SAMPLE, PERMISSION, columnLabel, type ConversationListItemDTO, type SatisfactionCategory, type SatisfactionReportDTO, type SatisfactionResponseDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { formatPhone } from "../../lib/format-phone";
 import { npsDelta, npsZone } from "../../lib/dashboardMetrics";
@@ -13,6 +13,7 @@ import { ReadOnlyConversationDrawer } from "../gestao/ReadOnlyConversationDrawer
 import type { PeriodValue } from "../common/PeriodFilter";
 import { ColumnViewMenu } from "../../components/common/ColumnViewMenu";
 import { useColumnView } from "../../hooks/useColumnView";
+import { useAuthStore } from "../../store/auth-store";
 
 const formatNps = (nps: number | null) => (nps === null ? "–" : String(nps));
 const DELTA_TONE = { up: "text-success", down: "text-danger", same: "text-muted" } as const;
@@ -40,13 +41,14 @@ const CATEGORY: Record<SatisfactionCategory, { label: string; chip: string; colo
 const ZONE_TEXT = { success: "text-success", primary: "text-primary", warning: "text-warning", danger: "text-danger" } as const;
 const npsTone = (nps: number | null) => (nps === null ? "text-muted" : ZONE_TEXT[npsZone(nps).tone]);
 
-type ResponseFilter = "answered" | SatisfactionCategory | "unanswered";
+type ResponseFilter = "answered" | SatisfactionCategory | "unanswered" | "review";
 const RESPONSE_FILTERS: { key: ResponseFilter; label: string }[] = [
   { key: "answered", label: "Respondidas" },
   { key: "detractor", label: "Detratores (0–6)" },
   { key: "passive", label: "Neutros (7–8)" },
   { key: "promoter", label: "Promotores (9–10)" },
   { key: "unanswered", label: "Sem resposta" },
+  { key: "review", label: "Para revisar" },
 ];
 
 function when(iso: string | null) {
@@ -113,6 +115,17 @@ export function SatisfactionReport({
     if (rated.length) onAgentsLoaded(rated);
   }, [data, onAgentsLoaded]);
 
+  const canCorrect = useAuthStore((s) => s.permissions?.[PERMISSION.RELATORIOS_PESQUISA_CORRIGIR]);
+  const queryClient = useQueryClient();
+  const correctMutation = useMutation({
+    mutationFn: ({ surveyId, score }: { surveyId: string; score: number }) => api.patch(`/reports/satisfaction/${surveyId}/score`, { score }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["report", "satisfaction"] });
+      toast.success("Nota corrigida.");
+    },
+    onError: (err) => toast.error(getApiErrorMessage(err)),
+  });
+
   const openMutation = useMutation({
     mutationFn: async (conversationId: string) => (await api.get<ConversationListItemDTO>(`/conversations/${conversationId}`)).data,
     onSuccess: setOpenConversation,
@@ -121,7 +134,13 @@ export function SatisfactionReport({
 
   const responses = (data?.responses ?? []).filter((r) => {
     const byFilter =
-      filter === "answered" ? r.status === "answered" : filter === "unanswered" ? r.status !== "answered" : r.category === filter;
+      filter === "answered"
+        ? r.status === "answered"
+        : filter === "unanswered"
+          ? r.status !== "answered"
+          : filter === "review"
+            ? r.rereadScore !== null
+            : r.category === filter;
     const q = search.trim().toLowerCase();
     const digits = q.replace(/\D/g, "");
     const bySearch = !q || (r.contactName ?? "").toLowerCase().includes(q) || (digits.length > 0 && (r.contactPhone ?? "").includes(digits));
@@ -445,7 +464,12 @@ export function SatisfactionReport({
                 </tr>
               )}
               {responses.map((r) => (
-                <ResponseRow key={r.surveyId} response={r} columns={responsesView.visibleKeys} opening={openMutation.isPending && openMutation.variables === r.conversationId} onOpen={() => openMutation.mutate(r.conversationId)} />
+                <ResponseRow
+                  key={r.surveyId}
+                  response={r}
+                  columns={responsesView.visibleKeys}
+                  onCorrect={canCorrect ? (score) => correctMutation.mutate({ surveyId: r.surveyId, score }) : undefined}
+                  opening={openMutation.isPending && openMutation.variables === r.conversationId} onOpen={() => openMutation.mutate(r.conversationId)} />
               ))}
             </tbody>
           </table>
@@ -457,7 +481,9 @@ export function SatisfactionReport({
   );
 }
 
-function ResponseCell({ column, response: r }: { column: string; response: SatisfactionResponseDTO }) {
+const SCORE_OPTIONS = Array.from({ length: 11 }, (_, n) => n);
+
+function ResponseCell({ column, response: r, onCorrect }: { column: string; response: SatisfactionResponseDTO; onCorrect?: (score: number) => void }) {
   switch (column) {
     case "date":
       return <td className="whitespace-nowrap px-4 py-2.5 tabular-nums text-muted">{when(r.answeredAt ?? r.sentAt)}</td>;
@@ -473,7 +499,48 @@ function ResponseCell({ column, response: r }: { column: string; response: Satis
     case "connection":
       return <td className="px-4 py-2.5 text-muted">{r.connectionName}</td>;
     case "score":
-      return <td className="px-4 py-2.5 text-right text-base font-semibold tabular-nums">{r.score ?? "–"}</td>;
+      return (
+        <td className="px-4 py-2.5 text-right">
+          {onCorrect && r.score !== null ? (
+            <select
+              value={r.score}
+              onChange={(e) => onCorrect(Number(e.target.value))}
+              aria-label={`Corrigir a nota de ${r.contactName ?? r.contactPhone ?? "cliente"}`}
+              title="Corrigir a nota"
+              className="focus-ring rounded-md border border-border bg-surface px-1.5 py-0.5 text-base font-semibold tabular-nums"
+            >
+              {SCORE_OPTIONS.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <span className="text-base font-semibold tabular-nums">{r.score ?? "–"}</span>
+          )}
+          {r.rereadScore !== null && (
+            <span className="mt-0.5 block whitespace-nowrap text-[11px] font-medium text-warning" title="Com a leitura atual, essa resposta vale outra nota">
+              Revisar: parece {r.rereadScore}
+            </span>
+          )}
+          {r.correction && (
+            <span
+              className="mt-0.5 block whitespace-nowrap text-[11px] text-muted"
+              title={`Corrigida por ${r.correction.byName ?? "—"} em ${new Date(r.correction.at).toLocaleDateString("pt-BR")}`}
+            >
+              corrigida (era {r.correction.originalScore ?? "–"})
+            </span>
+          )}
+        </td>
+      );
+    case "answer":
+      return (
+        <td className="max-w-[16rem] px-4 py-2.5 text-xs text-muted">
+          <span className="line-clamp-2" title={r.answerText ?? undefined}>
+            {r.answerText ?? "–"}
+          </span>
+        </td>
+      );
     case "category":
       return (
         <td className="px-4 py-2.5">
@@ -489,12 +556,24 @@ function ResponseCell({ column, response: r }: { column: string; response: Satis
   }
 }
 
-function ResponseRow({ response: r, columns, opening, onOpen }: { response: SatisfactionResponseDTO; columns: string[]; opening: boolean; onOpen: () => void }) {
+function ResponseRow({
+  response: r,
+  columns,
+  onCorrect,
+  opening,
+  onOpen,
+}: {
+  response: SatisfactionResponseDTO;
+  columns: string[];
+  onCorrect?: (score: number) => void;
+  opening: boolean;
+  onOpen: () => void;
+}) {
   return (
     <tr className="border-t border-border hover:bg-surface-alt">
       <td className="w-0 p-0" />
       {columns.map((column) => (
-        <ResponseCell key={column} column={column} response={r} />
+        <ResponseCell key={column} column={column} response={r} onCorrect={onCorrect} />
       ))}
       <td className="px-4 py-2 text-right">
         <button

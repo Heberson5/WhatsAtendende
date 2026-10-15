@@ -68,6 +68,7 @@ const ACTION_LABEL: Record<string, string> = {
   PROFILE_PHOTO_UPLOADED: "Foto de perfil enviada",
   PROFILE_PHOTO_REMOVED: "Foto de perfil removida",
   PROFILE_PASSWORD_CHANGED: "Senha alterada",
+  SATISFACTION_SCORE_CORRECTED: "Nota da pesquisa corrigida",
   COLUMN_VIEW_UPDATED: "Visão de colunas alterada",
   COLUMN_VIEW_DELETED: "Visão de colunas excluída",
   SETTINGS_BRANDING_UPDATED: "Identidade visual atualizada",

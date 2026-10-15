@@ -45,6 +45,7 @@ const SATISFACTION_EXPORT_COLUMNS: Record<"agents" | "responses", Record<string,
     agent: ["Atendente"],
     connection: ["Conexão"],
     score: ["Nota"],
+    answer: ["Resposta do cliente"],
     category: ["Classificação"],
   },
 };

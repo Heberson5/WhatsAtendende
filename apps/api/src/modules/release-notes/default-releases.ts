@@ -13,8 +13,8 @@ export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
     version: "2.10.0",
     date: "16 out 2026",
-    name: "Visões de colunas em todas as tabelas e cadastro de usuários mais seguro",
-    summary: "Toda tabela do sistema ganhou o botão ⋮ para escolher quais colunas aparecem e em que ordem, só por agora ou como padrão, e as exportações seguem essa escolha. Em Usuários, um e-mail pode ser reaproveitado de quem foi desativado, a desativação fica registrada com data e responsável, e trocar o nome pede confirmação.",
+    name: "Visões de colunas, notas da pesquisa mais bem lidas e cadastro de usuários mais seguro",
+    summary: "Toda tabela do sistema ganhou o botão ⋮ para escolher quais colunas aparecem e em que ordem, só por agora ou como padrão, e as exportações seguem essa escolha. A pesquisa de satisfação entende notas como \"1o\" e \"posso dar 10\", e o relatório mostra a resposta do cliente e permite corrigir a nota. Em Usuários, um e-mail pode ser reaproveitado de quem foi desativado, a desativação fica registrada com data e responsável, e trocar o nome pede confirmação.",
     notes: [
       {
         type: "novo",
@@ -40,6 +40,23 @@ export const DEFAULT_RELEASES: ReleaseContent[] = [
           { src: "/notas-de-versao/visoes-configuracoes.webp", caption: "As visões salvas, com quem pode usar cada uma" },
           { src: "/notas-de-versao/visoes-compartilhada.webp", caption: "Quem recebe a visão já abre a tela com ela" },
         ],
+      },
+      {
+        type: "melhoria",
+        area: "dashboard",
+        title: "Pesquisa de satisfação entende mais jeitos de dar a nota",
+        text: "O sistema passou a entender notas escritas de outro jeito: com letra no lugar do zero (\"1o\" vale 10), por extenso (\"dez\", \"nota nove\"), como \"10/10\" ou \"8 de 10\", e dentro de uma frase (\"Precisei primeira vez posso da 10\"). Quando a resposta tem duas notas diferentes, o sistema não escolhe nenhuma. Se o cliente tentou dar a nota e não deu para entender, ele recebe uma vez \"Não entendi sua nota. Responda só com um número de 0 a 10\". Se ele escreve outra coisa, como uma pergunta ou uma reclamação, a conversa segue para a fila como antes.",
+        where: "Pesquisa de satisfação",
+        requires: [PERMISSION.RELATORIOS_ACESSAR],
+      },
+      {
+        type: "novo",
+        area: "dashboard",
+        title: "Resposta do cliente e correção da nota no relatório",
+        text: "Em Relatórios › Pesquisa de satisfação, a coluna Resposta do cliente mostra o que ele escreveu. O filtro Para revisar mostra as notas que a leitura nova entende diferente, como os \"1o\" que antes viravam 1. Quem tem a permissão Corrigir nota pode escolher a nota certa na própria tabela; a nota antiga fica anotada (\"corrigida, era 1\") e a correção vai para a Auditoria. A resposta do cliente também sai nas exportações.",
+        where: "Relatórios › Pesquisa de satisfação",
+        requires: [PERMISSION.RELATORIOS_ACESSAR],
+        images: [{ src: "/notas-de-versao/pesquisa-revisar.webp", caption: "A resposta \"1o\" para revisar e a nota corrigida" }],
       },
       {
         type: "melhoria",
