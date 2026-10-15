@@ -6,6 +6,8 @@ import { PERMISSION, type MessageTemplateDTO } from "@whatsatendende/types";
 import { useAuthStore } from "../../store/auth-store";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { TemplateFormModal } from "./TemplateFormModal";
+import { ColumnViewMenu } from "../../components/common/ColumnViewMenu";
+import { useColumnView } from "../../hooks/useColumnView";
 
 const CATEGORY_LABEL: Record<string, string> = { MARKETING: "Marketing", UTILITY: "Utilidade", AUTHENTICATION: "Autenticação" };
 const CATEGORY_COLOR: Record<string, string> = {
@@ -32,6 +34,7 @@ const STATUS_COLOR: Record<string, string> = {
 
 /** Cadastro de templates de mensagem para aprovação da Meta — ver PROMPT: "nova aba chamada Templates, onde será cadastrado as mensagens em que a Meta terá que aprovar ou não, nas categorias de Marketing, Utilidades e Validação [Autenticação]". */
 export function TemplatesTab() {
+  const columnView = useColumnView("respostasTemplates");
   const queryClient = useQueryClient();
   const permissions = useAuthStore((s) => s.permissions);
   const canAdicionar = permissions?.[PERMISSION.RESPOSTAS_TEMPLATES_ADICIONAR];
@@ -75,50 +78,90 @@ export function TemplatesTab() {
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-surface-alt text-left text-xs uppercase tracking-wide text-muted">
             <tr>
-              <th className="px-4 py-3">Nome</th>
-              <th className="px-4 py-3">Categoria</th>
-              <th className="px-4 py-3">Conexão</th>
-              <th className="px-4 py-3">Status</th>
+              <th className="w-0 py-3 pl-2 pr-0">
+                <ColumnViewMenu view={columnView} />
+              </th>
+              {columnView.visibleKeys.map((key) => {
+                switch (key) {
+                  case "name":
+                    return (
+                      <th key="name" className="px-4 py-3">Nome</th>
+                    );
+                  case "category":
+                    return (
+                      <th key="category" className="px-4 py-3">Categoria</th>
+                    );
+                  case "connection":
+                    return (
+                      <th key="connection" className="px-4 py-3">Conexão</th>
+                    );
+                  case "status":
+                    return (
+                      <th key="status" className="px-4 py-3">Status</th>
+                    );
+                  default:
+                    return null;
+                }
+              })}
               <th className="px-4 py-3 text-right">Ações</th>
             </tr>
           </thead>
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-muted">
+                <td colSpan={columnView.visibleKeys.length + 2} className="px-4 py-8 text-center text-muted">
                   Carregando...
                 </td>
               </tr>
             )}
             {!isLoading && templates?.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-muted">
+                <td colSpan={columnView.visibleKeys.length + 2} className="px-4 py-8 text-center text-muted">
                   Nenhum template cadastrado ainda.
                 </td>
               </tr>
             )}
             {templates?.map((t) => (
               <tr key={t.id} className="border-t border-border hover:bg-surface-alt">
-                <td className="px-4 py-3 font-mono font-medium">
-                  <span className="inline-flex items-center gap-1.5">
-                    {t.name}
-                    {t.headerType !== "NONE" && t.headerType !== "TEXT" && (
-                      <Paperclip className="h-3 w-3 text-muted" aria-label="Cabeçalho com anexo" />
-                    )}
-                  </span>
-                </td>
-                <td className="px-4 py-3">
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${CATEGORY_COLOR[t.category]}`}>{CATEGORY_LABEL[t.category]}</span>
-                </td>
-                <td className="px-4 py-3 text-muted">{t.whatsappConnectionName}</td>
-                <td className="px-4 py-3">
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLOR[t.status]}`}
-                    title={t.status === "REJECTED" && t.rejectionReason ? t.rejectionReason : undefined}
-                  >
-                    {STATUS_LABEL[t.status]}
-                  </span>
-                </td>
+                <td className="w-0 p-0" />
+                {columnView.visibleKeys.map((key) => {
+                  switch (key) {
+                    case "name":
+                      return (
+                        <td key="name" className="px-4 py-3 font-mono font-medium">
+                          <span className="inline-flex items-center gap-1.5">
+                            {t.name}
+                            {t.headerType !== "NONE" && t.headerType !== "TEXT" && (
+                              <Paperclip className="h-3 w-3 text-muted" aria-label="Cabeçalho com anexo" />
+                            )}
+                          </span>
+                        </td>
+                      );
+                    case "category":
+                      return (
+                        <td key="category" className="px-4 py-3">
+                          <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${CATEGORY_COLOR[t.category]}`}>{CATEGORY_LABEL[t.category]}</span>
+                        </td>
+                      );
+                    case "connection":
+                      return (
+                        <td key="connection" className="px-4 py-3 text-muted">{t.whatsappConnectionName}</td>
+                      );
+                    case "status":
+                      return (
+                        <td key="status" className="px-4 py-3">
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLOR[t.status]}`}
+                            title={t.status === "REJECTED" && t.rejectionReason ? t.rejectionReason : undefined}
+                          >
+                            {STATUS_LABEL[t.status]}
+                          </span>
+                        </td>
+                      );
+                    default:
+                      return null;
+                  }
+                })}
                 <td className="px-4 py-3">
                   <div className="flex justify-end gap-1">
                     {canExcluir && (

@@ -1,5 +1,5 @@
 import type { Prisma } from "@prisma/client";
-import { DEFAULT_PHONE_SETTINGS, brazilianPhoneVariants, normalizeTypedPhone } from "@whatsatendende/types";
+import { COLUMN_SCREENS, DEFAULT_PHONE_SETTINGS, brazilianPhoneVariants, normalizeTypedPhone } from "@whatsatendende/types";
 import type { ContactDetailDTO, ContactImportResultDTO, ContactListItemDTO, ContactSortField, ManagedTagDTO, PhoneSettingsDTO, TagDTO } from "@whatsatendende/types";
 import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
@@ -171,21 +171,30 @@ function csvEscape(value: unknown): string {
   return /[";\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-/** Semicolon-separated (opens straight in Excel pt-BR), with a BOM so accents survive. */
-export async function exportContactsCsv(filters: ContactFilters): Promise<string> {
+type ExportRow = Prisma.ContactGetPayload<{ include: typeof listInclude }>;
+
+const EXPORT_CELLS: Record<string, (row: ExportRow, item: ContactListItemDTO) => unknown> = {
+  name: (_r, item) => item.name,
+  phone: (_r, item) => item.phone,
+  connection: (_r, item) => item.connectionName,
+  tags: (_r, item) => item.tags.map((t) => t.name).join(", "),
+  conversations: (_r, item) => item.conversationCount,
+  firstConversationAt: (r) => r.firstConversationAt.toISOString().slice(0, 10),
+  lastInteractionAt: (r) => r.lastInteractionAt.toISOString().slice(0, 10),
+};
+
+/**
+ * Semicolon-separated (opens straight in Excel pt-BR), with a BOM so accents survive.
+ * `columns` are the keys visible in the user's column view, in their order.
+ */
+export async function exportContactsCsv(filters: ContactFilters, columns: string[]): Promise<string> {
   const rows = await prisma.contact.findMany({ where: buildWhere(filters), include: listInclude, orderBy: { name: "asc" } });
-  const header = ["Nome", "Telefone", "Conexão", "Etiquetas", "Conversas", "Primeiro contato", "Última interação"];
+  const labels = new Map(COLUMN_SCREENS.contatos.columns.map((c) => [c.key, c.label]));
+  const header = columns.map((key) => labels.get(key));
   const lines = rows.map((r) => {
     const item = toListItem(r);
-    return [
-      item.name,
-      item.phone,
-      item.connectionName,
-      item.tags.map((t) => t.name).join(", "),
-      item.conversationCount,
-      r.firstConversationAt.toISOString().slice(0, 10),
-      r.lastInteractionAt.toISOString().slice(0, 10),
-    ]
+    return columns
+      .map((key) => EXPORT_CELLS[key](r, item))
       .map(csvEscape)
       .join(";");
   });

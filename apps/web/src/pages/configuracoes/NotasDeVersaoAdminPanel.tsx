@@ -19,6 +19,8 @@ import {
 import { api, getApiErrorMessage } from "../../lib/api";
 import { RELEASE_NOTES_QUERY_KEY } from "../../hooks/useReleaseNotes";
 import { ReleaseView } from "../../components/release-notes/ReleaseView";
+import { ColumnViewMenu } from "../../components/common/ColumnViewMenu";
+import { useColumnView } from "../../hooks/useColumnView";
 
 const ADMIN_QUERY_KEY = ["release-notes-admin"];
 const MONTHS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
@@ -479,6 +481,7 @@ function ReleaseEditor({
  * prévia antes de salvar".
  */
 export function NotasDeVersaoAdminPanel() {
+  const columnView = useColumnView("notasDeVersao");
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<{ release: ReleaseDTO | null; draft: ReleaseDraft } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ReleaseDTO | null>(null);
@@ -541,37 +544,77 @@ export function NotasDeVersaoAdminPanel() {
         <table className="w-full text-sm">
           <thead className="bg-surface-alt text-left text-xs uppercase tracking-wide text-muted">
             <tr>
-              <th className="px-4 py-3">Versão</th>
-              <th className="px-4 py-3">Data</th>
-              <th className="px-4 py-3">Nome</th>
-              <th className="px-4 py-3 text-right">Notas</th>
+              <th className="w-0 py-3 pl-2 pr-0">
+                <ColumnViewMenu view={columnView} />
+              </th>
+              {columnView.visibleKeys.map((key) => {
+                switch (key) {
+                  case "version":
+                    return (
+                      <th key="version" className="px-4 py-3">Versão</th>
+                    );
+                  case "date":
+                    return (
+                      <th key="date" className="px-4 py-3">Data</th>
+                    );
+                  case "name":
+                    return (
+                      <th key="name" className="px-4 py-3">Nome</th>
+                    );
+                  case "notes":
+                    return (
+                      <th key="notes" className="px-4 py-3 text-right">Notas</th>
+                    );
+                  default:
+                    return null;
+                }
+              })}
               <th className="px-4 py-3 text-right">Ações</th>
             </tr>
           </thead>
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-muted">
+                <td colSpan={columnView.visibleKeys.length + 2} className="px-4 py-8 text-center text-muted">
                   Carregando...
                 </td>
               </tr>
             )}
             {!isLoading && releases?.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-muted">
+                <td colSpan={columnView.visibleKeys.length + 2} className="px-4 py-8 text-center text-muted">
                   Nenhuma versão cadastrada.
                 </td>
               </tr>
             )}
             {releases?.map((r, i) => (
               <tr key={r.id} className="border-t border-border hover:bg-surface-alt">
-                <td className="whitespace-nowrap px-4 py-3 font-mono font-semibold">
-                  {r.version}
-                  {i === 0 && <span className="ms-1.5 rounded-full bg-primary/10 px-1.5 py-px align-[1px] font-sans text-[9.5px] font-bold uppercase text-primary">Atual</span>}
-                </td>
-                <td className="whitespace-nowrap px-4 py-3 text-muted">{r.date}</td>
-                <td className="px-4 py-3">{r.name}</td>
-                <td className="px-4 py-3 text-right tabular-nums text-muted">{r.notes.length}</td>
+                <td className="w-0 p-0" />
+                {columnView.visibleKeys.map((key) => {
+                  switch (key) {
+                    case "version":
+                      return (
+                        <td key="version" className="whitespace-nowrap px-4 py-3 font-mono font-semibold">
+                          {r.version}
+                          {i === 0 && <span className="ms-1.5 rounded-full bg-primary/10 px-1.5 py-px align-[1px] font-sans text-[9.5px] font-bold uppercase text-primary">Atual</span>}
+                        </td>
+                      );
+                    case "date":
+                      return (
+                        <td key="date" className="whitespace-nowrap px-4 py-3 text-muted">{r.date}</td>
+                      );
+                    case "name":
+                      return (
+                        <td key="name" className="px-4 py-3">{r.name}</td>
+                      );
+                    case "notes":
+                      return (
+                        <td key="notes" className="px-4 py-3 text-right tabular-nums text-muted">{r.notes.length}</td>
+                      );
+                    default:
+                      return null;
+                  }
+                })}
                 <td className="px-4 py-3">
                   <div className="flex justify-end gap-1">
                     <button

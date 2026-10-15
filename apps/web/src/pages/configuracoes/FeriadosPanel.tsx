@@ -6,6 +6,8 @@ import { PERMISSION, type HolidayDTO, type HolidayScope } from "@whatsatendende/
 import { useAuthStore } from "../../store/auth-store";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { StateCitySelect } from "../../components/common/StateCitySelect";
+import { ColumnViewMenu } from "../../components/common/ColumnViewMenu";
+import { useColumnView } from "../../hooks/useColumnView";
 
 const SCOPE_LABEL: Record<HolidayScope, string> = { NATIONAL: "Nacional", STATE: "Estadual", MUNICIPAL: "Municipal" };
 
@@ -20,6 +22,7 @@ interface NewHoliday {
 const EMPTY_NEW_HOLIDAY: NewHoliday = { date: "", name: "", scope: "NATIONAL", state: null, city: null };
 
 export function FeriadosPanel() {
+  const columnView = useColumnView("feriados");
   const queryClient = useQueryClient();
   const permissions = useAuthStore((s) => s.permissions);
   const canAdicionar = permissions?.[PERMISSION.CONFIGURACOES_FERIADOS_ADICIONAR];
@@ -151,41 +154,81 @@ export function FeriadosPanel() {
         <table className="w-full text-sm">
           <thead className="bg-surface-alt text-left text-xs uppercase tracking-wide text-muted">
             <tr>
-              <th className="px-3 py-2">Data</th>
-              <th className="px-3 py-2">Nome</th>
-              <th className="px-3 py-2">Abrangência</th>
-              <th className="px-3 py-2">Origem</th>
+              <th className="w-0 py-2 pl-2 pr-0">
+                <ColumnViewMenu view={columnView} />
+              </th>
+              {columnView.visibleKeys.map((key) => {
+                switch (key) {
+                  case "date":
+                    return (
+                      <th key="date" className="px-3 py-2">Data</th>
+                    );
+                  case "name":
+                    return (
+                      <th key="name" className="px-3 py-2">Nome</th>
+                    );
+                  case "scope":
+                    return (
+                      <th key="scope" className="px-3 py-2">Abrangência</th>
+                    );
+                  case "source":
+                    return (
+                      <th key="source" className="px-3 py-2">Origem</th>
+                    );
+                  default:
+                    return null;
+                }
+              })}
               <th className="px-3 py-2" />
             </tr>
           </thead>
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={5} className="px-3 py-6 text-center text-muted">
+                <td colSpan={columnView.visibleKeys.length + 2} className="px-3 py-6 text-center text-muted">
                   Carregando...
                 </td>
               </tr>
             )}
             {!isLoading && sorted.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-3 py-6 text-center text-muted">
+                <td colSpan={columnView.visibleKeys.length + 2} className="px-3 py-6 text-center text-muted">
                   Nenhum feriado cadastrado ainda.
                 </td>
               </tr>
             )}
             {sorted.map((h) => (
               <tr key={h.id} className="border-t border-border">
-                <td className="px-3 py-2 whitespace-nowrap">{new Date(`${h.date}T00:00:00`).toLocaleDateString("pt-BR")}</td>
-                <td className="px-3 py-2">{h.name}</td>
-                <td className="px-3 py-2 text-muted">
-                  {SCOPE_LABEL[h.scope]}
-                  {h.scope !== "NATIONAL" && h.state ? ` — ${h.city ? `${h.city}/` : ""}${h.state}` : ""}
-                </td>
-                <td className="px-3 py-2">
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${h.source === "AUTO" ? "bg-primary/10 text-primary" : "bg-secondary/40 text-text"}`}>
-                    {h.source === "AUTO" ? "Automático" : "Manual"}
-                  </span>
-                </td>
+                <td className="w-0 p-0" />
+                {columnView.visibleKeys.map((key) => {
+                  switch (key) {
+                    case "date":
+                      return (
+                        <td key="date" className="px-3 py-2 whitespace-nowrap">{new Date(`${h.date}T00:00:00`).toLocaleDateString("pt-BR")}</td>
+                      );
+                    case "name":
+                      return (
+                        <td key="name" className="px-3 py-2">{h.name}</td>
+                      );
+                    case "scope":
+                      return (
+                        <td key="scope" className="px-3 py-2 text-muted">
+                          {SCOPE_LABEL[h.scope]}
+                          {h.scope !== "NATIONAL" && h.state ? ` — ${h.city ? `${h.city}/` : ""}${h.state}` : ""}
+                        </td>
+                      );
+                    case "source":
+                      return (
+                        <td key="source" className="px-3 py-2">
+                          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${h.source === "AUTO" ? "bg-primary/10 text-primary" : "bg-secondary/40 text-text"}`}>
+                            {h.source === "AUTO" ? "Automático" : "Manual"}
+                          </span>
+                        </td>
+                      );
+                    default:
+                      return null;
+                  }
+                })}
                 <td className="px-3 py-2 text-right">
                   {canExcluir && (
                     <button

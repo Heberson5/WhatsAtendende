@@ -1,6 +1,6 @@
 import { Router, type Request } from "express";
 import { z } from "zod";
-import { CONTACT_SORT_FIELDS, PERMISSION } from "@whatsatendende/types";
+import { COLUMN_SCREENS, CONTACT_SORT_FIELDS, PERMISSION } from "@whatsatendende/types";
 import { asyncHandler } from "../../lib/async-handler";
 import { requireAuth } from "../../middleware/auth";
 import { requirePermission } from "../../lib/permissions";
@@ -52,11 +52,23 @@ contactsRouter.get(
   })
 );
 
+const CONTACT_COLUMN_KEYS = COLUMN_SCREENS.contatos.columns.map((c) => c.key);
+
+// The keys visible in the user's column view, comma-separated, in their order; all columns when absent.
+const exportColumnsSchema = z.object({
+  columns: z
+    .string()
+    .optional()
+    .transform((value) => (value ? value.split(",") : CONTACT_COLUMN_KEYS))
+    .pipe(z.array(z.enum(CONTACT_COLUMN_KEYS as [string, ...string[]])).min(1)),
+});
+
 contactsRouter.get(
   "/export",
   requirePermission(PERMISSION.CONTATOS_IMPORTAR_EXPORTAR),
   asyncHandler(async (req, res) => {
-    const csv = await service.exportContactsCsv(await parseFilters(req));
+    const { columns } = exportColumnsSchema.parse(req.query);
+    const csv = await service.exportContactsCsv(await parseFilters(req), columns);
     await writeAudit({ userId: req.auth!.userId, action: "CONTACTS_EXPORTED", entity: "Contact", entityId: null, ipAddress: req.ip ?? null });
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", 'attachment; filename="contatos.csv"');

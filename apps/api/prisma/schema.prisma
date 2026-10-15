@@ -29,25 +29,27 @@ enum AgentPresence {
 }
 
 model User {
-  id               String        @id @default(uuid())
-  fullName         String
-  displayName      String
+  id                String        @id @default(uuid())
+  fullName          String
+  displayName       String
   // Repeats only across inactive users: at most one ACTIVE user per e-mail (enforced in users.service — see assertEmailFreeForActive).
-  email            String
-  passwordHash     String
-  role             Role          @default(AGENT)
-  status           UserStatus    @default(ACTIVE)
+  email             String
+  passwordHash      String
+  role              Role          @default(AGENT)
+  status            UserStatus    @default(ACTIVE)
   // When, and by whom, this user was last deactivated — cleared on reactivation (the Auditoria keeps the history).
-  deactivatedAt    DateTime?
-  deactivatedBy    User?         @relation("UserDeactivatedBy", fields: [deactivatedById], references: [id], onDelete: SetNull)
-  deactivatedById  String?
-  deactivatedUsers User[]        @relation("UserDeactivatedBy")
-  presence         AgentPresence @default(OFFLINE)
-  photoUrl         String?
-  themePreference  String        @default("AUTO") // LIGHT | DARK | AUTO
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
-  lastAccessAt     DateTime?
+  deactivatedAt     DateTime?
+  deactivatedBy     User?         @relation("UserDeactivatedBy", fields: [deactivatedById], references: [id], onDelete: SetNull)
+  deactivatedById   String?
+  deactivatedUsers  User[]        @relation("UserDeactivatedBy")
+  columnViews       ColumnView[]  @relation("ColumnViewOwner")
+  sharedColumnViews ColumnView[]  @relation("ColumnViewShares")
+  presence          AgentPresence @default(OFFLINE)
+  photoUrl          String?
+  themePreference   String        @default("AUTO") // LIGHT | DARK | AUTO
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  lastAccessAt      DateTime?
 
   // Where this user works — drives which STATE/MUNICIPAL holidays block
   // their access automatically (a NATIONAL holiday always applies
@@ -1361,4 +1363,24 @@ model ReleaseNoteVersion {
   notes     Json
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+/// A table's columns (which are shown, in what order) saved from the ⋮ menu.
+/// One per owner and screen; shareAll/sharedWith let a manager's or an
+/// administrator's view be used by others (Configurações › Visões de colunas).
+model ColumnView {
+  id         String   @id @default(uuid())
+  screen     String
+  name       String
+  /// Ordered [{ key, visible }].
+  columns    Json
+  ownerId    String
+  owner      User     @relation("ColumnViewOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  shareAll   Boolean  @default(false)
+  sharedWith User[]   @relation("ColumnViewShares")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([ownerId, screen])
+  @@index([screen])
 }

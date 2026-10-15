@@ -2,10 +2,13 @@ import { Fragment, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ShieldCheck } from "lucide-react";
-import type { Permission, PermissionDefinition, Role } from "@whatsatendende/types";
+import clsx from "clsx";
+import { columnLabel, type Permission, type PermissionDefinition, type Role } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { UnsavedChangesBar } from "../../components/common/UnsavedChangesBar";
 import { useAuthStore } from "../../store/auth-store";
+import { ColumnViewMenu } from "../../components/common/ColumnViewMenu";
+import { useColumnView } from "../../hooks/useColumnView";
 
 interface PermissionsResponse {
   definitions: PermissionDefinition[];
@@ -18,6 +21,7 @@ const EDITABLE_ROLES: { role: Role; label: string }[] = [
 ];
 
 export function PermissionsPanel() {
+  const columnView = useColumnView("permissoes");
   const queryClient = useQueryClient();
   const setSession = useAuthStore((s) => s.setSession);
   const { accessToken, user } = useAuthStore();
@@ -85,17 +89,21 @@ export function PermissionsPanel() {
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-muted">
-              <th className="px-2 py-2">Permissão</th>
-              <th className="px-2 py-2 text-center">Atendente</th>
-              <th className="px-2 py-2 text-center">Gestor</th>
-              <th className="px-2 py-2 text-center">Administrador</th>
+              <th className="w-0 py-2 pl-2 pr-0">
+                <ColumnViewMenu view={columnView} />
+              </th>
+              {columnView.visibleKeys.map((key) => (
+                <th key={key} className={clsx("px-2 py-2", key !== "permission" && "text-center")}>
+                  {columnLabel("permissoes", key)}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
             {groups.map((group) => (
               <Fragment key={group}>
                 <tr className="bg-surface-alt/60">
-                  <td colSpan={4} className="px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
+                  <td colSpan={columnView.visibleKeys.length + 1} className="px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
                     {group}
                   </td>
                 </tr>
@@ -103,32 +111,39 @@ export function PermissionsPanel() {
                   .filter((d) => d.group === group)
                   .map((def) => (
                     <tr key={def.key} className="border-b border-border last:border-b-0">
-                      <td className="px-2 py-2.5">
-                        <p className="font-medium">{def.label}</p>
-                        <p className="text-xs text-muted">{def.description}</p>
-                      </td>
-                      {EDITABLE_ROLES.map(({ role }) => (
-                        <td key={role} className="px-2 py-2.5 text-center">
-                          {def.editableRoles.includes(role) ? (
-                            <input
-                              type="checkbox"
-                              checked={draft[role][def.key]}
-                              onChange={() => toggle(role, def.key)}
-                              aria-label={`${def.label} - ${role}`}
-                            />
-                          ) : (
-                            // Not offered to this profile at all (e.g. media in Respostas is for Gestor and Administrador only).
-                            <span className="text-xs text-muted" title="Não disponível para este perfil">
-                              —
-                            </span>
-                          )}
-                        </td>
-                      ))}
-                      <td className="px-2 py-2.5 text-center">
-                        <span title="Administrador sempre tem acesso total">
-                          <ShieldCheck className="mx-auto h-4 w-4 text-primary" />
-                        </span>
-                      </td>
+                      <td className="w-0 p-0" />
+                      {columnView.visibleKeys.map((key) => {
+                        if (key === "permission") {
+                          return (
+                            <td key={key} className="px-2 py-2.5">
+                              <p className="font-medium">{def.label}</p>
+                              <p className="text-xs text-muted">{def.description}</p>
+                            </td>
+                          );
+                        }
+                        if (key === "ADMIN") {
+                          return (
+                            <td key={key} className="px-2 py-2.5 text-center">
+                              <span title="Administrador sempre tem acesso total">
+                                <ShieldCheck className="mx-auto h-4 w-4 text-primary" />
+                              </span>
+                            </td>
+                          );
+                        }
+                        const role = key as Role;
+                        return (
+                          <td key={key} className="px-2 py-2.5 text-center">
+                            {def.editableRoles.includes(role) ? (
+                              <input type="checkbox" checked={draft[role][def.key]} onChange={() => toggle(role, def.key)} aria-label={`${def.label} - ${role}`} />
+                            ) : (
+                              // Not offered to this profile at all (e.g. media in Respostas is for Gestor and Administrador only).
+                              <span className="text-xs text-muted" title="Não disponível para este perfil">
+                                —
+                              </span>
+                            )}
+                          </td>
+                        );
+                      })}
                     </tr>
                   ))}
               </Fragment>

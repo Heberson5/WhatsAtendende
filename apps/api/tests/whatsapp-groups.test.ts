@@ -171,7 +171,7 @@ describe("WhatsApp groups in Atendimento", () => {
   it("a reply goes to the group with the display name from Usuários, like a reply to a customer, and counts as unread for the others", async () => {
     const [group] = (await request(app).get("/api/groups").set("Authorization", `Bearer ${lucas}`)).body;
     // Renamed after login: the message must already carry the new name.
-    await prisma.user.update({ where: { email: "lucas-grp@test.dev" }, data: { displayName: "Lucas Andrade" } });
+    await prisma.user.updateMany({ where: { email: "lucas-grp@test.dev" }, data: { displayName: "Lucas Andrade" } });
     const res = await request(app).post(`/api/groups/${group.id}/text`).set("Authorization", `Bearer ${lucas}`).send({ body: "Vou verificar agora" });
     expect(res.status).toBe(201);
     expect(res.body.body).toBe("Vou verificar agora");
@@ -193,9 +193,9 @@ describe("WhatsApp groups in Atendimento", () => {
 
   it("everybody who sees the group gets ONE bell entry per group, updated; opening it marks it read; muting stops the notices but not the count", async () => {
     const [group] = (await request(app).get("/api/groups").set("Authorization", `Bearer ${bianca}`)).body;
-    const biancaUser = await prisma.user.findUniqueOrThrow({ where: { email: "bianca-grp@test.dev" } });
-    const gestorUser = await prisma.user.findUniqueOrThrow({ where: { email: "gestor-grp@test.dev" } });
-    const lucasUser = await prisma.user.findUniqueOrThrow({ where: { email: "lucas-grp@test.dev" } });
+    const biancaUser = await prisma.user.findFirstOrThrow({ where: { email: "bianca-grp@test.dev" } });
+    const gestorUser = await prisma.user.findFirstOrThrow({ where: { email: "gestor-grp@test.dev" } });
+    const lucasUser = await prisma.user.findFirstOrThrow({ where: { email: "lucas-grp@test.dev" } });
     await request(app).post(`/api/groups/${group.id}/mute`).set("Authorization", `Bearer ${gestor}`);
     const gestorBefore = await prisma.notification.count({ where: { userId: gestorUser.id } });
 

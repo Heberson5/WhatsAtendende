@@ -101,7 +101,7 @@ describe("Relatórios › Pesquisa de satisfação", () => {
     const forManager = (await request(app).get("/api/reports/satisfaction").set("Authorization", `Bearer ${gestor}`)).body;
     expect(forManager.byConnection.map((c: { connectionId: string }) => c.connectionId)).toEqual([suporteId]);
 
-    const lucasId = (await prisma.user.findUniqueOrThrow({ where: { email: "lucas-nps@test.dev" } })).id;
+    const lucasId = (await prisma.user.findFirstOrThrow({ where: { email: "lucas-nps@test.dev" } })).id;
     const onlyLucas = (await request(app).get("/api/reports/satisfaction").query({ agentId: lucasId }).set("Authorization", `Bearer ${admin}`)).body;
     expect(onlyLucas.totals.sent).toBe(5);
 
@@ -139,7 +139,7 @@ describe("Relatórios › Pesquisa de satisfação", () => {
 
   it("compara com o período anterior, de mesmo tamanho, no total e por atendente", async () => {
     const now = Date.now();
-    const lucasId = (await prisma.user.findUniqueOrThrow({ where: { email: "lucas-nps@test.dev" } })).id;
+    const lucasId = (await prisma.user.findFirstOrThrow({ where: { email: "lucas-nps@test.dev" } })).id;
     const question = await prisma.satisfactionQuestion.findFirstOrThrow();
     // Two answers in the hour before the last hour: 10 and 0 → NPS 50.
     for (const [i, score] of [10, 0].entries()) {

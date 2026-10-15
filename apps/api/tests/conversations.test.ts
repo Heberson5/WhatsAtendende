@@ -57,7 +57,7 @@ describe("conversation queue and acceptance", () => {
     const joaoToken = await loginAs("joao@test.dev");
     // login always sets presence ONLINE (proof of life) — pause happens as
     // its own step afterwards, same as the real pause-button flow.
-    await prisma.user.update({ where: { email: "joao@test.dev" }, data: { presence: "AWAY" } });
+    await prisma.user.updateMany({ where: { email: "joao@test.dev" }, data: { presence: "AWAY" } });
     const { conversation } = await createWaitingConversation("5511999990099", connectionId);
 
     const res = await request(app).post(`/api/conversations/${conversation.id}/accept`).set("Authorization", `Bearer ${joaoToken}`);
@@ -219,7 +219,7 @@ describe("conversation queue and acceptance", () => {
 
     const reverted = await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } });
     expect(reverted.status).toBe("IN_PROGRESS");
-    expect(reverted.assignedAgentId).toBe((await prisma.user.findUniqueOrThrow({ where: { email: "joao@test.dev" } })).id);
+    expect(reverted.assignedAgentId).toBe((await prisma.user.findFirstOrThrow({ where: { email: "joao@test.dev" } })).id);
     expect(reverted.pendingTransferDeadline).toBeNull();
   });
 

@@ -116,7 +116,7 @@ describe("transfer targets include MANAGER/ADMIN, who can also receive transfers
     await createTestUser({ email: "gestor3@test.dev", role: "MANAGER", displayName: "Gestora", presence: "ONLINE" });
     const joaoToken = await loginAs("joao6@test.dev");
     const gestorToken = await loginAs("gestor3@test.dev");
-    const gestor = await prisma.user.findUniqueOrThrow({ where: { email: "gestor3@test.dev" } });
+    const gestor = await prisma.user.findFirstOrThrow({ where: { email: "gestor3@test.dev" } });
 
     const { conversation } = await createWaitingConversation("5511990006666", connectionId);
     await request(app).post(`/api/conversations/${conversation.id}/accept`).set("Authorization", `Bearer ${joaoToken}`);

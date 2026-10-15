@@ -5,9 +5,12 @@ import { toast } from "sonner";
 import { PERMISSION, type PauseReasonDTO } from "@whatsatendende/types";
 import { useAuthStore } from "../../store/auth-store";
 import { api, getApiErrorMessage } from "../../lib/api";
+import { ColumnViewMenu } from "../../components/common/ColumnViewMenu";
+import { useColumnView } from "../../hooks/useColumnView";
 
 /** Cadastro dos motivos que um atendente pode escolher ao pausar o atendimento (ver Topbar). */
 export function MotivoPausaTab() {
+  const columnView = useColumnView("respostasMotivoPausa");
   const queryClient = useQueryClient();
   const permissions = useAuthStore((s) => s.permissions);
   const canAdicionar = permissions?.[PERMISSION.RESPOSTAS_MOTIVO_PAUSA_ADICIONAR];
@@ -102,49 +105,77 @@ export function MotivoPausaTab() {
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-surface-alt text-left text-xs uppercase tracking-wide text-muted">
             <tr>
-              <th className="px-4 py-3">Nome</th>
-              <th className="px-4 py-3">Status</th>
+              <th className="w-0 py-3 pl-2 pr-0">
+                <ColumnViewMenu view={columnView} />
+              </th>
+              {columnView.visibleKeys.map((key) => {
+                switch (key) {
+                  case "name":
+                    return (
+                      <th key="name" className="px-4 py-3">Nome</th>
+                    );
+                  case "status":
+                    return (
+                      <th key="status" className="px-4 py-3">Status</th>
+                    );
+                  default:
+                    return null;
+                }
+              })}
               <th className="px-4 py-3 text-right">Ações</th>
             </tr>
           </thead>
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={3} className="px-4 py-8 text-center text-muted">
+                <td colSpan={columnView.visibleKeys.length + 2} className="px-4 py-8 text-center text-muted">
                   Carregando...
                 </td>
               </tr>
             )}
             {!isLoading && reasons?.length === 0 && (
               <tr>
-                <td colSpan={3} className="px-4 py-8 text-center text-muted">
+                <td colSpan={columnView.visibleKeys.length + 2} className="px-4 py-8 text-center text-muted">
                   Nenhum motivo de pausa cadastrado ainda.
                 </td>
               </tr>
             )}
             {reasons?.map((r) => (
               <tr key={r.id} className="border-t border-border hover:bg-surface-alt">
-                <td className="px-4 py-3 font-medium">
-                  {editingTarget?.id === r.id ? (
-                    <input
-                      autoFocus
-                      value={editingName}
-                      onChange={(e) => setEditingName(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && handleSaveEdit()}
-                      maxLength={60}
-                      className="focus-ring w-full rounded-card border border-border bg-transparent px-2 py-1 text-sm"
-                    />
-                  ) : (
-                    r.name
-                  )}
-                </td>
-                <td className="px-4 py-3">
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-xs font-medium ${r.active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}`}
-                  >
-                    {r.active ? "Ativo" : "Inativo"}
-                  </span>
-                </td>
+                <td className="w-0 p-0" />
+                {columnView.visibleKeys.map((key) => {
+                  switch (key) {
+                    case "name":
+                      return (
+                        <td key="name" className="px-4 py-3 font-medium">
+                          {editingTarget?.id === r.id ? (
+                            <input
+                              autoFocus
+                              value={editingName}
+                              onChange={(e) => setEditingName(e.target.value)}
+                              onKeyDown={(e) => e.key === "Enter" && handleSaveEdit()}
+                              maxLength={60}
+                              className="focus-ring w-full rounded-card border border-border bg-transparent px-2 py-1 text-sm"
+                            />
+                          ) : (
+                            r.name
+                          )}
+                        </td>
+                      );
+                    case "status":
+                      return (
+                        <td key="status" className="px-4 py-3">
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-xs font-medium ${r.active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}`}
+                          >
+                            {r.active ? "Ativo" : "Inativo"}
+                          </span>
+                        </td>
+                      );
+                    default:
+                      return null;
+                  }
+                })}
                 <td className="px-4 py-3">
                   <div className="flex justify-end gap-1">
                     {editingTarget?.id === r.id ? (

@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { clearTemporaryColumnViews } from "../lib/temporaryColumnViews";
 import type { AgentPresence, PermissionMap, UserDTO, WhatsAppConnectionStatus } from "@whatsatendende/types";
 
 interface AuthState {
@@ -54,7 +55,10 @@ export const useAuthStore = create<AuthState>((set) => ({
   hydrated: false,
   setSession: (accessToken, user, permissions) =>
     set((state) => ({ accessToken, user, permissions: permissions ?? state.permissions })),
-  clearSession: () => set({ accessToken: null, user: null, permissions: null }),
+  clearSession: () => {
+    clearTemporaryColumnViews();
+    set({ accessToken: null, user: null, permissions: null });
+  },
   setHydrated: () => set({ hydrated: true }),
   updateOwnConnectionStatus: (connectionId, status) =>
     set((state) => {
