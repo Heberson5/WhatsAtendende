@@ -200,7 +200,8 @@ export async function forceLogoutUser(id: string) {
   await getUser(id);
   await prisma.$transaction([
     prisma.refreshToken.updateMany({ where: { userId: id }, data: { revokedAt: new Date() } }),
-    prisma.user.update({ where: { id }, data: { presence: "OFFLINE" } }),
+    // Same as signing out: a pause ends here too (it would otherwise come back on the next login).
+    prisma.user.update({ where: { id }, data: { presence: "OFFLINE", pauseReasonId: null, pausedAt: null } }),
   ]);
 }
 

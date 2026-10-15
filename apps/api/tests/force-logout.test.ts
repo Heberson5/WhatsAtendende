@@ -43,6 +43,20 @@ describe("force-logging out a user from Usuários", () => {
     expect(refreshAttempt.status).toBe(401);
   });
 
+  it("also disconnects a paused user, and the pause ends like on Sair", async () => {
+    await createTestUser({ email: "admin-fl3@test.dev", role: "ADMIN" });
+    const target = await createTestUser({ email: "agent-fl3@test.dev", role: "AGENT" });
+    const adminToken = (await loginWithCookie("admin-fl3@test.dev")).accessToken;
+    const targetSession = await loginWithCookie("agent-fl3@test.dev");
+    const reason = await prisma.pauseReason.create({ data: { name: "Almoço" } });
+    await prisma.user.update({ where: { id: target.id }, data: { presence: "AWAY", pauseReasonId: reason.id, pausedAt: new Date() } });
+
+    const res = await request(app).post(`/api/users/${target.id}/force-logout`).set("Authorization", `Bearer ${adminToken}`);
+    expect(res.status).toBe(204);
+    expect(await prisma.user.findUniqueOrThrow({ where: { id: target.id } })).toMatchObject({ presence: "OFFLINE", pauseReasonId: null, pausedAt: null });
+    expect((await request(app).post("/api/auth/refresh").set("Cookie", targetSession.cookie)).status).toBe(401);
+  });
+
   it("a non-ADMIN cannot force-log-out an ADMIN account, even with usuarios.editar granted", async () => {
     await createTestUser({ email: "admin-fl2@test.dev", role: "ADMIN" });
     const targetAdmin = await createTestUser({ email: "otheradmin-fl@test.dev", role: "ADMIN" });

@@ -274,7 +274,7 @@ export default function UsuariosPage() {
                         {u.status === "ACTIVE" ? <UserX className="h-4 w-4" /> : <UserCheck className="h-4 w-4" />}
                       </button>
                     )}
-                    {canEditar && u.presence === "ONLINE" && u.id !== currentUserId && (
+                    {canEditar && u.presence !== "OFFLINE" && u.id !== currentUserId && (
                       <button
                         onClick={() => forceLogoutMutation.mutate(u.id)}
                         disabled={forceLogoutMutation.isPending && forceLogoutMutation.variables === u.id}
