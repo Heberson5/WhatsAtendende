@@ -6,6 +6,8 @@ import { PERMISSION, WEEKDAY_KEYS, type WeekdayKey, type WorkScheduleDTO } from 
 import { useAuthStore } from "../../store/auth-store";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { ExpedienteFormModal, type ExpedienteFormValues } from "./ExpedienteFormModal";
+import { ColumnViewMenu } from "../../components/common/ColumnViewMenu";
+import { useColumnView } from "../../hooks/useColumnView";
 
 const WEEKDAY_SHORT: Record<WeekdayKey, string> = { MON: "Seg", TUE: "Ter", WED: "Qua", THU: "Qui", FRI: "Sex", SAT: "Sáb", SUN: "Dom" };
 
@@ -23,6 +25,7 @@ function describeDays(days: WorkScheduleDTO["days"]): string {
 
 /** Respostas › Horário de expediente — each connection picks (in Conexões) the one it follows. */
 export function ExpedienteTab() {
+  const columnView = useColumnView("respostasExpediente");
   const queryClient = useQueryClient();
   const permissions = useAuthStore((s) => s.permissions);
   const canAdicionar = permissions?.[PERMISSION.RESPOSTAS_EXPEDIENTE_ADICIONAR];
@@ -88,41 +91,81 @@ export function ExpedienteTab() {
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-surface-alt text-left text-xs uppercase tracking-wide text-muted">
             <tr>
-              <th className="px-4 py-3">Nome</th>
-              <th className="px-4 py-3">Cidade</th>
-              <th className="px-4 py-3">Dias e horários</th>
-              <th className="px-4 py-3">Conexões</th>
+              <th className="w-0 py-3 pl-2 pr-0">
+                <ColumnViewMenu view={columnView} />
+              </th>
+              {columnView.visibleKeys.map((key) => {
+                switch (key) {
+                  case "name":
+                    return (
+                      <th key="name" className="px-4 py-3">Nome</th>
+                    );
+                  case "city":
+                    return (
+                      <th key="city" className="px-4 py-3">Cidade</th>
+                    );
+                  case "schedule":
+                    return (
+                      <th key="schedule" className="px-4 py-3">Dias e horários</th>
+                    );
+                  case "connections":
+                    return (
+                      <th key="connections" className="px-4 py-3">Conexões</th>
+                    );
+                  default:
+                    return null;
+                }
+              })}
               <th className="px-4 py-3 text-right">Ações</th>
             </tr>
           </thead>
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-muted">
+                <td colSpan={columnView.visibleKeys.length + 2} className="px-4 py-8 text-center text-muted">
                   Carregando...
                 </td>
               </tr>
             )}
             {!isLoading && schedules?.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-muted">
+                <td colSpan={columnView.visibleKeys.length + 2} className="px-4 py-8 text-center text-muted">
                   Nenhum horário cadastrado — todas as conexões atendem 24 horas.
                 </td>
               </tr>
             )}
             {schedules?.map((s) => (
               <tr key={s.id} className="border-t border-border hover:bg-surface-alt">
-                <td className="px-4 py-3 font-medium">{s.name}</td>
-                <td className="whitespace-nowrap px-4 py-3 text-muted">
-                  {s.city}/{s.state}
-                </td>
-                <td className="max-w-sm px-4 py-3 text-muted">
-                  {describeDays(s.days)}
-                  {s.partialHolidays.length > 0 && <span className="block text-xs">{s.partialHolidays.length} feriado(s) parcial(is)</span>}
-                </td>
-                <td className="max-w-[14rem] truncate px-4 py-3 text-muted" title={s.connections.map((c) => c.name).join(", ")}>
-                  {s.connections.length > 0 ? s.connections.map((c) => c.name).join(", ") : "Nenhuma"}
-                </td>
+                <td className="w-0 p-0" />
+                {columnView.visibleKeys.map((key) => {
+                  switch (key) {
+                    case "name":
+                      return (
+                        <td key="name" className="px-4 py-3 font-medium">{s.name}</td>
+                      );
+                    case "city":
+                      return (
+                        <td key="city" className="whitespace-nowrap px-4 py-3 text-muted">
+                          {s.city}/{s.state}
+                        </td>
+                      );
+                    case "schedule":
+                      return (
+                        <td key="schedule" className="max-w-sm px-4 py-3 text-muted">
+                          {describeDays(s.days)}
+                          {s.partialHolidays.length > 0 && <span className="block text-xs">{s.partialHolidays.length} feriado(s) parcial(is)</span>}
+                        </td>
+                      );
+                    case "connections":
+                      return (
+                        <td key="connections" className="max-w-[14rem] truncate px-4 py-3 text-muted" title={s.connections.map((c) => c.name).join(", ")}>
+                          {s.connections.length > 0 ? s.connections.map((c) => c.name).join(", ") : "Nenhuma"}
+                        </td>
+                      );
+                    default:
+                      return null;
+                  }
+                })}
                 <td className="px-4 py-3">
                   <div className="flex justify-end gap-1">
                     {canEditar && (

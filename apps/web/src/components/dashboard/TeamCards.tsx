@@ -3,6 +3,8 @@ import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useNow } from "../../hooks/useNow";
 import { formatMinutes } from "../common/StatCard";
+import { ColumnViewMenu } from "../../components/common/ColumnViewMenu";
+import { useColumnView } from "../../hooks/useColumnView";
 
 // A pause running longer than this is highlighted in red.
 const LONG_PAUSE_MINUTES = 30;
@@ -120,6 +122,7 @@ function formatHours(ms: number) {
 
 /** One row per agent: status right now, conversations, and time online / paused in the period. */
 export function AgentsTable({ team, stats }: { team: TeamData | undefined; stats: AgentConversationStats[] }) {
+  const columnView = useColumnView("dashboardEquipe");
   const byId = new Map(stats.map((s) => [s.agentId, s]));
   const maxConversations = Math.max(1, ...stats.map((s) => s.conversations));
   const rows = team?.agents ?? [];
@@ -135,18 +138,45 @@ export function AgentsTable({ team, stats }: { team: TeamData | undefined; stats
         <table className="w-full min-w-[640px] text-[13px]">
           <thead>
             <tr className="border-b border-border text-left text-[10.5px] font-semibold uppercase tracking-[0.05em] text-muted">
-              <th className="px-4 py-2">Atendente</th>
-              <th className="px-2 py-2">Agora</th>
-              <th className="px-2 py-2">Conversas</th>
-              <th className="px-2 py-2 text-right">Tempo médio</th>
-              <th className="px-2 py-2 text-right">Online</th>
-              <th className="px-4 py-2 text-right">Em pausa</th>
+              <th className="w-0 py-2 pl-2 pr-0">
+                <ColumnViewMenu view={columnView} />
+              </th>
+              {columnView.visibleKeys.map((key) => {
+                switch (key) {
+                  case "agent":
+                    return (
+                      <th key="agent" className="px-4 py-2">Atendente</th>
+                    );
+                  case "now":
+                    return (
+                      <th key="now" className="px-2 py-2">Agora</th>
+                    );
+                  case "conversations":
+                    return (
+                      <th key="conversations" className="px-2 py-2">Conversas</th>
+                    );
+                  case "avgTime":
+                    return (
+                      <th key="avgTime" className="px-2 py-2 text-right">Tempo médio</th>
+                    );
+                  case "online":
+                    return (
+                      <th key="online" className="px-2 py-2 text-right">Online</th>
+                    );
+                  case "paused":
+                    return (
+                      <th key="paused" className="px-4 py-2 text-right">Em pausa</th>
+                    );
+                  default:
+                    return null;
+                }
+              })}
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-6 text-center text-xs text-muted">
+                <td colSpan={columnView.visibleKeys.length + 1} className="px-4 py-6 text-center text-xs text-muted">
                   Nenhum atendente ativo.
                 </td>
               </tr>
@@ -155,33 +185,58 @@ export function AgentsTable({ team, stats }: { team: TeamData | undefined; stats
               const s = byId.get(a.agentId);
               return (
                 <tr key={a.agentId} className="border-b border-border last:border-b-0">
-                  <td className="px-4 py-2">
-                    <span className="flex items-center gap-2">
-                      <Avatar name={a.agentName} photoUrl={a.photoUrl} />
-                      <span className="truncate font-medium">{a.agentName}</span>
-                    </span>
-                  </td>
-                  <td className="max-w-[140px] px-2 py-2">
-                    <PresencePill presence={a.presence} reason={a.pauseReasonName} />
-                  </td>
-                  <td className="px-2 py-2">
-                    <span className="flex items-center gap-2">
-                      <span className="h-1.5 w-24 overflow-hidden rounded-full bg-surface-alt">
-                        <span className="block h-full rounded-full bg-primary" style={{ width: `${((s?.conversations ?? 0) / maxConversations) * 100}%` }} />
-                      </span>
-                      <span className="tabular-nums">{s?.conversations ?? 0}</span>
-                    </span>
-                  </td>
-                  <td className="px-2 py-2 text-right tabular-nums">{formatMinutes(s?.avgHandlingMs ?? null)}</td>
-                  <td className="px-2 py-2 text-right tabular-nums">{formatHours(a.onlineMs)}</td>
-                  <td
-                    className={clsx(
-                      "px-4 py-2 text-right tabular-nums",
-                      a.pausedMs > 0 && a.pausedMs === maxPaused && rows.length > 1 && "font-semibold text-danger"
-                    )}
-                  >
-                    {formatHours(a.pausedMs)}
-                  </td>
+                  <td className="w-0 p-0" />
+                  {columnView.visibleKeys.map((key) => {
+                    switch (key) {
+                      case "agent":
+                        return (
+                          <td key="agent" className="px-4 py-2">
+                            <span className="flex items-center gap-2">
+                              <Avatar name={a.agentName} photoUrl={a.photoUrl} />
+                              <span className="truncate font-medium">{a.agentName}</span>
+                            </span>
+                          </td>
+                        );
+                      case "now":
+                        return (
+                          <td key="now" className="max-w-[140px] px-2 py-2">
+                            <PresencePill presence={a.presence} reason={a.pauseReasonName} />
+                          </td>
+                        );
+                      case "conversations":
+                        return (
+                          <td key="conversations" className="px-2 py-2">
+                            <span className="flex items-center gap-2">
+                              <span className="h-1.5 w-24 overflow-hidden rounded-full bg-surface-alt">
+                                <span className="block h-full rounded-full bg-primary" style={{ width: `${((s?.conversations ?? 0) / maxConversations) * 100}%` }} />
+                              </span>
+                              <span className="tabular-nums">{s?.conversations ?? 0}</span>
+                            </span>
+                          </td>
+                        );
+                      case "avgTime":
+                        return (
+                          <td key="avgTime" className="px-2 py-2 text-right tabular-nums">{formatMinutes(s?.avgHandlingMs ?? null)}</td>
+                        );
+                      case "online":
+                        return (
+                          <td key="online" className="px-2 py-2 text-right tabular-nums">{formatHours(a.onlineMs)}</td>
+                        );
+                      case "paused":
+                        return (
+                          <td key="paused"
+                            className={clsx(
+                              "px-4 py-2 text-right tabular-nums",
+                              a.pausedMs > 0 && a.pausedMs === maxPaused && rows.length > 1 && "font-semibold text-danger"
+                            )}
+                          >
+                            {formatHours(a.pausedMs)}
+                          </td>
+                        );
+                      default:
+                        return null;
+                    }
+                  })}
                 </tr>
               );
             })}

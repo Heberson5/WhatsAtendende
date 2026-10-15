@@ -8,6 +8,8 @@ import { useAuthStore } from "../../store/auth-store";
 import { describeConnectionScope } from "./ConnectionScopePicker";
 import { PesquisaFormModal, toPesquisaFormValues, type PesquisaFormValues } from "./PesquisaFormModal";
 import { SatisfactionSettingsCard } from "./SatisfactionSettingsCard";
+import { ColumnViewMenu } from "../../components/common/ColumnViewMenu";
+import { useColumnView } from "../../hooks/useColumnView";
 
 const QUERY_KEY = ["satisfaction-surveys"];
 
@@ -23,6 +25,7 @@ function describeScope(survey: SatisfactionSurveyDTO): string {
  * templates, all off. See PROMPT: "Cadastre ao menos 4 pesquisas desligadas, para servir de modelo".
  */
 export function PesquisaTab() {
+  const columnView = useColumnView("respostasPesquisa");
   const queryClient = useQueryClient();
   const permissions = useAuthStore((s) => s.permissions);
   const canAdicionar = permissions?.[PERMISSION.RESPOSTAS_PESQUISA_ADICIONAR];
@@ -103,42 +106,82 @@ export function PesquisaTab() {
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-surface-alt text-left text-xs uppercase tracking-wide text-muted">
             <tr>
-              <th className="px-4 py-3">Nome</th>
-              <th className="px-4 py-3">Pergunta</th>
-              <th className="px-4 py-3">Conexões</th>
-              <th className="px-4 py-3">Status</th>
+              <th className="w-0 py-3 pl-2 pr-0">
+                <ColumnViewMenu view={columnView} />
+              </th>
+              {columnView.visibleKeys.map((key) => {
+                switch (key) {
+                  case "name":
+                    return (
+                      <th key="name" className="px-4 py-3">Nome</th>
+                    );
+                  case "question":
+                    return (
+                      <th key="question" className="px-4 py-3">Pergunta</th>
+                    );
+                  case "connections":
+                    return (
+                      <th key="connections" className="px-4 py-3">Conexões</th>
+                    );
+                  case "status":
+                    return (
+                      <th key="status" className="px-4 py-3">Status</th>
+                    );
+                  default:
+                    return null;
+                }
+              })}
               <th className="px-4 py-3 text-right">Ações</th>
             </tr>
           </thead>
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-muted">
+                <td colSpan={columnView.visibleKeys.length + 2} className="px-4 py-8 text-center text-muted">
                   Carregando...
                 </td>
               </tr>
             )}
             {!isLoading && surveys?.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-muted">
+                <td colSpan={columnView.visibleKeys.length + 2} className="px-4 py-8 text-center text-muted">
                   Nenhuma pesquisa cadastrada.
                 </td>
               </tr>
             )}
             {surveys?.map((s) => (
               <tr key={s.id} className="border-t border-border hover:bg-surface-alt">
-                <td className="px-4 py-3 font-medium">{s.name}</td>
-                <td className="max-w-sm truncate px-4 py-3 text-muted" title={s.question}>
-                  {s.question}
-                </td>
-                <td className="max-w-[14rem] truncate px-4 py-3 text-muted" title={describeScope(s)}>
-                  {describeScope(s)}
-                </td>
-                <td className="px-4 py-3">
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${s.active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}`}>
-                    {s.active ? "Ligada" : "Desligada"}
-                  </span>
-                </td>
+                <td className="w-0 p-0" />
+                {columnView.visibleKeys.map((key) => {
+                  switch (key) {
+                    case "name":
+                      return (
+                        <td key="name" className="px-4 py-3 font-medium">{s.name}</td>
+                      );
+                    case "question":
+                      return (
+                        <td key="question" className="max-w-sm truncate px-4 py-3 text-muted" title={s.question}>
+                          {s.question}
+                        </td>
+                      );
+                    case "connections":
+                      return (
+                        <td key="connections" className="max-w-[14rem] truncate px-4 py-3 text-muted" title={describeScope(s)}>
+                          {describeScope(s)}
+                        </td>
+                      );
+                    case "status":
+                      return (
+                        <td key="status" className="px-4 py-3">
+                          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${s.active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}`}>
+                            {s.active ? "Ligada" : "Desligada"}
+                          </span>
+                        </td>
+                      );
+                    default:
+                      return null;
+                  }
+                })}
                 <td className="px-4 py-3">
                   <div className="flex justify-end gap-1">
                     {canAdicionar && (

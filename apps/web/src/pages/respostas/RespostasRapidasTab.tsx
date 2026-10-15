@@ -8,8 +8,11 @@ import { api, getApiErrorMessage } from "../../lib/api";
 import { describeConnectionScope } from "./ConnectionScopePicker";
 import { QuickReplyFormModal, type QuickReplyFormValues } from "./QuickReplyFormModal";
 import { saveReplyMediaOrWarn, type ReplyMediaChange } from "./ReplyMediaField";
+import { ColumnViewMenu } from "../../components/common/ColumnViewMenu";
+import { useColumnView } from "../../hooks/useColumnView";
 
 export function RespostasRapidasTab() {
+  const columnView = useColumnView("respostasRapidas");
   const queryClient = useQueryClient();
   const permissions = useAuthStore((s) => s.permissions);
   const canAdicionar = permissions?.[PERMISSION.RESPOSTAS_RAPIDAS_ADICIONAR];
@@ -86,43 +89,83 @@ export function RespostasRapidasTab() {
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-surface-alt text-left text-xs uppercase tracking-wide text-muted">
             <tr>
-              <th className="px-4 py-3">Nome</th>
-              <th className="px-4 py-3">Atalho</th>
-              <th className="px-4 py-3">Conexões</th>
-              <th className="px-4 py-3">Texto</th>
+              <th className="w-0 py-3 pl-2 pr-0">
+                <ColumnViewMenu view={columnView} />
+              </th>
+              {columnView.visibleKeys.map((key) => {
+                switch (key) {
+                  case "name":
+                    return (
+                      <th key="name" className="px-4 py-3">Nome</th>
+                    );
+                  case "shortcut":
+                    return (
+                      <th key="shortcut" className="px-4 py-3">Atalho</th>
+                    );
+                  case "connections":
+                    return (
+                      <th key="connections" className="px-4 py-3">Conexões</th>
+                    );
+                  case "text":
+                    return (
+                      <th key="text" className="px-4 py-3">Texto</th>
+                    );
+                  default:
+                    return null;
+                }
+              })}
               <th className="px-4 py-3 text-right">Ações</th>
             </tr>
           </thead>
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-muted">
+                <td colSpan={columnView.visibleKeys.length + 2} className="px-4 py-8 text-center text-muted">
                   Carregando...
                 </td>
               </tr>
             )}
             {!isLoading && quickReplies?.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-muted">
+                <td colSpan={columnView.visibleKeys.length + 2} className="px-4 py-8 text-center text-muted">
                   Nenhuma resposta rápida cadastrada ainda.
                 </td>
               </tr>
             )}
             {quickReplies?.map((qr) => (
               <tr key={qr.id} className="border-t border-border hover:bg-surface-alt">
-                <td className="px-4 py-3 font-medium">{qr.name}</td>
-                <td className="px-4 py-3">
-                  <code className="rounded bg-surface-alt px-1.5 py-0.5 text-xs">/{qr.shortcut}</code>
-                </td>
-                <td className="max-w-[14rem] truncate px-4 py-3 text-muted" title={describeConnectionScope(qr.connectionScope)}>
-                  {describeConnectionScope(qr.connectionScope)}
-                </td>
-                <td className="max-w-xs px-4 py-3 text-muted" title={qr.text}>
-                  <span className="flex items-center gap-1.5">
-                    {qr.media && <MediaBadge kind={qr.media.kind} />}
-                    <span className="truncate">{qr.text}</span>
-                  </span>
-                </td>
+                <td className="w-0 p-0" />
+                {columnView.visibleKeys.map((key) => {
+                  switch (key) {
+                    case "name":
+                      return (
+                        <td key="name" className="px-4 py-3 font-medium">{qr.name}</td>
+                      );
+                    case "shortcut":
+                      return (
+                        <td key="shortcut" className="px-4 py-3">
+                          <code className="rounded bg-surface-alt px-1.5 py-0.5 text-xs">/{qr.shortcut}</code>
+                        </td>
+                      );
+                    case "connections":
+                      return (
+                        <td key="connections" className="max-w-[14rem] truncate px-4 py-3 text-muted" title={describeConnectionScope(qr.connectionScope)}>
+                          {describeConnectionScope(qr.connectionScope)}
+                        </td>
+                      );
+                    case "text":
+                      return (
+                        <td key="text" className="max-w-xs px-4 py-3 text-muted" title={qr.text}>
+                          <span className="flex items-center gap-1.5">
+                            {qr.media && <MediaBadge kind={qr.media.kind} />}
+                            <span className="truncate">{qr.text}</span>
+                          </span>
+                        </td>
+                      );
+                    default:
+                      return null;
+                  }
+                })}
                 <td className="px-4 py-3">
                   <div className="flex justify-end gap-1">
                     {canEditar && (

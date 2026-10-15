@@ -1,6 +1,6 @@
 import { useSearchParams } from "react-router-dom";
 import clsx from "clsx";
-import { Clock3, FileDown, KeyRound, Mail, MailPlus, Palette, Phone, ShieldCheck, CalendarDays, Sparkles, type LucideIcon } from "lucide-react";
+import { Clock3, Columns3, FileDown, KeyRound, Mail, MailPlus, Palette, Phone, ShieldCheck, CalendarDays, Sparkles, type LucideIcon } from "lucide-react";
 import { PERMISSION, type Permission } from "@whatsatendende/types";
 import { BrandingPanel } from "./BrandingPanel";
 import { AppInstallPanel } from "./AppInstallPanel";
@@ -13,9 +13,10 @@ import { EmailTemplatesPanel } from "./EmailTemplatesPanel";
 import { NotasDeVersaoAdminPanel } from "./NotasDeVersaoAdminPanel";
 import { PermissionsPanel } from "./PermissionsPanel";
 import { SecuritySettingsPanel } from "./SecuritySettingsPanel";
+import { VisoesColunasPanel } from "./VisoesColunasPanel";
 import { useAuthStore } from "../../store/auth-store";
 
-type Tab = "branding" | "exportacoes" | "email" | "email-templates" | "feriados" | "fila" | "telefone" | "seguranca" | "permissoes" | "notas-de-versao";
+type Tab = "branding" | "exportacoes" | "email" | "email-templates" | "feriados" | "fila" | "telefone" | "seguranca" | "permissoes" | "notas-de-versao" | "visoes";
 
 // Grouped by subject in the left-hand section menu.
 const TABS: { key: Tab; label: string; group: string; icon: LucideIcon }[] = [
@@ -24,6 +25,7 @@ const TABS: { key: Tab; label: string; group: string; icon: LucideIcon }[] = [
   { key: "telefone", label: "Números de telefone", group: "Atendimento", icon: Phone },
   { key: "branding", label: "Identidade visual", group: "Aparência", icon: Palette },
   { key: "exportacoes", label: "Exportações", group: "Aparência", icon: FileDown },
+  { key: "visoes", label: "Visões de colunas", group: "Aparência", icon: Columns3 },
   { key: "email", label: "E-mail", group: "E-mail", icon: Mail },
   { key: "email-templates", label: "Modelos de e-mail", group: "E-mail", icon: MailPlus },
   { key: "seguranca", label: "Segurança", group: "Segurança", icon: ShieldCheck },
@@ -46,6 +48,7 @@ const TAB_PERMISSION: Partial<Record<Tab, Permission>> = {
   feriados: PERMISSION.CONFIGURACOES_FERIADOS_VISUALIZAR,
   fila: PERMISSION.CONFIGURACOES_FILA_VISUALIZAR,
   telefone: PERMISSION.CONFIGURACOES_TELEFONE_VISUALIZAR,
+  visoes: PERMISSION.CONFIGURACOES_VISOES_VISUALIZAR,
 };
 
 export default function ConfiguracoesPage() {
@@ -126,6 +129,7 @@ export default function ConfiguracoesPage() {
         {activeTab === "feriados" && <FeriadosPanel />}
         {activeTab === "fila" && <FilaSettingsPanel />}
         {activeTab === "telefone" && <NumerosTelefonePanel />}
+        {activeTab === "visoes" && <VisoesColunasPanel />}
         {activeTab === "seguranca" && role === "ADMIN" && <SecuritySettingsPanel />}
         {activeTab === "permissoes" && role === "ADMIN" && <PermissionsPanel />}
         {activeTab === "notas-de-versao" && role === "ADMIN" && <NotasDeVersaoAdminPanel />}

@@ -3,6 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import type { AuditLogDTO, PaginatedResult } from "@whatsatendende/types";
 import { api } from "../../lib/api";
+import { ColumnViewMenu } from "../../components/common/ColumnViewMenu";
+import { useColumnView } from "../../hooks/useColumnView";
 
 // Every distinct `entity` string ever passed to writeAudit() across the API
 // — see e.g. auth.service.ts, users.routes.ts, conversations.routes.ts. The
@@ -66,6 +68,8 @@ const ACTION_LABEL: Record<string, string> = {
   PROFILE_PHOTO_UPLOADED: "Foto de perfil enviada",
   PROFILE_PHOTO_REMOVED: "Foto de perfil removida",
   PROFILE_PASSWORD_CHANGED: "Senha alterada",
+  COLUMN_VIEW_UPDATED: "Visão de colunas alterada",
+  COLUMN_VIEW_DELETED: "Visão de colunas excluída",
   SETTINGS_BRANDING_UPDATED: "Identidade visual atualizada",
   SETTINGS_LOGO_UPLOADED: "Logo enviada",
   SETTINGS_FAVICON_UPLOADED: "Favicon enviado",
@@ -112,6 +116,7 @@ async function fetchAuditLog(cursor: string | undefined, entity: string) {
 }
 
 export default function AuditoriaPage() {
+  const columnView = useColumnView("auditoria");
   const [entity, setEntity] = useState("");
   const [logs, setLogs] = useState<AuditLogDTO[]>([]);
   const [cursor, setCursor] = useState<string | undefined>(undefined);
@@ -168,26 +173,56 @@ export default function AuditoriaPage() {
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-surface-alt text-left text-xs uppercase tracking-wide text-muted">
             <tr>
-              <th className="px-4 py-3">Data/hora</th>
-              <th className="px-4 py-3">Usuário</th>
-              <th className="px-4 py-3">Ação</th>
-              <th className="px-4 py-3">Entidade</th>
-              <th className="px-4 py-3">Cliente</th>
-              <th className="px-4 py-3">Texto</th>
-              <th className="px-4 py-3">IP</th>
+              <th className="w-0 py-3 pl-2 pr-0">
+                <ColumnViewMenu view={columnView} />
+              </th>
+              {columnView.visibleKeys.map((key) => {
+                switch (key) {
+                  case "createdAt":
+                    return (
+                      <th key="createdAt" className="px-4 py-3">Data/hora</th>
+                    );
+                  case "user":
+                    return (
+                      <th key="user" className="px-4 py-3">Usuário</th>
+                    );
+                  case "action":
+                    return (
+                      <th key="action" className="px-4 py-3">Ação</th>
+                    );
+                  case "entity":
+                    return (
+                      <th key="entity" className="px-4 py-3">Entidade</th>
+                    );
+                  case "client":
+                    return (
+                      <th key="client" className="px-4 py-3">Cliente</th>
+                    );
+                  case "text":
+                    return (
+                      <th key="text" className="px-4 py-3">Texto</th>
+                    );
+                  case "ip":
+                    return (
+                      <th key="ip" className="px-4 py-3">IP</th>
+                    );
+                  default:
+                    return null;
+                }
+              })}
             </tr>
           </thead>
           <tbody>
             {query.isLoading && (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-muted">
+                <td colSpan={columnView.visibleKeys.length + 1} className="px-4 py-8 text-center text-muted">
                   Carregando...
                 </td>
               </tr>
             )}
             {!query.isLoading && logs.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-muted">
+                <td colSpan={columnView.visibleKeys.length + 1} className="px-4 py-8 text-center text-muted">
                   Nenhum registro encontrado.
                 </td>
               </tr>
@@ -197,15 +232,43 @@ export default function AuditoriaPage() {
               const client = contactName || contactPhone;
               return (
                 <tr key={log.id} className="border-t border-border align-top hover:bg-surface-alt">
-                  <td className="whitespace-nowrap px-4 py-3 text-muted">{format(new Date(log.createdAt), "dd/MM/yyyy HH:mm:ss")}</td>
-                  <td className="px-4 py-3">{log.userDisplayName}</td>
-                  <td className="px-4 py-3">{formatAction(log.action)}</td>
-                  <td className="px-4 py-3 text-muted">{formatEntity(log.entity)}</td>
-                  <td className="px-4 py-3 text-muted">{client ?? "-"}</td>
-                  <td className="max-w-xs truncate px-4 py-3 text-muted" title={text ?? undefined}>
-                    {text ?? "-"}
-                  </td>
-                  <td className="px-4 py-3 text-muted">{log.ipAddress ?? "-"}</td>
+                  <td className="w-0 p-0" />
+                  {columnView.visibleKeys.map((key) => {
+                    switch (key) {
+                      case "createdAt":
+                        return (
+                          <td key="createdAt" className="whitespace-nowrap px-4 py-3 text-muted">{format(new Date(log.createdAt), "dd/MM/yyyy HH:mm:ss")}</td>
+                        );
+                      case "user":
+                        return (
+                          <td key="user" className="px-4 py-3">{log.userDisplayName}</td>
+                        );
+                      case "action":
+                        return (
+                          <td key="action" className="px-4 py-3">{formatAction(log.action)}</td>
+                        );
+                      case "entity":
+                        return (
+                          <td key="entity" className="px-4 py-3 text-muted">{formatEntity(log.entity)}</td>
+                        );
+                      case "client":
+                        return (
+                          <td key="client" className="px-4 py-3 text-muted">{client ?? "-"}</td>
+                        );
+                      case "text":
+                        return (
+                          <td key="text" className="max-w-xs truncate px-4 py-3 text-muted" title={text ?? undefined}>
+                            {text ?? "-"}
+                          </td>
+                        );
+                      case "ip":
+                        return (
+                          <td key="ip" className="px-4 py-3 text-muted">{log.ipAddress ?? "-"}</td>
+                        );
+                      default:
+                        return null;
+                    }
+                  })}
                 </tr>
               );
             })}

@@ -1,16 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Download, MessageSquarePlus, Search, Tags, Upload } from "lucide-react";
 import clsx from "clsx";
 import { toast } from "sonner";
-import { PERMISSION, type ContactListItemDTO, type ContactSortField, type ConversationListItemDTO, type TagDTO } from "@whatsatendende/types";
+import { COLUMN_SCREENS, PERMISSION, type ContactListItemDTO, type ContactSortField, type ConversationListItemDTO, type TagDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
 import { ContactDrawer } from "./ContactDrawer";
 import { ImportContactsModal } from "./ImportContactsModal";
 import { TagsManagerDrawer } from "./TagsManagerDrawer";
 import { TagChip, formatContactPhone } from "./contactFormat";
+import { ColumnViewMenu } from "../../components/common/ColumnViewMenu";
+import { useColumnView } from "../../hooks/useColumnView";
 
 const PAGE_SIZE = 50;
 const SEARCH_DEBOUNCE_MS = 300;
@@ -22,19 +24,64 @@ interface ConnectionOption {
 
 type SortDir = "asc" | "desc";
 
-/** Each column orders the way its data reads: names A–Z first, numbers and dates from the most recent / largest first. */
-const SORT_COLUMNS: { field: ContactSortField; label: string; firstDir: SortDir; align?: "right"; hint: Record<SortDir, string> }[] = [
-  { field: "name", label: "Nome", firstDir: "asc", hint: { asc: "A a Z", desc: "Z a A" } },
-  { field: "phone", label: "Telefone", firstDir: "asc", hint: { asc: "menor para maior", desc: "maior para menor" } },
-  { field: "connection", label: "Conexão", firstDir: "asc", hint: { asc: "A a Z", desc: "Z a A" } },
-];
-const SORT_COLUMNS_AFTER_TAGS: typeof SORT_COLUMNS = [
-  { field: "conversations", label: "Conversas", firstDir: "desc", align: "right", hint: { asc: "menos para mais", desc: "mais para menos" } },
-  { field: "firstConversationAt", label: "Primeiro contato", firstDir: "desc", hint: { asc: "mais antigo primeiro", desc: "mais recente primeiro" } },
-  { field: "lastInteractionAt", label: "Última interação", firstDir: "desc", hint: { asc: "mais antiga primeiro", desc: "mais recente primeiro" } },
-];
+interface SortColumn {
+  field: ContactSortField;
+  label: string;
+  firstDir: SortDir;
+  align?: "right";
+  hint: Record<SortDir, string>;
+}
 
-function SortHeader({ column, sort, onSort }: { column: (typeof SORT_COLUMNS)[number]; sort: { field: ContactSortField; dir: SortDir }; onSort: (field: ContactSortField, dir: SortDir) => void }) {
+const columnLabel = (key: string) => COLUMN_SCREENS.contatos.columns.find((c) => c.key === key)?.label ?? key;
+
+/**
+ * Each column's header sort (if any) and cell, keyed like COLUMN_SCREENS.contatos — the ⋮ menu picks which show and in what order.
+ * Sortable columns order the way their data reads: names A–Z first, numbers and dates from the most recent / largest first.
+ */
+const CONTACT_COLUMNS: Record<string, { sort?: Omit<SortColumn, "label">; className: string; render: (c: ContactListItemDTO) => ReactNode }> = {
+  name: {
+    sort: { field: "name", firstDir: "asc", hint: { asc: "A a Z", desc: "Z a A" } },
+    className: "px-4 py-3 font-medium",
+    render: (c) => c.name || <span className="text-muted">Sem nome</span>,
+  },
+  phone: {
+    sort: { field: "phone", firstDir: "asc", hint: { asc: "menor para maior", desc: "maior para menor" } },
+    className: "whitespace-nowrap px-4 py-3 tabular-nums text-muted",
+    render: (c) => formatContactPhone(c),
+  },
+  connection: {
+    sort: { field: "connection", firstDir: "asc", hint: { asc: "A a Z", desc: "Z a A" } },
+    className: "px-4 py-3 text-muted",
+    render: (c) => c.connectionName ?? "-",
+  },
+  tags: {
+    className: "px-4 py-3",
+    render: (c) => (
+      <div className="flex flex-wrap gap-1">
+        {c.tags.map((t) => (
+          <TagChip key={t.id} tag={t} />
+        ))}
+      </div>
+    ),
+  },
+  conversations: {
+    sort: { field: "conversations", firstDir: "desc", align: "right", hint: { asc: "menos para mais", desc: "mais para menos" } },
+    className: "px-4 py-3 text-right tabular-nums",
+    render: (c) => c.conversationCount,
+  },
+  firstConversationAt: {
+    sort: { field: "firstConversationAt", firstDir: "desc", hint: { asc: "mais antigo primeiro", desc: "mais recente primeiro" } },
+    className: "whitespace-nowrap px-4 py-3 text-muted",
+    render: (c) => new Date(c.firstConversationAt).toLocaleDateString("pt-BR"),
+  },
+  lastInteractionAt: {
+    sort: { field: "lastInteractionAt", firstDir: "desc", hint: { asc: "mais antiga primeiro", desc: "mais recente primeiro" } },
+    className: "whitespace-nowrap px-4 py-3 text-muted",
+    render: (c) => new Date(c.lastInteractionAt).toLocaleDateString("pt-BR"),
+  },
+};
+
+function SortHeader({ column, sort, onSort }: { column: SortColumn; sort: { field: ContactSortField; dir: SortDir }; onSort: (field: ContactSortField, dir: SortDir) => void }) {
   const active = sort.field === column.field;
   const nextDir: SortDir = active ? (sort.dir === "asc" ? "desc" : "asc") : column.firstDir;
   const Icon = !active ? ArrowUpDown : sort.dir === "asc" ? ArrowUp : ArrowDown;
@@ -62,6 +109,7 @@ export default function ContatosPage() {
   const isAgent = useAuthStore((s) => s.user?.role === "AGENT");
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const columnView = useColumnView("contatos");
   const [sort, setSort] = useState<{ field: ContactSortField; dir: SortDir }>({ field: "lastInteractionAt", dir: "desc" });
 
   const [searchInput, setSearchInput] = useState("");
@@ -117,7 +165,7 @@ export default function ContatosPage() {
   async function exportCsv() {
     setExporting(true);
     try {
-      const res = await api.get<Blob>("/contacts/export", { params: filters, responseType: "blob" });
+      const res = await api.get<Blob>("/contacts/export", { params: { ...filters, columns: columnView.visibleKeys.join(",") }, responseType: "blob" });
       const url = URL.createObjectURL(res.data);
       const link = document.createElement("a");
       link.href = url;
@@ -221,50 +269,51 @@ export default function ContatosPage() {
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-surface-alt text-left text-xs uppercase tracking-wide text-muted">
             <tr>
-              {SORT_COLUMNS.map((column) => (
-                <SortHeader key={column.field} column={column} sort={sort} onSort={(field, dir) => (setSort({ field, dir }), setPage(1))} />
-              ))}
-              <th className="px-4 py-3">Etiquetas</th>
-              {SORT_COLUMNS_AFTER_TAGS.map((column) => (
-                <SortHeader key={column.field} column={column} sort={sort} onSort={(field, dir) => (setSort({ field, dir }), setPage(1))} />
-              ))}
+              <th className="w-0 py-3 pl-2 pr-0">
+                <ColumnViewMenu view={columnView} />
+              </th>
+              {columnView.visibleKeys.map((key) => {
+                const column = CONTACT_COLUMNS[key];
+                return column.sort ? (
+                  <SortHeader key={key} column={{ ...column.sort, label: columnLabel(key) }} sort={sort} onSort={(field, dir) => (setSort({ field, dir }), setPage(1))} />
+                ) : (
+                  <th key={key} className="px-4 py-3">
+                    {columnLabel(key)}
+                  </th>
+                );
+              })}
               {canAttend && <th className="px-4 py-3"><span className="sr-only">Ações</span></th>}
             </tr>
           </thead>
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={canAttend ? 8 : 7} className="px-4 py-8 text-center text-muted">
+                <td colSpan={columnView.visibleKeys.length + (canAttend ? 2 : 1)} className="px-4 py-8 text-center text-muted">
                   Carregando...
                 </td>
               </tr>
             )}
             {!isLoading && data?.items.length === 0 && (
               <tr>
-                <td colSpan={canAttend ? 8 : 7} className="px-4 py-8 text-center text-muted">
+                <td colSpan={columnView.visibleKeys.length + (canAttend ? 2 : 1)} className="px-4 py-8 text-center text-muted">
                   Nenhum contato encontrado.
                 </td>
               </tr>
             )}
             {data?.items.map((c) => (
               <tr key={c.id} onClick={() => setOpenContactId(c.id)} className="cursor-pointer border-t border-border hover:bg-surface-alt">
-                <td className="px-4 py-3 font-medium">
-                  <button type="button" className="focus-ring rounded text-left" onClick={() => setOpenContactId(c.id)}>
-                    {c.name || <span className="text-muted">Sem nome</span>}
-                  </button>
-                </td>
-                <td className="whitespace-nowrap px-4 py-3 tabular-nums text-muted">{formatContactPhone(c)}</td>
-                <td className="px-4 py-3 text-muted">{c.connectionName ?? "-"}</td>
-                <td className="px-4 py-3">
-                  <div className="flex flex-wrap gap-1">
-                    {c.tags.map((t) => (
-                      <TagChip key={t.id} tag={t} />
-                    ))}
-                  </div>
-                </td>
-                <td className="px-4 py-3 text-right tabular-nums">{c.conversationCount}</td>
-                <td className="whitespace-nowrap px-4 py-3 text-muted">{new Date(c.firstConversationAt).toLocaleDateString("pt-BR")}</td>
-                <td className="whitespace-nowrap px-4 py-3 text-muted">{new Date(c.lastInteractionAt).toLocaleDateString("pt-BR")}</td>
+                <td className="w-0 p-0" />
+                {columnView.visibleKeys.map((key) => (
+                  <td key={key} className={CONTACT_COLUMNS[key].className}>
+                    {key === "name" ? (
+                      <button type="button" className="focus-ring rounded text-left" onClick={() => setOpenContactId(c.id)}>
+                        {CONTACT_COLUMNS.name.render(c)}
+                      </button>
+                    ) : (
+                      CONTACT_COLUMNS[key].render(c)
+                    )}
+                  </td>
+                ))}
                 {canAttend && (
                   <td className="px-4 py-2 text-right" onClick={(e) => e.stopPropagation()}>
                     {c.channel === "WHATSAPP" && c.phone && (

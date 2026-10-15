@@ -1,15 +1,78 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { KeyRound, LogOut, Pencil, Plus, Search, Trash2, UserCheck, UserX } from "lucide-react";
 import { toast } from "sonner";
-import { PERMISSION, type UserDTO } from "@whatsatendende/types";
+import { COLUMN_SCREENS, PERMISSION, type UserDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
 import { UserFormModal, type UserFormValues } from "./UserFormModal";
+import { ColumnViewMenu } from "../../components/common/ColumnViewMenu";
+import { useColumnView } from "../../hooks/useColumnView";
 
 const ROLE_LABEL: Record<string, string> = { ADMIN: "Administrador", MANAGER: "Gestor", AGENT: "Atendente" };
 const PRESENCE_LABEL: Record<string, string> = { ONLINE: "Online", AWAY: "Ausente", OFFLINE: "Offline" };
+
+const columnLabel = (key: string) => COLUMN_SCREENS.usuarios.columns.find((c) => c.key === key)?.label ?? key;
+
+/** Each column's cell, keyed like COLUMN_SCREENS.usuarios — the ⋮ menu picks which show and in what order. */
+const USER_CELLS: Record<string, { className: string; render: (u: UserDTO) => ReactNode }> = {
+  name: {
+    className: "px-4 py-3",
+    render: (u) => (
+      <div className="flex items-center gap-2.5">
+        <span className="h-8 w-8 shrink-0 overflow-hidden rounded-full bg-primary/15 text-xs font-semibold text-primary">
+          {u.photoUrl ? (
+            <img src={u.photoUrl} alt="" className="h-full w-full object-cover" />
+          ) : (
+            <span className="flex h-full w-full items-center justify-center">{u.displayName.slice(0, 2).toUpperCase()}</span>
+          )}
+        </span>
+        <div className="min-w-0">
+          <div className="truncate font-medium">{u.fullName}</div>
+          <div className="truncate text-xs text-muted">{u.displayName}</div>
+        </div>
+      </div>
+    ),
+  },
+  email: { className: "px-4 py-3", render: (u) => u.email },
+  role: { className: "px-4 py-3", render: (u) => ROLE_LABEL[u.role] },
+  connection: { className: "px-4 py-3 text-muted", render: (u) => u.whatsappConnectionName ?? "-" },
+  status: {
+    className: "px-4 py-3",
+    render: (u) => (
+      <>
+        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${u.status === "ACTIVE" ? "bg-success-soft text-success" : "border border-border bg-surface-alt text-muted"}`}>
+          {u.status === "ACTIVE" ? "Ativo" : "Inativo"}
+        </span>
+        {u.status === "INACTIVE" && u.deactivatedAt && (
+          <span className="mt-0.5 block whitespace-nowrap text-[11px] text-muted" title={u.deactivatedByName ? `Desativado por ${u.deactivatedByName}` : undefined}>
+            desde {new Date(u.deactivatedAt).toLocaleDateString("pt-BR")}
+          </span>
+        )}
+      </>
+    ),
+  },
+  presence: {
+    className: "px-4 py-3",
+    render: (u) =>
+      u.presence === "AWAY" ? (
+        <span className="inline-flex flex-col items-start gap-0.5" title={u.pauseReasonName ? `Pausado — ${u.pauseReasonName}` : "Pausado"}>
+          <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-warning-soft px-2 py-0.5 text-xs font-semibold text-warning">
+            <span className="h-1.5 w-1.5 rounded-full bg-current" />
+            Pausado
+          </span>
+          {u.pauseReasonName && <span className="max-w-[160px] truncate pl-1 text-[11px] text-muted">{u.pauseReasonName}</span>}
+        </span>
+      ) : (
+        <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-medium text-muted">
+          <span className={`h-2 w-2 rounded-full ${u.presence === "ONLINE" ? "bg-green-500" : "bg-gray-300"}`} />
+          {PRESENCE_LABEL[u.presence]}
+        </span>
+      ),
+  },
+  lastAccess: { className: "px-4 py-3 text-muted", render: (u) => (u.lastAccessAt ? format(new Date(u.lastAccessAt), "dd/MM/yyyy HH:mm") : "Nunca acessou") },
+};
 
 export default function UsuariosPage() {
   const queryClient = useQueryClient();
@@ -19,6 +82,7 @@ export default function UsuariosPage() {
   const canAdicionar = permissions?.[PERMISSION.USUARIOS_ADICIONAR];
   const canEditar = permissions?.[PERMISSION.USUARIOS_EDITAR];
   const canInativar = permissions?.[PERMISSION.USUARIOS_INATIVAR];
+  const columnView = useColumnView("usuarios");
   const [modalUser, setModalUser] = useState<UserDTO | null | "new">(null);
   const [deletingUser, setDeletingUser] = useState<UserDTO | null>(null);
   const [search, setSearch] = useState("");
@@ -159,78 +223,40 @@ export default function UsuariosPage() {
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-surface-alt text-left text-xs uppercase tracking-wide text-muted">
             <tr>
-              <th className="px-4 py-3">Nome</th>
-              <th className="px-4 py-3">E-mail</th>
-              <th className="px-4 py-3">Perfil</th>
-              <th className="px-4 py-3">Conexão WhatsApp</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3">Presença</th>
-              <th className="px-4 py-3">Último acesso</th>
+              <th className="w-0 py-3 pl-2 pr-0">
+                <ColumnViewMenu view={columnView} />
+              </th>
+              {columnView.visibleKeys.map((key) => (
+                <th key={key} className="px-4 py-3">
+                  {columnLabel(key)}
+                </th>
+              ))}
               <th className="px-4 py-3 text-right">Ações</th>
             </tr>
           </thead>
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-muted">
+                <td colSpan={columnView.visibleKeys.length + 2} className="px-4 py-8 text-center text-muted">
                   Carregando...
                 </td>
               </tr>
             )}
             {!isLoading && visibleUsers.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-muted">
+                <td colSpan={columnView.visibleKeys.length + 2} className="px-4 py-8 text-center text-muted">
                   Nenhum usuário encontrado.
                 </td>
               </tr>
             )}
             {visibleUsers.map((u) => (
               <tr key={u.id} className="border-t border-border hover:bg-surface-alt">
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2.5">
-                    <span className="h-8 w-8 shrink-0 overflow-hidden rounded-full bg-primary/15 text-xs font-semibold text-primary">
-                      {u.photoUrl ? (
-                        <img src={u.photoUrl} alt="" className="h-full w-full object-cover" />
-                      ) : (
-                        <span className="flex h-full w-full items-center justify-center">{u.displayName.slice(0, 2).toUpperCase()}</span>
-                      )}
-                    </span>
-                    <div className="min-w-0">
-                      <div className="truncate font-medium">{u.fullName}</div>
-                      <div className="truncate text-xs text-muted">{u.displayName}</div>
-                    </div>
-                  </div>
-                </td>
-                <td className="px-4 py-3">{u.email}</td>
-                <td className="px-4 py-3">{ROLE_LABEL[u.role]}</td>
-                <td className="px-4 py-3 text-muted">{u.whatsappConnectionName ?? "-"}</td>
-                <td className="px-4 py-3">
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${u.status === "ACTIVE" ? "bg-success-soft text-success" : "border border-border bg-surface-alt text-muted"}`}>
-                    {u.status === "ACTIVE" ? "Ativo" : "Inativo"}
-                  </span>
-                  {u.status === "INACTIVE" && u.deactivatedAt && (
-                    <span className="mt-0.5 block whitespace-nowrap text-[11px] text-muted" title={u.deactivatedByName ? `Desativado por ${u.deactivatedByName}` : undefined}>
-                      desde {new Date(u.deactivatedAt).toLocaleDateString("pt-BR")}
-                    </span>
-                  )}
-                </td>
-                <td className="px-4 py-3">
-                  {u.presence === "AWAY" ? (
-                    <span className="inline-flex flex-col items-start gap-0.5" title={u.pauseReasonName ? `Pausado — ${u.pauseReasonName}` : "Pausado"}>
-                      <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-warning-soft px-2 py-0.5 text-xs font-semibold text-warning">
-                        <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                        Pausado
-                      </span>
-                      {u.pauseReasonName && <span className="max-w-[160px] truncate pl-1 text-[11px] text-muted">{u.pauseReasonName}</span>}
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs font-medium text-muted">
-                      <span className={`h-2 w-2 rounded-full ${u.presence === "ONLINE" ? "bg-green-500" : "bg-gray-300"}`} />
-                      {PRESENCE_LABEL[u.presence]}
-                    </span>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-muted">{u.lastAccessAt ? format(new Date(u.lastAccessAt), "dd/MM/yyyy HH:mm") : "Nunca acessou"}</td>
+                <td className="w-0 p-0" />
+                {columnView.visibleKeys.map((key) => (
+                  <td key={key} className={USER_CELLS[key].className}>
+                    {USER_CELLS[key].render(u)}
+                  </td>
+                ))}
                 <td className="px-4 py-3">
                   <div className="flex justify-end gap-1">
                     {canEditar && (

@@ -4,13 +4,15 @@ import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ReferenceLine, Res
 import { Eye, Search } from "lucide-react";
 import clsx from "clsx";
 import { toast } from "sonner";
-import { NPS_SMALL_SAMPLE, type ConversationListItemDTO, type SatisfactionCategory, type SatisfactionReportDTO, type SatisfactionResponseDTO } from "@whatsatendende/types";
+import { NPS_SMALL_SAMPLE, columnLabel, type ConversationListItemDTO, type SatisfactionCategory, type SatisfactionReportDTO, type SatisfactionResponseDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { formatPhone } from "../../lib/format-phone";
 import { npsDelta, npsZone } from "../../lib/dashboardMetrics";
 import { CHART_CARD_SHADOW, CHART_TOOLTIP_PROPS } from "../../lib/chart-theme";
 import { ReadOnlyConversationDrawer } from "../gestao/ReadOnlyConversationDrawer";
 import type { PeriodValue } from "../common/PeriodFilter";
+import { ColumnViewMenu } from "../../components/common/ColumnViewMenu";
+import { useColumnView } from "../../hooks/useColumnView";
 
 const formatNps = (nps: number | null) => (nps === null ? "–" : String(nps));
 const DELTA_TONE = { up: "text-success", down: "text-danger", same: "text-muted" } as const;
@@ -83,6 +85,8 @@ export function SatisfactionReport({
   agentId: string;
   onAgentsLoaded: (agents: { id: string; name: string }[]) => void;
 }) {
+  const columnView = useColumnView("relatorioSatisfacaoAtendentes");
+  const responsesView = useColumnView("relatorioSatisfacaoRespostas");
   const [filter, setFilter] = useState<ResponseFilter>("answered");
   const [search, setSearch] = useState("");
   const [openConversation, setOpenConversation] = useState<ConversationListItemDTO | null>(null);
@@ -242,42 +246,124 @@ export function SatisfactionReport({
           <table className="w-full text-sm">
             <thead className="bg-surface-alt text-left text-xs uppercase tracking-wide text-muted">
               <tr>
-                <th className="px-4 py-2.5">Atendente</th>
-                <th className="px-4 py-2.5 text-right">Pesquisas</th>
-                <th className="px-4 py-2.5 text-right">Respostas</th>
-                <th className="px-4 py-2.5 text-right">Taxa</th>
-                <th className="px-4 py-2.5 text-right">Nota média</th>
-                <th className="px-4 py-2.5 text-right">NPS (0–100)</th>
-                <th className="px-4 py-2.5 text-right">Variação</th>
-                <th className="px-4 py-2.5 text-right">Promotores</th>
-                <th className="px-4 py-2.5 text-right">Neutros</th>
-                <th className="px-4 py-2.5 text-right">Detratores</th>
-                <th className="px-4 py-2.5 text-right">Menor / maior</th>
+                <th className="w-0 py-2.5 pl-2 pr-0">
+                  <ColumnViewMenu view={columnView} />
+                </th>
+                {columnView.visibleKeys.map((key) => {
+                  switch (key) {
+                    case "agent":
+                      return (
+                        <th key="agent" className="px-4 py-2.5">Atendente</th>
+                      );
+                    case "sent":
+                      return (
+                        <th key="sent" className="px-4 py-2.5 text-right">Pesquisas</th>
+                      );
+                    case "answered":
+                      return (
+                        <th key="answered" className="px-4 py-2.5 text-right">Respostas</th>
+                      );
+                    case "rate":
+                      return (
+                        <th key="rate" className="px-4 py-2.5 text-right">Taxa</th>
+                      );
+                    case "average":
+                      return (
+                        <th key="average" className="px-4 py-2.5 text-right">Nota média</th>
+                      );
+                    case "nps":
+                      return (
+                        <th key="nps" className="px-4 py-2.5 text-right">NPS (0–100)</th>
+                      );
+                    case "variation":
+                      return (
+                        <th key="variation" className="px-4 py-2.5 text-right">Variação</th>
+                      );
+                    case "promoters":
+                      return (
+                        <th key="promoters" className="px-4 py-2.5 text-right">Promotores</th>
+                      );
+                    case "passives":
+                      return (
+                        <th key="passives" className="px-4 py-2.5 text-right">Neutros</th>
+                      );
+                    case "detractors":
+                      return (
+                        <th key="detractors" className="px-4 py-2.5 text-right">Detratores</th>
+                      );
+                    case "range":
+                      return (
+                        <th key="range" className="px-4 py-2.5 text-right">Menor / maior</th>
+                      );
+                    default:
+                      return null;
+                  }
+                })}
               </tr>
             </thead>
             <tbody>
               {data.byAgent.map((a) => (
                 <tr key={a.agentId ?? "none"} className="border-t border-border">
-                  <td className="px-4 py-2.5 font-medium">
-                    {a.agentName}
-                    {a.answered > 0 && a.answered < NPS_SMALL_SAMPLE && (
-                      <span className="ml-1.5 whitespace-nowrap rounded bg-surface-alt px-1 text-[10px] font-normal text-muted" title="Com poucas respostas, uma nota muda muito o NPS">
-                        amostra pequena
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">{a.sent}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">{a.answered}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">{a.responseRate === null ? "–" : `${a.responseRate}%`}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">{formatAverage(a.average)}</td>
-                  <td className={clsx("px-4 py-2.5 text-right font-semibold tabular-nums", npsTone(a.nps))}>{formatNps(a.nps)}</td>
-                  <td className="px-4 py-2.5 text-right text-xs tabular-nums">
-                    <Delta current={a.nps} previous={a.previousNps} />
-                  </td>
-                  <td className="px-4 py-2.5 text-right tabular-nums text-success">{a.promoters}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums text-warning">{a.passives}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums text-danger">{a.detractors}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums text-muted">{a.lowest === null ? "–" : `${a.lowest} / ${a.highest}`}</td>
+                  <td className="w-0 p-0" />
+                  {columnView.visibleKeys.map((key) => {
+                    switch (key) {
+                      case "agent":
+                        return (
+                          <td key="agent" className="px-4 py-2.5 font-medium">
+                            {a.agentName}
+                            {a.answered > 0 && a.answered < NPS_SMALL_SAMPLE && (
+                              <span className="ml-1.5 whitespace-nowrap rounded bg-surface-alt px-1 text-[10px] font-normal text-muted" title="Com poucas respostas, uma nota muda muito o NPS">
+                                amostra pequena
+                              </span>
+                            )}
+                          </td>
+                        );
+                      case "sent":
+                        return (
+                          <td key="sent" className="px-4 py-2.5 text-right tabular-nums">{a.sent}</td>
+                        );
+                      case "answered":
+                        return (
+                          <td key="answered" className="px-4 py-2.5 text-right tabular-nums">{a.answered}</td>
+                        );
+                      case "rate":
+                        return (
+                          <td key="rate" className="px-4 py-2.5 text-right tabular-nums">{a.responseRate === null ? "–" : `${a.responseRate}%`}</td>
+                        );
+                      case "average":
+                        return (
+                          <td key="average" className="px-4 py-2.5 text-right tabular-nums">{formatAverage(a.average)}</td>
+                        );
+                      case "nps":
+                        return (
+                          <td key="nps" className={clsx("px-4 py-2.5 text-right font-semibold tabular-nums", npsTone(a.nps))}>{formatNps(a.nps)}</td>
+                        );
+                      case "variation":
+                        return (
+                          <td key="variation" className="px-4 py-2.5 text-right text-xs tabular-nums">
+                            <Delta current={a.nps} previous={a.previousNps} />
+                          </td>
+                        );
+                      case "promoters":
+                        return (
+                          <td key="promoters" className="px-4 py-2.5 text-right tabular-nums text-success">{a.promoters}</td>
+                        );
+                      case "passives":
+                        return (
+                          <td key="passives" className="px-4 py-2.5 text-right tabular-nums text-warning">{a.passives}</td>
+                        );
+                      case "detractors":
+                        return (
+                          <td key="detractors" className="px-4 py-2.5 text-right tabular-nums text-danger">{a.detractors}</td>
+                        );
+                      case "range":
+                        return (
+                          <td key="range" className="px-4 py-2.5 text-right tabular-nums text-muted">{a.lowest === null ? "–" : `${a.lowest} / ${a.highest}`}</td>
+                        );
+                      default:
+                        return null;
+                    }
+                  })}
                 </tr>
               ))}
             </tbody>
@@ -337,12 +423,14 @@ export function SatisfactionReport({
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-surface-alt text-left text-xs uppercase tracking-wide text-muted">
               <tr>
-                <th className="px-4 py-2.5">Data</th>
-                <th className="px-4 py-2.5">Cliente</th>
-                <th className="px-4 py-2.5">Atendente</th>
-                <th className="px-4 py-2.5">Conexão</th>
-                <th className="px-4 py-2.5 text-right">Nota</th>
-                <th className="px-4 py-2.5">Classificação</th>
+                <th className="w-0 py-2.5 pl-2 pr-0">
+                  <ColumnViewMenu view={responsesView} />
+                </th>
+                {responsesView.visibleKeys.map((key) => (
+                  <th key={key} className={clsx("px-4 py-2.5", key === "score" && "text-right")}>
+                    {columnLabel("relatorioSatisfacaoRespostas", key)}
+                  </th>
+                ))}
                 <th className="px-4 py-2.5">
                   <span className="sr-only">Conversa</span>
                 </th>
@@ -351,13 +439,13 @@ export function SatisfactionReport({
             <tbody>
               {responses.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-muted">
+                  <td colSpan={responsesView.visibleKeys.length + 2} className="px-4 py-8 text-center text-muted">
                     Nenhuma resposta com esse filtro.
                   </td>
                 </tr>
               )}
               {responses.map((r) => (
-                <ResponseRow key={r.surveyId} response={r} opening={openMutation.isPending && openMutation.variables === r.conversationId} onOpen={() => openMutation.mutate(r.conversationId)} />
+                <ResponseRow key={r.surveyId} response={r} columns={responsesView.visibleKeys} opening={openMutation.isPending && openMutation.variables === r.conversationId} onOpen={() => openMutation.mutate(r.conversationId)} />
               ))}
             </tbody>
           </table>
@@ -369,24 +457,45 @@ export function SatisfactionReport({
   );
 }
 
-function ResponseRow({ response: r, opening, onOpen }: { response: SatisfactionResponseDTO; opening: boolean; onOpen: () => void }) {
+function ResponseCell({ column, response: r }: { column: string; response: SatisfactionResponseDTO }) {
+  switch (column) {
+    case "date":
+      return <td className="whitespace-nowrap px-4 py-2.5 tabular-nums text-muted">{when(r.answeredAt ?? r.sentAt)}</td>;
+    case "client":
+      return (
+        <td className="px-4 py-2.5">
+          <p className="font-medium">{r.contactName ?? (r.contactPhone ? formatPhone(r.contactPhone) : "–")}</p>
+          {r.contactName && r.contactPhone && <p className="text-xs tabular-nums text-muted">{formatPhone(r.contactPhone)}</p>}
+        </td>
+      );
+    case "agent":
+      return <td className="px-4 py-2.5">{r.agentName ?? "–"}</td>;
+    case "connection":
+      return <td className="px-4 py-2.5 text-muted">{r.connectionName}</td>;
+    case "score":
+      return <td className="px-4 py-2.5 text-right text-base font-semibold tabular-nums">{r.score ?? "–"}</td>;
+    case "category":
+      return (
+        <td className="px-4 py-2.5">
+          {r.category ? (
+            <span className={clsx("rounded-full px-2 py-0.5 text-xs font-semibold", CATEGORY[r.category].chip)}>{CATEGORY[r.category].label}</span>
+          ) : (
+            <span className="text-xs text-muted">{r.status === "awaiting" ? "Aguardando" : "Sem resposta"}</span>
+          )}
+        </td>
+      );
+    default:
+      return null;
+  }
+}
+
+function ResponseRow({ response: r, columns, opening, onOpen }: { response: SatisfactionResponseDTO; columns: string[]; opening: boolean; onOpen: () => void }) {
   return (
     <tr className="border-t border-border hover:bg-surface-alt">
-      <td className="whitespace-nowrap px-4 py-2.5 tabular-nums text-muted">{when(r.answeredAt ?? r.sentAt)}</td>
-      <td className="px-4 py-2.5">
-        <p className="font-medium">{r.contactName ?? (r.contactPhone ? formatPhone(r.contactPhone) : "–")}</p>
-        {r.contactName && r.contactPhone && <p className="text-xs tabular-nums text-muted">{formatPhone(r.contactPhone)}</p>}
-      </td>
-      <td className="px-4 py-2.5">{r.agentName ?? "–"}</td>
-      <td className="px-4 py-2.5 text-muted">{r.connectionName}</td>
-      <td className="px-4 py-2.5 text-right text-base font-semibold tabular-nums">{r.score ?? "–"}</td>
-      <td className="px-4 py-2.5">
-        {r.category ? (
-          <span className={clsx("rounded-full px-2 py-0.5 text-xs font-semibold", CATEGORY[r.category].chip)}>{CATEGORY[r.category].label}</span>
-        ) : (
-          <span className="text-xs text-muted">{r.status === "awaiting" ? "Aguardando" : "Sem resposta"}</span>
-        )}
-      </td>
+      <td className="w-0 p-0" />
+      {columns.map((column) => (
+        <ResponseCell key={column} column={column} response={r} />
+      ))}
       <td className="px-4 py-2 text-right">
         <button
           onClick={onOpen}

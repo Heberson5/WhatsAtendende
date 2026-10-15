@@ -11,6 +11,57 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.10.0",
+    date: "16 out 2026",
+    name: "Visões de colunas em todas as tabelas e cadastro de usuários mais seguro",
+    summary: "Toda tabela do sistema ganhou o botão ⋮ para escolher quais colunas aparecem e em que ordem, só por agora ou como padrão, e as exportações seguem essa escolha. Em Usuários, um e-mail pode ser reaproveitado de quem foi desativado, a desativação fica registrada com data e responsável, e trocar o nome pede confirmação.",
+    notes: [
+      {
+        type: "novo",
+        area: "geral",
+        title: "Escolha as colunas de cada tabela",
+        text: "O botão ⋮ no canto esquerdo do cabeçalho abre a lista de colunas: desmarque as que não quer ver e arraste (ou use as setas) para mudar a ordem. As colunas com cadeado são essenciais e sempre aparecem. Usar só agora vale até você sair do sistema; Salvar como padrão guarda a visão para as próximas vezes. As exportações (CSV, PDF e Excel) saem só com as colunas visíveis, na ordem escolhida.",
+        steps: [
+          "Clique no ⋮ no canto esquerdo do cabeçalho da tabela.",
+          "Marque, desmarque e arraste as colunas.",
+          "Clique em Usar só agora ou em Salvar como padrão.",
+        ],
+        where: "Gestão, Contatos, Usuários, Relatórios, Dashboard, Respostas, Auditoria e Configurações",
+        images: [{ src: "/notas-de-versao/visoes-menu.webp", caption: "O menu de colunas, com a coluna essencial travada" }],
+      },
+      {
+        type: "novo",
+        area: "configuracoes",
+        title: "Visões de colunas compartilhadas",
+        text: "Em Configurações › Visões de colunas ficam todas as visões salvas: a tela, o nome, quem salvou, o dia, as colunas e quem pode usar. Dá para mudar colunas e ordem e escolher quem usa a visão de um gestor ou administrador: todos ou usuários escolhidos. A visão de um atendente é só dele. Quem abre uma tela usa a própria visão; sem ela, a compartilhada com a pessoa; sem nenhuma, o padrão do sistema.",
+        where: "Configurações › Visões de colunas",
+        requires: [PERMISSION.CONFIGURACOES_VISOES_VISUALIZAR],
+        images: [
+          { src: "/notas-de-versao/visoes-configuracoes.webp", caption: "As visões salvas, com quem pode usar cada uma" },
+          { src: "/notas-de-versao/visoes-compartilhada.webp", caption: "Quem recebe a visão já abre a tela com ela" },
+        ],
+      },
+      {
+        type: "melhoria",
+        area: "usuarios",
+        title: "E-mail de usuário desativado pode ser reaproveitado",
+        text: "Um e-mail que só pertence a usuários desativados pode ser usado em um cadastro novo, com histórico separado nos relatórios. Se o e-mail estiver com um usuário ativo, o sistema avisa quem o usa. Um usuário antigo não pode ser reativado enquanto houver outro ativo com o mesmo e-mail. A data da desativação e quem desativou aparecem na lista e na Auditoria; ao reativar, a data é apagada e a reativação também fica na Auditoria.",
+        where: "Usuários",
+        requires: [PERMISSION.USUARIOS_ADICIONAR],
+        images: [{ src: "/notas-de-versao/usuarios-email-inativo.webp", caption: "O aviso de e-mail já usado por um usuário desativado", size: "small" }],
+      },
+      {
+        type: "melhoria",
+        area: "usuarios",
+        title: "Confirmação ao trocar o nome de um usuário",
+        text: "Relatórios, Dashboard e histórico de conversas mostram o nome atual do usuário. Por isso, ao trocar o nome completo ou o nome de exibição por outro diferente, o sistema pede para confirmar que é a mesma pessoa. Para outra pessoa, desative o usuário e cadastre um novo. Acentos, maiúsculas e espaços não contam como troca.",
+        where: "Usuários › Editar",
+        requires: [PERMISSION.USUARIOS_EDITAR],
+        images: [{ src: "/notas-de-versao/usuarios-trocar-nome.webp", caption: "A confirmação antes de salvar o nome novo", size: "small" }],
+      },
+    ],
+  },
+  {
     version: "2.9.0",
     date: "15 out 2026",
     name: "Intervir na conversa, nome nas mensagens automáticas e Nova conversa só com WhatsApp",

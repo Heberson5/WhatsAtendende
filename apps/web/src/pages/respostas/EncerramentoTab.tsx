@@ -9,9 +9,12 @@ import { describeConnectionScope } from "./ConnectionScopePicker";
 import { EncerramentoFormModal, type EncerramentoFormValues } from "./EncerramentoFormModal";
 import { saveReplyMediaOrWarn, type ReplyMediaChange } from "./ReplyMediaField";
 import { MediaBadge } from "./RespostasRapidasTab";
+import { ColumnViewMenu } from "../../components/common/ColumnViewMenu";
+import { useColumnView } from "../../hooks/useColumnView";
 
 /** Cadastro de mensagens de encerramento automático — ver PROMPT: "Encerramento, o cadastro deverá ser similar com a resposta rápida, mas com alguns diferenciais." */
 export function EncerramentoTab() {
+  const columnView = useColumnView("respostasEncerramento");
   const queryClient = useQueryClient();
   const permissions = useAuthStore((s) => s.permissions);
   const canAdicionar = permissions?.[PERMISSION.RESPOSTAS_ENCERRAMENTO_ADICIONAR];
@@ -86,54 +89,100 @@ export function EncerramentoTab() {
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-surface-alt text-left text-xs uppercase tracking-wide text-muted">
             <tr>
-              <th className="px-4 py-3">Nome</th>
-              <th className="px-4 py-3">Texto</th>
-              <th className="px-4 py-3">Usuários</th>
-              <th className="px-4 py-3">Conexões</th>
-              <th className="px-4 py-3">Status</th>
+              <th className="w-0 py-3 pl-2 pr-0">
+                <ColumnViewMenu view={columnView} />
+              </th>
+              {columnView.visibleKeys.map((key) => {
+                switch (key) {
+                  case "name":
+                    return (
+                      <th key="name" className="px-4 py-3">Nome</th>
+                    );
+                  case "text":
+                    return (
+                      <th key="text" className="px-4 py-3">Texto</th>
+                    );
+                  case "users":
+                    return (
+                      <th key="users" className="px-4 py-3">Usuários</th>
+                    );
+                  case "connections":
+                    return (
+                      <th key="connections" className="px-4 py-3">Conexões</th>
+                    );
+                  case "status":
+                    return (
+                      <th key="status" className="px-4 py-3">Status</th>
+                    );
+                  default:
+                    return null;
+                }
+              })}
               <th className="px-4 py-3 text-right">Ações</th>
             </tr>
           </thead>
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-muted">
+                <td colSpan={columnView.visibleKeys.length + 2} className="px-4 py-8 text-center text-muted">
                   Carregando...
                 </td>
               </tr>
             )}
             {!isLoading && closingMessages?.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-muted">
+                <td colSpan={columnView.visibleKeys.length + 2} className="px-4 py-8 text-center text-muted">
                   Nenhum encerramento cadastrado ainda.
                 </td>
               </tr>
             )}
             {closingMessages?.map((cm) => (
               <tr key={cm.id} className="border-t border-border hover:bg-surface-alt">
-                <td className="px-4 py-3 font-medium">
-                  {cm.name}
-                  <span className="block text-xs font-normal text-muted">{cm.showSenderName ? "Com o nome do atendente" : "Sem o nome do atendente"}</span>
-                </td>
-                <td className="max-w-xs px-4 py-3 text-muted" title={cm.text}>
-                  <span className="flex items-center gap-1.5">
-                    {cm.media && <MediaBadge kind={cm.media.kind} />}
-                    <span className="truncate">{cm.text}</span>
-                  </span>
-                </td>
-                <td className="px-4 py-3 text-muted">
-                  {cm.assignedUsers.length === 0 ? "-" : cm.assignedUsers.map((u) => u.displayName).join(", ")}
-                </td>
-                <td className="max-w-[14rem] truncate px-4 py-3 text-muted" title={describeConnectionScope(cm.connectionScope)}>
-                  {describeConnectionScope(cm.connectionScope)}
-                </td>
-                <td className="px-4 py-3">
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-xs font-medium ${cm.active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}`}
-                  >
-                    {cm.active ? "Ativo" : "Inativo"}
-                  </span>
-                </td>
+                <td className="w-0 p-0" />
+                {columnView.visibleKeys.map((key) => {
+                  switch (key) {
+                    case "name":
+                      return (
+                        <td key="name" className="px-4 py-3 font-medium">
+                          {cm.name}
+                          <span className="block text-xs font-normal text-muted">{cm.showSenderName ? "Com o nome do atendente" : "Sem o nome do atendente"}</span>
+                        </td>
+                      );
+                    case "text":
+                      return (
+                        <td key="text" className="max-w-xs px-4 py-3 text-muted" title={cm.text}>
+                          <span className="flex items-center gap-1.5">
+                            {cm.media && <MediaBadge kind={cm.media.kind} />}
+                            <span className="truncate">{cm.text}</span>
+                          </span>
+                        </td>
+                      );
+                    case "users":
+                      return (
+                        <td key="users" className="px-4 py-3 text-muted">
+                          {cm.assignedUsers.length === 0 ? "-" : cm.assignedUsers.map((u) => u.displayName).join(", ")}
+                        </td>
+                      );
+                    case "connections":
+                      return (
+                        <td key="connections" className="max-w-[14rem] truncate px-4 py-3 text-muted" title={describeConnectionScope(cm.connectionScope)}>
+                          {describeConnectionScope(cm.connectionScope)}
+                        </td>
+                      );
+                    case "status":
+                      return (
+                        <td key="status" className="px-4 py-3">
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-xs font-medium ${cm.active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"}`}
+                          >
+                            {cm.active ? "Ativo" : "Inativo"}
+                          </span>
+                        </td>
+                      );
+                    default:
+                      return null;
+                  }
+                })}
                 <td className="px-4 py-3">
                   <div className="flex justify-end gap-1">
                     {canEditar && (

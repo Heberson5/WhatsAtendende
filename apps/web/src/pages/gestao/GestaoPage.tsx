@@ -6,7 +6,7 @@ import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import clsx from "clsx";
 import { ArrowRightLeft, CheckCircle2, Eye, GitMerge, Hand, Inbox, Search, Undo2, X } from "lucide-react";
-import { PERMISSION, type ConversationListItemDTO, type ConversationStatus } from "@whatsatendende/types";
+import { COLUMN_SCREENS, PERMISSION, type ConversationListItemDTO, type ConversationStatus } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { contactDisplayName } from "../../lib/contact-display";
 import { useAuthStore } from "../../store/auth-store";
@@ -20,6 +20,8 @@ import { useNow } from "../../hooks/useNow";
 import { formatActivity } from "../../lib/formatActivity";
 import { STATUS_COLOR, STATUS_LABEL } from "../../lib/conversationStatus";
 import { toastWithUndo } from "../../lib/undoToast";
+import { ColumnViewMenu } from "../../components/common/ColumnViewMenu";
+import { useColumnView } from "../../hooks/useColumnView";
 
 // Same "still active" scope the backend enforces (see
 // assignConversationFromGestao/returnConversationToQueue) — CLOSED/ABANDONED
@@ -64,6 +66,7 @@ export default function GestaoPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkTransferring, setBulkTransferring] = useState(false);
   const now = useNow();
+  const columnView = useColumnView("gestao");
   const [search, setSearch] = useState("");
   const [connectionIds, setConnectionIds] = useState<string[]>([]);
   const [selected, setSelected] = useState<ConversationListItemDTO | null>(null);
@@ -231,6 +234,83 @@ export default function GestaoPage() {
     return null;
   }
 
+  // One cell per column of COLUMN_SCREENS.gestao — the ⋮ menu picks which show and in what order.
+  function renderCell(key: string, c: ConversationListItemDTO, wait: ReturnType<typeof waitInfo>) {
+    switch (key) {
+      case "client":
+        return (
+          <td key="client" className="px-3 py-3">
+            <div className="flex items-center gap-2.5">
+              {c.contact.photoUrl ? (
+                <img src={c.contact.photoUrl} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover" />
+              ) : (
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-alt text-xs font-semibold text-muted">
+                  {contactDisplayName(c.contact).slice(0, 2).toUpperCase()}
+                </div>
+              )}
+              <div className="min-w-0">
+                <div className="truncate font-medium">{contactDisplayName(c.contact)}</div>
+                {c.contact.phone && <div className="text-xs text-muted">{c.contact.phone}</div>}
+              </div>
+            </div>
+          </td>
+        );
+      case "status":
+        return (
+          <td key="status" className="px-3 py-3">
+            <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_COLOR[c.status]}`}>{STATUS_LABEL[c.status]}</span>
+          </td>
+        );
+      case "agent":
+        return (
+          <td key="agent" className="px-3 py-3">
+            {c.assignedAgentName ?? <span className="text-muted">—</span>}
+            {c.intervention && (
+              <span className="mt-0.5 flex items-center gap-1 whitespace-nowrap text-[11px] font-medium text-amber-600 dark:text-amber-400">
+                <Hand className="h-3 w-3" /> Intervenção · {c.intervention.name}
+              </span>
+            )}
+          </td>
+        );
+      case "connection":
+        return (
+          <td key="connection" className="px-3 py-3">
+            <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs text-muted">
+              <span className="h-2 w-2 rounded-sm" style={{ backgroundColor: c.whatsappConnectionColor }} />
+              {c.whatsappConnectionName}
+            </span>
+          </td>
+        );
+      case "waiting":
+        return (
+          <td key="waiting"
+            className={clsx(
+              "whitespace-nowrap px-3 py-3 text-xs tabular-nums",
+              !wait
+                ? "text-muted"
+                : wait.minutes >= WAIT_DANGER_MINUTES
+                  ? "font-semibold text-danger"
+                  : wait.minutes >= WAIT_WARNING_MINUTES
+                    ? "font-semibold text-warning"
+                    : "text-muted"
+            )}
+            title={`Entrou na fila ${formatDistanceToNow(new Date(c.enteredQueueAt), { locale: ptBR, addSuffix: true })}${c.acceptedAt ? ` · aceita ${formatDistanceToNow(new Date(c.acceptedAt), { locale: ptBR, addSuffix: true })}` : ""}`}
+          >
+            {wait?.label ?? "—"}
+          </td>
+        );
+      case "lastActivity":
+        return (
+          <td key="lastActivity" className="max-w-[220px] px-3 py-3 text-xs text-muted">
+            <div className="truncate">{c.lastMessagePreview ?? "—"}</div>
+            <div className="text-[11px] opacity-75">{formatActivity(c.lastMessageAt, now)}</div>
+          </td>
+        );
+      default:
+        return null;
+    }
+  }
+
   const bulkReturnMutation = useMutation({
     mutationFn: async (rows: ConversationListItemDTO[]) => {
       const targets = rows.filter((c) => !ALREADY_QUEUED_STATUSES.has(c.status));
@@ -339,38 +419,40 @@ export default function GestaoPage() {
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-surface-alt text-left text-xs uppercase tracking-wide text-muted">
             <tr>
-              <th className="w-10 px-4 py-3">
-                {canManage && (
-                  <input
-                    type="checkbox"
-                    aria-label="Selecionar todas"
-                    checked={allSelected}
-                    disabled={selectable.length === 0}
-                    onChange={() => setSelectedIds(allSelected ? new Set() : new Set(selectable.map((c) => c.id)))}
-                    className="h-4 w-4 accent-[var(--color-primary)]"
-                  />
-                )}
+              <th className="w-16 py-3 pl-2 pr-4">
+                <div className="flex items-center gap-1.5">
+                  <ColumnViewMenu view={columnView} />
+                  {canManage && (
+                    <input
+                      type="checkbox"
+                      aria-label="Selecionar todas"
+                      checked={allSelected}
+                      disabled={selectable.length === 0}
+                      onChange={() => setSelectedIds(allSelected ? new Set() : new Set(selectable.map((c) => c.id)))}
+                      className="h-4 w-4 accent-[var(--color-primary)]"
+                    />
+                  )}
+                </div>
               </th>
-              <th className="px-3 py-3">Cliente</th>
-              <th className="px-3 py-3">Status</th>
-              <th className="px-3 py-3">Atendente</th>
-              <th className="px-3 py-3">Conexão</th>
-              <th className="px-3 py-3">Esperando</th>
-              <th className="px-3 py-3">Última atividade</th>
+              {columnView.visibleKeys.map((key) => (
+                <th key={key} className="px-3 py-3">
+                  {COLUMN_SCREENS.gestao.columns.find((col) => col.key === key)?.label}
+                </th>
+              ))}
               <th className="px-4 py-3" />
             </tr>
           </thead>
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-muted">
+                <td colSpan={columnView.visibleKeys.length + 2} className="px-4 py-8 text-center text-muted">
                   Carregando...
                 </td>
               </tr>
             )}
             {!isLoading && visible.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-muted">
+                <td colSpan={columnView.visibleKeys.length + 2} className="px-4 py-8 text-center text-muted">
                   Nenhuma conversa encontrada para os filtros selecionados.
                 </td>
               </tr>
@@ -380,7 +462,7 @@ export default function GestaoPage() {
               const isSelected = selectedIds.has(c.id);
               return (
               <tr key={c.id} className={clsx("border-t border-border", isSelected ? "bg-primary/[0.07]" : "hover:bg-surface-alt")}>
-                <td className="px-4 py-3">
+                <td className="py-3 pl-9 pr-4">
                   {canManage && ROUTABLE_STATUSES.has(c.status) && (
                     <input
                       type="checkbox"
@@ -391,57 +473,7 @@ export default function GestaoPage() {
                     />
                   )}
                 </td>
-                <td className="px-3 py-3">
-                  <div className="flex items-center gap-2.5">
-                    {c.contact.photoUrl ? (
-                      <img src={c.contact.photoUrl} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover" />
-                    ) : (
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-alt text-xs font-semibold text-muted">
-                        {contactDisplayName(c.contact).slice(0, 2).toUpperCase()}
-                      </div>
-                    )}
-                    <div className="min-w-0">
-                      <div className="truncate font-medium">{contactDisplayName(c.contact)}</div>
-                      {c.contact.phone && <div className="text-xs text-muted">{c.contact.phone}</div>}
-                    </div>
-                  </div>
-                </td>
-                <td className="px-3 py-3">
-                  <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_COLOR[c.status]}`}>{STATUS_LABEL[c.status]}</span>
-                </td>
-                <td className="px-3 py-3">
-                  {c.assignedAgentName ?? <span className="text-muted">—</span>}
-                  {c.intervention && (
-                    <span className="mt-0.5 flex items-center gap-1 whitespace-nowrap text-[11px] font-medium text-amber-600 dark:text-amber-400">
-                      <Hand className="h-3 w-3" /> Intervenção · {c.intervention.name}
-                    </span>
-                  )}
-                </td>
-                <td className="px-3 py-3">
-                  <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs text-muted">
-                    <span className="h-2 w-2 rounded-sm" style={{ backgroundColor: c.whatsappConnectionColor }} />
-                    {c.whatsappConnectionName}
-                  </span>
-                </td>
-                <td
-                  className={clsx(
-                    "whitespace-nowrap px-3 py-3 text-xs tabular-nums",
-                    !wait
-                      ? "text-muted"
-                      : wait.minutes >= WAIT_DANGER_MINUTES
-                        ? "font-semibold text-danger"
-                        : wait.minutes >= WAIT_WARNING_MINUTES
-                          ? "font-semibold text-warning"
-                          : "text-muted"
-                  )}
-                  title={`Entrou na fila ${formatDistanceToNow(new Date(c.enteredQueueAt), { locale: ptBR, addSuffix: true })}${c.acceptedAt ? ` · aceita ${formatDistanceToNow(new Date(c.acceptedAt), { locale: ptBR, addSuffix: true })}` : ""}`}
-                >
-                  {wait?.label ?? "—"}
-                </td>
-                <td className="max-w-[220px] px-3 py-3 text-xs text-muted">
-                  <div className="truncate">{c.lastMessagePreview ?? "—"}</div>
-                  <div className="text-[11px] opacity-75">{formatActivity(c.lastMessageAt, now)}</div>
-                </td>
+                {columnView.visibleKeys.map((key) => renderCell(key, c, wait))}
                 <td className="px-4 py-3 text-right">
                   <div className="flex items-center justify-end gap-0.5 whitespace-nowrap">
                     {canManage && ROUTABLE_STATUSES.has(c.status) && (

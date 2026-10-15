@@ -2,6 +2,7 @@
 // Keep this package framework-agnostic (no Express/React/Prisma imports).
 
 export * from "./phone";
+export * from "./column-views";
 
 export const ROLE = {
   ADMIN: "ADMIN",
@@ -992,6 +993,10 @@ export const PERMISSION = {
   // visualizar/editar — same pattern as Fila.
   CONFIGURACOES_TELEFONE_VISUALIZAR: "configuracoes.telefone.visualizar",
   CONFIGURACOES_TELEFONE_EDITAR: "configuracoes.telefone.editar",
+  // Column views saved from the ⋮ menu of each table — list them, and edit
+  // their columns/order and who can use them.
+  CONFIGURACOES_VISOES_VISUALIZAR: "configuracoes.visoes.visualizar",
+  CONFIGURACOES_VISOES_EDITAR: "configuracoes.visoes.editar",
   AUDITORIA_ACESSAR: "auditoria.acessar",
   CONTATOS_ACESSAR: "contatos.acessar",
   CONTATOS_EDITAR: "contatos.editar",
@@ -1301,6 +1306,22 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     description: "Alterar o intervalo do lembrete de conversas aguardando na fila.",
     editableRoles: ["AGENT", "MANAGER"],
     defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.CONFIGURACOES_VISOES_VISUALIZAR,
+    group: "Configurações",
+    label: "Configurações — Visões de colunas (visualizar)",
+    description: "Ver as visões de colunas salvas pelos usuários: tela, colunas, quem salvou e quem pode usar.",
+    editableRoles: ["MANAGER"],
+    defaultAllowed: { MANAGER: false },
+  },
+  {
+    key: PERMISSION.CONFIGURACOES_VISOES_EDITAR,
+    group: "Configurações",
+    label: "Configurações — Visões de colunas (editar)",
+    description: "Alterar colunas, ordem e quem pode usar uma visão salva, ou excluí-la.",
+    editableRoles: ["MANAGER"],
+    defaultAllowed: { MANAGER: false },
   },
   {
     key: PERMISSION.CONFIGURACOES_TELEFONE_VISUALIZAR,
