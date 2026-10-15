@@ -67,6 +67,16 @@ export const realtimeEvents = {
     getIO()?.to(ROOMS.user(toAgentId)).emit("conversation:transferred-in", { conversationId });
     getIO()?.to(ROOMS.oversight()).emit("oversight:updated");
   },
+  /** Gestão › Intervir started or ended — the agent's chat locks/unlocks, the manager's opens/closes. */
+  interventionChanged: (conversationId: string, userIds: (string | null)[]) => {
+    for (const userId of userIds) if (userId) getIO()?.to(ROOMS.user(userId)).emit("conversation:intervention", { conversationId });
+    getIO()?.to(ROOMS.conversation(conversationId)).emit("conversation:intervention", { conversationId });
+    getIO()?.to(ROOMS.oversight()).emit("oversight:updated");
+  },
+  /** A note was added while another person also has this conversation open (an intervention) — their note list refreshes. */
+  notesChanged: (conversationId: string, userIds: string[]) => {
+    for (const userId of userIds) getIO()?.to(ROOMS.user(userId)).emit("conversation:notes", { conversationId });
+  },
   conversationClosed: (conversationId: string, agentId: string) => {
     getIO()?.to(ROOMS.user(agentId)).emit("conversation:removed", { conversationId });
     getIO()?.to(ROOMS.oversight()).emit("oversight:updated");

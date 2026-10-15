@@ -7,6 +7,8 @@ import { scheduleCloseFollowUp, type HeldClosingMessage } from "../satisfaction/
 import { Errors } from "../../lib/http-error";
 import { writeAudit } from "../../lib/audit";
 import { realtimeEvents } from "../../realtime/realtime";
+import { createNotification } from "../notifications/notifications.service";
+import { toNotificationDTO } from "../notifications/notifications.mapper";
 import type { AgentPresence, Channel, Contact, ConversationStatus, Role } from "@prisma/client";
 
 const TRANSFER_OFFLINE_GRACE_MS = 2 * 60 * 60 * 1000; // 2h — see PROMPT: transfer to an offline agent auto-reverts if they don't log in in time.
@@ -14,6 +16,7 @@ const TRANSFER_OFFLINE_GRACE_MS = 2 * 60 * 60 * 1000; // 2h — see PROMPT: tran
 const conversationInclude = {
   contact: true,
   assignedAgent: true,
+  interventionBy: true,
   whatsappConnection: true,
   metaConnection: true,
   transfers: { orderBy: { createdAt: "desc" as const }, take: 1, include: { fromAgent: true, toAgent: true } },
@@ -1201,6 +1204,87 @@ export function assertAgentCanAccessConversation(
 }
 
 /**
+ * Who may write to the customer (send, transfer, close as the agent): while a Gestão intervention is on, only the
+ * person intervening; otherwise only the assigned agent. The assigned agent keeps reading and leaving notes.
+ */
+export function assertCanReplyToConversation(conversation: { assignedAgentId: string | null; interventionById: string | null }, userId: string) {
+  if (conversation.interventionById) {
+    if (conversation.interventionById !== userId) {
+      throw Errors.forbidden("Um gestor está intervindo nesta conversa — você pode acompanhar e deixar notas, mas não responder ao cliente");
+    }
+    return;
+  }
+  if (conversation.assignedAgentId !== userId) throw Errors.forbidden("Esta conversa pertence a outro atendente");
+}
+
+const INTERVENABLE_STATUSES: ConversationStatus[] = ["IN_PROGRESS", "TRANSFERRED"];
+
+async function notifyIntervention(conversationId: string, userId: string, title: string, body: string) {
+  const notification = await createNotification({ userId, type: "MESSAGE", title, body, entityType: "Conversation", entityId: conversationId });
+  realtimeEvents.notificationCreated(userId, toNotificationDTO(notification));
+}
+
+/** Gestão › Intervir: `userId` takes over replying; the assigned agent is told and can only follow and leave notes. */
+export async function startIntervention(conversationId: string, userId: string) {
+  const existing = await getConversationOrThrow(conversationId);
+  if (!INTERVENABLE_STATUSES.includes(existing.status) || !existing.assignedAgentId) {
+    throw Errors.badRequest("Só é possível intervir em uma conversa em atendimento");
+  }
+  if (existing.interventionById === userId) return existing;
+  if (existing.interventionById) throw Errors.conflict(`${existing.interventionBy?.displayName ?? "Outro gestor"} já está intervindo nesta conversa`);
+  if (existing.assignedAgentId === userId) throw Errors.badRequest("Esta conversa já está com você");
+
+  // Two managers clicking at once: only the first one takes it.
+  const { count } = await prisma.conversation.updateMany({
+    where: { id: conversationId, interventionById: null },
+    data: { interventionById: userId, interventionStartedAt: new Date() },
+  });
+  if (count === 0) throw Errors.conflict("Outro gestor acabou de intervir nesta conversa");
+
+  const actor = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { displayName: true } });
+  await prisma.$transaction([
+    prisma.conversationEvent.create({ data: { conversationId, type: "INTERVENTION_STARTED", payload: { userId, agentId: existing.assignedAgentId } } }),
+    prisma.conversationNote.create({ data: { conversationId, authorId: userId, body: `${actor.displayName} começou a intervir nesta conversa. Enquanto isso, só ${actor.displayName} responde ao cliente.` } }),
+  ]);
+  const contactLabel = existing.contact.name ?? existing.contact.phone ?? "Contato";
+  await notifyIntervention(conversationId, existing.assignedAgentId, contactLabel, `${actor.displayName} está intervindo nesta conversa. Você pode acompanhar e deixar notas.`);
+  realtimeEvents.interventionChanged(conversationId, [existing.assignedAgentId, userId]);
+  return getConversationOrThrow(conversationId);
+}
+
+/** "Devolver": the assigned agent replies again. */
+export async function endIntervention(conversationId: string, userId: string) {
+  const existing = await getConversationOrThrow(conversationId);
+  if (!existing.interventionById) throw Errors.badRequest("Esta conversa não está em intervenção");
+  const interventorId = existing.interventionById;
+  await prisma.conversation.update({ where: { id: conversationId }, data: { interventionById: null, interventionStartedAt: null } });
+  const actor = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { displayName: true } });
+  const agentName = existing.assignedAgent?.displayName ?? "o atendente";
+  await prisma.$transaction([
+    prisma.conversationEvent.create({ data: { conversationId, type: "INTERVENTION_ENDED", payload: { userId, interventorId, agentId: existing.assignedAgentId } } }),
+    prisma.conversationNote.create({ data: { conversationId, authorId: userId, body: `${actor.displayName} devolveu a conversa para ${agentName}.` } }),
+  ]);
+  if (existing.assignedAgentId) {
+    const contactLabel = existing.contact.name ?? existing.contact.phone ?? "Contato";
+    await notifyIntervention(conversationId, existing.assignedAgentId, contactLabel, `${actor.displayName} devolveu a conversa para você. Você já pode responder.`);
+  }
+  realtimeEvents.interventionChanged(conversationId, [existing.assignedAgentId, interventorId]);
+  return getConversationOrThrow(conversationId);
+}
+
+/** A note written during an intervention reaches the other side's bell — the agent alerting the manager, or the other way round. */
+export async function notifyInterventionNote(conversationId: string, authorId: string, body: string): Promise<void> {
+  const conversation = await getConversationOrThrow(conversationId);
+  if (!conversation.interventionById || !conversation.assignedAgentId) return;
+  const recipientId = authorId === conversation.interventionById ? conversation.assignedAgentId : conversation.interventionById;
+  if (recipientId === authorId) return;
+  const author = await prisma.user.findUnique({ where: { id: authorId }, select: { displayName: true } });
+  const contactLabel = conversation.contact.name ?? conversation.contact.phone ?? "Contato";
+  await notifyIntervention(conversationId, recipientId, `Nota de ${author?.displayName ?? "alguém"} · ${contactLabel}`, body.slice(0, 200));
+  realtimeEvents.notesChanged(conversationId, [recipientId]);
+}
+
+/**
  * Read-only relaxation of assertAgentCanAccessConversation, above —
  * deliberately used ONLY by the GET .../messages route and the socket's
  * conversation:join, never by anything that sends/transfers/closes. The
@@ -1395,6 +1479,9 @@ export async function assignConversationFromGestao(conversationId: string, toAge
       // transferConversation already draw, just both reachable from here.
       status: previousAgentId ? "TRANSFERRED" : "IN_PROGRESS",
       assignedAgentId: toAgentId,
+      // A Gestão transfer ends an intervention.
+      interventionById: null,
+      interventionStartedAt: null,
       acceptedAt: new Date(),
       // "1ª resposta" is counted from this acceptance: the new agent's own first reply.
       firstResponseAt: null,
@@ -1452,6 +1539,8 @@ export async function returnConversationToQueue(conversationId: string, initiate
     data: {
       status: "WAITING",
       assignedAgentId: null,
+      interventionById: null,
+      interventionStartedAt: null,
       acceptedAt: null,
       firstResponseAt: null,
       assignedAgentReadAt: null,
@@ -1511,7 +1600,7 @@ export async function closeConversationFromGestao(
 
   await prisma.conversation.update({
     where: { id: conversationId },
-    data: { status: "CLOSED", closedAt: new Date(), closedByUserId: initiatedById, pendingTransferDeadline: null },
+    data: { status: "CLOSED", closedAt: new Date(), closedByUserId: initiatedById, pendingTransferDeadline: null, interventionById: null, interventionStartedAt: null },
   });
 
   await prisma.conversationEvent.create({

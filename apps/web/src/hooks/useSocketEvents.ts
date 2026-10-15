@@ -78,6 +78,13 @@ export function useSocketEvents(activeConversationId: string | null) {
     // on the phone, without waiting for the 20s poll.
     const onConversationRead = () => queryClient.invalidateQueries({ queryKey: ["mine"] });
     const onOversightUpdated = () => queryClient.invalidateQueries({ queryKey: ["oversight"] });
+    const onNotes = (payload: { conversationId: string }) => queryClient.invalidateQueries({ queryKey: ["notes", payload.conversationId] });
+    // Gestão › Intervir started/ended: the agent's chat locks or unlocks, the manager's panel follows.
+    const onIntervention = (payload: { conversationId: string }) => {
+      queryClient.invalidateQueries({ queryKey: ["mine"] });
+      queryClient.invalidateQueries({ queryKey: ["oversight"] });
+      queryClient.invalidateQueries({ queryKey: ["notes", payload.conversationId] });
+    };
     // A connection's status changing affects every conversation/queue card
     // tied to it (accept/send get enabled or disabled — see PROMPT: alerta
     // e bloqueio para conexões desconectadas) and, for an AGENT whose own
@@ -136,6 +143,8 @@ export function useSocketEvents(activeConversationId: string | null) {
     socket.on("message:status", onMessageStatus);
     socket.on("conversation:read", onConversationRead);
     socket.on("oversight:updated", onOversightUpdated);
+    socket.on("conversation:intervention", onIntervention);
+    socket.on("conversation:notes", onNotes);
     socket.on("whatsapp:status", onWhatsappStatus);
     socket.on("presence:self", onPresenceSelf);
     socket.on("notification:new", onNotificationNew);
@@ -155,6 +164,8 @@ export function useSocketEvents(activeConversationId: string | null) {
       socket.off("message:status", onMessageStatus);
       socket.off("conversation:read", onConversationRead);
       socket.off("oversight:updated", onOversightUpdated);
+      socket.off("conversation:intervention", onIntervention);
+      socket.off("conversation:notes", onNotes);
       socket.off("whatsapp:status", onWhatsappStatus);
       socket.off("presence:self", onPresenceSelf);
       socket.off("notification:new", onNotificationNew);

@@ -4,6 +4,7 @@ import type { ConversationListItemDTO } from "@whatsatendende/types";
 type ConversationWithRelations = Conversation & {
   contact: Contact;
   assignedAgent: User | null;
+  interventionBy?: User | null;
   // Exactly one of these two is non-null, depending on `channel` — see
   // the Channel enum's doc comment in schema.prisma.
   whatsappConnection: WhatsAppConnection | null;
@@ -51,6 +52,9 @@ export function toConversationListItemDTO(
     status: conversation.status,
     assignedAgentId: conversation.assignedAgentId,
     assignedAgentName: conversation.assignedAgent?.displayName ?? null,
+    intervention: conversation.interventionById
+      ? { userId: conversation.interventionById, name: conversation.interventionBy?.displayName ?? "Gestor", startedAt: (conversation.interventionStartedAt ?? new Date()).toISOString() }
+      : null,
     channel: conversation.channel,
     whatsappConnectionId: connection.id,
     whatsappConnectionName: connection.name,

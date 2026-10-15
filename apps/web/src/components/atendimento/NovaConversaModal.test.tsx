@@ -14,7 +14,10 @@ vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 const SETTINGS_ON = { defaultCountryCodeEnabled: true, defaultCountryCode: "55", fixExtraNineEnabled: true };
 const SETTINGS_OFF = { defaultCountryCodeEnabled: false, defaultCountryCode: "55", fixExtraNineEnabled: false };
 
-function givenApi(settings: object, lookup: PhoneLookupDTO | "falha") {
+type Lookup = Pick<PhoneLookupDTO, "exists" | "phone" | "normalizedPhone"> & Partial<PhoneLookupDTO>;
+
+function givenApi(settings: object, partial: Lookup | "falha") {
+  const lookup: PhoneLookupDTO | "falha" = partial === "falha" ? partial : { unverifiable: false, checkedByConnectionName: null, ...partial };
   vi.mocked(api.get).mockImplementation((url: string) => {
     if (url === "/settings/phone") return Promise.resolve({ data: settings }) as never;
     if (url.endsWith("/lookup-number")) return lookup === "falha" ? (Promise.reject(new Error("fora do ar")) as never) : (Promise.resolve({ data: lookup }) as never);
@@ -54,7 +57,7 @@ describe("Nova conversa › Novo número", () => {
 
     await screen.findByText("Número (DDI opcional)"); // settings loaded
     fireEvent.change(phoneInput, { target: { value: "65999286623" } });
-    expect(await screen.findByText("Número confirmado no WhatsApp.")).toBeInTheDocument();
+    expect(await screen.findByText("Número com WhatsApp.")).toBeInTheDocument();
     expect(screen.getByText("+55 65 9928-6623")).toBeInTheDocument(); // "Será usado": 55 added, the extra 9 dropped
 
     fireEvent.click(screen.getByRole("button", { name: /iniciar conversa/i }));
@@ -67,7 +70,7 @@ describe("Nova conversa › Novo número", () => {
     givenApi(SETTINGS_ON, { exists: true, phone: "5565999286623", normalizedPhone: "556599286623" });
     const { phoneInput } = await openNovoNumero();
     fireEvent.change(phoneInput, { target: { value: "65999286623" } });
-    expect(await screen.findByText("Número confirmado no WhatsApp.")).toBeInTheDocument();
+    expect(await screen.findByText("Número com WhatsApp.")).toBeInTheDocument();
     expect(screen.getByText("+55 65 99928-6623")).toBeInTheDocument();
   });
 
@@ -79,13 +82,28 @@ describe("Nova conversa › Novo número", () => {
     expect(screen.getByRole("button", { name: /iniciar conversa/i })).toBeDisabled();
   });
 
-  it("não bloqueia quando o WhatsApp não pôde ser consultado", async () => {
+  it("bloqueia quando o WhatsApp não pôde ser consultado, e deixa tentar de novo", async () => {
     givenApi(SETTINGS_ON, { exists: null, phone: null, normalizedPhone: "556599286623" });
     const { phoneInput } = await openNovoNumero();
     fireEvent.change(phoneInput, { target: { value: "65999286623" } });
-    await waitFor(() => expect(api.get).toHaveBeenCalledWith(expect.stringContaining("/lookup-number"), expect.anything()));
-    expect(screen.queryByText(/não está no whatsapp/i)).not.toBeInTheDocument();
-    expect(screen.queryByText("Número confirmado no WhatsApp.")).not.toBeInTheDocument();
+    expect(await screen.findByText("Não foi possível verificar o número agora.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Tentar de novo" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /iniciar conversa/i })).toBeDisabled();
+  });
+
+  it("API Oficial: mostra a conexão de QR Code que verificou", async () => {
+    givenApi(SETTINGS_ON, { exists: true, phone: "556599286623", normalizedPhone: "556599286623", checkedByConnectionName: "Suporte" });
+    const { phoneInput } = await openNovoNumero();
+    fireEvent.change(phoneInput, { target: { value: "65999286623" } });
+    expect(await screen.findByText("Número com WhatsApp (verificado pela conexão Suporte).")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /iniciar conversa/i })).toBeEnabled();
+  });
+
+  it("API Oficial sem conexão de QR Code: deixa iniciar sem verificação, com aviso", async () => {
+    givenApi(SETTINGS_ON, { exists: null, phone: null, normalizedPhone: "556599286623", unverifiable: true });
+    const { phoneInput } = await openNovoNumero();
+    fireEvent.change(phoneInput, { target: { value: "65999286623" } });
+    expect(await screen.findByText(/Não há conexão de QR Code conectada/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /iniciar conversa/i })).toBeEnabled();
   });
 

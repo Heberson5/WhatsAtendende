@@ -8,6 +8,7 @@ import { writeAudit } from "../../lib/audit";
 import {
   assertAgentCanAccessConversation,
   assertAgentCanReadConversation,
+  notifyInterventionNote,
   getConversationOrThrow,
 } from "../conversations/conversations.service";
 import * as service from "./client-panel.service";
@@ -80,6 +81,7 @@ clientPanelRouter.post(
     const conversation = await conversationForWrite(req);
     const { body } = noteSchema.parse(req.body);
     const note = await service.createNote(conversation.id, req.auth!.userId, body);
+    await notifyInterventionNote(conversation.id, req.auth!.userId, body);
     await writeAudit({ userId: req.auth!.userId, action: "CONVERSATION_NOTE_CREATED", entity: "Conversation", entityId: conversation.id, ipAddress: req.ip ?? null });
     res.status(201).json(note);
   })

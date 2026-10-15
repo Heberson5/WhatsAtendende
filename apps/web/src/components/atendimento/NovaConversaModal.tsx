@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Search, UserPlus, X, CheckCircle2, XCircle, Loader2, Phone } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Info, Loader2, Phone, Search, UserPlus, X, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import {
   PERMISSION,
@@ -102,9 +102,13 @@ export function NovaConversaModal({
       (await api.get<PhoneLookupDTO>(`/whatsapp/connections/${connectionId}/lookup-number`, { params: { phone: manualDigits } })).data,
     enabled: mode === "manual" && Boolean(connectionId) && manualDigits.length >= 10,
   });
-  // `exists: null` means WhatsApp could not be asked right now — never blocks, like a failed lookup.
+  // Only a number WhatsApp confirms can start — or, on a WhatsApp Oficial connection with no QR Code connection to
+  // ask through, one that can't be checked at all. WhatsApp not answering right now blocks it until it does.
   const numberConfirmedMissing = mode === "manual" && numberLookup.isSuccess && numberLookup.data.exists === false;
   const numberConfirmed = numberLookup.isSuccess && numberLookup.data.exists === true;
+  const numberUnverifiable = numberLookup.isSuccess && numberLookup.data.unverifiable;
+  const numberUnanswered = !numberLookup.isFetching && (numberLookup.isError || (numberLookup.isSuccess && numberLookup.data.exists === null && !numberLookup.data.unverifiable));
+  const canStartManual = numberConfirmed || numberUnverifiable;
   // What the conversation will use: the number WhatsApp confirmed, or else the typed one after Configurações › Números de telefone.
   const numberToUse = numberConfirmed && numberLookup.data?.phone ? numberLookup.data.phone : phoneSettings ? normalizeTypedPhone(manualPhone, phoneSettings).phone : null;
   const defaultCountryCode = phoneSettings?.defaultCountryCodeEnabled ? phoneSettings.defaultCountryCode : null;
@@ -245,6 +249,7 @@ export function NovaConversaModal({
               <input
                 value={manualPhone}
                 onChange={(e) => setManualPhone(e.target.value)}
+                disabled={!connectionId}
                 placeholder={!phoneSettings ? "" : defaultCountryCode ? "65 99999-9999" : "5511999999999"}
                 className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm"
               />
@@ -271,7 +276,24 @@ export function NovaConversaModal({
                       </>
                     ) : numberConfirmed ? (
                       <>
-                        <CheckCircle2 className="h-3.5 w-3.5 text-green-500" /> <span className="text-green-700">Número confirmado no WhatsApp.</span>
+                        <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />{" "}
+                        <span className="text-green-700">
+                          Número com WhatsApp
+                          {numberLookup.data?.checkedByConnectionName ? ` (verificado pela conexão ${numberLookup.data.checkedByConnectionName})` : ""}.
+                        </span>
+                      </>
+                    ) : numberUnverifiable ? (
+                      <>
+                        <Info className="h-3.5 w-3.5 shrink-0 text-muted" />{" "}
+                        <span className="text-muted">Não há conexão de QR Code conectada para verificar o número. A conversa pode ser iniciada sem verificação.</span>
+                      </>
+                    ) : numberUnanswered ? (
+                      <>
+                        <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-warning" />{" "}
+                        <span className="text-warning">Não foi possível verificar o número agora.</span>
+                        <button type="button" onClick={() => numberLookup.refetch()} className="focus-ring ml-1 font-semibold text-primary hover:underline">
+                          Tentar de novo
+                        </button>
                       </>
                     ) : null}
                   </p>
@@ -288,7 +310,7 @@ export function NovaConversaModal({
             </label>
             <button
               onClick={() => manualPhone.trim() && startMutation.mutate({ phone: manualPhone.trim(), name: manualName.trim() || null })}
-              disabled={!manualPhone.trim() || !connectionId || startMutation.isPending || numberConfirmedMissing}
+              disabled={!manualPhone.trim() || !connectionId || startMutation.isPending || !canStartManual}
               className="focus-ring flex w-full items-center justify-center gap-2 rounded-card bg-primary py-2.5 text-sm font-semibold text-primary-fg disabled:opacity-60"
             >
               <UserPlus className="h-4 w-4" /> {startMutation.isPending ? "Iniciando..." : "Iniciar conversa"}

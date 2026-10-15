@@ -71,6 +71,7 @@ model User {
   passwordResetTokens   PasswordResetToken[]
   refreshTokens         RefreshToken[]
   assignedConversations Conversation[]            @relation("AssignedAgent")
+  interventions         Conversation[]            @relation("ConversationIntervention")
   assignmentsFrom       ConversationAssignment[]  @relation("AssignmentFromAgent")
   assignmentsTo         ConversationAssignment[]  @relation("AssignmentToAgent")
   transfersInitiated    ConversationTransfer[]    @relation("TransferInitiatedBy")
@@ -355,25 +356,25 @@ model ManagerConnectionAccess {
 // connection (not global) so, e.g., "Vendas" and "Suporte" can each curate
 // their own set without stepping on each other's shortcuts.
 model QuickReply {
-  id             String               @id @default(uuid())
-  name           String
+  id              String               @id @default(uuid())
+  name            String
   // Stored without the leading "/" (e.g. "boasvindas", not "/boasvindas") —
   // the slash is purely a UI trigger, added back only when displayed.
-  shortcut       String
-  text           String
+  shortcut        String
+  text            String
   // Offered in every connection's "/" picker, or only in `connections`.
   // A shortcut must be unique among the replies that can show up together
   // in the same connection — enforced in quick-replies.service.ts.
-  allConnections Boolean              @default(false)
-  connections    WhatsAppConnection[] @relation("QuickReplyConnections")
+  allConnections  Boolean              @default(false)
+  connections     WhatsAppConnection[] @relation("QuickReplyConnections")
   // The one image, video or PDF sent with the text (the text is its caption) — added only by Gestor/Administrador
   // (Perfis de acesso › "Respostas — Incluir imagem, vídeo ou PDF"). The file lives in UPLOAD_DIR, see lib/reply-media.ts.
   mediaStorageKey String?
   mediaFileName   String?
   mediaMimeType   String?
   mediaSizeBytes  Int?
-  createdAt      DateTime             @default(now())
-  updatedAt      DateTime             @updatedAt
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
 
   @@index([shortcut])
 }
@@ -401,6 +402,8 @@ model AutoMessageTemplate {
   name           String
   text           String
   active         Boolean              @default(true)
+  // "*Nome:*" of whoever triggered it on top of the text sent to the customer (Respostas › "Mostrar o nome do atendente no topo").
+  showSenderName Boolean              @default(true)
   // Sent for conversations of every connection, or only of `connections`.
   // A connection-specific active template wins over an "all connections" one.
   allConnections Boolean              @default(true)
@@ -443,25 +446,27 @@ model WorkSchedule {
 // of the AGENT, not of which connection they happen to be on. See
 // conversations.routes.ts's close route for where this actually fires.
 model ClosingMessage {
-  id             String               @id @default(uuid())
-  name           String
-  text           String
+  id              String               @id @default(uuid())
+  name            String
+  text            String
   // Inactive = kept on file but never auto-sent, without losing its user
   // assignments (toggling it back on picks up exactly where it left off).
-  active         Boolean              @default(true)
-  assignedUsers  User[]
+  active          Boolean              @default(true)
+  // "*Nome:*" of whoever closed on top of the text sent to the customer (Respostas › "Mostrar o nome do atendente no topo").
+  showSenderName  Boolean              @default(true)
+  assignedUsers   User[]
   // Only auto-sent when the closed conversation came from one of these
   // connections (or from any, when allConnections).
-  allConnections Boolean              @default(true)
-  connections    WhatsAppConnection[] @relation("ClosingMessageConnections")
+  allConnections  Boolean              @default(true)
+  connections     WhatsAppConnection[] @relation("ClosingMessageConnections")
   // The one image, video or PDF sent with the text (the text is its caption) — added only by Gestor/Administrador
   // (Perfis de acesso › "Respostas — Incluir imagem, vídeo ou PDF"). The file lives in UPLOAD_DIR, see lib/reply-media.ts.
   mediaStorageKey String?
   mediaFileName   String?
   mediaMimeType   String?
   mediaSizeBytes  Int?
-  createdAt      DateTime             @default(now())
-  updatedAt      DateTime             @updatedAt
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
 }
 
 // ---------------------------------------------------------------------------
@@ -684,10 +689,10 @@ enum ConversationStatus {
 }
 
 model Conversation {
-  id                   String              @id @default(uuid())
+  id                    String              @id @default(uuid())
   // Denormalized from contact.channel at creation time, same reasoning as
   // whatsappConnectionId below.
-  channel              Channel             @default(WHATSAPP)
+  channel               Channel             @default(WHATSAPP)
   // Denormalized from contact.whatsappConnectionId at creation time — kept
   // directly on the conversation (rather than only reachable via a join)
   // so the queue, oversight, dashboard, and report filters can filter by
@@ -696,15 +701,20 @@ model Conversation {
   // null for an INSTAGRAM/MESSENGER conversation, which sets
   // metaConnectionId instead.
   // onDelete: Restrict on both — same reasoning as Contact's connection FKs.
-  whatsappConnection   WhatsAppConnection? @relation(fields: [whatsappConnectionId], references: [id], onDelete: Restrict)
-  whatsappConnectionId String?
-  metaConnection       MetaConnection?     @relation(fields: [metaConnectionId], references: [id], onDelete: Restrict)
-  metaConnectionId     String?
-  contact              Contact             @relation(fields: [contactId], references: [id])
-  contactId            String
-  status               ConversationStatus  @default(WAITING)
-  assignedAgent        User?               @relation("AssignedAgent", fields: [assignedAgentId], references: [id])
-  assignedAgentId      String?
+  whatsappConnection    WhatsAppConnection? @relation(fields: [whatsappConnectionId], references: [id], onDelete: Restrict)
+  whatsappConnectionId  String?
+  metaConnection        MetaConnection?     @relation(fields: [metaConnectionId], references: [id], onDelete: Restrict)
+  metaConnectionId      String?
+  contact               Contact             @relation(fields: [contactId], references: [id])
+  contactId             String
+  status                ConversationStatus  @default(WAITING)
+  assignedAgent         User?               @relation("AssignedAgent", fields: [assignedAgentId], references: [id])
+  assignedAgentId       String?
+  // Gestão › Intervir: the manager/admin who took over replying. Until they hand it back (or transfer/close it from
+  // Gestão), the assigned agent only follows the conversation and leaves notes — see assertCanReplyToConversation.
+  interventionBy        User?               @relation("ConversationIntervention", fields: [interventionById], references: [id])
+  interventionById      String?
+  interventionStartedAt DateTime?
 
   enteredQueueAt  DateTime  @default(now())
   acceptedAt      DateTime?

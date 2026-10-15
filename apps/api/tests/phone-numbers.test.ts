@@ -147,42 +147,42 @@ describe("número digitado à mão: DDI padrão e 9 a mais", () => {
       it("sem o 9, quando é a forma que o WhatsApp tem", async () => {
         whatsapp.known.add("556599286623");
         const res = await lookup("65999286623");
-        expect(res.body).toEqual({ exists: true, phone: "556599286623", normalizedPhone: "556599286623" });
+        expect(res.body).toEqual({ exists: true, phone: "556599286623", normalizedPhone: "556599286623", unverifiable: false, checkedByConnectionName: null });
         expect(whatsapp.asked).toEqual(["556599286623"]); // the first form was enough
       });
 
       it("com o 9, quando o WhatsApp só conhece essa forma", async () => {
         whatsapp.known.add("5565999286623");
         const res = await lookup("65999286623");
-        expect(res.body).toEqual({ exists: true, phone: "5565999286623", normalizedPhone: "556599286623" });
+        expect(res.body).toEqual({ exists: true, phone: "5565999286623", normalizedPhone: "556599286623", unverifiable: false, checkedByConnectionName: null });
         expect(whatsapp.asked).toEqual(["556599286623", "5565999286623"]);
       });
 
       it("em DDD que mantém o 9, pergunta primeiro pela forma digitada", async () => {
         whatsapp.known.add("5511987654321");
         const res = await lookup("11987654321");
-        expect(res.body).toEqual({ exists: true, phone: "5511987654321", normalizedPhone: "5511987654321" });
+        expect(res.body).toEqual({ exists: true, phone: "5511987654321", normalizedPhone: "5511987654321", unverifiable: false, checkedByConnectionName: null });
         expect(whatsapp.asked).toEqual(["5511987654321"]);
       });
 
       it("diz que não existe quando nenhuma forma existe, e mostra o número que foi conferido", async () => {
         const res = await lookup("65999286623");
-        expect(res.body).toEqual({ exists: false, phone: null, normalizedPhone: "556599286623" });
+        expect(res.body).toEqual({ exists: false, phone: null, normalizedPhone: "556599286623", unverifiable: false, checkedByConnectionName: null });
         expect(whatsapp.asked).toEqual(["556599286623", "5565999286623"]);
       });
 
-      it("não bloqueia quando o WhatsApp não pôde ser consultado", async () => {
+      it("responde sem resposta (null) quando o WhatsApp não pôde ser consultado", async () => {
         whatsapp.down = true;
         const res = await lookup("65999286623");
         expect(res.status).toBe(200);
-        expect(res.body).toEqual({ exists: null, phone: null, normalizedPhone: "556599286623" });
+        expect(res.body).toEqual({ exists: null, phone: null, normalizedPhone: "556599286623", unverifiable: false, checkedByConnectionName: null });
       });
 
       it("com a correção desligada, confere o número exatamente como foi digitado", async () => {
         await updatePhoneSettings(OFF);
         whatsapp.known.add("65999286623");
         const res = await lookup("65999286623");
-        expect(res.body).toEqual({ exists: true, phone: "65999286623", normalizedPhone: "65999286623" });
+        expect(res.body).toEqual({ exists: true, phone: "65999286623", normalizedPhone: "65999286623", unverifiable: false, checkedByConnectionName: null });
       });
     });
 
@@ -204,14 +204,24 @@ describe("número digitado à mão: DDI padrão e 9 a mais", () => {
         expect(await contactPhones()).toEqual(["5565999286623"]);
       });
 
-      it("inicia mesmo assim, sem o 9, quando o WhatsApp não conhece nenhuma forma", async () => {
-        expect((await start("65999286623")).status).toBe(201);
-        expect(await contactPhones()).toEqual(["556599286623"]);
+      it("recusa quando o WhatsApp não conhece nenhuma forma do número", async () => {
+        const res = await start("65999286623");
+        expect(res.status).toBe(400);
+        expect(res.body.message ?? res.body.error).toMatch(/não tem WhatsApp/);
+        expect(await contactPhones()).toEqual([]);
       });
 
-      it("não consulta o WhatsApp quando não há dúvida (nenhum 9 foi tirado)", async () => {
+      it("recusa quando o WhatsApp não pôde ser consultado agora", async () => {
+        whatsapp.down = true;
+        const res = await start("6599286623");
+        expect(res.status).toBe(400);
+        expect(JSON.stringify(res.body)).toMatch(/Não foi possível confirmar/);
+      });
+
+      it("também confere o número sem dúvida de 9 antes de iniciar", async () => {
+        whatsapp.known.add("556599286623");
         expect((await start("6599286623")).status).toBe(201);
-        expect(whatsapp.asked).toEqual([]);
+        expect(whatsapp.asked).toEqual(["556599286623"]);
         expect(await contactPhones()).toEqual(["556599286623"]);
       });
 
@@ -226,15 +236,6 @@ describe("número digitado à mão: DDI padrão e 9 a mais", () => {
         expect(res.body.contact.id).toBe(stale.id);
       });
 
-      it("reaproveita o contato salvo na outra forma, sem mexer nele, quando não houve confirmação", async () => {
-        const saved = await prisma.contact.create({ data: { phone: "5565999286623", whatsappConnectionId: connectionId } });
-        const res = await start("6599286623"); // no 9 typed: nothing to ask WhatsApp about
-        expect(res.status).toBe(201);
-        expect(await prisma.contact.count()).toBe(1);
-        expect((await prisma.contact.findUniqueOrThrow({ where: { id: saved.id } })).phone).toBe("5565999286623");
-        expect(res.body.contact.id).toBe(saved.id);
-      });
-
       it("prefere o contato que já tem exatamente o número, em vez de mexer em outro", async () => {
         const exact = await prisma.contact.create({ data: { phone: "556599286623", whatsappConnectionId: connectionId } });
         await prisma.contact.create({ data: { phone: "5565999286623", whatsappConnectionId: connectionId } });
@@ -246,8 +247,41 @@ describe("número digitado à mão: DDI padrão e 9 a mais", () => {
 
       it("com as opções desligadas, usa só os números digitados", async () => {
         await updatePhoneSettings(OFF);
+        whatsapp.known.add("65999286623");
         expect((await start("65999286623")).status).toBe(201);
         expect(await contactPhones()).toEqual(["65999286623"]);
+        expect(whatsapp.asked).toEqual(["65999286623"]);
+      });
+    });
+
+    describe("API Oficial: conferência por uma conexão de QR Code", () => {
+      async function officialConnection() {
+        return prisma.whatsAppConnection.create({ data: { name: "Vendas Oficial", status: "CONNECTED", connectionMode: "OFFICIAL_API" } });
+      }
+
+      it("pergunta pela conexão de QR Code conectada e diz qual conferiu", async () => {
+        const official = await officialConnection();
+        whatsapp.known.add("556599286623");
+        const res = await request(app).get(`/api/whatsapp/connections/${official.id}/lookup-number`).set("Authorization", `Bearer ${adminToken}`).query({ phone: "65999286623" });
+        expect(res.body).toMatchObject({ exists: true, phone: "556599286623", unverifiable: false, checkedByConnectionName: "Suporte" });
+        const started = await request(app).post("/api/conversations/start").set("Authorization", `Bearer ${adminToken}`).send({ connectionId: official.id, phone: "65999286623" });
+        expect(started.status).toBe(201);
+        expect(started.body.whatsappConnectionId).toBe(official.id);
+      });
+
+      it("recusa o número que a conexão de QR Code diz não ter WhatsApp", async () => {
+        const official = await officialConnection();
+        const started = await request(app).post("/api/conversations/start").set("Authorization", `Bearer ${adminToken}`).send({ connectionId: official.id, phone: "65999286623" });
+        expect(started.status).toBe(400);
+      });
+
+      it("sem conexão de QR Code conectada, segue sem verificação", async () => {
+        const official = await officialConnection();
+        await prisma.whatsAppConnection.update({ where: { id: connectionId }, data: { status: "DISCONNECTED" } });
+        const res = await request(app).get(`/api/whatsapp/connections/${official.id}/lookup-number`).set("Authorization", `Bearer ${adminToken}`).query({ phone: "65999286623" });
+        expect(res.body).toMatchObject({ exists: null, unverifiable: true });
+        const started = await request(app).post("/api/conversations/start").set("Authorization", `Bearer ${adminToken}`).send({ connectionId: official.id, phone: "65999286623" });
+        expect(started.status).toBe(201);
         expect(whatsapp.asked).toEqual([]);
       });
     });

@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, ArrowRightLeft, CheckCircle2, ChevronDown, ChevronUp, FileText, PanelRight, Paperclip, Phone, Search, StickyNote, X as CloseIcon } from "lucide-react";
+import { ArrowLeft, ArrowRightLeft, CheckCircle2, ChevronDown, ChevronUp, FileText, Lock, PanelRight, Paperclip, Phone, Search, StickyNote, X as CloseIcon } from "lucide-react";
 import clsx from "clsx";
 import { PERMISSION, type ConversationListItemDTO, type ConversationNoteDTO, type MessageDTO, type PaginatedResult, type QuickReplyDTO, type TemplateContextDTO } from "@whatsatendende/types";
 import { toastWithUndo } from "../../lib/undoToast";
@@ -35,8 +35,11 @@ export function ChatPanel({
   onConversationStarted,
   clientPanelOpen,
   onToggleClientPanel,
+  headerActions,
 }: {
   conversation: ConversationListItemDTO;
+  /** Replaces Transferir/Encerrar in the header — Gestão's intervention panel puts Devolver/Transferir/Encerrar there. */
+  headerActions?: ReactNode;
   onClosed: () => void;
   onBack?: () => void;
   /** Whether the client panel beside the chat is expanded — drives the header toggle's pressed state. */
@@ -48,8 +51,11 @@ export function ChatPanel({
   const queryClient = useQueryClient();
   const permissions = useAuthStore((s) => s.permissions);
   const isAdmin = useAuthStore((s) => s.user?.role === "ADMIN");
-  const canTransfer = permissions?.[PERMISSION.ATENDIMENTO_TRANSFERIR];
-  const canClose = permissions?.[PERMISSION.ATENDIMENTO_ENCERRAR];
+  const userId = useAuthStore((s) => s.user?.id);
+  // Gestão › Intervir: someone else took over replying — this agent follows along and can only leave notes.
+  const lockedByIntervention = Boolean(conversation.intervention && conversation.intervention.userId !== userId);
+  const canTransfer = permissions?.[PERMISSION.ATENDIMENTO_TRANSFERIR] && !lockedByIntervention && !headerActions;
+  const canClose = permissions?.[PERMISSION.ATENDIMENTO_ENCERRAR] && !lockedByIntervention && !headerActions;
   // A disconnected connection can't actually deliver anything — see PROMPT:
   // "não permitindo enviar mensagens... de conexões desconectadas".
   const connectionDisconnected = conversation.whatsappConnectionStatus !== "CONNECTED";
@@ -59,7 +65,8 @@ export function ChatPanel({
   const [transferOpen, setTransferOpen] = useState(false);
   const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
   // "Responder" sends to the customer; "Nota interna" only saves a note the team sees.
-  const [composerMode, setComposerMode] = useState<"reply" | "note">("reply");
+  const [composerModeChoice, setComposerMode] = useState<"reply" | "note">("reply");
+  const composerMode = lockedByIntervention ? "note" : composerModeChoice;
   const [noteText, setNoteText] = useState("");
   const composerRef = useRef<ComposerHandle>(null);
   // Whether a file is currently being dragged over this conversation, to
@@ -123,7 +130,10 @@ export function ChatPanel({
   });
 
   const markReadMutation = useMutation({
-    mutationFn: () => api.post(`/conversations/${conversation.id}/read`),
+    // Only the assigned agent's own "read" marker — a manager intervening must not clear it for them.
+    mutationFn: async () => {
+      if (conversation.assignedAgentId === userId) await api.post(`/conversations/${conversation.id}/read`);
+    },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["mine"] }),
   });
 
@@ -570,6 +580,7 @@ export function ChatPanel({
           >
             <Search className="h-3.5 w-3.5" />
           </button>
+          {headerActions}
           {canTransfer && (
             <button
               onClick={() => setTransferOpen(true)}
@@ -673,6 +684,16 @@ export function ChatPanel({
         </div>
       )}
 
+      {lockedByIntervention && (
+        <div className="mx-4 mb-2 flex items-start gap-2 rounded-card border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100">
+          <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>
+            <strong>{conversation.intervention?.name}</strong> está intervindo nesta conversa. Você acompanha em tempo real e pode deixar notas para ele, mas não
+            pode responder ao cliente, transferir nem encerrar.
+          </span>
+        </div>
+      )}
+
       <div className="flex items-center gap-4 border-t border-border bg-surface px-4 pt-2 text-xs" role="tablist" aria-label="Tipo de mensagem">
         {(
           [
@@ -684,9 +705,11 @@ export function ChatPanel({
             key={tab.value}
             role="tab"
             aria-selected={composerMode === tab.value}
+            disabled={lockedByIntervention && tab.value === "reply"}
+            title={lockedByIntervention && tab.value === "reply" ? "Bloqueado durante a intervenção" : undefined}
             onClick={() => setComposerMode(tab.value)}
             className={clsx(
-              "focus-ring -mb-px border-b-2 pb-1.5 font-medium",
+              "focus-ring -mb-px flex items-center gap-1 border-b-2 pb-1.5 font-medium disabled:cursor-not-allowed disabled:opacity-50",
               composerMode === tab.value
                 ? tab.value === "note"
                   ? "border-amber-500 text-amber-600 dark:text-amber-400"
@@ -694,6 +717,7 @@ export function ChatPanel({
                 : "border-transparent text-muted hover:text-[var(--color-text)]"
             )}
           >
+            {lockedByIntervention && tab.value === "reply" && <Lock className="h-3 w-3" />}
             {tab.label}
           </button>
         ))}
@@ -743,7 +767,7 @@ export function ChatPanel({
             }}
             rows={2}
             maxLength={2000}
-            placeholder="Escreva uma nota para a equipe — o cliente não vê"
+            placeholder={lockedByIntervention ? `Escreva uma nota para ${conversation.intervention?.name} — o cliente não vê` : "Escreva uma nota para a equipe — o cliente não vê"}
             className="focus-ring min-h-[44px] flex-1 resize-none rounded-card border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950 placeholder:text-amber-700/60 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100"
           />
           <button

@@ -11,6 +11,7 @@ export function toAutoMessageTemplateDTO(
     name: row.name,
     text: row.text,
     active: row.active,
+    showSenderName: row.showSenderName,
     connectionScope: toConnectionScopeDTO(row),
     userScope: { allUsers: row.allUsers, users: row.allUsers ? [] : row.users },
     createdAt: row.createdAt.toISOString(),

@@ -52,6 +52,8 @@ export interface AutoMessageTemplateInput {
   name: string;
   text: string;
   active: boolean;
+  // Left out: with the name on top (the default).
+  showSenderName?: boolean;
   connectionScope: ConnectionScopeInput;
   // Left out: sent for everyone.
   userScope?: UserScopeInput;

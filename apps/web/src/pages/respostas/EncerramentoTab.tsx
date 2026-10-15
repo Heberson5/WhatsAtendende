@@ -111,7 +111,10 @@ export function EncerramentoTab() {
             )}
             {closingMessages?.map((cm) => (
               <tr key={cm.id} className="border-t border-border hover:bg-surface-alt">
-                <td className="px-4 py-3 font-medium">{cm.name}</td>
+                <td className="px-4 py-3 font-medium">
+                  {cm.name}
+                  <span className="block text-xs font-normal text-muted">{cm.showSenderName ? "Com o nome do atendente" : "Sem o nome do atendente"}</span>
+                </td>
                 <td className="max-w-xs px-4 py-3 text-muted" title={cm.text}>
                   <span className="flex items-center gap-1.5">
                     {cm.media && <MediaBadge kind={cm.media.kind} />}

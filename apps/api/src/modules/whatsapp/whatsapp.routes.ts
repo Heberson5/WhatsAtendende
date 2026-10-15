@@ -309,6 +309,12 @@ whatsappRouter.get(
     // The typed number goes through Configurações › Números de telefone (DDI padrão, 9 a mais) before it is
     // asked about; what comes back is the number WhatsApp itself knows, which is what the conversation will use.
     const result = await resolveTypedNumber(req.params.id, phone);
-    res.json({ exists: result.exists, phone: result.exists ? result.phone : null, normalizedPhone: result.normalized } satisfies PhoneLookupDTO);
+    res.json({
+      exists: result.exists,
+      phone: result.exists ? result.phone : null,
+      normalizedPhone: result.normalized,
+      unverifiable: result.unverifiable,
+      checkedByConnectionName: result.checkedByConnectionName,
+    } satisfies PhoneLookupDTO);
   })
 );

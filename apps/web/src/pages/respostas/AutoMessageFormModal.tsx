@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { X } from "lucide-react";
 import type { AutoMessageTemplateDTO, AutoMessageTrigger } from "@whatsatendende/types";
-import { AutoMessagePreview } from "./AutoMessagePreview";
+import { AutoMessagePreview, SenderNameToggle } from "./AutoMessagePreview";
 import { ConnectionScopePicker, toConnectionScopeValue, type ConnectionScopeValue } from "./ConnectionScopePicker";
 import { UserScopePicker, toUserScopeValue, type UserScopeValue } from "./UserScopePicker";
 import {
@@ -17,6 +17,7 @@ export interface AutoMessageFormValues {
   name: string;
   text: string;
   active: boolean;
+  showSenderName: boolean;
   connectionScope: ConnectionScopeValue;
   userScope: UserScopeValue;
 }
@@ -50,6 +51,7 @@ export function AutoMessageFormModal({
   const [name, setName] = useState(template?.name ?? "");
   const [text, setText] = useState(template?.text ?? "");
   const [active, setActive] = useState(template?.active ?? true);
+  const [showSenderName, setShowSenderName] = useState(template?.showSenderName ?? true);
   const [connectionScope, setConnectionScope] = useState(toConnectionScopeValue(template?.connectionScope, true));
   const [userScope, setUserScope] = useState(toUserScopeValue(template?.userScope));
   const [error, setError] = useState<string | null>(null);
@@ -98,7 +100,7 @@ export function AutoMessageFormModal({
     }
     setLoading(true);
     try {
-      await onSubmit({ trigger, name, text, active, connectionScope, userScope });
+      await onSubmit({ trigger, name, text, active, showSenderName, connectionScope, userScope });
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao salvar mensagem automática");
@@ -163,7 +165,9 @@ export function AutoMessageFormModal({
             </p>
           </div>
 
-          <AutoMessagePreview senderName={senderExampleName} text={previewText} />
+          <SenderNameToggle checked={showSenderName} onChange={setShowSenderName} />
+
+          <AutoMessagePreview senderName={showSenderName ? senderExampleName : null} text={previewText} />
 
           <ConnectionScopePicker
             value={connectionScope}

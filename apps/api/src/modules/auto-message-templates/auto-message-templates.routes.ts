@@ -62,6 +62,7 @@ const bodySchema = z.object({
   name: z.string().min(1).max(120),
   text: z.string().min(1).max(4096),
   active: z.boolean(),
+  showSenderName: z.boolean().default(true),
   connectionScope: connectionScopeSchema,
   userScope: service.userScopeSchema.optional(),
 });

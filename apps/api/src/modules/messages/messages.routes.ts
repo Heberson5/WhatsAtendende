@@ -24,7 +24,7 @@ import * as templatesService from "../message-templates/message-templates.servic
 import { toMessageTemplateDTO } from "../message-templates/message-templates.mapper";
 import { realtimeEvents } from "../../realtime/realtime";
 import * as groupsService from "../groups/groups.service";
-import { assertAgentCanAccessConversation, assertAgentCanReadContactHistory, assertAgentCanReadConversation, getConversationOrThrow } from "../conversations/conversations.service";
+import { assertCanReplyToConversation, assertAgentCanReadContactHistory, assertAgentCanReadConversation, getConversationOrThrow } from "../conversations/conversations.service";
 
 export const messagesRouter = Router();
 
@@ -138,7 +138,8 @@ export function mimeToMessageType(mime: string): "IMAGE" | "VIDEO" | "AUDIO" | "
 
 async function loadConversationForAgent(conversationId: string, agentId: string) {
   const conversation = await getConversationOrThrow(conversationId);
-  assertAgentCanAccessConversation(conversation, { userId: agentId, role: "AGENT" });
+  // The assigned agent — or, during a Gestão intervention, only the person intervening.
+  assertCanReplyToConversation(conversation, agentId);
   // Shared by every outbound send route (text/file/audio/location) — a
   // disconnected connection can't actually deliver anything, so block it
   // here once instead of duplicating the check in each route. Exactly one

@@ -5,7 +5,7 @@ import { PERMISSION, REPLY_MEDIA_CAPTION_MAX, type ClosingMessageDTO } from "@wh
 import { api } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
 import { ReplyMediaField, captionTooLong, hasReplyMedia, type ReplyMediaChange } from "./ReplyMediaField";
-import { AutoMessagePreview } from "./AutoMessagePreview";
+import { AutoMessagePreview, SenderNameToggle } from "./AutoMessagePreview";
 import { ConnectionScopePicker, toConnectionScopeValue, type ConnectionScopeValue } from "./ConnectionScopePicker";
 import { fillAutoMessageTags, AGENT_EXAMPLE, CLIENT_EXAMPLE_NAME } from "../../lib/auto-message-tags";
 
@@ -22,6 +22,7 @@ export interface EncerramentoFormValues {
   name: string;
   text: string;
   active: boolean;
+  showSenderName: boolean;
   userIds: string[];
   connectionScope: ConnectionScopeValue;
 }
@@ -58,6 +59,7 @@ export function EncerramentoFormModal({
     name: closingMessage?.name ?? "",
     text: closingMessage?.text ?? "",
     active: closingMessage?.active ?? true,
+    showSenderName: closingMessage?.showSenderName ?? true,
     userIds: closingMessage?.assignedUsers.map((u) => u.id) ?? [],
     connectionScope: toConnectionScopeValue(closingMessage?.connectionScope, true),
   });
@@ -191,7 +193,9 @@ export function EncerramentoFormModal({
             onChange={setMedia}
           />
 
-          <AutoMessagePreview senderName={AGENT_EXAMPLE.fullName} text={previewText} />
+          <SenderNameToggle checked={values.showSenderName} onChange={(showSenderName) => setValues((v) => ({ ...v, showSenderName }))} />
+
+          <AutoMessagePreview senderName={values.showSenderName ? AGENT_EXAMPLE.fullName : null} text={previewText} />
 
           <label className="flex items-center justify-between rounded-card border border-border px-3 py-2">
             <span className="text-sm font-medium">Ativo</span>

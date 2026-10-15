@@ -247,6 +247,8 @@ export interface ClosingMessageDTO {
   text: string;
   media: ReplyMediaDTO | null;
   active: boolean;
+  /** The "*Nome:*" of whoever closed on top of the text the customer gets. */
+  showSenderName: boolean;
   /** Users who get this message auto-sent when they click Encerrar — a user appears in at most one ClosingMessage's list at a time. */
   assignedUsers: { id: string; displayName: string }[];
   connectionScope: ConnectionScopeDTO;
@@ -626,6 +628,8 @@ export interface AutoMessageTemplateDTO {
   name: string;
   text: string;
   active: boolean;
+  /** The "*Nome:*" of whoever triggered it on top of the text the customer gets. */
+  showSenderName: boolean;
   connectionScope: ConnectionScopeDTO;
   /** Who it is sent for: everyone, or only when one of `users` takes the conversation (Respostas › Aceite › "Quem pode usar"). */
   userScope: UserScopeDTO;
@@ -760,6 +764,8 @@ export interface ConversationListItemDTO {
   status: ConversationStatus;
   assignedAgentId: string | null;
   assignedAgentName: string | null;
+  /** Gestão › Intervir: who took over replying, while they have it. The assigned agent then only follows and leaves notes. */
+  intervention: { userId: string; name: string; startedAt: string } | null;
   // Which channel this conversation is on — drives which icon/label
   // ConversationCard shows. WhatsAppConnection*/below stays populated
   // (with the owning MetaConnection's data, not just WhatsApp's) for every
@@ -942,6 +948,7 @@ export const PERMISSION = {
   // Layered ON TOP of GESTAO_ACESSAR (need both) — see that key's own doc
   // comment.
   GESTAO_GERENCIAR: "gestao.gerenciar",
+  GESTAO_INTERVIR: "gestao.intervir",
   DASHBOARD_ACESSAR: "dashboard.acessar",
   RELATORIOS_ACESSAR: "relatorios.acessar",
   // Usuários — split from the old single USUARIOS_GERENCIAR into granular
@@ -1124,6 +1131,14 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     description: "Além de visualizar, poder transferir uma conversa para outro atendente ou devolvê-la para a fila diretamente pela Gestão.",
     editableRoles: ["AGENT", "MANAGER"],
     defaultAllowed: { AGENT: true, MANAGER: true },
+  },
+  {
+    key: PERMISSION.GESTAO_INTERVIR,
+    group: "Gestão",
+    label: "Intervir na conversa pela Gestão",
+    description: "Assumir as respostas de uma conversa em atendimento: o atendente passa a só acompanhar e deixar notas até a conversa ser devolvida, transferida ou encerrada.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
   },
   {
     key: PERMISSION.DASHBOARD_ACESSAR,
