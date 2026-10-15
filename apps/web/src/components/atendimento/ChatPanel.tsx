@@ -17,6 +17,7 @@ import { TransferModal } from "./TransferModal";
 import { SendTemplateModal } from "./SendTemplateModal";
 import { TransferNoteCard } from "./TransferNoteCard";
 import { TimelineByDay, type TimelineEntry } from "./TimelineByDay";
+import { ContactPhoto } from "../common/ContactPhoto";
 
 async function fetchMessages(conversationId: string, cursor?: string) {
   // 100 (the API's own max) rather than a smaller page, since every page
@@ -550,13 +551,15 @@ export function ChatPanel({
               <ArrowLeft className="h-4 w-4" />
             </button>
           )}
-          <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full bg-surface-alt text-sm font-semibold text-muted">
-            {conversation.contact.photoUrl ? (
-              <img src={conversation.contact.photoUrl} alt="" className="h-full w-full object-cover" />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center">{displayName.slice(0, 2).toUpperCase()}</div>
-            )}
-          </div>
+          <ContactPhoto photoUrl={conversation.contact.photoUrl} name={displayName} phone={conversation.contact.phone}>
+            <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full bg-surface-alt text-sm font-semibold text-muted">
+              {conversation.contact.photoUrl ? (
+                <img src={conversation.contact.photoUrl} alt="" className="h-full w-full object-cover" />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center">{displayName.slice(0, 2).toUpperCase()}</div>
+              )}
+            </div>
+          </ContactPhoto>
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold">{displayName}</p>
             {conversation.contact.phone && (

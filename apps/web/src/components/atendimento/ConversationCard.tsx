@@ -6,6 +6,7 @@ import type { Channel, ConversationListItemDTO } from "@whatsatendende/types";
 import { contactDisplayName } from "../../lib/contact-display";
 import { formatPhone } from "../../lib/format-phone";
 import { useNow } from "../../hooks/useNow";
+import { ContactPhoto } from "../common/ContactPhoto";
 
 // Customer waiting this long for a reply gets the "sem resposta" warning;
 // past the second threshold it turns red.
@@ -99,7 +100,9 @@ export function ConversationCard({
       {selected && <span className="absolute inset-y-2 left-0 w-[3px] rounded-r bg-primary" aria-hidden />}
       <div className="relative shrink-0">
         {conversation.contact.photoUrl ? (
-          <img src={conversation.contact.photoUrl} alt="" className="h-10 w-10 rounded-full object-cover" />
+          <ContactPhoto photoUrl={conversation.contact.photoUrl} name={displayName} phone={conversation.contact.phone}>
+            <img src={conversation.contact.photoUrl} alt="" className="h-10 w-10 rounded-full object-cover" />
+          </ContactPhoto>
         ) : (
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-[13px] font-semibold text-primary">
             {initials(displayName)}

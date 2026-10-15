@@ -9,6 +9,7 @@ import type { ContactPanelDTO, ConversationListItemDTO, TagDTO } from "@whatsate
 import { api, getApiErrorMessage } from "../../lib/api";
 import { contactDisplayName } from "../../lib/contact-display";
 import { formatPhone } from "../../lib/format-phone";
+import { ContactPhoto } from "../common/ContactPhoto";
 
 const STATUS_LABEL: Record<string, string> = {
   IN_FLOW: "No fluxo",
@@ -24,18 +25,20 @@ const STATUS_LABEL: Record<string, string> = {
 function Avatar({ conversation, size }: { conversation: ConversationListItemDTO; size: "sm" | "lg" }) {
   const name = contactDisplayName(conversation.contact, conversation.channel);
   return (
-    <div
-      className={clsx(
-        "shrink-0 overflow-hidden rounded-full bg-primary/15 font-semibold text-primary",
-        size === "lg" ? "h-16 w-16 text-lg" : "h-8 w-8 text-[11px]"
-      )}
-    >
-      {conversation.contact.photoUrl ? (
-        <img src={conversation.contact.photoUrl} alt="" className="h-full w-full object-cover" />
-      ) : (
-        <div className="flex h-full w-full items-center justify-center">{name.slice(0, 2).toUpperCase()}</div>
-      )}
-    </div>
+    <ContactPhoto photoUrl={conversation.contact.photoUrl} name={name} phone={conversation.contact.phone}>
+      <div
+        className={clsx(
+          "shrink-0 overflow-hidden rounded-full bg-primary/15 font-semibold text-primary",
+          size === "lg" ? "h-16 w-16 text-lg" : "h-8 w-8 text-[11px]"
+        )}
+      >
+        {conversation.contact.photoUrl ? (
+          <img src={conversation.contact.photoUrl} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center">{name.slice(0, 2).toUpperCase()}</div>
+        )}
+      </div>
+    </ContactPhoto>
   );
 }
 

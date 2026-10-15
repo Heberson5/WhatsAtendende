@@ -10,13 +10,6 @@ export async function getOwnProfile(userId: string) {
   return prisma.user.findUniqueOrThrow({ where: { id: userId }, include: withConnection });
 }
 
-export async function updateOwnProfile(userId: string, input: { fullName?: string; displayName?: string }) {
-  return prisma.user.update({
-    where: { id: userId },
-    data: { fullName: input.fullName, displayName: input.displayName },
-    include: withConnection,
-  });
-}
 
 export async function markReleaseNotesSeen(userId: string, version: string) {
   await prisma.user.update({ where: { id: userId }, data: { releaseNotesSeenVersion: version } });

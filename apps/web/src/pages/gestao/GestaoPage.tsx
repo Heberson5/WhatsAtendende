@@ -22,6 +22,7 @@ import { STATUS_COLOR, STATUS_LABEL } from "../../lib/conversationStatus";
 import { toastWithUndo } from "../../lib/undoToast";
 import { ColumnViewMenu } from "../../components/common/ColumnViewMenu";
 import { useColumnView } from "../../hooks/useColumnView";
+import { ContactPhoto } from "../../components/common/ContactPhoto";
 
 // Same "still active" scope the backend enforces (see
 // assignConversationFromGestao/returnConversationToQueue) — CLOSED/ABANDONED
@@ -242,7 +243,9 @@ export default function GestaoPage() {
           <td key="client" className="px-3 py-3">
             <div className="flex items-center gap-2.5">
               {c.contact.photoUrl ? (
-                <img src={c.contact.photoUrl} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover" />
+                <ContactPhoto photoUrl={c.contact.photoUrl} name={contactDisplayName(c.contact)} phone={c.contact.phone}>
+                  <img src={c.contact.photoUrl} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover" />
+                </ContactPhoto>
               ) : (
                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-alt text-xs font-semibold text-muted">
                   {contactDisplayName(c.contact).slice(0, 2).toUpperCase()}
