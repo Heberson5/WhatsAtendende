@@ -11,6 +11,7 @@ import { TransferNoteCard } from "../atendimento/TransferNoteCard";
 import { TimelineByDay, type TimelineEntry } from "../atendimento/TimelineByDay";
 import { InternalNoteCard } from "../atendimento/ChatPanel";
 import { TagChip } from "../../pages/contatos/contactFormat";
+import { ContactPhoto } from "../common/ContactPhoto";
 
 async function fetchMessages(conversationId: string, cursor?: string) {
   const res = await api.get<PaginatedResult<MessageDTO>>(`/messages/conversations/${conversationId}`, {
@@ -213,13 +214,15 @@ export function ReadOnlyConversationDrawer({
     <div className={variant === "drawer" ? "flex h-full w-full max-w-lg flex-col bg-surface shadow-elevated" : "flex h-full w-full flex-col bg-surface"}>
         <div className="flex items-center justify-between gap-2 border-b border-border bg-surface px-4 py-3">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full bg-surface-alt text-sm font-semibold text-muted">
-              {conversation.contact.photoUrl ? (
-                <img src={conversation.contact.photoUrl} alt="" className="h-full w-full object-cover" />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center">{displayName.slice(0, 2).toUpperCase()}</div>
-              )}
-            </div>
+            <ContactPhoto photoUrl={conversation.contact.photoUrl} name={displayName} phone={conversation.contact.phone}>
+              <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full bg-surface-alt text-sm font-semibold text-muted">
+                {conversation.contact.photoUrl ? (
+                  <img src={conversation.contact.photoUrl} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center">{displayName.slice(0, 2).toUpperCase()}</div>
+                )}
+              </div>
+            </ContactPhoto>
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold">{displayName}</p>
               <p className="flex items-center gap-1 text-xs text-muted">

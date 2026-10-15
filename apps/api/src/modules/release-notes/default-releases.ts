@@ -13,7 +13,7 @@ export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
     version: "2.10.0",
     date: "16 out 2026",
-    name: "Visões de colunas, notas da pesquisa mais bem lidas e cadastro de usuários mais seguro",
+    name: "Visões de colunas, notas da pesquisa mais bem lidas, foto do cliente ampliada e cadastro de usuários mais seguro",
     summary: "Toda tabela do sistema ganhou o botão ⋮ para escolher quais colunas aparecem e em que ordem, só por agora ou como padrão, e as exportações seguem essa escolha. A pesquisa de satisfação entende notas como \"1o\" e \"posso dar 10\", e o relatório mostra a resposta do cliente e permite corrigir a nota. Em Usuários, um e-mail pode ser reaproveitado de quem foi desativado, a desativação fica registrada com data e responsável, e trocar o nome pede confirmação.",
     notes: [
       {
@@ -57,6 +57,22 @@ export const DEFAULT_RELEASES: ReleaseContent[] = [
         where: "Relatórios › Pesquisa de satisfação",
         requires: [PERMISSION.RELATORIOS_ACESSAR],
         images: [{ src: "/notas-de-versao/pesquisa-revisar.webp", caption: "A resposta \"1o\" para revisar e a nota corrigida" }],
+      },
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "Foto do cliente ampliada, como no WhatsApp Web",
+        text: "Clique na foto do cliente para vê-la grande: na lista de conversas, no cabeçalho da conversa, no painel do cliente e na Gestão. Fecha no X, no Esc ou clicando fora. A foto não tem botão de baixar e não pode ser copiada nem arrastada pelo botão direito.",
+        where: "Atendimento e Gestão › foto do cliente",
+        requires: [PERMISSION.ATENDIMENTO_ACESSAR],
+      },
+      {
+        type: "melhoria",
+        area: "geral",
+        title: "Meu Perfil: nome só pelo gestor e X para voltar",
+        text: "O nome completo e o nome de exibição não podem mais ser alterados pelo próprio usuário em Meu Perfil; a troca é feita pelo gestor ou administrador em Usuários. O nome de exibição saiu da tela. No canto superior direito, o X (ou o Esc) fecha o perfil e volta para a tela anterior.",
+        where: "Meu Perfil",
+        images: [{ src: "/notas-de-versao/perfil-fechar.webp", caption: "Meu Perfil com o X e o nome só para leitura", size: "small" }],
       },
       {
         type: "melhoria",

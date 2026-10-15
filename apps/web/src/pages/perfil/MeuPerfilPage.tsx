@@ -1,6 +1,7 @@
-import { useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useNavigate } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Camera, Trash2 } from "lucide-react";
+import { Camera, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import type { UserDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
@@ -14,9 +15,7 @@ export default function MeuPerfilPage() {
   const accessToken = useAuthStore((s) => s.accessToken);
   const queryClient = useQueryClient();
   const photoInputRef = useRef<HTMLInputElement>(null);
-
-  const [fullName, setFullName] = useState(user?.fullName ?? "");
-  const [displayName, setDisplayName] = useState(user?.displayName ?? "");
+  const navigate = useNavigate();
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -27,15 +26,6 @@ export default function MeuPerfilPage() {
     if (accessToken) setSession(accessToken, updated);
     queryClient.invalidateQueries({ queryKey: ["users"] });
   }
-
-  const profileMutation = useMutation({
-    mutationFn: () => api.patch<UserDTO>("/profile", { fullName, displayName }),
-    onSuccess: (res) => {
-      applyUser(res.data);
-      toast.success("Perfil atualizado.");
-    },
-    onError: (err) => toast.error(getApiErrorMessage(err)),
-  });
 
   const photoMutation = useMutation({
     mutationFn: async (file: File) => {
@@ -70,10 +60,20 @@ export default function MeuPerfilPage() {
     onError: (err) => setPasswordError(getApiErrorMessage(err)),
   });
 
-  function handleProfileSubmit(e: FormEvent) {
-    e.preventDefault();
-    profileMutation.mutate();
-  }
+  // Back to the screen the profile was opened from; opened straight from the address bar, to the start screen.
+  const close = useCallback(() => {
+    if ((window.history.state as { idx?: number } | null)?.idx) navigate(-1);
+    else navigate("/", { replace: true });
+  }, [navigate]);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const target = e.target as HTMLElement;
+      if (e.key === "Escape" && !["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) close();
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [close]);
 
   function handlePasswordSubmit(e: FormEvent) {
     e.preventDefault();
@@ -89,7 +89,16 @@ export default function MeuPerfilPage() {
 
   return (
     <div className="h-full overflow-auto p-3 sm:p-6">
-      <div className="mx-auto flex max-w-2xl flex-col gap-6">
+      <div className="relative mx-auto flex max-w-2xl flex-col gap-6 pt-12 sm:pt-0">
+        <button
+          type="button"
+          onClick={close}
+          className="focus-ring shadow-soft absolute end-0 top-0 rounded-full border border-border bg-surface p-2 text-muted hover:bg-surface-alt hover:text-[var(--color-text)] sm:-end-14"
+          aria-label="Fechar e voltar"
+          title="Fechar e voltar"
+        >
+          <X className="h-5 w-5" />
+        </button>
         <div className="shadow-soft rounded-card border border-border bg-surface p-6">
           <h2 className="mb-4 text-base font-semibold">Foto de perfil</h2>
           <div className="flex items-center gap-4">
@@ -135,13 +144,10 @@ export default function MeuPerfilPage() {
           </div>
         </div>
 
-        <form onSubmit={handleProfileSubmit} className="shadow-soft space-y-3 rounded-card border border-border bg-surface p-6">
+        <section className="shadow-soft space-y-3 rounded-card border border-border bg-surface p-6">
           <h2 className="mb-1 text-base font-semibold">Dados pessoais</h2>
           <Field label="Nome completo">
-            <input required value={fullName} onChange={(e) => setFullName(e.target.value)} className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm" />
-          </Field>
-          <Field label="Nome de exibição">
-            <input required value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm" />
+            <input disabled value={user.fullName} className="w-full rounded-card border border-border bg-surface-alt px-3 py-2 text-sm text-muted" />
           </Field>
           <Field label="E-mail">
             <input disabled value={user.email} className="w-full rounded-card border border-border bg-surface-alt px-3 py-2 text-sm text-muted" />
@@ -149,12 +155,8 @@ export default function MeuPerfilPage() {
           <Field label="Perfil">
             <input disabled value={ROLE_LABEL[user.role] ?? user.role} className="w-full rounded-card border border-border bg-surface-alt px-3 py-2 text-sm text-muted" />
           </Field>
-          <div className="pt-1">
-            <button type="submit" disabled={profileMutation.isPending} className="focus-ring rounded-card bg-primary px-4 py-2 text-sm font-semibold text-primary-fg disabled:opacity-60">
-              {profileMutation.isPending ? "Salvando..." : "Salvar alterações"}
-            </button>
-          </div>
-        </form>
+          <p className="text-xs text-muted">Para alterar o nome, fale com o gestor ou o administrador.</p>
+        </section>
 
         <form onSubmit={handlePasswordSubmit} className="shadow-soft space-y-3 rounded-card border border-border bg-surface p-6">
           <h2 className="mb-1 text-base font-semibold">Alterar senha</h2>

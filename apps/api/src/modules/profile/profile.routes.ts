@@ -20,20 +20,8 @@ profileRouter.get(
   })
 );
 
-const updateSchema = z.object({
-  fullName: z.string().min(2).optional(),
-  displayName: z.string().min(1).optional(),
-});
-
-profileRouter.patch(
-  "/",
-  asyncHandler(async (req, res) => {
-    const input = updateSchema.parse(req.body);
-    const user = await service.updateOwnProfile(req.auth!.userId, input);
-    await writeAudit({ userId: req.auth!.userId, action: "PROFILE_UPDATED", entity: "User", entityId: user.id, ipAddress: req.ip ?? null, metadata: input });
-    res.json(toUserDTO(user));
-  })
-);
+// No PATCH "/": the user can't rename themselves — reports and the Dashboard show the current name, so only Usuários
+// (with its "é a mesma pessoa?" check) changes it.
 
 profileRouter.post(
   "/photo",
