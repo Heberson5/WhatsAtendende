@@ -11,6 +11,68 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.13.0",
+    date: "16 out 2026",
+    name: "Fluxo Univida, fotos e botões no Fluxo, transferência por pessoas e fila de Abandonados",
+    summary: "O Fluxo ganhou nome em cada passo, foto nas mensagens e nos menus, botões e listas na API Oficial, a variável {{opcao}} e o aviso de horário no começo. A transferência pode ir para pessoas escolhidas de qualquer conexão, e quem para de responder vai para a nova fila Abandonados. Os fluxos Univida (QR Code e API Oficial) já vêm cadastrados, desligados.",
+    notes: [
+      {
+        type: "novo",
+        area: "fluxo",
+        title: "Fluxos Univida já cadastrados",
+        text: "Em Fluxo aparecem \"Univida · QR Code\" e \"Univida · API Oficial\", com todos os menus, textos e fotos do atendimento Univida. Os dois chegam desligados e sem conexão: abra o fluxo, vincule a conexão no botão Conexões, escolha as pessoas de cada passo de transferência e ligue quando quiser. Se apagar um deles, ele não volta.",
+        where: "Fluxo",
+        requires: [PERMISSION.FLUXO_VISUALIZAR],
+      },
+      {
+        type: "novo",
+        area: "fluxo",
+        title: "Nome do passo, foto e {{opcao}}",
+        text: "Cada passo pode ter um nome (aparece no desenho e nas notas para o atendente). As mensagens e os menus podem levar uma foto, enviada junto com o texto. A variável {{opcao}} escreve a última opção que o cliente escolheu, como \"Cidade selecionada: {{opcao}}\". A pergunta do menu agora aceita textos longos, com várias linhas.",
+        where: "Fluxo › clique no passo",
+        requires: [PERMISSION.FLUXO_VISUALIZAR],
+        images: [{ src: "/notas-de-versao/fluxo-passo-foto.webp", caption: "O menu Guias, com nome, foto e a prévia no WhatsApp" }],
+      },
+      {
+        type: "novo",
+        area: "fluxo",
+        title: "Botões e listas na API Oficial",
+        text: "Nas conexões da API Oficial, um menu com até 3 opções curtas vai como botões do próprio WhatsApp (com a foto em cima), e um de 4 a 10 opções vai como uma lista \"Ver opções\". O cliente só toca na opção. Nas conexões por QR Code continua com as opções numeradas.",
+        where: "Fluxo",
+        requires: [PERMISSION.FLUXO_VISUALIZAR],
+      },
+      {
+        type: "novo",
+        area: "fluxo",
+        title: "Aviso de horário no começo do fluxo",
+        text: "No passo Início, ligue \"Avisar quando estiver fora do horário\": fora do Horário de expediente da conexão de entrada, o fluxo conta o horário de atendimento e pergunta se o cliente quer seguir mesmo assim, para um atendente dar sequência quando abrir. Se ele disser que não, a conversa é encerrada com uma despedida. Esse aviso substitui a mensagem de fechado da conexão.",
+        where: "Fluxo › Início",
+        requires: [PERMISSION.FLUXO_VISUALIZAR],
+        images: [{ src: "/notas-de-versao/fluxo-inicio-config.webp", caption: "As configurações do fluxo, no Início", size: "small" }],
+      },
+      {
+        type: "melhoria",
+        area: "fluxo",
+        title: "Transferência para pessoas escolhidas, de qualquer conexão",
+        text: "No passo Transferir, as pessoas marcadas atendem o cliente venha ele de qualquer conexão. O cliente continua falando com o número em que entrou. A conversa vai direto para a pessoa online com menos conversas abertas. Se nenhuma delas estiver online, vai para Abandonados. Se ninguém estiver online, espera no passo e vai para quem ficar online primeiro. Quem recebe a conversa vê uma nota com tudo o que o cliente escolheu no fluxo.",
+        where: "Fluxo › Transferir para atendente",
+        requires: [PERMISSION.FLUXO_VISUALIZAR],
+      },
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "Fila Abandonados",
+        text: "Uma nova aba em Atendimento reúne os clientes que pararam de responder os menus do fluxo (30 minutos por padrão, ajustável no Início) e os que chegaram quando ninguém do passo de transferência estava online. Quem parou de responder recebe um aviso de que um atendente vai falar com ele. Ao aceitar, uma nota do sistema explica o motivo e onde o cliente parou. Na Gestão, eles aparecem no filtro Abandonadas.",
+        where: "Atendimento › Aband.",
+        requires: [PERMISSION.ATENDIMENTO_ACESSAR],
+        images: [
+          { src: "/notas-de-versao/atendimento-abandonados.webp", caption: "A aba Abandonados", size: "small" },
+          { src: "/notas-de-versao/fluxo-notas-sistema.webp", caption: "As notas do sistema ao aceitar" },
+        ],
+      },
+    ],
+  },
+  {
     version: "2.12.0",
     date: "16 out 2026",
     name: "Meu dia, conversas fixadas, lembrete de retorno, envio agendado e atalhos do teclado",

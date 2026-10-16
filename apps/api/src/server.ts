@@ -8,11 +8,13 @@ import { runHolidaySyncIfDue } from "./modules/holidays/holidays.service";
 import { sendQueueRemindersIfDue } from "./lib/queue-reminder";
 import { endIdleSessions } from "./modules/auth/auth.service";
 import { syncDefaultReleaseNotes } from "./modules/release-notes/release-notes.service";
+import { syncDefaultFlows } from "./modules/flows/default-flows";
 import { syncContactsIfDue } from "./lib/contacts-sync";
 import { env } from "./config/env";
 import { logger } from "./lib/logger";
 import { prisma } from "./lib/prisma";
 import { fireDueReminders, sendDueScheduledMessages } from "./modules/agent-tools/agent-tools.service";
+import { abandonIdleFlowSessions, dispatchWaitingTransfers } from "./modules/flows/flow-engine.service";
 
 const AGENT_TOOLS_SWEEP_INTERVAL_MS = 20_000;
 
@@ -51,6 +53,8 @@ async function main() {
 
   // The release notes shipped with this version — each one copied into the database once (see syncDefaultReleaseNotes).
   await syncDefaultReleaseNotes().catch((err) => logger.error({ err }, "failed to copy the shipped release notes"));
+  // Flows shipped with this version (e.g. Univida) — copied in once, switched off and with no connection.
+  await syncDefaultFlows().catch((err) => logger.error({ err }, "failed to copy the shipped flows"));
 
   const app = createApp();
   const httpServer = http.createServer(app);
@@ -105,7 +109,8 @@ async function main() {
   const agentToolsTimer = setInterval(() => {
     if (agentToolsSweepRunning) return;
     agentToolsSweepRunning = true;
-    Promise.all([fireDueReminders(), sendDueScheduledMessages()])
+    // Also the Fluxo's clock: menus left unanswered go to Abandonados, and transfers waiting for someone online are handed over.
+    Promise.all([fireDueReminders(), sendDueScheduledMessages(), abandonIdleFlowSessions(), dispatchWaitingTransfers()])
       .catch((err) => logger.error({ err }, "failed to fire reminders / send scheduled messages"))
       .finally(() => {
         agentToolsSweepRunning = false;

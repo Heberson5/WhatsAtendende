@@ -78,6 +78,19 @@ conversationsRouter.get(
   })
 );
 
+// Abandonados: left by the Fluxo (menus unanswered, or nobody of the transfer step online) — accepted like the queue.
+conversationsRouter.get(
+  "/abandoned",
+  requireAttendanceAccess,
+  asyncHandler(async (req, res) => {
+    const viewer = await prisma.user.findUnique({ where: { id: req.auth!.userId }, select: { whatsappConnectionId: true } });
+    let connectionIds = req.auth!.role === "AGENT" ? undefined : parseListParam(req.query.connectionId as string | string[] | undefined);
+    if (req.auth!.role === "MANAGER") connectionIds = await resolveAllowedConnectionIds(req.auth!, connectionIds, "receive");
+    const conversations = await service.listAbandoned({ userId: req.auth!.userId, role: req.auth!.role, whatsappConnectionId: viewer?.whatsappConnectionId ?? null }, connectionIds);
+    res.json(conversations.map((c) => toConversationListItemDTO(c, false)));
+  })
+);
+
 conversationsRouter.get(
   "/mine",
   requireAttendanceAccess,
@@ -177,7 +190,7 @@ const oversightQuerySchema = z.object({
   // Repeated query param (?connectionId=a&connectionId=b) or comma-separated; empty/absent = all connections.
   connectionId: z.union([z.string(), z.array(z.string())]).optional(),
 });
-const OVERSIGHT_STATUSES = new Set(["IN_FLOW", "NEW", "WAITING", "IN_PROGRESS", "TRANSFERRED", "CLOSED", "ABANDONED", "HANDLED_EXTERNALLY"]);
+const OVERSIGHT_STATUSES = new Set(["IN_FLOW", "NEW", "WAITING", "FLOW_ABANDONED", "IN_PROGRESS", "TRANSFERRED", "CLOSED", "ABANDONED", "HANDLED_EXTERNALLY"]);
 conversationsRouter.get(
   "/oversight",
   requirePermission(PERMISSION.GESTAO_ACESSAR),

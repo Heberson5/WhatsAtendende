@@ -32,6 +32,9 @@ import {
   type FlowNodeType,
   type FlowBusinessHoursData,
   type WorkScheduleOptionDTO,
+  type FlowImage,
+  type FlowStartData,
+  FLOW_ABANDON_AFTER_MINUTES_DEFAULT,
   FLOW_HOURS_CLOSED,
   FLOW_HOURS_OPEN,
   FLOW_MENU_DEFAULT_PROMPT,
@@ -63,7 +66,12 @@ const HISTORY_LIMIT = 80;
 // Consecutive edits to the same field within this window become one undo step.
 const HISTORY_COALESCE_MS = 800;
 const PRESENCE_DOT: Record<string, string> = { ONLINE: "bg-green-500", AWAY: "bg-amber-500", OFFLINE: "bg-gray-400" };
-const VARIABLES = [{ tag: "{{cliente}}", label: "Nome do cliente" }];
+const VARIABLES = [
+  { tag: "{{cliente}}", label: "Nome do cliente" },
+  { tag: "{{opcao}}", label: "Última opção que o cliente escolheu" },
+];
+const PREVIEW_VARS = (text: string) => text.replaceAll("{{cliente}}", "Carlos").replaceAll("{{opcao}}", "Tangará da Serra");
+const MAX_MENU_PROMPT = 4096;
 
 const PALETTE: { category: string; items: { type: FlowNodeType; defaultData: FlowNodeData; hint: string }[] }[] = [
   {
@@ -86,10 +94,7 @@ const PALETTE: { category: string; items: { type: FlowNodeType; defaultData: Flo
     ],
   },
 ];
-const COMING_SOON = [
-  { label: "Imagem", icon: Image },
-  { label: "Validar CEP", icon: MapPin },
-];
+const COMING_SOON = [{ label: "Validar CEP", icon: MapPin }];
 
 interface Graph {
   nodes: FlowNodeDTO[];
@@ -926,7 +931,8 @@ export default function FlowEditorPage() {
                     style={{ height: HEADER_HEIGHT, backgroundColor: `${meta.color}14`, color: meta.color, borderBottom: `1px solid ${meta.color}26` }}
                   >
                     <meta.icon className="h-3.5 w-3.5 shrink-0" />
-                    <span className="flex-1 truncate">{meta.label}</span>
+                    <span className="flex-1 truncate" title={meta.label}>{(node.data as { name?: string }).name?.trim() || meta.label}</span>
+                    {(node.data as { image?: FlowImage | null }).image && <Image className="h-3.5 w-3.5 shrink-0" aria-label="Com foto" />}
                     {nodeIssues && (
                       <span title={nodeIssues.join("\n")} className="text-warning">
                         <AlertTriangle className="h-3.5 w-3.5" />
@@ -1075,6 +1081,21 @@ function NodeInspector({
           </div>
         )}
 
+        {node.type !== "START" && node.type !== "END" && (
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium text-muted">Nome do passo</span>
+            <input
+              disabled={disabled}
+              value={(node.data as { name?: string }).name ?? ""}
+              onChange={(e) => onChange({ ...(node.data as object), name: e.target.value } as FlowNodeData, "name")}
+              placeholder={`${meta.label} — ex.: Guias, Cidades, Vendas`}
+              maxLength={60}
+              className="focus-ring w-full rounded-lg border border-border bg-surface px-2.5 py-1.5 text-sm"
+            />
+            <span className="mt-1 block text-[11px] text-muted">Aparece no desenho e nas notas para o atendente.</span>
+          </label>
+        )}
+
         {node.type === "TEXT_MESSAGE" && (
           <>
             <label className="block">
@@ -1083,7 +1104,7 @@ function NodeInspector({
                 ref={textRef}
                 disabled={disabled}
                 value={(node.data as { text?: string }).text ?? ""}
-                onChange={(e) => onChange({ text: e.target.value }, "text")}
+                onChange={(e) => onChange({ ...(node.data as object), text: e.target.value } as FlowNodeData, "text")}
                 rows={5}
                 maxLength={4096}
                 placeholder="Olá! Como podemos ajudar?"
@@ -1100,7 +1121,7 @@ function NodeInspector({
                       const el = textRef.current;
                       const current = (node.data as { text?: string }).text ?? "";
                       const pos = el?.selectionStart ?? current.length;
-                      onChange({ text: current.slice(0, pos) + v.tag + current.slice(pos) }, "text");
+                      onChange({ ...(node.data as object), text: current.slice(0, pos) + v.tag + current.slice(pos) } as FlowNodeData, "text");
                       requestAnimationFrame(() => el?.focus());
                     }}
                     className="focus-ring rounded-full border border-border px-2 py-0.5 font-mono text-[11px] text-primary hover:border-primary/40"
@@ -1111,7 +1132,8 @@ function NodeInspector({
                 ))}
               </div>
             )}
-            <WhatsAppPreview text={((node.data as { text?: string }).text ?? "").replaceAll("{{cliente}}", "Carlos")} />
+            <FlowImageField disabled={disabled} image={(node.data as { image?: FlowImage | null }).image ?? null} onChange={(image) => onChange({ ...(node.data as object), image } as FlowNodeData, "image")} />
+            <WhatsAppPreview text={PREVIEW_VARS((node.data as { text?: string }).text ?? "")} image={(node.data as { image?: FlowImage | null }).image ?? null} />
           </>
         )}
 
@@ -1119,24 +1141,32 @@ function NodeInspector({
           <>
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-muted">Pergunta</span>
-              <input
+              <textarea
                 disabled={disabled}
                 value={(node.data as { prompt?: string }).prompt ?? ""}
                 onChange={(e) => onChange({ ...(node.data as { options: { id: string; label: string }[] }), prompt: e.target.value }, "prompt")}
                 placeholder={FLOW_MENU_DEFAULT_PROMPT}
-                maxLength={300}
-                className="focus-ring w-full rounded-lg border border-border bg-surface px-2.5 py-1.5 text-sm"
+                maxLength={MAX_MENU_PROMPT}
+                rows={4}
+                className="focus-ring w-full resize-y rounded-lg border border-border bg-surface px-2.5 py-1.5 text-sm"
               />
             </label>
             <MenuOptionsEditor disabled={disabled} options={menuOptions(node)} onChange={(options) => onChange({ ...(node.data as object), options }, "options")} />
             {menuOptions(node).length > 0 && (
               <>
-                <p className="text-xs text-muted">O cliente responde com o número ou com o nome da opção. Depois de 3 respostas que não batem com nenhuma opção, a conversa vai para a fila.</p>
+                <p className="text-xs text-muted">
+                  Na conexão por QR Code o cliente responde com o número ou com o nome da opção. Na API Oficial, até 3 opções curtas viram botões e até 10 viram
+                  uma lista. Depois de 3 respostas que não batem com nenhuma opção, a conversa vai para a fila.
+                </p>
+                <FlowImageField disabled={disabled} image={(node.data as { image?: FlowImage | null }).image ?? null} onChange={(image) => onChange({ ...(node.data as object), image } as FlowNodeData, "image")} />
                 <WhatsAppPreview
-                  text={renderFlowMenuText({
-                    prompt: (node.data as { prompt?: string }).prompt,
-                    options: menuOptions(node).map((o) => ({ ...o, label: o.label || "…" })),
-                  }).replaceAll("{{cliente}}", "Carlos")}
+                  text={PREVIEW_VARS(
+                    renderFlowMenuText({
+                      prompt: (node.data as { prompt?: string }).prompt,
+                      options: menuOptions(node).map((o) => ({ ...o, label: o.label || "…" })),
+                    })
+                  )}
+                  image={(node.data as { image?: FlowImage | null }).image ?? null}
                 />
               </>
             )}
@@ -1155,8 +1185,12 @@ function NodeInspector({
                 <div className="space-y-1.5">
                   {(
                     [
-                      { value: "any", label: "Qualquer atendente disponível", hint: "Vai para a fila da conexão" },
-                      { value: "selected", label: "Somente os atendentes selecionados", hint: "Vai direto para o selecionado online menos ocupado; se nenhum estiver online, vai para a fila" },
+                      { value: "any", label: "Qualquer atendente disponível", hint: "Vai para a fila da conexão por onde o cliente entrou" },
+                      {
+                        value: "selected",
+                        label: "Somente os atendentes selecionados",
+                        hint: "Atendem de qualquer conexão: vai direto para o selecionado online menos ocupado. Sem nenhum deles online, vai para Abandonados; sem ninguém online, espera neste passo.",
+                      },
                     ] as const
                   ).map((opt) => (
                     <label
@@ -1171,7 +1205,7 @@ function NodeInspector({
                         name={`transfer-mode-${node.id}`}
                         disabled={disabled}
                         checked={mode === opt.value}
-                        onChange={() => onChange({ assignedAgentIds: opt.value === "any" ? [] : ids, mode: opt.value }, "mode")}
+                        onChange={() => onChange({ ...(node.data as object), assignedAgentIds: opt.value === "any" ? [] : ids, mode: opt.value } as FlowNodeData, "mode")}
                         className="mt-0.5 accent-[var(--color-primary)]"
                       />
                       <span>
@@ -1199,7 +1233,7 @@ function NodeInspector({
                               disabled={disabled}
                               checked={checked}
                               onChange={() =>
-                                onChange({ assignedAgentIds: checked ? ids.filter((aid) => aid !== agent.id) : [...ids, agent.id], mode: "selected" }, "agents")
+                                onChange({ ...(node.data as object), assignedAgentIds: checked ? ids.filter((aid) => aid !== agent.id) : [...ids, agent.id], mode: "selected" } as FlowNodeData, "agents")
                               }
                               className="h-4 w-4 accent-[var(--color-primary)]"
                             />
@@ -1233,7 +1267,7 @@ function NodeInspector({
                   <select
                     disabled={disabled}
                     value={data.workScheduleId ?? ""}
-                    onChange={(e) => onChange({ workScheduleId: e.target.value || null }, "workScheduleId")}
+                    onChange={(e) => onChange({ ...(node.data as object), workScheduleId: e.target.value || null } as FlowNodeData, "workScheduleId")}
                     className="focus-ring w-full rounded-lg border border-border bg-surface px-2.5 py-1.5 text-sm"
                   >
                     <option value="">{legacy ? "Horário próprio deste nó" : "Sem horário (sempre aberto)"}</option>
@@ -1254,10 +1288,47 @@ function NodeInspector({
             );
           })()}
 
-        {(node.type === "START" || node.type === "END") && (
-          <p className="text-sm text-muted">
-            {node.type === "START" ? "Ponto de entrada do fluxo — toda conversa nova começa por aqui. Ligue-o ao primeiro passo." : "Encerra a conversa sem passar por um atendente. Use depois de uma mensagem final; para levar o cliente até a equipe, use Transferir."}
-          </p>
+        {node.type === "START" &&
+          (() => {
+            const data = node.data as FlowStartData;
+            return (
+              <div className="space-y-4">
+                <p className="text-sm text-muted">Ponto de entrada do fluxo — toda conversa nova começa por aqui. Ligue-o ao primeiro passo.</p>
+                <label className="flex items-start gap-2 rounded-lg border border-border px-3 py-2">
+                  <input
+                    type="checkbox"
+                    disabled={disabled}
+                    checked={Boolean(data.outOfHoursPrompt)}
+                    onChange={(e) => onChange({ ...data, outOfHoursPrompt: e.target.checked }, "outOfHoursPrompt")}
+                    className="mt-0.5 h-4 w-4 accent-[var(--color-primary)]"
+                  />
+                  <span>
+                    <span className="block text-sm font-medium">Avisar quando estiver fora do horário</span>
+                    <span className="block text-xs text-muted">
+                      Fora do Horário de expediente da conexão de entrada, o fluxo começa contando o horário de atendimento e perguntando se o cliente quer seguir. No
+                      lugar da mensagem de fechado da conexão.
+                    </span>
+                  </span>
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-medium text-muted">Minutos sem resposta nos menus para ir a Abandonados</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={1440}
+                    disabled={disabled}
+                    value={data.abandonAfterMinutes ?? FLOW_ABANDON_AFTER_MINUTES_DEFAULT}
+                    onChange={(e) => onChange({ ...data, abandonAfterMinutes: Math.max(1, Math.min(1440, Number(e.target.value) || FLOW_ABANDON_AFTER_MINUTES_DEFAULT)) }, "abandonAfterMinutes")}
+                    className="focus-ring w-28 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-sm"
+                  />
+                  <span className="mt-1 block text-[11px] text-muted">O cliente recebe um aviso e a conversa vai para Abandonados, com uma nota de onde ele parou.</span>
+                </label>
+              </div>
+            );
+          })()}
+
+        {node.type === "END" && (
+          <p className="text-sm text-muted">Encerra a conversa sem passar por um atendente. Use depois de uma mensagem final; para levar o cliente até a equipe, use Transferir.</p>
         )}
       </div>
     </div>
@@ -1265,13 +1336,15 @@ function NodeInspector({
 }
 
 /** How the message will look on the customer's WhatsApp. */
-function WhatsAppPreview({ text }: { text: string }) {
+function WhatsAppPreview({ text, image }: { text: string; image?: FlowImage | null }) {
+  const imageUrl = useFlowImageUrl(image ?? null);
   return (
     <div>
       <p className="mb-1.5 text-xs font-medium text-muted">Prévia no WhatsApp</p>
       <div className="rounded-card bg-[#efeae2] p-3 dark:bg-[#0b141a]">
         <div className="ml-auto max-w-[90%] whitespace-pre-wrap break-words rounded-lg rounded-tr-none bg-[#d9fdd3] px-2.5 py-1.5 text-[13px] text-[#111b21] shadow-sm dark:bg-[#005c4b] dark:text-[#e9edef]">
-          {text.trim() || <span className="opacity-50">Digite o texto da mensagem…</span>}
+          {imageUrl && <img src={imageUrl} alt="" className="-mx-1 mb-1.5 mt-0.5 block w-[calc(100%+0.5rem)] max-w-none rounded-md" />}
+          {text.trim() ? <WhatsAppFormatted text={text} /> : <span className="opacity-50">Digite o texto da mensagem…</span>}
           <span className="ml-2 inline-block align-bottom text-[10px] opacity-60">10:42</span>
         </div>
       </div>
@@ -1321,5 +1394,78 @@ function MenuOptionsEditor({
         </button>
       )}
     </div>
+  );
+}
+
+/** The step's photo for the editor (fetched with the session, like the Respostas attachment preview). */
+function useFlowImageUrl(image: FlowImage | null) {
+  const { data } = useQuery({
+    queryKey: ["flow-media", image?.storageKey],
+    queryFn: async () => URL.createObjectURL((await api.get<Blob>(`/flows/media/${image!.storageKey}`, { responseType: "blob" })).data),
+    enabled: Boolean(image?.storageKey),
+    staleTime: Infinity,
+  });
+  return image ? (data ?? null) : null;
+}
+
+/** A photo sent with this step — above the text (QR Code), or with the buttons (API Oficial). */
+function FlowImageField({ image, onChange, disabled }: { image: FlowImage | null; onChange: (image: FlowImage | null) => void; disabled: boolean }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const upload = useMutation({
+    mutationFn: async (file: File) => {
+      const form = new FormData();
+      form.append("file", file);
+      return (await api.post<FlowImage>("/flows/media", form, { headers: { "Content-Type": "multipart/form-data" } })).data;
+    },
+    onSuccess: (uploaded) => onChange(uploaded),
+    onError: (err) => toast.error(getApiErrorMessage(err)),
+  });
+  return (
+    <div>
+      <p className="mb-1.5 text-xs font-medium text-muted">Foto (opcional)</p>
+      {image ? (
+        <div className="flex items-center gap-2 rounded-lg border border-border px-2.5 py-1.5 text-xs">
+          <Image className="h-3.5 w-3.5 shrink-0 text-primary" />
+          <span className="min-w-0 flex-1 truncate">{image.fileName}</span>
+          {!disabled && (
+            <button onClick={() => onChange(null)} className="focus-ring rounded p-0.5 text-muted hover:text-danger" aria-label="Remover foto">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+      ) : (
+        !disabled && (
+          <button
+            onClick={() => inputRef.current?.click()}
+            disabled={upload.isPending}
+            className="focus-ring flex items-center gap-1.5 rounded-lg border border-dashed border-border px-2.5 py-1.5 text-xs font-medium text-primary hover:border-primary/40 disabled:opacity-60"
+          >
+            <Image className="h-3.5 w-3.5" /> {upload.isPending ? "Enviando..." : "Escolher foto"}
+          </button>
+        )
+      )}
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        hidden
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) upload.mutate(file);
+          e.target.value = "";
+        }}
+      />
+    </div>
+  );
+}
+
+/** *negrito* as WhatsApp shows it. */
+function WhatsAppFormatted({ text }: { text: string }) {
+  return (
+    <>
+      {text.split(/(\*[^*\n]+\*)/g).map((part, i) =>
+        part.length > 2 && part.startsWith("*") && part.endsWith("*") ? <strong key={i}>{part.slice(1, -1)}</strong> : <span key={i}>{part}</span>
+      )}
+    </>
   );
 }

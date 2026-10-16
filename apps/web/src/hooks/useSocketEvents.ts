@@ -138,6 +138,7 @@ export function useSocketEvents(activeConversationId: string | null) {
     const onGroupsUpdated = () => queryClient.invalidateQueries({ queryKey: ["groups"] });
     const onTyping = (payload: { conversationId: string; typing: boolean }) => useTypingStore.getState().setTyping(payload.conversationId, payload.typing);
     const onAgentExtras = () => queryClient.invalidateQueries({ queryKey: ["agent-extras"] });
+    const onAbandoned = () => queryClient.invalidateQueries({ queryKey: ["abandoned"] });
     const onReminderDue = (reminder: ConversationReminderDTO & { contactName: string }) => {
       showReminderToast(reminder, (conversationId) => navigate(`/atendimento?open=${conversationId}`));
       notifyDesktop(`Hora de retornar para ${reminder.contactName}`, reminder.note ?? "Lembrete de retorno", `wa-reminder-${reminder.id}`);
@@ -164,6 +165,7 @@ export function useSocketEvents(activeConversationId: string | null) {
     socket.on("groups:updated", onGroupsUpdated);
     socket.on("conversation:typing", onTyping);
     socket.on("agent:extras", onAgentExtras);
+    socket.on("abandoned:updated", onAbandoned);
     socket.on("reminder:due", onReminderDue);
 
     return () => {
@@ -188,6 +190,7 @@ export function useSocketEvents(activeConversationId: string | null) {
       socket.off("groups:updated", onGroupsUpdated);
       socket.off("conversation:typing", onTyping);
       socket.off("agent:extras", onAgentExtras);
+      socket.off("abandoned:updated", onAbandoned);
       socket.off("reminder:due", onReminderDue);
     };
   }, [queryClient, activeConversationId, accessToken, navigate]);

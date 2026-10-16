@@ -1,7 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { CONVERSATION_UNDO_WINDOW_MS, brazilianPhoneVariants } from "@whatsatendende/types";
 import { prisma } from "../../lib/prisma";
-import { endFlowSession } from "../flows/flow-engine.service";
+import { endFlowSession, flowIdsWithPerson, noteAbandonedReason } from "../flows/flow-engine.service";
 import { getClosedMessageForConnection } from "../work-schedules/work-schedules.service";
 import { scheduleCloseFollowUp, type HeldClosingMessage } from "../satisfaction/satisfaction.service";
 import { Errors } from "../../lib/http-error";
@@ -413,7 +413,7 @@ export async function getOldestMessageAnchor(
  */
 export async function findActiveConversationForContact(contactId: string) {
   return prisma.conversation.findFirst({
-    where: { contactId, status: { in: ["IN_FLOW", "NEW", "WAITING", "IN_PROGRESS", "TRANSFERRED", "HANDLED_EXTERNALLY"] } },
+    where: { contactId, status: { in: ["IN_FLOW", "NEW", "WAITING", "FLOW_ABANDONED", "IN_PROGRESS", "TRANSFERRED", "HANDLED_EXTERNALLY"] } },
     orderBy: { createdAt: "desc" },
   });
 }
@@ -647,7 +647,7 @@ export async function findOrOpenConversationForInboundMessage(
     // Nobody is with this customer yet — waiting in the queue, still in the Fluxo, or on the
     // linked phone ("Atendido pelo celular") — so an "@nome" now still takes it to that person.
     // One already with an agent (IN_PROGRESS/TRANSFERRED) never moves on a customer's say-so.
-    const unattended = active.status === "NEW" || active.status === "WAITING" || active.status === "IN_FLOW" || active.status === "HANDLED_EXTERNALLY";
+    const unattended = ["NEW", "WAITING", "IN_FLOW", "FLOW_ABANDONED", "HANDLED_EXTERNALLY"].includes(active.status);
     const mentionedAgent = unattended ? await findOnlineMention() : null;
     if (!mentionedAgent) {
       return { conversation: active, isNewConversation: false, autoAssignedAgentId: null as string | null, flowId: null as string | null, closedMessage: null as string | null };
@@ -672,16 +672,22 @@ export async function findOrOpenConversationForInboundMessage(
   const mentionedAgent = await findOnlineMention();
   const now = new Date();
 
-  // Outside the hours of the schedule this connection follows (Respostas › Horário de expediente), the customer gets the
-  // schedule's notice instead of the Fluxo — once, with the conversation that opens now. Nobody is notified who asked for a named online agent.
-  const closedMessage = mentionedAgent ? null : await getClosedMessageForConnection(channel, connectionId, now);
-
   // An active Fluxo on this connection talks to the customer first (see
   // flow-engine.service.ts) — unless they asked for an online agent by name.
-  const flowId =
-    !mentionedAgent && !closedMessage && channel === "WHATSAPP"
-      ? ((await prisma.flowConnection.findFirst({ where: { whatsappConnectionId: connectionId, flow: { active: true } }, select: { flowId: true } }))?.flowId ?? null)
+  const activeFlow =
+    !mentionedAgent && channel === "WHATSAPP"
+      ? await prisma.flowConnection.findFirst({
+          where: { whatsappConnectionId: connectionId, flow: { active: true } },
+          select: { flowId: true, flow: { select: { nodes: { where: { type: "START" }, select: { data: true } } } } },
+        })
       : null;
+  // A flow that tells the hours itself (Início › avisar fora do horário) replaces the schedule's notice.
+  const flowTellsHours = Boolean((activeFlow?.flow.nodes[0]?.data as { outOfHoursPrompt?: boolean } | null)?.outOfHoursPrompt);
+
+  // Outside the hours of the schedule this connection follows (Respostas › Horário de expediente), the customer gets the
+  // schedule's notice instead of the Fluxo — once, with the conversation that opens now. Nobody is notified who asked for a named online agent.
+  const closedMessage = mentionedAgent || flowTellsHours ? null : await getClosedMessageForConnection(channel, connectionId, now);
+  const flowId = closedMessage ? null : (activeFlow?.flowId ?? null);
 
   const conversation = await prisma.conversation.create({
     data: mentionedAgent
@@ -1185,7 +1191,7 @@ async function foldActiveConversationDuplicates(contactId: string): Promise<void
   // included so a stray duplicate left over from before that fix (or from
   // any other race) still gets folded away instead of lingering forever.
   const actives = await prisma.conversation.findMany({
-    where: { contactId, status: { in: ["IN_FLOW", "NEW", "WAITING", "IN_PROGRESS", "TRANSFERRED", "HANDLED_EXTERNALLY"] } },
+    where: { contactId, status: { in: ["IN_FLOW", "NEW", "WAITING", "FLOW_ABANDONED", "IN_PROGRESS", "TRANSFERRED", "HANDLED_EXTERNALLY"] } },
   });
   if (actives.length < 2) return;
 
@@ -1372,8 +1378,9 @@ export async function acceptConversation(conversationId: string, agentId: string
   }
 
   const now = new Date();
+  const fromAbandoned = (await prisma.conversation.findUnique({ where: { id: conversationId }, select: { status: true } }))?.status === "FLOW_ABANDONED";
   const result = await prisma.conversation.updateMany({
-    where: { id: conversationId, status: { in: ["NEW", "WAITING"] }, assignedAgentId: null },
+    where: { id: conversationId, status: { in: ["NEW", "WAITING", "FLOW_ABANDONED"] }, assignedAgentId: null },
     data: { status: "IN_PROGRESS", assignedAgentId: agentId, acceptedAt: now, firstResponseAt: null },
   });
 
@@ -1397,8 +1404,35 @@ export async function acceptConversation(conversationId: string, agentId: string
       data: { conversationId, type: "ACCEPTED", payload: { agentId } },
     }),
   ]);
+  if (fromAbandoned) {
+    await noteAbandonedReason(conversationId);
+    realtimeEvents.abandonedChanged();
+  }
 
   return getConversationOrThrow(conversationId);
+}
+
+/**
+ * Abandonados (see the FLOW_ABANDONED status): for an attendant, their connection's and those of the flows whose
+ * transfer steps include them; MANAGER/ADMIN pass the connections they may see, like the queue.
+ */
+export async function listAbandoned(viewer: { userId: string; role: Role; whatsappConnectionId: string | null }, whatsappConnectionIds?: string[]) {
+  const visibility: Prisma.ConversationWhereInput =
+    viewer.role === "AGENT"
+      ? {
+          OR: [
+            ...(viewer.whatsappConnectionId ? [{ whatsappConnectionId: viewer.whatsappConnectionId }] : []),
+            { flowSession: { flowId: { in: await flowIdsWithPerson(viewer.userId) } } },
+          ],
+        }
+      : { whatsappConnectionId: whatsappConnectionIds === undefined ? undefined : { in: whatsappConnectionIds } };
+  const conversations = await prisma.conversation.findMany({
+    where: { status: "FLOW_ABANDONED", AND: [visibility] },
+    include: conversationInclude,
+    orderBy: { lastMessageAt: "desc" },
+  });
+  const unreadCounts = await getUnreadCounts(conversations.map((c) => c.id));
+  return conversations.map((c) => Object.assign(c, { _unreadCount: unreadCounts.get(c.id) ?? 0 }));
 }
 
 /**
@@ -1454,7 +1488,7 @@ export async function transferConversation(
 // ABANDONED are terminal on purpose (see that function's own doc comment)
 // and stay out of Gestão's reach here too; a genuinely new conversation for
 // that contact is what picks the thread back up from those.
-const GESTAO_TRANSFERABLE_STATUSES: ConversationStatus[] = ["IN_FLOW", "NEW", "WAITING", "IN_PROGRESS", "TRANSFERRED", "HANDLED_EXTERNALLY"];
+const GESTAO_TRANSFERABLE_STATUSES: ConversationStatus[] = ["IN_FLOW", "NEW", "WAITING", "FLOW_ABANDONED", "IN_PROGRESS", "TRANSFERRED", "HANDLED_EXTERNALLY"];
 
 /**
  * Gestão (MANAGER/ADMIN) directly assigning or reassigning a conversation to
@@ -1527,6 +1561,10 @@ export async function assignConversationFromGestao(conversationId: string, toAge
       }),
     ]);
   }
+  if (existing.status === "FLOW_ABANDONED") {
+    await noteAbandonedReason(conversationId);
+    realtimeEvents.abandonedChanged();
+  }
 
   return { conversation: await getConversationOrThrow(conversationId), previousAgentId };
 }
@@ -1566,6 +1604,7 @@ export async function returnConversationToQueue(conversationId: string, initiate
   await prisma.conversationEvent.create({
     data: { conversationId, type: "RETURNED_TO_QUEUE", payload: { previousAgentId, initiatedById, previousStatus: existing.status } },
   });
+  if (existing.status === "FLOW_ABANDONED") realtimeEvents.abandonedChanged();
 
   return { conversation: await getConversationOrThrow(conversationId), previousAgentId };
 }
@@ -1621,6 +1660,7 @@ export async function closeConversationFromGestao(
     data: { conversationId, type: "CLOSED", payload: { agentId: initiatedById, previousAgentId, previousStatus: existing.status } },
   });
   if (!options.silent) scheduleCloseFollowUp(conversationId, closingMessage);
+  if (existing.status === "FLOW_ABANDONED") realtimeEvents.abandonedChanged();
 
   return { conversation: await getConversationOrThrow(conversationId), previousAgentId };
 }

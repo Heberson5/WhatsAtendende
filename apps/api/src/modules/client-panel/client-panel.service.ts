@@ -10,12 +10,15 @@ export function toTagDTO(tag: { id: string; name: string; color: string }): TagD
   return { id: tag.id, name: tag.name, color: tag.color };
 }
 
-export function toNoteDTO(note: { id: string; conversationId: string; authorId: string; body: string; createdAt: Date; author: { displayName: string } }): ConversationNoteDTO {
+// A note with no author was written by the system (e.g. why a conversation came from Abandonados).
+export const SYSTEM_NOTE_AUTHOR = "Sistema";
+
+export function toNoteDTO(note: { id: string; conversationId: string; authorId: string | null; body: string; createdAt: Date; author: { displayName: string } | null }): ConversationNoteDTO {
   return {
     id: note.id,
     conversationId: note.conversationId,
     authorId: note.authorId,
-    authorName: note.author.displayName,
+    authorName: note.author?.displayName ?? SYSTEM_NOTE_AUTHOR,
     body: note.body,
     createdAt: note.createdAt.toISOString(),
   };

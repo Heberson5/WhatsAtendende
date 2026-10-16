@@ -7,6 +7,7 @@ export const STATUS_LABEL: Record<string, string> = {
   TRANSFERRED: "Transferida",
   CLOSED: "Encerrada",
   ABANDONED: "Abandonada",
+  FLOW_ABANDONED: "Abandonado no fluxo",
   HANDLED_EXTERNALLY: "Atendido pelo celular",
 };
 
@@ -18,5 +19,6 @@ export const STATUS_COLOR: Record<string, string> = {
   TRANSFERRED: "bg-info-soft text-info",
   CLOSED: "border border-border bg-surface-alt text-muted",
   ABANDONED: "bg-danger-soft text-danger",
+  FLOW_ABANDONED: "bg-danger-soft text-danger",
   HANDLED_EXTERNALLY: "bg-secondary/40 text-[var(--color-text)]",
 };
