@@ -40,6 +40,9 @@ export const CONVERSATION_STATUS = {
   HANDLED_EXTERNALLY: "HANDLED_EXTERNALLY",
   // A WhatsApp group — shown only in Atendimento's Grupos tab, never in the queue or in any metric.
   GROUP: "GROUP",
+  // Left by the Fluxo in "Abandonados": the customer stopped answering its menus, or nobody chosen on the transfer step
+  // was online. Still open — whoever is online among the flow's people accepts it, like the queue.
+  FLOW_ABANDONED: "FLOW_ABANDONED",
 } as const;
 export type ConversationStatus = (typeof CONVERSATION_STATUS)[keyof typeof CONVERSATION_STATUS];
 
@@ -325,6 +328,30 @@ export interface FlowBusinessHoursData {
 
 export const FLOW_MENU_DEFAULT_PROMPT = "Escolha uma opção respondendo com o número:";
 
+/** Minutes without an answer to a menu before the customer goes to Abandonados — the default of the Início step. */
+export const FLOW_ABANDON_AFTER_MINUTES_DEFAULT = 30;
+
+/** The photo a message or menu step sends (stored with the uploads, like a quick reply's attachment). */
+export interface FlowImage {
+  storageKey: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
+/** START config: the flow-wide settings. */
+export interface FlowStartData {
+  /** Outside the entry connection's Horário de expediente, the flow first tells the hours and asks whether to go on. */
+  outOfHoursPrompt?: boolean;
+  /** Minutes without an answer to a menu before going to Abandonados. */
+  abandonAfterMinutes?: number;
+}
+
+/** Placeholders a flow's texts can carry — {{opcao}} is the option the customer picked last. */
+export function renderFlowText(text: string, vars: { cliente: string; opcao?: string | null }): string {
+  return text.replace(/\{\{\s*cliente\s*\}\}/gi, vars.cliente).replace(/\{\{\s*opcao\s*\}\}/gi, vars.opcao ?? "");
+}
+
 /** Exactly what the customer receives for a MENU node — shared by the engine and the editor's WhatsApp preview. */
 export function renderFlowMenuText(data: { prompt?: string; options: FlowMenuOption[] }): string {
   const prompt = data.prompt?.trim() || FLOW_MENU_DEFAULT_PROMPT;
@@ -343,12 +370,20 @@ export interface FlowMenuOption {
  * (any agent on the connection's queue); see PROMPT: "para quais
  * atendentes serão designados para ser configurado no nó".
  */
-export type FlowNodeData =
-  | { text?: string } // TEXT_MESSAGE
-  | { options: FlowMenuOption[]; prompt?: string } // MENU — prompt defaults to FLOW_MENU_DEFAULT_PROMPT
+export type FlowNodeData = { name?: string } & (
+  | { text?: string; image?: FlowImage | null } // TEXT_MESSAGE
+  | { options: FlowMenuOption[]; prompt?: string; image?: FlowImage | null } // MENU — prompt defaults to FLOW_MENU_DEFAULT_PROMPT
   | FlowBusinessHoursData // BUSINESS_HOURS
-  | { assignedAgentIds: string[]; mode?: "any" | "selected" } // TRANSFER_TO_AGENT — "selected" restricts to assignedAgentIds
-  | Record<string, never>; // START / END — no config
+  | { assignedAgentIds: string[]; mode?: "any" | "selected" } // TRANSFER_TO_AGENT — "selected": those people attend it, from any connection
+  | FlowStartData // START
+  | Record<string, never> // END — no config
+);
+
+/** The step's own name (shown on the drawing and in the notes), or null. */
+export function flowNodeName(node: { data: unknown }): string | null {
+  const name = (node.data as { name?: string } | null)?.name?.trim();
+  return name || null;
+}
 
 export interface FlowNodeDTO {
   id: string;
@@ -660,6 +695,29 @@ export type WorkScheduleWindowDTO = { allDay: true } | { allDay?: false; start: 
 
 /** A weekday missing from the map is closed. */
 export type WorkScheduleDaysDTO = Partial<Record<WeekdayKey, WorkScheduleWindowDTO>>;
+
+const WEEKDAY_SHORT_PT: Record<WeekdayKey, string> = { MON: "Seg", TUE: "Ter", WED: "Qua", THU: "Qui", FRI: "Sex", SAT: "Sáb", SUN: "Dom" };
+
+/** The open hours as the customer reads them — consecutive days with the same hours together: "Seg a Sex, 07:00 às 18:00 · Sáb, 07:00 às 11:00". */
+export function describeWorkScheduleDays(days: WorkScheduleDaysDTO): string {
+  const windowText = (w: WorkScheduleWindowDTO) => (w.allDay ? "24 horas" : `${w.start} às ${w.end}`);
+  const groups: { first: WeekdayKey; last: WeekdayKey; hours: string }[] = [];
+  for (const day of WEEKDAY_KEYS) {
+    const window = days[day];
+    if (!window) continue;
+    const hours = windowText(window);
+    const previous = groups[groups.length - 1];
+    if (previous && previous.hours === hours && WEEKDAY_KEYS.indexOf(previous.last) === WEEKDAY_KEYS.indexOf(day) - 1) previous.last = day;
+    else groups.push({ first: day, last: day, hours });
+  }
+  return groups
+    .map((g) => {
+      const span = WEEKDAY_KEYS.indexOf(g.last) - WEEKDAY_KEYS.indexOf(g.first);
+      const label = span === 0 ? WEEKDAY_SHORT_PT[g.first] : `${WEEKDAY_SHORT_PT[g.first]} ${span === 1 ? "e" : "a"} ${WEEKDAY_SHORT_PT[g.last]}`;
+      return `${label}, ${g.hours}`;
+    })
+    .join(" · ");
+}
 
 /** A holiday that opens part of the day; every other holiday stays closed all day. */
 export interface WorkSchedulePartialHolidayDTO {
@@ -1866,7 +1924,8 @@ export interface ContactImportResultDTO {
 export interface ConversationNoteDTO {
   id: string;
   conversationId: string;
-  authorId: string;
+  /** null = written by the system. */
+  authorId: string | null;
   authorName: string;
   body: string;
   createdAt: string;

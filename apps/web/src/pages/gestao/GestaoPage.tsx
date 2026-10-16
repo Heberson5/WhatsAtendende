@@ -27,7 +27,7 @@ import { ContactPhoto } from "../../components/common/ContactPhoto";
 // Same "still active" scope the backend enforces (see
 // assignConversationFromGestao/returnConversationToQueue) — CLOSED/ABANDONED
 // are terminal, nothing to route there anymore.
-const ROUTABLE_STATUSES = new Set<ConversationStatus>(["IN_FLOW", "NEW", "WAITING", "IN_PROGRESS", "TRANSFERRED", "HANDLED_EXTERNALLY"]);
+const ROUTABLE_STATUSES = new Set<ConversationStatus>(["IN_FLOW", "NEW", "WAITING", "FLOW_ABANDONED", "IN_PROGRESS", "TRANSFERRED", "HANDLED_EXTERNALLY"]);
 const INTERVENABLE_STATUSES = new Set<ConversationStatus>(["IN_PROGRESS", "TRANSFERRED"]);
 const SEARCH_DEBOUNCE_MS = 400;
 const ALREADY_QUEUED_STATUSES = new Set<ConversationStatus>(["NEW", "WAITING"]);
@@ -39,7 +39,7 @@ const STATUS_CHIPS: { key: string; label: string; statuses: ConversationStatus[]
   { key: "inProgress", label: "Em atendimento", statuses: ["IN_PROGRESS", "TRANSFERRED"] },
   { key: "external", label: "Pelo celular", statuses: ["HANDLED_EXTERNALLY"] },
   { key: "closed", label: "Encerradas", statuses: ["CLOSED"] },
-  { key: "abandoned", label: "Abandonadas", statuses: ["ABANDONED"] },
+  { key: "abandoned", label: "Abandonadas", statuses: ["ABANDONED", "FLOW_ABANDONED"] },
 ];
 
 // Waiting this long (queue, or customer without a reply) turns amber, then red.

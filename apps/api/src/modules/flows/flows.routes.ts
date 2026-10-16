@@ -2,9 +2,12 @@ import { Router } from "express";
 import { z } from "zod";
 import { PERMISSION } from "@whatsatendende/types";
 import { asyncHandler } from "../../lib/async-handler";
+import { prisma } from "../../lib/prisma";
 import { requireAuth } from "../../middleware/auth";
 import { requirePermission } from "../../lib/permissions";
 import { writeAudit } from "../../lib/audit";
+import { replyMediaUpload, sendReplyMedia, storeReplyMedia } from "../../lib/reply-media";
+import { Errors } from "../../lib/http-error";
 import { toFlowDetailDTO, toFlowListItemDTO } from "./flows.mapper";
 import * as service from "./flows.service";
 
@@ -38,6 +41,36 @@ flowsRouter.get(
   asyncHandler(async (_req, res) => {
     const rows = await service.listFlows();
     res.json(rows.map(toFlowListItemDTO));
+  })
+);
+
+// A step's photo (Mensagem de texto / Menu de opções): stored like a quick reply's attachment; the step keeps its key in its data.
+flowsRouter.post(
+  "/media",
+  requirePermission(PERMISSION.FLUXO_EDITAR),
+  replyMediaUpload.single("file"),
+  asyncHandler(async (req, res) => {
+    if (req.file && !req.file.mimetype.startsWith("image/")) throw Errors.badRequest("Escolha uma imagem (JPG, PNG ou WEBP).");
+    const media = storeReplyMedia(req.file);
+    res.status(201).json({ storageKey: media.mediaStorageKey, fileName: media.mediaFileName, mimeType: media.mediaMimeType, sizeBytes: media.mediaSizeBytes });
+  })
+);
+
+flowsRouter.get(
+  "/media/:storageKey",
+  requirePermission(PERMISSION.FLUXO_VISUALIZAR),
+  asyncHandler(async (req, res) => {
+    const storageKey = req.params.storageKey;
+    if (!/^[\w-]+\.[a-z0-9]+$/i.test(storageKey)) throw Errors.notFound("Imagem nao encontrada");
+    const node = await prisma.flowNode.findFirst({ where: { data: { path: ["image", "storageKey"], equals: storageKey } }, select: { data: true } });
+    const image = (node?.data as { image?: { fileName: string; mimeType: string; sizeBytes: number } } | undefined)?.image;
+    // A photo just uploaded and not saved on a step yet is still the editor's own preview.
+    sendReplyMedia(req, res, {
+      mediaStorageKey: storageKey,
+      mediaFileName: image?.fileName ?? storageKey,
+      mediaMimeType: image?.mimeType ?? (storageKey.endsWith(".png") ? "image/png" : storageKey.endsWith(".webp") ? "image/webp" : "image/jpeg"),
+      mediaSizeBytes: image?.sizeBytes ?? 0,
+    });
   })
 );
 

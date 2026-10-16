@@ -101,6 +101,11 @@ export const realtimeEvents = {
     getIO()?.to(ROOMS.oversight()).emit("oversight:updated");
   },
   /** A brand-new conversation entered a connection's queue — notifies the agents watching that connection, plus MANAGER/ADMIN's combined queue view. */
+  /** Abandonados changed (a conversation came in or was accepted) — its people span connections, so everyone refreshes it. */
+  abandonedChanged: () => {
+    getIO()?.emit("abandoned:updated");
+    getIO()?.to(ROOMS.oversight()).emit("oversight:updated");
+  },
   newQueueConversation: (connectionId: string, conversationId: string, contactName: string) => {
     getIO()?.to(ROOMS.queue(connectionId)).emit("queue:updated");
     getIO()?.to(ROOMS.queue(connectionId)).emit("queue:new-conversation", { conversationId, contactName });

@@ -43,7 +43,7 @@ type ListFilter = "all" | "unread" | "noReply";
 
 export default function AtendimentoPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [tab, setTab] = useState<"queue" | "mine" | "transferred" | "groups">("mine");
+  const [tab, setTab] = useState<"queue" | "mine" | "transferred" | "groups" | "abandoned">("mine");
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [connectionIds, setConnectionIds] = useState<string[]>([]);
   const [novaConversaOpen, setNovaConversaOpen] = useState(false);
@@ -181,10 +181,23 @@ export default function AtendimentoPage() {
     refetchInterval: 20_000,
   });
 
+  // Abandonados: left by the Fluxo — the customer stopped answering its menus, or nobody of the transfer step was online.
+  const abandonedQuery = useQuery({
+    queryKey: ["abandoned", connectionIds],
+    queryFn: async () =>
+      (
+        await api.get<ConversationListItemDTO[]>("/conversations/abandoned", {
+          params: { connectionId: canFilterByConnection && connectionIds.length ? connectionIds : undefined },
+        })
+      ).data,
+    refetchInterval: 30_000,
+  });
+
   const acceptMutation = useMutation({
     mutationFn: (id: string) => api.post(`/conversations/${id}/accept`),
     onSuccess: (_res, id) => {
       queryClient.invalidateQueries({ queryKey: ["queue"] });
+      queryClient.invalidateQueries({ queryKey: ["abandoned"] });
       queryClient.invalidateQueries({ queryKey: ["mine"] });
       setSelectedId(id);
       setTab("mine");
@@ -227,6 +240,10 @@ export default function AtendimentoPage() {
   // The order on screen (pinned first) — what Alt+↓/↑ walks through.
   const visibleMine = [...pinnedMine, ...otherMine];
   const visibleQueue = (queueQuery.data ?? []).filter(matchesSearch);
+  const abandoned = abandonedQuery.data ?? [];
+  const visibleAbandoned = abandoned.filter(matchesSearch);
+  // The tab shows up while someone is there (or it is open).
+  const showAbandonedTab = abandoned.length > 0 || tab === "abandoned";
   const visibleTransferred = (transferredOutQuery.data ?? []).filter(matchesSearch);
   const panelConversation = tab === "groups" ? null : (selectedConversation ?? watchingConversation);
   const groupsWithUnread = groups.filter((g) => g.unreadCount > 0).length;
@@ -298,8 +315,10 @@ export default function AtendimentoPage() {
     { value: "mine" as const, label: "Meus", count: mine.length },
     { value: "queue" as const, label: "Fila", count: queueCount },
     { value: "transferred" as const, label: "Transf.", count: transferredOutQuery.data?.length ?? 0 },
+    ...(showAbandonedTab ? [{ value: "abandoned" as const, label: "Aband.", count: abandoned.length }] : []),
     ...(showGroupsTab ? [{ value: "groups" as const, label: "Grupos", count: groupsWithUnread }] : []),
   ];
+  const compactTabs = tabs.length >= 4;
 
   return (
     <div
@@ -345,12 +364,16 @@ export default function AtendimentoPage() {
           </div>
 
           <div
-            className={clsx("grid rounded-[10px] border border-border bg-surface-alt p-[3px]", tabs.length === 4 ? "grid-cols-4" : "grid-cols-3")}
+            className={clsx(
+              "grid rounded-[10px] border border-border bg-surface-alt p-[3px]",
+              tabs.length === 5 ? "grid-cols-5" : tabs.length === 4 ? "grid-cols-4" : "grid-cols-3"
+            )}
             role="tablist"
             aria-label="Conversas"
           >
             {tabs.map((t) => {
-              const highlightQueue = (t.value === "queue" && queueHasPending) || (t.value === "groups" && groupsWithUnread > 0);
+              const highlightQueue =
+                (t.value === "queue" && queueHasPending) || (t.value === "groups" && groupsWithUnread > 0) || (t.value === "abandoned" && t.count > 0);
               return (
                 <button
                   key={t.value}
@@ -359,7 +382,7 @@ export default function AtendimentoPage() {
                   onClick={() => setTab(t.value)}
                   className={clsx(
                     "focus-ring flex min-w-0 items-center justify-center rounded-[7px] py-1.5 font-medium transition-colors",
-                    tabs.length === 4 ? "gap-1 text-[12px]" : "gap-1.5 text-[13px]",
+                    compactTabs ? "gap-1 text-[12px]" : "gap-1.5 text-[13px]",
                     tab === t.value ? "bg-surface font-semibold text-[var(--color-text)] shadow-sm" : "text-muted hover:text-[var(--color-text)]"
                   )}
                 >
@@ -441,6 +464,27 @@ export default function AtendimentoPage() {
             ) : (
               <EmptyState message="Nenhuma conversa aguardando." />
             ))}
+
+          {tab === "abandoned" && (
+            <>
+              <p className="border-b border-border bg-surface-alt px-3 py-1.5 text-[11px] text-muted">
+                Clientes que pararam de responder os menus do fluxo, ou que chegaram quando ninguém do passo estava online. Ao aceitar, uma nota explica o motivo.
+              </p>
+              {visibleAbandoned.length ? (
+                visibleAbandoned.map((c) => (
+                  <ConversationCard
+                    key={c.id}
+                    conversation={c}
+                    onAccept={() => acceptMutation.mutate(c.id)}
+                    accepting={acceptMutation.isPending && acceptMutation.variables === c.id}
+                    agentPaused={user?.presence === "AWAY"}
+                  />
+                ))
+              ) : (
+                <EmptyState message="Nenhum cliente em Abandonados." />
+              )}
+            </>
+          )}
 
           {tab === "groups" &&
             (visibleGroups.length ? (

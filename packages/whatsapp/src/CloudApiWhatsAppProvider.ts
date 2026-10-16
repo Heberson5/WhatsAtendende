@@ -9,6 +9,7 @@ import type {
   GroupInfo,
   HistorySyncEvent,
   InboundMessageEvent,
+  OutboundMenu,
   ReactionEvent,
   SendResult,
   SendTextOptions,
@@ -32,6 +33,18 @@ export interface TemplateSendInput {
   headerMedia?: { kind: "image" | "video" | "document"; buffer: Buffer; fileName: string; mimeType: string };
   bodyParams: string[];
 }
+
+// What WhatsApp accepts in an interactive message (Cloud API).
+const MAX_BUTTONS = 3;
+const MAX_BUTTON_TITLE = 20;
+export const MAX_LIST_ROWS = 10;
+const MAX_ROW_TITLE = 24;
+const MAX_ROW_DESCRIPTION = 72;
+const MAX_INTERACTIVE_BODY = 1024;
+const MAX_LIST_LABEL = 20;
+const LONG_BODY_FOLLOW_UP = "Escolha uma opção 👇";
+
+const clip = (text: string, max: number) => (text.length <= max ? text : `${text.slice(0, max - 1)}…`);
 
 function digitsOnly(chatId: string): string {
   return chatId.replace(/\D/g, "");
@@ -179,6 +192,52 @@ export class CloudApiWhatsAppProvider implements WhatsAppProvider {
       [type]: mediaPayload,
     });
     return { providerMessageId: body.messages?.[0]?.id ?? randomUUID(), timestamp: new Date() };
+  }
+
+  /**
+   * A flow menu as WhatsApp's own reply buttons (up to 3 short options, the picture above them) or a list (up to 10).
+   * A body longer than WhatsApp takes goes first as a plain text. A list row longer than WhatsApp shows is cut, with
+   * the full name underneath.
+   */
+  async sendMenu(chatId: string, menu: OutboundMenu): Promise<SendResult> {
+    if (menu.options.length === 0 || menu.options.length > MAX_LIST_ROWS) throw new Error(`Um menu da API Oficial tem de 1 a ${MAX_LIST_ROWS} opções`);
+    let body = menu.body.trim();
+    if (body.length > MAX_INTERACTIVE_BODY) {
+      await this.sendText(chatId, body);
+      body = LONG_BODY_FOLLOW_UP;
+    }
+    const asButtons = menu.options.length <= MAX_BUTTONS && menu.options.every((o) => o.label.length <= MAX_BUTTON_TITLE);
+    let interactive: Record<string, unknown>;
+    if (asButtons) {
+      interactive = {
+        type: "button",
+        body: { text: body },
+        action: { buttons: menu.options.map((o) => ({ type: "reply", reply: { id: o.id, title: o.label } })) },
+      };
+      if (menu.image) interactive.header = { type: "image", image: { id: await this.uploadMedia(menu.image.buffer, menu.image.fileName, menu.image.mimeType) } };
+    } else {
+      // A list has no picture of its own: it goes just before.
+      if (menu.image) await this.sendFile(chatId, menu.image.buffer, menu.image.fileName, menu.image.mimeType);
+      interactive = {
+        type: "list",
+        body: { text: body },
+        action: {
+          button: clip(menu.listButton ?? "Ver opções", MAX_LIST_LABEL),
+          sections: [
+            {
+              title: clip(menu.listTitle ?? "Opções", MAX_ROW_TITLE),
+              rows: menu.options.map((o) => ({
+                id: o.id,
+                title: clip(o.label, MAX_ROW_TITLE),
+                ...(o.label.length > MAX_ROW_TITLE ? { description: clip(o.label, MAX_ROW_DESCRIPTION) } : {}),
+              })),
+            },
+          ],
+        },
+      };
+    }
+    const result = await this.graphPost(`${this.phoneNumberId}/messages`, { messaging_product: "whatsapp", to: digitsOnly(chatId), type: "interactive", interactive });
+    return { providerMessageId: result.messages?.[0]?.id ?? randomUUID(), timestamp: new Date() };
   }
 
   /**
@@ -368,6 +427,11 @@ export class CloudApiWhatsAppProvider implements WhatsAppProvider {
     if (raw.type === "text" && raw.text) {
       return { ...base, type: "TEXT", body: raw.text.body };
     }
+    // A tapped reply button or list row (a flow menu, see sendMenu): its title as the text, its id to tell which.
+    const picked = raw.type === "interactive" ? (raw.interactive?.button_reply ?? raw.interactive?.list_reply) : undefined;
+    if (picked) {
+      return { ...base, type: "TEXT", body: picked.title, selectedOptionId: picked.id };
+    }
     if (raw.type === "location" && raw.location) {
       return { ...base, type: "LOCATION", body: null, latitude: raw.location.latitude, longitude: raw.location.longitude };
     }
@@ -448,4 +512,5 @@ interface CloudApiInboundMessage {
   audio?: CloudApiMediaRef;
   document?: CloudApiMediaRef;
   context?: { id: string };
+  interactive?: { type: string; button_reply?: { id: string; title: string }; list_reply?: { id: string; title: string; description?: string } };
 }

@@ -20,6 +20,20 @@ export interface ConnectOptions {
   phoneNumber?: string;
 }
 
+/**
+ * A menu sent as WhatsApp's own buttons (up to 3) or a list (up to 10 rows) — API Oficial only. Tapping one comes
+ * back as an inbound message whose `selectedOptionId` is the option's id.
+ */
+export interface OutboundMenu {
+  body: string;
+  options: { id: string; label: string }[];
+  /** Shown above the buttons (buttons only — a list has no picture). */
+  image?: { buffer: Buffer; fileName: string; mimeType: string };
+  /** The list's button and the title above its rows. */
+  listButton?: string;
+  listTitle?: string;
+}
+
 export interface InboundMessageEvent {
   providerMessageId: string;
   chatId: string; // provider-native chat/contact id (e.g. "5511999999999@s.whatsapp.net")
@@ -27,6 +41,8 @@ export interface InboundMessageEvent {
   contactName: string | null;
   type: "TEXT" | "IMAGE" | "VIDEO" | "AUDIO" | "DOCUMENT" | "LOCATION" | "CONTACT" | "POLL" | "EVENT";
   body: string | null;
+  /** The id of the reply button or list row the customer tapped (API Oficial) — `body` holds its title. */
+  selectedOptionId?: string | null;
   mediaBuffer?: Buffer;
   mediaMimeType?: string;
   mediaFileName?: string;

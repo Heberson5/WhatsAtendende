@@ -19,6 +19,7 @@ const STATUS_LABEL: Record<string, string> = {
   TRANSFERRED: "Transferida",
   CLOSED: "Encerrada",
   ABANDONED: "Abandonada",
+  FLOW_ABANDONED: "Abandonado no fluxo",
   HANDLED_EXTERNALLY: "Pelo celular",
 };
 

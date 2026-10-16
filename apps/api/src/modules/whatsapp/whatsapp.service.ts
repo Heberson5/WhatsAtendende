@@ -7,6 +7,7 @@ import {
   isGroupChat,
   type CloudApiWebhookValue,
   type InboundMessageEvent,
+  type OutboundMenu,
   type SendResult,
   type TemplateSendInput,
   type WhatsAppProvider,
@@ -520,7 +521,7 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
       // answers, and only hands the conversation to people when it's done.
       if (conversation.status === "IN_FLOW") {
         realtimeEvents.newMessage(conversation.id, null);
-        await flowEngine.handleInboundForFlow(conversation.id, flowId, event.body ?? null);
+        await flowEngine.handleInboundForFlow(conversation.id, flowId, event.body ?? null, event.selectedOptionId ?? null);
         return;
       }
 
@@ -569,6 +570,8 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
         if (autoAssignedAgentId) realtimeEvents.conversationAccepted(conversation.id, connectionId, autoAssignedAgentId);
         realtimeEvents.newMessage(conversation.id, conversation.assignedAgentId);
         if (conversation.assignedAgentId) await notifyAssignedAgent(conversation.assignedAgentId);
+        // Still in Abandonados: it stays there, the card moves up with the new message.
+        else if (conversation.status === "FLOW_ABANDONED") realtimeEvents.abandonedChanged();
       }
     } catch (err) {
       logger.error({ err, connectionId }, "failed to process inbound whatsapp message");
@@ -1379,6 +1382,18 @@ async function sendClosedHoursNotice(conversationId: string, connectionId: strin
 
 export async function sendAutomatedText(connectionId: string, messageId: string, contactPhone: string, text: string) {
   return sendWithTimeoutGuard(messageId, "text", () => sendToContact(connectionId, contactPhone, (chatId) => getProvider(connectionId).sendText(chatId, text, {})));
+}
+
+/** Whether this connection is the API Oficial (Cloud API) — its flow menus go as buttons/lists. */
+export function isOfficialConnection(connectionId: string): boolean {
+  return providers.get(connectionId) instanceof CloudApiWhatsAppProvider;
+}
+
+/** A flow menu as WhatsApp's own buttons or list — only on an API Oficial connection (see isOfficialConnection). */
+export async function sendAutomatedMenu(connectionId: string, messageId: string, contactPhone: string, menu: OutboundMenu) {
+  const provider = providers.get(connectionId);
+  if (!(provider instanceof CloudApiWhatsAppProvider)) throw Errors.badRequest("Botões e listas só podem ser enviados por uma conexão da API Oficial");
+  return sendWithTimeoutGuard(messageId, "menu", () => provider.sendMenu(toChatId(contactPhone), menu));
 }
 
 /** Sends a Meta-approved template — only possible on an OFFICIAL_API connection (Cloud API). */

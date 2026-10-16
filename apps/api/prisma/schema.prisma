@@ -699,6 +699,10 @@ enum ConversationStatus {
   // out of the queue — never accepted, transferred or closed — and out of
   // every metric. Each person's own reading lives in GroupReadState.
   GROUP
+  // Left by the Fluxo in "Abandonados": the customer stopped answering its
+  // menus, or nobody chosen on the transfer step was online. Still open —
+  // whoever is online among the flow's people accepts it, like the queue.
+  FLOW_ABANDONED
 }
 
 model Conversation {
@@ -1227,9 +1231,13 @@ model FlowSession {
   contactId       String
   conversation    Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   conversationId  String?       @unique
+  // The menu waiting for an answer, or the transfer step waiting for someone to come online.
   currentNodeId   String?
   invalidAttempts Int           @default(0)
+  // { opcao: last option picked, path: labels picked so far } — see flow-engine.service.ts.
   variables       Json          @default("{}")
+  // Last thing the flow said or heard — a menu left unanswered past the flow's limit goes to Abandonados.
+  lastActivityAt  DateTime      @default(now())
   startedAt       DateTime      @default(now())
   completedAt     DateTime?
 
@@ -1242,8 +1250,9 @@ model ConversationNote {
   id             String       @id @default(uuid())
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   conversationId String
-  author         User         @relation(fields: [authorId], references: [id])
-  authorId       String
+  // No author = written by the system (e.g. why a conversation came from Abandonados).
+  author         User?        @relation(fields: [authorId], references: [id])
+  authorId       String?
   body           String
   createdAt      DateTime     @default(now())
 
