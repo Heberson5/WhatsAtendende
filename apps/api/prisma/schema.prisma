@@ -1394,3 +1394,16 @@ model ColumnView {
   @@unique([ownerId, screen])
   @@index([screen])
 }
+
+/// Approximate place of an IP seen in Auditoria (looked up once, then reused). found=false: the lookup service knows
+/// nothing about it.
+model IpLocation {
+  ip         String   @id
+  found      Boolean
+  city       String?
+  region     String?
+  country    String?
+  latitude   Float?
+  longitude  Float?
+  lookedUpAt DateTime @default(now())
+}

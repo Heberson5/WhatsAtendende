@@ -156,7 +156,6 @@ Principais variáveis da API:
 | `WHATSAPP_AUTH_DIR` | Diretório onde o Baileys persiste a sessão pareada |
 | `UPLOAD_DIR` / `UPLOAD_MAX_SIZE_MB` | Armazenamento local de anexos e limite de tamanho |
 | `WEB_APP_URL` | Origem permitida no CORS e nos cookies; também usada para montar o link de redefinição de senha enviado por e-mail |
-| `TRUST_PROXY` | `false` por padrão — só ativar atrás de um proxy reverso confiável (ver comentário em `.env.example`) |
 
 ## Banco de dados e migrações
 
@@ -257,7 +256,7 @@ Em **Configurações → E-mail** (perfil Administrador), configure um servidor 
 - Toda rota sensível usa `requireAuth` + `requireRole(...)` no backend — o menu lateral apenas *esconde* itens que o usuário não pode acessar; a proteção real está nas rotas Express.
 - Cabeçalhos de segurança via `helmet` (com `X-Powered-By` também desabilitado explicitamente); rate limiting global, limite mais agressivo no login, e limite dedicado em `forgot-password`/`reset-password`/teste de SMTP (`express-rate-limit`).
 - **Logs nunca contêm segredos**: `Authorization`, `Cookie` e `Set-Cookie` são redigidos nos logs de requisição (`pino-http` com `redact`) — sem isso, o access/refresh token de cada request apareceria em texto puro no log.
-- `TRUST_PROXY` desligado por padrão — só deve ser ativado quando a API é alcançável exclusivamente através de um proxy reverso confiável (evita que um cliente falsifique seu próprio IP para burlar o rate limit ou poluir a auditoria).
+- IP real do visitante: a API só confia no cabeçalho `X-Forwarded-For` vindo de proxies em endereços internos (o nginx do container e o proxy HTTPS da VPS). Um cliente da internet não consegue falsificar o próprio IP. O proxy HTTPS da VPS precisa repassar o cabeçalho (`proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`).
 - Upload de anexos valida MIME type contra uma allowlist e respeita um tamanho máximo configurável (`UPLOAD_MAX_SIZE_MB`); uploads de identidade visual (logo/favicon) usam uma allowlist só de formatos raster (SVG é recusado — evita o vetor de XSS de SVG com `<script>` embutido) e o nome do arquivo salvo é derivado do MIME type validado, nunca do nome enviado pelo cliente.
 - Prisma usa consultas parametrizadas (sem SQL bruto concatenado); a única query raw do projeto (contagem de não lidas) usa `Prisma.sql`/`Prisma.join` parametrizados.
 - Configurações de negócio (`PATCH /settings/business`) e de e-mail (`PATCH /settings/email`) são validadas com Zod (`.strict()` no primeiro caso) — não persistem JSON arbitrário enviado pelo cliente.

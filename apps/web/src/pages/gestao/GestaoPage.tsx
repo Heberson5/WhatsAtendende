@@ -29,6 +29,7 @@ import { ContactPhoto } from "../../components/common/ContactPhoto";
 // are terminal, nothing to route there anymore.
 const ROUTABLE_STATUSES = new Set<ConversationStatus>(["IN_FLOW", "NEW", "WAITING", "IN_PROGRESS", "TRANSFERRED", "HANDLED_EXTERNALLY"]);
 const INTERVENABLE_STATUSES = new Set<ConversationStatus>(["IN_PROGRESS", "TRANSFERRED"]);
+const SEARCH_DEBOUNCE_MS = 400;
 const ALREADY_QUEUED_STATUSES = new Set<ConversationStatus>(["NEW", "WAITING"]);
 
 // Filter chips (each one a group of statuses), with live counts.
@@ -69,6 +70,12 @@ export default function GestaoPage() {
   const now = useNow();
   const columnView = useColumnView("gestao");
   const [search, setSearch] = useState("");
+  // Searching inside the messages is heavier — wait for a pause in the typing.
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search.trim()), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [search]);
   const [connectionIds, setConnectionIds] = useState<string[]>([]);
   const [selected, setSelected] = useState<ConversationListItemDTO | null>(null);
   const [merging, setMerging] = useState<ConversationListItemDTO | null>(null);
@@ -181,7 +188,7 @@ export default function GestaoPage() {
   });
 
   const { data: conversations, isLoading } = useQuery({
-    queryKey: ["oversight", period, agentId, search, connectionIds],
+    queryKey: ["oversight", period, agentId, debouncedSearch, connectionIds],
     queryFn: async () =>
       (
         await api.get<ConversationListItemDTO[]>("/conversations/oversight", {
@@ -194,7 +201,7 @@ export default function GestaoPage() {
             from: period.from,
             to: period.to,
             agentId: agentId === "all" ? undefined : agentId,
-            q: search || undefined,
+            q: debouncedSearch || undefined,
             connectionId: connectionIds.length ? connectionIds : undefined,
           },
         })
@@ -305,7 +312,14 @@ export default function GestaoPage() {
       case "lastActivity":
         return (
           <td key="lastActivity" className="max-w-[220px] px-3 py-3 text-xs text-muted">
-            <div className="truncate">{c.lastMessagePreview ?? "—"}</div>
+            {c.searchMatch ? (
+              <div className="truncate font-medium text-[var(--color-text)]" title={c.searchMatch}>
+                <Search className="me-1 inline h-3 w-3 text-primary" aria-label="Encontrado na conversa" />
+                {c.searchMatch}
+              </div>
+            ) : (
+              <div className="truncate">{c.lastMessagePreview ?? "—"}</div>
+            )}
             <div className="text-[11px] opacity-75">{formatActivity(c.lastMessageAt, now)}</div>
           </td>
         );
@@ -360,7 +374,7 @@ export default function GestaoPage() {
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar por nome ou telefone..."
+            placeholder="Buscar por nome, telefone ou texto da conversa..."
             className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted"
           />
         </label>

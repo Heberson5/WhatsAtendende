@@ -40,6 +40,7 @@ interface DashboardData {
 // slots follow the company's own primary/secondary — see PROMPT: "gráficos
 // neste estilo, mais apresentável com estilo de 3d e profundidade".
 const WAITING_COLOR = "#F59E0B";
+const SURVEY_UNANSWERED_COLOR = WAITING_COLOR;
 
 export default function DashboardPage() {
   const [period, setPeriod] = useState<PeriodValue>({ period: "today" });
@@ -394,6 +395,18 @@ export default function DashboardPage() {
           </section>
 
           {satisfaction?.byAgent && satisfaction.totals.answered > 0 && <SatisfactionDetailSection overview={satisfaction} />}
+
+          {satisfaction?.byAgent && satisfaction.totals.sent > 0 && (
+            <SeriesChartCard
+              title="Pesquisa por atendente: responderam x não responderam"
+              data={satisfaction.byAgent.filter((a) => a.agentId).map((a) => ({ agentName: a.agentName, answered: a.answered, unanswered: a.unanswered }))}
+              categoryKey="agentName"
+              series={[
+                { key: "answered", name: "Responderam", color: agentSeriesColors[0] },
+                { key: "unanswered", name: "Não responderam", color: SURVEY_UNANSWERED_COLOR },
+              ]}
+            />
+          )}
 
           <section>
             <h2 className="mb-3 text-sm font-semibold text-muted">Tempos médios de atendimento</h2>

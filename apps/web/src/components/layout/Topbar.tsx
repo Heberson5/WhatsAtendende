@@ -31,6 +31,8 @@ function useClickOutside(ref: React.RefObject<HTMLElement | null>, open: boolean
 
 export function Topbar({ title, onMenuClick }: { title: string; onMenuClick?: () => void }) {
   const user = useAuthStore((s) => s.user);
+  // The shortcut search lists screens and actions an attendant can't use — managers and administrators only.
+  const canSearch = user?.role === "MANAGER" || user?.role === "ADMIN";
   const clearSession = useAuthStore((s) => s.clearSession);
   const openPalette = useCommandPaletteStore((s) => s.setOpen);
   const navigate = useNavigate();
@@ -72,6 +74,7 @@ export function Topbar({ title, onMenuClick }: { title: string; onMenuClick?: ()
           <Menu className="h-5 w-5" />
         </button>
         <h1 className="truncate text-base font-semibold tracking-tight sm:text-lg">{title}</h1>
+        {canSearch && (
         <button
           type="button"
           onClick={() => openPalette(true)}
@@ -81,16 +84,19 @@ export function Topbar({ title, onMenuClick }: { title: string; onMenuClick?: ()
           <span className="flex-1 truncate text-left">Buscar contato, tela ou ação…</span>
           <kbd className="rounded border border-border bg-surface px-1.5 font-mono text-[10px] text-muted">{IS_MAC ? "⌘K" : "Ctrl K"}</kbd>
         </button>
+        )}
       </div>
       <div className="flex shrink-0 items-center gap-1.5 sm:gap-3">
-        <button
-          type="button"
-          onClick={() => openPalette(true)}
-          className="focus-ring rounded-full p-2 text-muted hover:bg-surface-alt lg:hidden"
-          aria-label="Buscar"
-        >
-          <Search className="h-5 w-5" />
-        </button>
+        {canSearch && (
+          <button
+            type="button"
+            onClick={() => openPalette(true)}
+            className="focus-ring rounded-full p-2 text-muted hover:bg-surface-alt lg:hidden"
+            aria-label="Buscar"
+          >
+            <Search className="h-5 w-5" />
+          </button>
+        )}
         <div className="relative" ref={pauseRef}>
           <button
             className={clsx(

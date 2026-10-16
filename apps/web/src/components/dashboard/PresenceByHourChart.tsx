@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, Bar, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { ChartTypeMenu } from "./ChartTypeMenu";
+import { SERIES_KIND_OPTIONS, type SeriesKind } from "./SeriesChartCard";
 import { Settings2 } from "lucide-react";
 import type { PresenceByHourDTO } from "@whatsatendende/types";
 import { CHART_CARD_SHADOW, CHART_DEPTH_FILTER, CHART_TOOLTIP_PROPS, NEUTRAL_SERIES_COLOR, darken, gradientId, lighten } from "../../lib/chart-theme";
@@ -54,6 +56,7 @@ export function PresenceByHourChart({
 }) {
   const [range, setRange] = useState<HourRange | null>(initialRange);
   const [gearOpen, setGearOpen] = useState(false);
+  const [kind, setKind] = useState<SeriesKind>("bar");
   const [draftStart, setDraftStart] = useState(initialRange?.start ?? 8);
   const [draftEnd, setDraftEnd] = useState(initialRange?.end ?? 20);
   const [draftAsDefault, setDraftAsDefault] = useState(false);
@@ -103,6 +106,8 @@ export function PresenceByHourChart({
     <div className={`rounded-card border border-border bg-surface p-4 ${CHART_CARD_SHADOW}`}>
       <div className="mb-2 flex items-center justify-between">
         <p className="text-xs font-medium text-muted">Presença ao longo do dia</p>
+        <div className="flex items-center gap-1">
+        <ChartTypeMenu value={kind} onChange={setKind} options={SERIES_KIND_OPTIONS} />
         <div ref={gearRef} className="relative">
           <button
             onClick={() => setGearOpen((o) => !o)}
@@ -166,6 +171,7 @@ export function PresenceByHourChart({
             </div>
           )}
         </div>
+        </div>
       </div>
 
       {isLoading ? (
@@ -174,7 +180,7 @@ export function PresenceByHourChart({
         <p className="py-8 text-center text-sm text-muted">Sem dados de presença no período selecionado.</p>
       ) : (
         <ResponsiveContainer width="100%" height={280}>
-          <BarChart data={chartData} style={{ filter: CHART_DEPTH_FILTER }}>
+          <ComposedChart data={chartData} style={{ filter: CHART_DEPTH_FILTER }}>
             <defs>
               {series.map((key, i) => (
                 <linearGradient key={barIds[i]} id={barIds[i]} x1="0" y1="0" x2="0" y2="1">
@@ -188,10 +194,16 @@ export function PresenceByHourChart({
             <YAxis tick={{ fontSize: 12 }} allowDecimals={false} />
             <Tooltip {...CHART_TOOLTIP_PROPS} />
             <Legend wrapperStyle={{ fontSize: 12 }} />
-            {series.map((key, i) => (
-              <Bar key={key} dataKey={key} name={key} stackId="presence" fill={`url(#${barIds[i]})`} radius={i === series.length - 1 ? [4, 4, 0, 0] : undefined} />
-            ))}
-          </BarChart>
+            {series.map((key, i) =>
+              kind === "line" ? (
+                <Line key={key} type="monotone" dataKey={key} name={key} stroke={seriesColor(i, primaryColor, secondaryColor)} strokeWidth={2.5} dot={false} />
+              ) : kind === "area" ? (
+                <Area key={key} type="monotone" dataKey={key} name={key} stackId="presence" stroke={seriesColor(i, primaryColor, secondaryColor)} fill={`url(#${barIds[i]})`} />
+              ) : (
+                <Bar key={key} dataKey={key} name={key} stackId="presence" fill={`url(#${barIds[i]})`} radius={i === series.length - 1 ? [4, 4, 0, 0] : undefined} />
+              )
+            )}
+          </ComposedChart>
         </ResponsiveContainer>
       )}
     </div>

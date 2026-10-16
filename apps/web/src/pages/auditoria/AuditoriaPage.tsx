@@ -1,3 +1,4 @@
+import { MapPin } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -264,7 +265,22 @@ export default function AuditoriaPage() {
                         );
                       case "ip":
                         return (
-                          <td key="ip" className="px-4 py-3 text-muted">{log.ipAddress ?? "-"}</td>
+                          <td key="ip" className="px-4 py-3 text-muted">
+                            <span className="whitespace-nowrap tabular-nums">{log.ipAddress ?? "-"}</span>
+                            {log.ipPlace ? (
+                              <a
+                                href={`https://www.google.com/maps?q=${log.ipPlace.latitude},${log.ipPlace.longitude}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="mt-0.5 flex items-center gap-1 whitespace-nowrap text-xs text-primary hover:underline"
+                                title="Localização aproximada pelo IP — ver no Google Maps"
+                              >
+                                <MapPin className="h-3 w-3 shrink-0" /> {log.ipPlace.label}
+                              </a>
+                            ) : (
+                              log.ipInternal && <span className="mt-0.5 block text-xs">Rede interna</span>
+                            )}
+                          </td>
                         );
                       default:
                         return null;

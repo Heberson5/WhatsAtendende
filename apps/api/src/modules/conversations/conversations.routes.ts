@@ -173,7 +173,7 @@ const oversightQuerySchema = z.object({
   // Repeated query param (?status=a&status=b) or comma-separated — see
   // PROMPT: Dashboard's "Em atendimento" card needs IN_PROGRESS + TRANSFERRED at once.
   status: z.union([z.string(), z.array(z.string())]).optional(),
-  q: z.string().optional(),
+  q: z.string().trim().max(120).optional(),
   // Repeated query param (?connectionId=a&connectionId=b) or comma-separated; empty/absent = all connections.
   connectionId: z.union([z.string(), z.array(z.string())]).optional(),
 });
@@ -199,10 +199,11 @@ conversationsRouter.get(
       to: range.to,
       agentId: filters.agentId,
       status,
-      contactSearch: filters.q,
+      search: filters.q,
       connectionIds,
     });
-    res.json(conversations.map((c) => toConversationListItemDTO(c, true)));
+    const matches = filters.q ? await service.findSearchMatches(conversations.map((c) => c.id), filters.q) : new Map<string, string>();
+    res.json(conversations.map((c) => ({ ...toConversationListItemDTO(c, true), searchMatch: matches.get(c.id) ?? null })));
   })
 );
 

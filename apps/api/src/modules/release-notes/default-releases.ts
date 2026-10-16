@@ -11,6 +11,61 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.11.0",
+    date: "16 out 2026",
+    name: "Pesquisas não respondidas, tipo de gráfico em todos, tempos em horas e busca no texto da conversa",
+    summary: "O Dashboard e os Relatórios mostram quantos clientes não responderam a pesquisa, por atendente. Todos os gráficos ganharam a troca de tipo, os tempos dos relatórios aparecem como \"1h 41min\", a Gestão busca também pelo texto das mensagens e a Auditoria mostra o IP real com o local aproximado.",
+    notes: [
+      {
+        type: "novo",
+        area: "dashboard",
+        title: "Quem não respondeu a pesquisa, por atendente",
+        text: "O cartão da pesquisa no Dashboard mostra quantos clientes não responderam (a pesquisa venceu sem nota) e quantas ainda estão no prazo. Logo abaixo, um gráfico compara, por atendente, quem respondeu e quem não respondeu. Em Relatórios, a coluna Não responderam aparece na tabela da pesquisa por atendente e Pesquisas não respondidas no relatório Por atendente, inclusive nas exportações.",
+        where: "Dashboard e Relatórios",
+        requires: [PERMISSION.DASHBOARD_ACESSAR],
+      },
+      {
+        type: "melhoria",
+        area: "dashboard",
+        title: "Troca de tipo em todos os gráficos",
+        text: "Presença ao longo do dia, Notas de 0 a 10 e Evolução do NPS também ganharam o botão de tipo de gráfico, no canto do cartão: barras, linha ou área.",
+        where: "Dashboard e Relatórios › Pesquisa de satisfação",
+        requires: [PERMISSION.DASHBOARD_ACESSAR],
+      },
+      {
+        type: "melhoria",
+        area: "dashboard",
+        title: "Tempos dos relatórios em horas e minutos",
+        text: "As colunas de tempo dos relatórios Atendimentos e Por atendente deixaram de mostrar só minutos (\"204\") e passaram a mostrar o tempo pronto para ler, como \"3h 24min\". O \"(min)\" saiu do nome das colunas. Vale também para CSV, PDF e Excel.",
+        where: "Relatórios",
+        requires: [PERMISSION.RELATORIOS_ACESSAR],
+      },
+      {
+        type: "novo",
+        area: "gestao",
+        title: "Busca pelo texto da conversa",
+        text: "A busca da Gestão encontra também o que foi escrito nas mensagens (a partir de 3 letras), além do nome e do telefone do cliente. Na linha da conversa aparece a mensagem onde o texto foi encontrado.",
+        where: "Gestão › Buscar",
+        requires: [PERMISSION.GESTAO_ACESSAR],
+      },
+      {
+        type: "correcao",
+        area: "configuracoes",
+        title: "IP real e local aproximado na Auditoria",
+        text: "A Auditoria passou a gravar o IP real de quem acessa, e não mais o endereço interno do servidor. Abaixo do IP aparece a cidade aproximada, que abre no Google Maps. O local vem do IP, então é aproximado: costuma indicar a cidade do provedor de internet. Registros anteriores continuam com o IP antigo.",
+        where: "Auditoria",
+        requires: [PERMISSION.AUDITORIA_ACESSAR],
+      },
+      {
+        type: "melhoria",
+        area: "geral",
+        title: "Seta para recolher o menu e busca só para gestores",
+        text: "O menu lateral ganhou uma seta discreta no alto, na borda direita, que recolhe e expande o menu. A busca de atalhos no topo (Ctrl K) passou a aparecer só para gestores e administradores.",
+        where: "Menu lateral e topo",
+      },
+    ],
+  },
+  {
     version: "2.10.0",
     date: "16 out 2026",
     name: "Visões de colunas, notas da pesquisa mais bem lidas, foto do cliente ampliada e cadastro de usuários mais seguro",

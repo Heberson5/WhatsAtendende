@@ -10,8 +10,8 @@ import {
   Users,
   Settings,
   ScrollText,
-  PanelLeftClose,
-  PanelLeftOpen,
+  ChevronLeft,
+  ChevronRight,
   X,
   Slash,
   MonitorSmartphone,
@@ -198,6 +198,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
       {/* Backdrop: only ever rendered (and interactive) on mobile, where the
           sidebar becomes an off-canvas overlay instead of sitting in flow. */}
       {mobileOpen && <div className="fixed inset-0 z-30 bg-black/40 md:hidden" onClick={onMobileClose} aria-hidden />}
+      <div className="md:relative md:h-full md:shrink-0">
       <aside
         className={clsx(
           "shadow-soft fixed inset-y-0 left-0 z-40 flex h-dvh w-64 flex-col overflow-hidden rounded-r-card bg-side text-side-text transition-transform duration-200 md:relative md:inset-auto md:z-10 md:h-full md:translate-x-0 md:rounded-card md:transition-all",
@@ -225,17 +226,6 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
           >
             <X className="h-4 w-4" />
           </button>
-          {!isCollapsed && (
-            <button
-              type="button"
-              onClick={() => setCollapsed(true)}
-              className="focus-ring hidden h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-side-border text-side-muted hover:text-side-strong md:flex"
-              aria-label="Recolher menu"
-              title="Recolher menu"
-            >
-              <PanelLeftClose className="h-4 w-4" />
-            </button>
-          )}
         </div>
 
         <nav
@@ -327,17 +317,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
           </NavLink>
         </div>
 
-        {isCollapsed ? (
-          <button
-            type="button"
-            onClick={() => setCollapsed(false)}
-            className="focus-ring mx-auto mb-3 hidden h-9 w-9 shrink-0 items-center justify-center rounded-lg text-side-muted hover:bg-side-hover hover:text-side-strong md:flex"
-            aria-label="Expandir menu"
-            title="Expandir menu"
-          >
-            <PanelLeftOpen className="h-[18px] w-[18px]" />
-          </button>
-        ) : (
+        {!isCollapsed &&
           branding?.appVersion && (
             <NavLink
               to="/notas-de-versao"
@@ -347,9 +327,19 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
             >
               Versão {branding.appVersion}
             </NavLink>
-          )
-        )}
+          )}
       </aside>
+      {/* Discreet arrow on the sidebar's top edge — collapses or expands it (desktop only; on mobile the sidebar is an overlay). */}
+      <button
+        type="button"
+        onClick={() => setCollapsed((c) => !c)}
+        className="focus-ring absolute -right-3 top-5 z-20 hidden h-6 w-6 items-center justify-center rounded-full border border-border bg-surface text-muted shadow-sm transition-colors hover:border-primary/40 hover:text-primary md:flex"
+        aria-label={isCollapsed ? "Expandir menu" : "Recolher menu"}
+        title={isCollapsed ? "Expandir menu" : "Recolher menu"}
+      >
+        {isCollapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronLeft className="h-3.5 w-3.5" />}
+      </button>
+      </div>
       {tooltip && isCollapsed && (
         <div
           role="tooltip"

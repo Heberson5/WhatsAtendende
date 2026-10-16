@@ -38,6 +38,7 @@ export function AppLayout() {
   const location = useLocation();
   const navigate = useNavigate();
   const accessToken = useAuthStore((s) => s.accessToken);
+  const role = useAuthStore((s) => s.user?.role);
   const clearSession = useAuthStore((s) => s.clearSession);
   const activeConversationId = useActiveConversationStore((s) => s.activeConversationId);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -127,7 +128,8 @@ export function AppLayout() {
             navegação". */}
         {!activeConversationId && <BottomNav onMoreClick={() => setMobileNavOpen(true)} />}
       </div>
-      <CommandPalette />
+      {/* The shortcut search (Ctrl K) is for managers and administrators — see Topbar. */}
+      {(role === "MANAGER" || role === "ADMIN") && <CommandPalette />}
       <WhatsNewModal />
     </div>
   );

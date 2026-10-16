@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Area, Bar, CartesianGrid, Cell, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Eye, Search } from "lucide-react";
 import clsx from "clsx";
 import { toast } from "sonner";
@@ -14,6 +14,8 @@ import type { PeriodValue } from "../common/PeriodFilter";
 import { ColumnViewMenu } from "../../components/common/ColumnViewMenu";
 import { useColumnView } from "../../hooks/useColumnView";
 import { useAuthStore } from "../../store/auth-store";
+import { ChartTypeMenu } from "../dashboard/ChartTypeMenu";
+import { SERIES_KIND_OPTIONS, type SeriesKind } from "../dashboard/SeriesChartCard";
 
 const formatNps = (nps: number | null) => (nps === null ? "–" : String(nps));
 const DELTA_TONE = { up: "text-success", down: "text-danger", same: "text-muted" } as const;
@@ -89,6 +91,8 @@ export function SatisfactionReport({
 }) {
   const columnView = useColumnView("relatorioSatisfacaoAtendentes");
   const responsesView = useColumnView("relatorioSatisfacaoRespostas");
+  const [distributionKind, setDistributionKind] = useState<SeriesKind>("bar");
+  const [trendKind, setTrendKind] = useState<SeriesKind>("line");
   const [filter, setFilter] = useState<ResponseFilter>("answered");
   const [search, setSearch] = useState("");
   const [openConversation, setOpenConversation] = useState<ConversationListItemDTO | null>(null);
@@ -210,32 +214,44 @@ export function SatisfactionReport({
 
       <div className="grid gap-3 lg:grid-cols-2">
         <section className={clsx("rounded-card border border-border bg-surface p-4", CHART_CARD_SHADOW)} aria-label="Notas de 0 a 10">
-          <h3 className="mb-2 text-sm font-semibold">Notas de 0 a 10</h3>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold">Notas de 0 a 10</h3>
+            <ChartTypeMenu value={distributionKind} onChange={setDistributionKind} options={SERIES_KIND_OPTIONS} />
+          </div>
           <div className="h-56">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={distribution} margin={{ top: 16, right: 8, left: -20, bottom: 0 }}>
+              <ComposedChart data={distribution} margin={{ top: 16, right: 8, left: -20, bottom: 0 }}>
                 <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--color-border)" />
                 <XAxis dataKey="score" tick={{ fontSize: 12 }} />
                 <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
                 <Tooltip {...CHART_TOOLTIP_PROPS} formatter={(v: number) => [v, "Respostas"]} labelFormatter={(l) => `Nota ${l}`} />
-                <Bar dataKey="count" radius={[4, 4, 0, 0]} label={{ position: "top", fontSize: 11, formatter: (v: number) => (v ? v : "") }}>
-                  {distribution.map((d) => (
-                    <Cell key={d.score} fill={CATEGORY[d.category].color} />
-                  ))}
-                </Bar>
-              </BarChart>
+                {distributionKind === "line" ? (
+                  <Line type="monotone" dataKey="count" stroke="var(--color-primary)" strokeWidth={2.5} dot={{ r: 3.5 }} />
+                ) : distributionKind === "area" ? (
+                  <Area type="monotone" dataKey="count" stroke="var(--color-primary)" fill="var(--color-primary)" fillOpacity={0.25} />
+                ) : (
+                  <Bar dataKey="count" radius={[4, 4, 0, 0]} label={{ position: "top", fontSize: 11, formatter: (v: number) => (v ? v : "") }}>
+                    {distribution.map((d) => (
+                      <Cell key={d.score} fill={CATEGORY[d.category].color} />
+                    ))}
+                  </Bar>
+                )}
+              </ComposedChart>
             </ResponsiveContainer>
           </div>
         </section>
 
         <section className={clsx("rounded-card border border-border bg-surface p-4", CHART_CARD_SHADOW)} aria-label="Evolução do NPS">
-          <h3 className="mb-2 text-sm font-semibold">Evolução do NPS no período</h3>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold">Evolução do NPS no período</h3>
+            <ChartTypeMenu value={trendKind} onChange={setTrendKind} options={SERIES_KIND_OPTIONS} />
+          </div>
           {data.trend.length < 2 ? (
             <p className="flex h-56 items-center justify-center text-sm text-muted">A evolução aparece quando há respostas em mais de um dia.</p>
           ) : (
             <div className="h-56">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={data.trend} margin={{ top: 16, right: 12, left: -20, bottom: 0 }}>
+                <ComposedChart data={data.trend} margin={{ top: 16, right: 12, left: -20, bottom: 0 }}>
                   <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="var(--color-border)" />
                   <XAxis dataKey="label" tick={{ fontSize: 11 }} />
                   <YAxis domain={[0, 100]} ticks={[0, 25, 50, 75, 100]} tick={{ fontSize: 11 }} />
@@ -251,8 +267,14 @@ export function SatisfactionReport({
                     {...CHART_TOOLTIP_PROPS}
                     formatter={(v: number, name: string) => (name === "nps" ? [formatNps(v), "NPS (0 a 100)"] : [v, name])}
                   />
-                  <Line type="linear" dataKey="nps" stroke="var(--color-primary)" strokeWidth={2.5} dot={{ r: 3.5 }} />
-                </LineChart>
+                  {trendKind === "bar" ? (
+                    <Bar dataKey="nps" fill="var(--color-primary)" radius={[4, 4, 0, 0]} />
+                  ) : trendKind === "area" ? (
+                    <Area type="linear" dataKey="nps" stroke="var(--color-primary)" fill="var(--color-primary)" fillOpacity={0.25} strokeWidth={2.5} />
+                  ) : (
+                    <Line type="linear" dataKey="nps" stroke="var(--color-primary)" strokeWidth={2.5} dot={{ r: 3.5 }} />
+                  )}
+                </ComposedChart>
               </ResponsiveContainer>
             </div>
           )}
@@ -281,6 +303,10 @@ export function SatisfactionReport({
                     case "answered":
                       return (
                         <th key="answered" className="px-4 py-2.5 text-right">Respostas</th>
+                      );
+                    case "unanswered":
+                      return (
+                        <th key="unanswered" className="px-4 py-2.5 text-right">Não responderam</th>
                       );
                     case "rate":
                       return (
@@ -344,6 +370,10 @@ export function SatisfactionReport({
                       case "answered":
                         return (
                           <td key="answered" className="px-4 py-2.5 text-right tabular-nums">{a.answered}</td>
+                        );
+                      case "unanswered":
+                        return (
+                          <td key="unanswered" className={clsx("px-4 py-2.5 text-right tabular-nums", a.unanswered > 0 && "font-semibold text-warning")}>{a.unanswered}</td>
                         );
                       case "rate":
                         return (

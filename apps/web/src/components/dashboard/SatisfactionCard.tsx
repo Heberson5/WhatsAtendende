@@ -91,6 +91,10 @@ export function SatisfactionCard({ overview, isLoading }: { overview: Satisfacti
                 {totals.answered} de {totals.sent} responderam ({totals.responseRate ?? 0}%)
                 {totals.average !== null && ` · média ${formatAverage(totals.average)}`}
               </p>
+              <p className="tabular-nums">
+                <span className={totals.unanswered > 0 ? "font-semibold text-warning" : undefined}>{totals.unanswered} não responderam</span>
+                {totals.awaiting > 0 && ` · ${totals.awaiting} ainda no prazo`}
+              </p>
             </div>
           </div>
           {totals.answered > 0 && <NpsBreakdown promoters={totals.promoters} passives={totals.passives} detractors={totals.detractors} answered={totals.answered} />}
