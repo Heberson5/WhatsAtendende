@@ -1979,3 +1979,38 @@ export function compareVersions(a: string, b: string): number {
   for (let i = 0; i < Math.max(pa.length, pb.length); i++) if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) - (pb[i] ?? 0);
   return 0;
 }
+
+// --- Atendimento: ferramentas do atendente (fixar, lembrar de retornar, agendar envio, Meu dia) ---
+
+export interface ConversationReminderDTO {
+  id: string;
+  conversationId: string;
+  remindAt: string;
+  note: string | null;
+  /** Set once the notice went off — the reminder stays until the attendant dismisses it. */
+  firedAt: string | null;
+}
+
+export interface ScheduledMessageDTO {
+  id: string;
+  conversationId: string;
+  body: string;
+  sendAt: string;
+}
+
+export interface AgentExtrasDTO {
+  pinnedConversationIds: string[];
+  reminders: ConversationReminderDTO[];
+  scheduledMessages: ScheduledMessageDTO[];
+}
+
+export interface MyDayDTO {
+  /** Conversations this attendant closed today. */
+  closedToday: number;
+  /** Average time from accepting to the first reply, today; null without any. */
+  avgFirstResponseMs: number | null;
+  /** This attendant's NPS (0 to 100) this month; null without answers. */
+  npsThisMonth: number | null;
+  /** Configurações › Fila › meta diária; null = no goal. */
+  goal: number | null;
+}

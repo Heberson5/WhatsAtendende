@@ -140,7 +140,10 @@ model User {
 
   // Flows this user authored — see Flow.createdByUserId. onDelete: SetNull
   // there (not listed here) means a flow outlives its creator's account.
-  createdFlows Flow[]
+  createdFlows          Flow[]
+  conversationPins      ConversationPin[]
+  conversationReminders ConversationReminder[]
+  scheduledMessages     ScheduledMessage[]
 
   @@index([email])
   @@index([role])
@@ -764,7 +767,10 @@ model Conversation {
   transfers          ConversationTransfer[]
   events             ConversationEvent[]
 
-  createdAt DateTime @default(now())
+  createdAt             DateTime               @default(now())
+  conversationPins      ConversationPin[]
+  conversationReminders ConversationReminder[]
+  scheduledMessages     ScheduledMessage[]
 
   @@index([status])
   @@index([assignedAgentId])
@@ -1406,4 +1412,50 @@ model IpLocation {
   latitude   Float?
   longitude  Float?
   lookedUpAt DateTime @default(now())
+}
+
+/// An attendant pinned this conversation to the top of their list.
+model ConversationPin {
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
+
+  @@id([userId, conversationId])
+}
+
+/// "Lembrar de retornar": a notice to the attendant at remindAt. firedAt once it went off; dismissed by deleting it.
+model ConversationReminder {
+  id             String       @id @default(uuid())
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  remindAt       DateTime
+  note           String?
+  firedAt        DateTime?
+  createdAt      DateTime     @default(now())
+
+  @@index([firedAt, remindAt])
+  @@index([userId])
+}
+
+/// A message an attendant wrote to go out by itself at sendAt. Exactly one of sentAt / canceledAt / failedAt ends it.
+model ScheduledMessage {
+  id             String       @id @default(uuid())
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  body           String
+  sendAt         DateTime
+  sentAt         DateTime?
+  canceledAt     DateTime?
+  failedAt       DateTime?
+  failedReason   String?
+  createdAt      DateTime     @default(now())
+
+  @@index([sentAt, canceledAt, failedAt, sendAt])
+  @@index([userId])
 }

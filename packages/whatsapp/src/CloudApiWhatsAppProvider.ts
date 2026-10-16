@@ -313,6 +313,11 @@ export class CloudApiWhatsAppProvider implements WhatsAppProvider {
     this.reactionListeners.push(listener);
   }
 
+  // The Cloud API doesn't tell when the customer is typing.
+  async subscribeTyping(): Promise<void> {}
+
+  onTyping(): void {}
+
   // No linked-phone/companion-device concept on a Cloud API connection, so
   // none of these three ever fire — same no-op precedent as
   // MockWhatsAppProvider.onChatRead.

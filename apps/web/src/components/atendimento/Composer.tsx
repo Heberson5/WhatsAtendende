@@ -1,8 +1,11 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import clsx from "clsx";
-import { Mic, Paperclip, Pause, Play, Plus, Send, Trash2, X, MapPin, Bold, Italic, Strikethrough, Code, Wand2, FileText, Image as ImageIcon, Video } from "lucide-react";
+import { CalendarClock, Mic, Paperclip, Pause, Play, Plus, Send, Trash2, X, MapPin, Bold, Italic, Strikethrough, Code, Wand2, FileText, Image as ImageIcon, Video } from "lucide-react";
 import type { MessageDTO, ReplyMediaDTO } from "@whatsatendende/types";
 import { api } from "../../lib/api";
+import { useAuthStore } from "../../store/auth-store";
+import { draftKey, useDraftStore } from "../../store/draft-store";
+import { WhenPicker } from "./WhenPicker";
 
 // How long to wait after the agent stops typing before asking for a writing
 // suggestion — same debounce shape as EmailTemplatesPanel's preview call.
@@ -118,6 +121,8 @@ export interface ComposerHandle {
   addFiles: (files: File[]) => void;
   /** Fills the box with a quick reply's text (the chips under the composer), ready to edit or send. */
   applyQuickReply: (reply: QuickReplyOption) => void;
+  /** Puts the cursor in the box, optionally typing something first (the "/" shortcut opens the quick replies this way). */
+  focus: (insert?: string) => void;
 }
 
 export const Composer = forwardRef<
@@ -133,12 +138,22 @@ export const Composer = forwardRef<
     replyTo: MessageDTO | null;
     onCancelReply: () => void;
     disabled?: boolean;
+    /** The conversation this box writes in — what's typed and not sent stays as its draft. */
+    conversationId?: string;
+    /** "Agendar envio": the text goes out at that time, as this attendant. */
+    onScheduleText?: (text: string, sendAt: Date) => Promise<void>;
   }
 >(function Composer(
-  { onSendText, onSendFile, onSendAudio, onSendLocation, quickReplies = [], replyTo, onCancelReply, disabled },
+  { onSendText, onSendFile, onSendAudio, onSendLocation, quickReplies = [], replyTo, onCancelReply, disabled, conversationId, onScheduleText },
   ref
 ) {
-  const [text, setText] = useState("");
+  const userId = useAuthStore((s) => s.user?.id);
+  const currentDraftKey = userId && conversationId ? draftKey(userId, conversationId) : null;
+  const [text, setText] = useState(() => (currentDraftKey ? (useDraftStore.getState().drafts[currentDraftKey] ?? "") : ""));
+  // Which conversation the text in the box belongs to — saved under that key, even in the render right after switching.
+  const textDraftKeyRef = useRef(currentDraftKey);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [scheduling, setScheduling] = useState(false);
   const [showEmoji, setShowEmoji] = useState(false);
   const [sending, setSending] = useState(false);
   // "recording": actively capturing, mic live, waveform animating.
@@ -319,6 +334,28 @@ export const Composer = forwardRef<
     el.style.overflowY = el.scrollHeight > maxHeight ? "auto" : "hidden";
   }, [text]);
 
+  useEffect(() => {
+    if (textDraftKeyRef.current) useDraftStore.getState().setDraft(textDraftKeyRef.current, text);
+  }, [text]);
+  useEffect(() => {
+    if (textDraftKeyRef.current === currentDraftKey) return;
+    textDraftKeyRef.current = currentDraftKey;
+    setText(currentDraftKey ? (useDraftStore.getState().drafts[currentDraftKey] ?? "") : "");
+    setScheduleOpen(false);
+  }, [currentDraftKey]);
+
+  async function handleSchedule(sendAt: Date) {
+    if (!onScheduleText || !text.trim()) return;
+    setScheduling(true);
+    try {
+      await onScheduleText(text.trim(), sendAt);
+      setText("");
+      setScheduleOpen(false);
+    } finally {
+      setScheduling(false);
+    }
+  }
+
   async function handleSend() {
     if (!text.trim() || sending) return;
     setSending(true);
@@ -399,7 +436,14 @@ export const Composer = forwardRef<
     }
   }
 
-  useImperativeHandle(ref, () => ({ addFiles, applyQuickReply: selectQuickReply }));
+  useImperativeHandle(ref, () => ({
+    addFiles,
+    applyQuickReply: selectQuickReply,
+    focus: (insert) => {
+      if (insert) setText((t) => (t ? t : insert));
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    },
+  }));
 
   // Revokes the object URL for any file removed from (or sent out of)
   // pendingFiles — the cache would otherwise hold every staged file for the
@@ -1161,6 +1205,30 @@ export const Composer = forwardRef<
           className="focus-ring mx-1 flex-1 resize-none rounded-2xl border border-border bg-transparent px-4 py-2 text-sm leading-5 disabled:opacity-60"
         />
 
+        {text.trim() && onScheduleText && (
+          <div className="relative shrink-0">
+            <button
+              onClick={() => setScheduleOpen((o) => !o)}
+              disabled={sending || disabled}
+              className="focus-ring rounded-full p-2.5 text-muted hover:bg-surface-alt disabled:opacity-60"
+              aria-label="Agendar envio"
+              title="Agendar envio"
+              type="button"
+            >
+              <CalendarClock className="h-5 w-5" />
+            </button>
+            {scheduleOpen && (
+              <WhenPicker
+                title="Agendar envio"
+                confirmLabel="Agendar"
+                busy={scheduling}
+                className="bottom-12 right-0"
+                onConfirm={(at) => handleSchedule(at)}
+                onClose={() => setScheduleOpen(false)}
+              />
+            )}
+          </div>
+        )}
         {text.trim() ? (
           <button
             onClick={handleSend}

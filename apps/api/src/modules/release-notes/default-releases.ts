@@ -11,6 +11,68 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.12.0",
+    date: "16 out 2026",
+    name: "Meu dia, conversas fixadas, lembrete de retorno, envio agendado e atalhos do teclado",
+    summary: "O Atendimento ganhou ferramentas para o dia a dia de quem atende: o painel Meu dia com a meta, conversas fixadas no topo, \"digitando…\" do cliente, rascunho guardado por conversa, lembrete para retornar ao cliente, mensagem agendada e atalhos do teclado.",
+    notes: [
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "Meu dia",
+        text: "Acima da lista de conversas aparecem quantos atendimentos você encerrou hoje, o seu tempo médio de 1ª resposta de hoje e o seu NPS do mês. Quando a meta diária está configurada, uma barra mostra quanto falta para batê-la.",
+        where: "Atendimento",
+        requires: [PERMISSION.ATENDIMENTO_ACESSAR],
+      },
+      {
+        type: "novo",
+        area: "configuracoes",
+        title: "Meta diária de atendimentos",
+        text: "Em Configurações › Fila dá para definir quantos atendimentos cada atendente deve encerrar por dia. Em branco, o Meu dia não mostra a barra de meta.",
+        where: "Configurações › Fila",
+        requires: [PERMISSION.CONFIGURACOES_FILA_VISUALIZAR],
+      },
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "Fixar conversa, rascunho e \"digitando…\"",
+        text: "O botão de alfinete no topo da conversa a fixa na seção Fixadas, no alto da lista de Meus. O que você escreve e não envia fica guardado como rascunho daquela conversa, mesmo trocando de conversa ou recarregando a página, e o cartão mostra o selo Rascunho. Nas conexões por QR Code, quando o cliente está digitando aparece \"digitando…\" no cartão e no topo da conversa.",
+        where: "Atendimento",
+        requires: [PERMISSION.ATENDIMENTO_ACESSAR],
+        images: [{ src: "/notas-de-versao/atendente-lista-agendada.webp", caption: "Conversa fixada com lembrete e rascunho, e uma mensagem agendada" }],
+      },
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "Lembrar de retornar",
+        text: "O botão de despertador no topo da conversa agenda um lembrete: em 30 minutos, em 1 hora, hoje às 15:00, amanhã às 9:00 ou na data e hora que você escolher, com uma anotação opcional. O cartão mostra \"Retornar HH:MM\". Na hora, chega um aviso no sino e uma janela com Abrir conversa ou Adiar 15 min. O lembrete é só seu e some se a conversa for encerrada ou transferida antes.",
+        where: "Atendimento › topo da conversa",
+        requires: [PERMISSION.ATENDIMENTO_ACESSAR],
+        images: [
+          { src: "/notas-de-versao/atendente-lembrete.webp", caption: "Escolhendo quando retornar, com anotação" },
+          { src: "/notas-de-versao/atendente-aviso-retorno.webp", caption: "O aviso na hora de retornar", size: "small" },
+        ],
+      },
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "Agendar envio",
+        text: "Com uma mensagem escrita, o botão de calendário ao lado de Enviar agenda o envio. A mensagem fica marcada acima da caixa de texto, com a opção Cancelar, e sai na hora escolhida com o seu nome, como se você a enviasse. Se não der para enviar (a conversa foi encerrada ou transferida, ou a conexão caiu), você recebe um aviso no sino.",
+        where: "Atendimento › caixa de mensagem",
+        requires: [PERMISSION.ATENDIMENTO_ACESSAR],
+      },
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "Atalhos do teclado",
+        text: "Alt+↓ e Alt+↑ passam para a próxima conversa ou a anterior, Alt+A aceita a próxima da fila, / abre as respostas rápidas, Alt+N alterna entre nota interna e resposta, Alt+T transfere, Alt+E encerra, Alt+L abre o lembrete e Esc fecha a conversa. A tecla ? (ou o ícone de teclado no Meu dia) mostra a lista.",
+        where: "Atendimento",
+        requires: [PERMISSION.ATENDIMENTO_ACESSAR],
+        images: [{ src: "/notas-de-versao/atendente-atalhos.webp", caption: "A lista de atalhos", size: "small" }],
+      },
+    ],
+  },
+  {
     version: "2.11.0",
     date: "16 out 2026",
     name: "Pesquisas não respondidas, tipo de gráfico em todos, tempos em horas e busca no texto da conversa",

@@ -1,8 +1,11 @@
 import { useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import type { AgentPresence, NotificationDTO, WhatsAppConnectionStatus } from "@whatsatendende/types";
+import type { AgentPresence, ConversationReminderDTO, NotificationDTO, WhatsAppConnectionStatus } from "@whatsatendende/types";
+import { showReminderToast } from "../components/atendimento/ReminderToast";
 import { getSocket } from "../lib/socket";
+import { useTypingStore } from "../store/typing-store";
 import { notifyDesktop } from "./useDesktopNotifications";
 import { useAuthStore } from "../store/auth-store";
 import type { NotificationsResponse } from "../components/layout/NotificationBell";
@@ -11,6 +14,7 @@ import { useActiveGroupStore } from "../store/active-group-store";
 /** Subscribes to server-pushed realtime events and invalidates the affected React Query caches — no polling. */
 export function useSocketEvents(activeConversationId: string | null) {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   // A token refresh makes AppLayout call connectSocket() again, which
   // creates a brand-new socket object (see lib/socket.ts) and discards the
   // old one — without this dependency, this effect would never re-run to
@@ -49,6 +53,7 @@ export function useSocketEvents(activeConversationId: string | null) {
     };
     const onRemoved = () => {
       queryClient.invalidateQueries({ queryKey: ["mine"] });
+      queryClient.invalidateQueries({ queryKey: ["my-day"] });
       // A transfer-out is the only thing that fires conversation:removed for
       // the FROM side — this keeps "Transferidas" live the moment an agent
       // sends one away, without waiting for the 20s poll.
@@ -131,6 +136,12 @@ export function useSocketEvents(activeConversationId: string | null) {
       notifyDesktop(payload.groupName, text, `wa-group-${payload.conversationId}`);
     };
     const onGroupsUpdated = () => queryClient.invalidateQueries({ queryKey: ["groups"] });
+    const onTyping = (payload: { conversationId: string; typing: boolean }) => useTypingStore.getState().setTyping(payload.conversationId, payload.typing);
+    const onAgentExtras = () => queryClient.invalidateQueries({ queryKey: ["agent-extras"] });
+    const onReminderDue = (reminder: ConversationReminderDTO & { contactName: string }) => {
+      showReminderToast(reminder, (conversationId) => navigate(`/atendimento?open=${conversationId}`));
+      notifyDesktop(`Hora de retornar para ${reminder.contactName}`, reminder.note ?? "Lembrete de retorno", `wa-reminder-${reminder.id}`);
+    };
 
     socket.on("queue:updated", onQueueUpdated);
     socket.on("queue:new-conversation", onNewQueueConversation);
@@ -151,6 +162,9 @@ export function useSocketEvents(activeConversationId: string | null) {
     socket.on("group:message", onGroupMessage);
     socket.on("group:read", onGroupsUpdated);
     socket.on("groups:updated", onGroupsUpdated);
+    socket.on("conversation:typing", onTyping);
+    socket.on("agent:extras", onAgentExtras);
+    socket.on("reminder:due", onReminderDue);
 
     return () => {
       socket.off("queue:updated", onQueueUpdated);
@@ -172,8 +186,11 @@ export function useSocketEvents(activeConversationId: string | null) {
       socket.off("group:message", onGroupMessage);
       socket.off("group:read", onGroupsUpdated);
       socket.off("groups:updated", onGroupsUpdated);
+      socket.off("conversation:typing", onTyping);
+      socket.off("agent:extras", onAgentExtras);
+      socket.off("reminder:due", onReminderDue);
     };
-  }, [queryClient, activeConversationId, accessToken]);
+  }, [queryClient, activeConversationId, accessToken, navigate]);
 
   useEffect(() => {
     const socket = getSocket();

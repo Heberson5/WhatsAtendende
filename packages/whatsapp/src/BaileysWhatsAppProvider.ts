@@ -25,6 +25,7 @@ import type {
   InboundMessageEvent,
   OlderHistoryAnchor,
   ReactionEvent,
+  TypingEvent,
   SendResult,
   SendTextOptions,
   WhatsAppProvider,
@@ -694,6 +695,12 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
         }
       });
 
+      socket.ev.on("presence.update", ({ id, presences }) => {
+        if (isGroupChat(id)) return;
+        const typing = Object.values(presences).some((p) => p.lastKnownPresence === "composing" || p.lastKnownPresence === "recording");
+        this.emitter.emit("typing", { chatId: id, typing } satisfies TypingEvent);
+      });
+
       socket.ev.on("messages.reaction", (reactions) => {
         // Reactions inside groups are left out for now.
         for (const r of reactions) if (!isGroupChat(r.key.remoteJid ?? "")) this.emitter.emit("reaction", reactionEventFromBaileys(r));
@@ -1010,6 +1017,15 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
 
   onReaction(listener: (event: ReactionEvent) => void): void {
     this.emitter.on("reaction", listener);
+  }
+
+  async subscribeTyping(chatId: string): Promise<void> {
+    if (!this.socket || this.status.state !== "CONNECTED") return;
+    await this.socket.presenceSubscribe(chatId);
+  }
+
+  onTyping(listener: (event: TypingEvent) => void): void {
+    this.emitter.on("typing", listener);
   }
 
   onHistorySync(listener: (event: HistorySyncEvent) => void): void {

@@ -108,6 +108,18 @@ function getProvider(connectionId: string): WhatsAppProvider {
   return provider;
 }
 
+/** An agent opened this conversation: ask WhatsApp to tell us while the customer types (best-effort). */
+export async function watchCustomerTyping(conversationId: string): Promise<void> {
+  const conversation = await prisma.conversation.findUnique({
+    where: { id: conversationId },
+    select: { whatsappConnectionId: true, channel: true, contact: { select: { providerChatId: true, phone: true } } },
+  });
+  if (!conversation?.whatsappConnectionId || conversation.channel !== "WHATSAPP") return;
+  const provider = providers.get(conversation.whatsappConnectionId);
+  const chatId = conversation.contact.providerChatId ?? (conversation.contact.phone ? toChatId(conversation.contact.phone) : null);
+  if (provider && chatId) await provider.subscribeTyping(chatId);
+}
+
 /** Test-only escape hatch to reach the live provider instance (e.g. to inspect MockWhatsAppProvider.sentTexts) — never used by application code. */
 export function __getProviderForTests(connectionId: string): WhatsAppProvider | undefined {
   return providers.get(connectionId);
@@ -832,6 +844,25 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
       });
     } catch (err) {
       logger.error({ err, connectionId }, "failed to heal a contact's identity from a resolved chat identity");
+    }
+  });
+
+  provider.onTyping(async (event) => {
+    try {
+      const phone = event.chatId.endsWith("@s.whatsapp.net") ? event.chatId.split("@")[0] : null;
+      const contact = await prisma.contact.findFirst({
+        where: { whatsappConnectionId: connectionId, OR: [{ providerChatId: event.chatId }, ...(phone ? [{ phone }] : [])] },
+        select: { id: true },
+      });
+      if (!contact) return;
+      const conversation = await prisma.conversation.findFirst({
+        where: { contactId: contact.id, status: { in: ["NEW", "WAITING", "IN_PROGRESS", "TRANSFERRED"] } },
+        orderBy: { lastMessageAt: "desc" },
+        select: { id: true, assignedAgentId: true },
+      });
+      if (conversation) realtimeEvents.customerTyping(conversation.id, conversation.assignedAgentId, event.typing);
+    } catch (err) {
+      logger.warn({ err, connectionId }, "failed to relay that the customer is typing");
     }
   });
 

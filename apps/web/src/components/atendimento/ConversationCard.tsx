@@ -1,12 +1,15 @@
 import clsx from "clsx";
 import { format, formatDistanceToNow, isToday, isYesterday } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Facebook, Instagram, type LucideIcon } from "lucide-react";
-import type { Channel, ConversationListItemDTO } from "@whatsatendende/types";
+import { AlarmClock, Facebook, Instagram, PencilLine, Pin, type LucideIcon } from "lucide-react";
+import type { Channel, ConversationListItemDTO, ConversationReminderDTO } from "@whatsatendende/types";
 import { contactDisplayName } from "../../lib/contact-display";
 import { formatPhone } from "../../lib/format-phone";
 import { useNow } from "../../hooks/useNow";
 import { ContactPhoto } from "../common/ContactPhoto";
+import { useAuthStore } from "../../store/auth-store";
+import { draftKey, useDraftStore } from "../../store/draft-store";
+import { useTypingStore } from "../../store/typing-store";
 
 // Customer waiting this long for a reply gets the "sem resposta" warning;
 // past the second threshold it turns red.
@@ -18,6 +21,11 @@ function shortTime(iso: string) {
   if (isToday(d)) return format(d, "HH:mm");
   if (isYesterday(d)) return "ontem";
   return format(d, "dd/MM");
+}
+
+function shortReminderTime(iso: string) {
+  const d = new Date(iso);
+  return isToday(d) ? format(d, "HH:mm") : format(d, "dd/MM HH:mm");
 }
 
 export function minutesWaiting(conversation: ConversationListItemDTO, now: number) {
@@ -48,6 +56,8 @@ export function ConversationCard({
   accepting,
   agentPaused,
   transferredOutView,
+  pinned,
+  reminder,
 }: {
   conversation: ConversationListItemDTO;
   selected?: boolean;
@@ -64,8 +74,15 @@ export function ConversationCard({
   // (who *I* sent it to, and when) instead of the usual "who sent it to
   // me" badge and the last-message timestamp.
   transferredOutView?: boolean;
+  /** "Meus" only: pinned to the top by this attendant, and their "lembrar de retornar" for it. */
+  pinned?: boolean;
+  reminder?: ConversationReminderDTO | null;
 }) {
   const now = useNow();
+  const userId = useAuthStore((s) => s.user?.id);
+  const customerTyping = useTypingStore((s) => Boolean(s.typing[conversation.id]));
+  // Only the attendant's own conversations can hold a draft (queue/transferred cards have no composer).
+  const hasDraft = useDraftStore((s) => Boolean(!onAccept && !transferredOutView && userId && s.drafts[draftKey(userId, conversation.id)]?.trim()));
   const displayName = contactDisplayName(conversation.contact, conversation.channel);
   const ChannelIcon = CHANNEL_ICON[conversation.channel];
   // When there's a saved name, displayName hides the phone entirely — show
@@ -113,7 +130,10 @@ export function ConversationCard({
 
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-2">
-          <p className={clsx("truncate text-[13.5px]", conversation.unreadCount > 0 ? "font-bold" : "font-semibold")}>{displayName}</p>
+          <p className={clsx("flex min-w-0 items-center gap-1 text-[13.5px]", conversation.unreadCount > 0 ? "font-bold" : "font-semibold")}>
+            {pinned && <Pin className="h-3 w-3 shrink-0 text-primary" aria-label="Fixada" />}
+            <span className="truncate">{displayName}</span>
+          </p>
           <span
             className={clsx(
               "shrink-0 text-[11px]",
@@ -125,7 +145,9 @@ export function ConversationCard({
         </div>
 
         {showPhoneSubtitle && <p className="truncate text-[11.5px] tabular-nums text-muted">{formatPhone(conversation.contact.phone!)}</p>}
-        {conversation.lastMessagePreview ? (
+        {customerTyping ? (
+          <p className="truncate text-xs font-medium italic text-primary">digitando…</p>
+        ) : conversation.lastMessagePreview ? (
           <p className={clsx("truncate text-xs", conversation.unreadCount > 0 ? "font-medium text-[var(--color-text)]" : "text-muted")}>
             {conversation.lastMessagePreview}
           </p>
@@ -149,6 +171,22 @@ export function ConversationCard({
           )}
           {connectionDisconnected && (
             <span className="inline-flex items-center rounded-full bg-danger-soft px-2 py-0.5 text-[10.5px] font-semibold text-danger">Conexão desconectada</span>
+          )}
+          {reminder && (
+            <span
+              className={clsx(
+                "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-semibold",
+                reminder.firedAt ? "animate-pulse bg-warning-soft text-warning" : "bg-warning-soft text-warning"
+              )}
+            >
+              <AlarmClock className="h-3 w-3" />
+              {reminder.firedAt ? "Retornar agora" : `Retornar ${shortReminderTime(reminder.remindAt)}`}
+            </span>
+          )}
+          {hasDraft && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-surface-alt px-2 py-0.5 text-[10.5px] font-semibold text-muted">
+              <PencilLine className="h-3 w-3" /> Rascunho
+            </span>
           )}
           {noReply && (
             <span

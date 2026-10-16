@@ -122,6 +122,12 @@ export interface DeliveryEvent {
   timestamp: Date;
 }
 
+/** The customer started or stopped typing (or recording audio) in a chat — see subscribeTyping. */
+export interface TypingEvent {
+  chatId: string;
+  typing: boolean;
+}
+
 export interface ReactionEvent {
   providerMessageId: string;
   chatId: string;
@@ -340,6 +346,12 @@ export interface WhatsAppProvider {
   onMessage(listener: (event: InboundMessageEvent) => void): void;
   onDelivery(listener: (event: DeliveryEvent) => void): void;
   onReaction(listener: (event: ReactionEvent) => void): void;
+  /**
+   * Asks WhatsApp to report when the customer of this chat is typing (it only does so for chats someone asked
+   * about, and for a while). A no-op where the channel has no such signal (the Cloud API).
+   */
+  subscribeTyping(chatId: string): Promise<void>;
+  onTyping(listener: (event: TypingEvent) => void): void;
   /** Fired when the linked phone hands over its address book and/or recent chat history — see BaileysWhatsAppProvider for when/why this fires. */
   onHistorySync(listener: (event: HistorySyncEvent) => void): void;
   /** Fired when a chat's unread count drops to zero from outside this app (e.g. read on the linked phone) — see ChatReadEvent. */

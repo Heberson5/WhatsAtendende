@@ -400,7 +400,12 @@ settingsRouter.patch(
 // governs just this one field — same SystemSetting "business" bag
 // underneath, read back through the same GET /business any authenticated
 // user already has.
-const queueSettingsSchema = z.object({ queueReminderIntervalMinutes: z.number().int().min(1).max(60) }).strict();
+const queueSettingsSchema = z
+  .object({
+    queueReminderIntervalMinutes: z.number().int().min(1).max(60).optional(),
+    dailyConversationGoal: z.number().int().min(1).max(500).nullable().optional(),
+  })
+  .strict();
 
 settingsRouter.patch(
   "/queue",

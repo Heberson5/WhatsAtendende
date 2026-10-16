@@ -10,6 +10,7 @@ import type {
   InboundMessageEvent,
   OlderHistoryAnchor,
   ReactionEvent,
+  TypingEvent,
   SendResult,
   SendTextOptions,
   WhatsAppProvider,
@@ -263,6 +264,22 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
 
   onReaction(listener: (event: ReactionEvent) => void): void {
     this.emitter.on("reaction", listener);
+  }
+
+  /** Chats whose typing was asked for — tests read it. */
+  typingSubscriptions: string[] = [];
+
+  async subscribeTyping(chatId: string): Promise<void> {
+    this.typingSubscriptions.push(chatId);
+  }
+
+  onTyping(listener: (event: TypingEvent) => void): void {
+    this.emitter.on("typing", listener);
+  }
+
+  /** Test helper: the customer starts/stops typing. */
+  simulateTyping(event: TypingEvent): void {
+    this.emitter.emit("typing", event);
   }
 
   onHistorySync(listener: (event: HistorySyncEvent) => void): void {
