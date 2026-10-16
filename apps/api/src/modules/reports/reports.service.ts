@@ -38,8 +38,14 @@ const STATUS_LABEL: Record<string, string> = {
   HANDLED_EXTERNALLY: "Atendido pelo celular",
 };
 
-function minutes(ms: number | null): number | string {
-  return ms === null ? "-" : Math.round(ms / 60000);
+/** "1h 41min", "45min" — read at a glance instead of working out what 101 minutes is. */
+export function formatDuration(ms: number | null): string {
+  if (ms === null) return "-";
+  const total = Math.round(ms / 60000);
+  const hours = Math.floor(total / 60);
+  const mins = total % 60;
+  if (!hours) return `${mins}min`;
+  return mins ? `${hours}h ${mins}min` : `${hours}h`;
 }
 
 // Formats in the browser's local time, not the server's (this API runs in a
@@ -89,10 +95,10 @@ export async function getAttendanceReport({ from, to, agentId, connectionIds, tz
       Atendente: c.assignedAgent?.displayName ?? "-",
       "Entrada na fila": formatDateTime(c.enteredQueueAt, tzOffsetMinutes),
       Aceite: formatDateTime(c.acceptedAt, tzOffsetMinutes),
-      "Até aceite (min)": minutes(acceptMs),
-      "Até 1ª resposta (min)": minutes(firstResponse),
+      "Até aceite": formatDuration(acceptMs),
+      "Até 1ª resposta": formatDuration(firstResponse),
       Encerramento: formatDateTime(c.closedAt, tzOffsetMinutes),
-      "Duração total (min)": minutes(totalMs),
+      "Duração total": formatDuration(totalMs),
       "Mensagens recebidas": received,
       "Mensagens enviadas": sent,
       Transferências: c.transfers.length,
@@ -128,18 +134,19 @@ export async function getPerAgentReport({ from, to, connectionIds }: ReportParam
       const acceptDiffs = conversations.filter((c) => c.acceptedAt).map((c) => c.acceptedAt!.getTime() - c.enteredQueueAt.getTime());
       const handlingDiffs = conversations.filter((c) => c.acceptedAt && c.closedAt).map((c) => c.closedAt!.getTime() - c.acceptedAt!.getTime());
 
-      const avg = (arr: number[]): number | string => (arr.length ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length / 60000) : "-");
+      const avg = (arr: number[]): string => formatDuration(arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null);
 
       return {
         Atendente: agent.displayName,
         Conversas: conversations.length,
         "Mensagens enviadas": messagesSent,
-        "Tempo médio até aceite (min)": avg(acceptDiffs),
-        "Tempo médio até 1ª resposta (min)": avg(firstResponseDiffs(conversations)),
-        "Tempo médio de atendimento (min)": avg(handlingDiffs),
+        "Tempo médio até aceite": avg(acceptDiffs),
+        "Tempo médio até 1ª resposta": avg(firstResponseDiffs(conversations)),
+        "Tempo médio de atendimento": avg(handlingDiffs),
         "Transferências recebidas": transfersReceived,
         "Transferências realizadas": transfersMade,
         "Avaliações recebidas": satisfaction.get(agent.id)?.answered ?? 0,
+        "Pesquisas não respondidas": satisfaction.get(agent.id)?.unanswered ?? 0,
         "NPS (0 a 100)": satisfaction.get(agent.id)?.nps ?? "-",
       };
     })

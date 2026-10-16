@@ -26,6 +26,7 @@ const SATISFACTION: PresentationInput["satisfaction"] = {
   totals: {
     sent: 1102,
     answered: 412,
+    unanswered: 0,
     responseRate: 37,
     average: 8.7,
     nps: 81,
@@ -174,6 +175,7 @@ describe("apresentação do Dashboard", () => {
     const stats = (sent: number, answered: number, nps: number | null, promoters: number, passives: number, detractors: number, average: number | null) => ({
       sent,
       answered,
+      unanswered: 0,
       responseRate: sent ? Math.round((answered / sent) * 100) : null,
       average,
       nps,

@@ -284,7 +284,7 @@ describe("Pesquisa de satisfação (NPS)", () => {
       await closeAndAnswer("5511900000071", "2");
       await closeAndAnswer("5511900000072", "9");
       const byAgent = await getSatisfactionByAgent(PERIOD());
-      expect(byAgent.get(agentId)).toEqual({ answered: 3, nps: 67 });
+      expect(byAgent.get(agentId)).toEqual({ answered: 3, nps: 67, unanswered: 0 });
     });
   });
 

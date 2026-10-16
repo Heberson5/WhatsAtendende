@@ -17,7 +17,7 @@ vi.mock("../gestao/ReadOnlyConversationDrawer", () => ({
   ReadOnlyConversationDrawer: ({ conversation }: { conversation: { id: string } }) => <p>Conversa aberta: {conversation.id}</p>,
 }));
 
-const stats = { sent: 4, answered: 3, responseRate: 75, average: 6.3, nps: 50, promoters: 1, passives: 1, detractors: 1 };
+const stats = { sent: 4, answered: 3, unanswered: 0, responseRate: 75, average: 6.3, nps: 50, promoters: 1, passives: 1, detractors: 1 };
 const response = (id: string, contactName: string, score: number | null, category: "promoter" | "passive" | "detractor" | null) => ({
   surveyId: id,
   conversationId: `conv-${id}`,

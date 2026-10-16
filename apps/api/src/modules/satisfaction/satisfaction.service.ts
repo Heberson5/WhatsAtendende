@@ -589,10 +589,26 @@ export async function getSatisfactionByAgent(params: { from: Date; to: Date; con
     distribution[row.score] += row._count._all;
     distributions.set(row.agentId, distribution);
   }
-  return new Map([...distributions].map(([agentId, distribution]) => {
-    const { answered, nps } = calculateNps(distribution);
-    return [agentId, { answered, nps }] as const;
-  }));
+  // Sent in the period and the time to answer ran out without a score — still-open surveys don't count yet.
+  const unansweredRows = await prisma.satisfactionSurvey.groupBy({
+    by: ["agentId"],
+    where: {
+      sentAt: { gte: params.from, lte: params.to },
+      score: null,
+      expiresAt: { lte: new Date() },
+      questionId: { not: null },
+      ...(params.connectionIds && { whatsappConnectionId: { in: params.connectionIds } }),
+    },
+    _count: { _all: true },
+  });
+  const unanswered = new Map(unansweredRows.filter((r) => r.agentId).map((r) => [r.agentId!, r._count._all]));
+  const agentIds = new Set([...distributions.keys(), ...unanswered.keys()]);
+  return new Map(
+    [...agentIds].map((agentId) => {
+      const { answered, nps } = calculateNps(distributions.get(agentId) ?? Array<number>(MAX_SCORE + 1).fill(0));
+      return [agentId, { answered, nps, unanswered: unanswered.get(agentId) ?? 0 }] as const;
+    })
+  );
 }
 
 // ---------------------------------------------------------------------------

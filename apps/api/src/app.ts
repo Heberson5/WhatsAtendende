@@ -47,9 +47,10 @@ export function createApp() {
   // this is set, removing a free hint of the backend stack to a scanner.
   app.disable("x-powered-by");
 
-  // Only meaningful (and only safe) when a trusted reverse proxy is the
-  // sole path to this process — see the TRUST_PROXY comment in env.ts/.env.example.
-  if (env.TRUST_PROXY) app.set("trust proxy", 1);
+  // The visitor's real IP (Auditoria, rate limiting) comes in X-Forwarded-For from the proxies in front of the API:
+  // the web container's nginx and, on a VPS, the host's HTTPS proxy. Only hops on private/loopback addresses are
+  // trusted, so a client reaching the API directly from the internet still can't fake its IP with that header.
+  app.set("trust proxy", "loopback, linklocal, uniquelocal");
 
   app.use(
     helmet({

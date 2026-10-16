@@ -509,6 +509,8 @@ export interface SatisfactionQuestionSummaryDTO {
 export interface SatisfactionScoreStatsDTO {
   sent: number;
   answered: number;
+  /** Surveys whose time to answer ran out without a score (still-open ones are not counted). */
+  unanswered: number;
   /** answered ÷ sent × 100, rounded; null when nothing was sent. */
   responseRate: number | null;
   /** Average score, one decimal; null without answers. */
@@ -811,6 +813,8 @@ export interface ConversationListItemDTO {
     at: string;
     note: string | null;
   } | null;
+  /** Gestão search only: the latest message that contains the searched text. */
+  searchMatch?: string | null;
 }
 
 export interface MessageDTO {
@@ -918,6 +922,10 @@ export interface AuditLogDTO {
   entity: string;
   entityId: string | null;
   ipAddress: string | null;
+  /** An address inside the network (the server itself, a proxy) — it has no place on the map. */
+  ipInternal: boolean;
+  /** Approximate place of the IP (city, state, country), when known. */
+  ipPlace: { label: string; latitude: number; longitude: number } | null;
   metadata: unknown;
   createdAt: string;
 }

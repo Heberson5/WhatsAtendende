@@ -45,7 +45,7 @@ export function categoryOf(score: number): SatisfactionCategory {
 
 export const CATEGORY_LABEL: Record<SatisfactionCategory, string> = { promoter: "Promotor", passive: "Neutro", detractor: "Detrator" };
 
-function stats(sent: number, scores: number[]): SatisfactionScoreStatsDTO {
+function stats(sent: number, scores: number[], awaiting = 0): SatisfactionScoreStatsDTO {
   const distribution = Array<number>(11).fill(0);
   for (const s of scores) distribution[s] += 1;
   const nps = calculateNps(distribution);
@@ -53,6 +53,7 @@ function stats(sent: number, scores: number[]): SatisfactionScoreStatsDTO {
   return {
     sent,
     answered: scores.length,
+    unanswered: sent - scores.length - awaiting,
     responseRate: sent ? Math.round((scores.length / sent) * 100) : null,
     average,
     nps: nps.nps,
@@ -126,13 +127,15 @@ export async function getSatisfactionReport(params: SatisfactionReportParams): P
   for (const s of answeredScores) distribution[s] += 1;
 
   // Per attendant / per connection.
-  const byAgent = new Map<string, { agentId: string | null; agentName: string; sent: number; scores: number[] }>();
-  const byConnection = new Map<string, { connectionId: string; connectionName: string; connectionColor: string; sent: number; scores: number[] }>();
+  const byAgent = new Map<string, { agentId: string | null; agentName: string; sent: number; scores: number[]; awaiting: number }>();
+  const byConnection = new Map<string, { connectionId: string; connectionName: string; connectionColor: string; sent: number; scores: number[]; awaiting: number }>();
+  const isAwaiting = (r: (typeof rows)[number]) => r.score === null && r.expiresAt > now;
   for (const r of rows) {
     const agentKey = r.agentId ?? "none";
-    const agent = byAgent.get(agentKey) ?? { agentId: r.agentId, agentName: r.agent?.displayName ?? "Sem atendente", sent: 0, scores: [] };
+    const agent = byAgent.get(agentKey) ?? { agentId: r.agentId, agentName: r.agent?.displayName ?? "Sem atendente", sent: 0, scores: [], awaiting: 0 };
     agent.sent += 1;
     if (r.score !== null) agent.scores.push(r.score);
+    if (isAwaiting(r)) agent.awaiting += 1;
     byAgent.set(agentKey, agent);
     const conn = byConnection.get(r.whatsappConnection.id) ?? {
       connectionId: r.whatsappConnection.id,
@@ -140,9 +143,11 @@ export async function getSatisfactionReport(params: SatisfactionReportParams): P
       connectionColor: r.whatsappConnection.color,
       sent: 0,
       scores: [],
+      awaiting: 0,
     };
     conn.sent += 1;
     if (r.score !== null) conn.scores.push(r.score);
+    if (isAwaiting(r)) conn.awaiting += 1;
     byConnection.set(r.whatsappConnection.id, conn);
   }
 
@@ -198,10 +203,10 @@ export async function getSatisfactionReport(params: SatisfactionReportParams): P
     (b.nps ?? -Infinity) - (a.nps ?? -Infinity) || (b.average ?? -1) - (a.average ?? -1) || b.answered - a.answered;
 
   return {
-    totals: { ...stats(rows.length, answeredScores), distribution, awaiting: responses.filter((r) => r.status === "awaiting").length },
+    totals: { ...stats(rows.length, answeredScores, rows.filter(isAwaiting).length), distribution, awaiting: rows.filter(isAwaiting).length },
     byAgent: [...byAgent.values()]
       .map((a) => ({
-        ...stats(a.sent, a.scores),
+        ...stats(a.sent, a.scores, a.awaiting),
         agentId: a.agentId,
         agentName: a.agentName,
         lowest: a.scores.length ? Math.min(...a.scores) : null,
@@ -209,7 +214,7 @@ export async function getSatisfactionReport(params: SatisfactionReportParams): P
         previousNps: a.agentId ? (npsByAgent.get(a.agentId) ?? null) : null,
       }))
       .sort(sortByNps),
-    byConnection: [...byConnection.values()].map((c) => ({ ...stats(c.sent, c.scores), connectionId: c.connectionId, connectionName: c.connectionName, connectionColor: c.connectionColor })).sort(sortByNps),
+    byConnection: [...byConnection.values()].map((c) => ({ ...stats(c.sent, c.scores, c.awaiting), connectionId: c.connectionId, connectionName: c.connectionName, connectionColor: c.connectionColor })).sort(sortByNps),
     trend,
     responses,
     previous,
@@ -271,6 +276,7 @@ export function agentsToRows(report: SatisfactionReportDTO): Record<string, unkn
     Atendente: a.agentName,
     "Pesquisas enviadas": a.sent,
     Respostas: a.answered,
+    "Não responderam": a.unanswered,
     "Taxa de resposta (%)": a.responseRate ?? "-",
     "Nota média": a.average ?? "-",
     "NPS (0 a 100)": a.nps ?? "-",

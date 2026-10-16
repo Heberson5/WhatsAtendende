@@ -17,9 +17,9 @@ import { AreaChart as AreaChartIcon, BarChart3, LineChart as LineChartIcon } fro
 import { ChartTypeMenu } from "./ChartTypeMenu";
 import { CHART_CARD_SHADOW, CHART_DEPTH_FILTER, CHART_TOOLTIP_PROPS, darken, gradientId, lighten } from "../../lib/chart-theme";
 
-type SeriesKind = "bar" | "line" | "area";
+export type SeriesKind = "bar" | "line" | "area";
 
-const KIND_OPTIONS = [
+export const SERIES_KIND_OPTIONS = [
   { key: "bar" as const, label: "Barras", icon: BarChart3 },
   { key: "line" as const, label: "Linha", icon: LineChartIcon },
   { key: "area" as const, label: "Área", icon: AreaChartIcon },
@@ -76,7 +76,7 @@ export function SeriesChartCard({
     <div className={`rounded-card border border-border bg-surface p-4 ${CHART_CARD_SHADOW}`}>
       <div className="mb-2 flex items-center justify-between">
         <p className="text-xs font-medium text-muted">{title}</p>
-        <ChartTypeMenu value={kind} onChange={setKind} options={KIND_OPTIONS} />
+        <ChartTypeMenu value={kind} onChange={setKind} options={SERIES_KIND_OPTIONS} />
       </div>
 
       {data.length === 0 ? (

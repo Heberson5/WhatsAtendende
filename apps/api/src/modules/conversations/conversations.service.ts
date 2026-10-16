@@ -1036,7 +1036,7 @@ export interface OversightFilters {
   agentId?: string;
   /** One or more statuses (OR'd) — a list so the Dashboard's "Em atendimento" card can deep-link into both IN_PROGRESS and TRANSFERRED at once. */
   status?: string[];
-  contactSearch?: string;
+  search?: string;
   /** Empty/undefined = all connections — see PROMPT: filtro podendo selecionar várias ou todas. */
   connectionIds?: string[];
 }
@@ -1068,19 +1068,33 @@ export async function listAllConversations(filters: OversightFilters) {
         },
         ...(filters.from || filters.to ? [{ OR: [{ createdAt: inPeriod }, { lastMessageAt: inPeriod }, { closedAt: inPeriod }] }] : []),
       ],
-      contact: filters.contactSearch
-        ? {
-            OR: [
-              { name: { contains: filters.contactSearch, mode: "insensitive" } },
-              { phone: { contains: filters.contactSearch } },
-            ],
-          }
+      // The customer's name or number, or (from 3 letters) anything written in the conversation.
+      OR: filters.search
+        ? [
+            { contact: { name: { contains: filters.search, mode: "insensitive" } } },
+            { contact: { phone: { contains: filters.search } } },
+            ...(filters.search.length >= MIN_MESSAGE_SEARCH_LENGTH ? [{ messages: { some: { body: { contains: filters.search, mode: "insensitive" as const } } } }] : []),
+          ]
         : undefined,
     },
     include: conversationInclude,
     orderBy: { lastMessageAt: "desc" },
     take: 200,
   });
+}
+
+const MIN_MESSAGE_SEARCH_LENGTH = 3;
+
+/** For a Gestão search: the most recent message of each conversation that contains the text, to show where it was found. */
+export async function findSearchMatches(conversationIds: string[], search: string): Promise<Map<string, string>> {
+  if (search.length < MIN_MESSAGE_SEARCH_LENGTH || conversationIds.length === 0) return new Map();
+  const messages = await prisma.message.findMany({
+    where: { conversationId: { in: conversationIds }, body: { contains: search, mode: "insensitive" } },
+    orderBy: { createdAt: "desc" },
+    distinct: ["conversationId"],
+    select: { conversationId: true, body: true },
+  });
+  return new Map(messages.map((m) => [m.conversationId, m.body ?? ""]));
 }
 
 export async function getConversationOrThrow(id: string) {
