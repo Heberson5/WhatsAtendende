@@ -214,6 +214,8 @@ const DEFAULT_BUSINESS_SETTINGS = {
   // fila... parametrizado quanto tempo deverá ser notificado". Checked by
   // the queue-reminder timer in server.ts.
   queueReminderIntervalMinutes: 1,
+  // Conversations each attendant aims to close per day — the bar under "Meu dia" in Atendimento. null = no goal.
+  dailyConversationGoal: null as number | null,
 };
 
 export async function updateBusinessSettings(patch: Record<string, unknown>) {

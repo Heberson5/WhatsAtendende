@@ -7,6 +7,7 @@ import { setIO, ROOMS } from "./realtime";
 import { registerConnection, registerDisconnection } from "./presence-tracker";
 import { logger } from "../lib/logger";
 import { prisma } from "../lib/prisma";
+import { watchCustomerTyping } from "../modules/whatsapp/whatsapp.service";
 
 export function createSocketServer(httpServer: HttpServer): SocketIOServer {
   const io = new SocketIOServer(httpServer, {
@@ -104,6 +105,7 @@ export function createSocketServer(httpServer: HttpServer): SocketIOServer {
         }
       }
       socket.join(ROOMS.conversation(conversationId));
+      watchCustomerTyping(conversationId).catch((err) => logger.debug({ err, conversationId }, "could not subscribe to the customer's typing"));
     });
     socket.on("conversation:leave", (conversationId: unknown) => {
       if (typeof conversationId !== "string" || !conversationId) return;

@@ -81,6 +81,20 @@ export const realtimeEvents = {
     getIO()?.to(ROOMS.user(agentId)).emit("conversation:removed", { conversationId });
     getIO()?.to(ROOMS.oversight()).emit("oversight:updated");
   },
+  /** The attendant's pins, reminders or scheduled messages changed (from another tab, or a message went out). */
+  agentExtrasChanged: (userId: string) => {
+    getIO()?.to(ROOMS.user(userId)).emit("agent:extras");
+  },
+  /** A "lembrar de retornar" went off — a pop-up with "Abrir conversa" / "Adiar". */
+  reminderDue: (userId: string, payload: unknown) => {
+    getIO()?.to(ROOMS.user(userId)).emit("reminder:due", payload);
+    getIO()?.to(ROOMS.user(userId)).emit("agent:extras");
+  },
+  /** The customer is typing (or stopped) — the open conversation and the agent's list show "digitando…". */
+  customerTyping: (conversationId: string, agentId: string | null, typing: boolean) => {
+    getIO()?.to(ROOMS.conversation(conversationId)).emit("conversation:typing", { conversationId, typing });
+    if (agentId) getIO()?.to(ROOMS.user(agentId)).emit("conversation:typing", { conversationId, typing });
+  },
   newMessage: (conversationId: string, agentId: string | null) => {
     getIO()?.to(ROOMS.conversation(conversationId)).emit("message:new", { conversationId });
     if (agentId) getIO()?.to(ROOMS.user(agentId)).emit("message:new", { conversationId });

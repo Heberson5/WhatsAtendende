@@ -12,6 +12,9 @@ import { syncContactsIfDue } from "./lib/contacts-sync";
 import { env } from "./config/env";
 import { logger } from "./lib/logger";
 import { prisma } from "./lib/prisma";
+import { fireDueReminders, sendDueScheduledMessages } from "./modules/agent-tools/agent-tools.service";
+
+const AGENT_TOOLS_SWEEP_INTERVAL_MS = 20_000;
 
 const TRANSFER_SWEEP_INTERVAL_MS = 5 * 60 * 1000; // see PROMPT: revert an unaccepted offline transfer after 2h
 // Cheap to check daily — runHolidaySyncIfDue itself only does real work
@@ -97,6 +100,19 @@ async function main() {
   }, CLOSING_MESSAGE_SWEEP_INTERVAL_MS);
   closingMessageTimer.unref();
 
+  // "Lembrar de retornar" and "Agendar envio" — both kept in the database, so a restart loses nothing.
+  let agentToolsSweepRunning = false;
+  const agentToolsTimer = setInterval(() => {
+    if (agentToolsSweepRunning) return;
+    agentToolsSweepRunning = true;
+    Promise.all([fireDueReminders(), sendDueScheduledMessages()])
+      .catch((err) => logger.error({ err }, "failed to fire reminders / send scheduled messages"))
+      .finally(() => {
+        agentToolsSweepRunning = false;
+      });
+  }, AGENT_TOOLS_SWEEP_INTERVAL_MS);
+  agentToolsTimer.unref();
+
   httpServer.listen(env.PORT, () => {
     logger.info(`API listening on port ${env.PORT} (env=${env.NODE_ENV}, whatsapp=${env.WHATSAPP_PROVIDER})`);
   });
@@ -109,6 +125,7 @@ async function main() {
     clearInterval(idleSessionTimer);
     clearInterval(contactsSyncTimer);
     clearInterval(closingMessageTimer);
+    clearInterval(agentToolsTimer);
     httpServer.close();
     // Every deploy sends this signal to the outgoing container — ending
     // each WhatsApp connection's socket cleanly here (rather than letting

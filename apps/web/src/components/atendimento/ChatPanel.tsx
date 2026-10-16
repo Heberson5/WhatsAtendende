@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ArrowLeft, ArrowRightLeft, CheckCircle2, ChevronDown, ChevronUp, FileText, Lock, PanelRight, Paperclip, Phone, Search, StickyNote, X as CloseIcon } from "lucide-react";
+import { AlarmClock, ArrowLeft, ArrowRightLeft, CalendarClock, CheckCircle2, ChevronDown, ChevronUp, FileText, Lock, PanelRight, Paperclip, Phone, Pin, PinOff, Search, StickyNote, X as CloseIcon } from "lucide-react";
+import { format } from "date-fns";
 import clsx from "clsx";
 import { PERMISSION, type ConversationListItemDTO, type ConversationNoteDTO, type MessageDTO, type PaginatedResult, type QuickReplyDTO, type TemplateContextDTO } from "@whatsatendende/types";
 import { toastWithUndo } from "../../lib/undoToast";
@@ -18,6 +19,9 @@ import { SendTemplateModal } from "./SendTemplateModal";
 import { TransferNoteCard } from "./TransferNoteCard";
 import { TimelineByDay, type TimelineEntry } from "./TimelineByDay";
 import { ContactPhoto } from "../common/ContactPhoto";
+import { useAgentExtras } from "../../hooks/useAgentExtras";
+import { useTypingStore } from "../../store/typing-store";
+import { WhenPicker } from "./WhenPicker";
 
 async function fetchMessages(conversationId: string, cursor?: string) {
   // 100 (the API's own max) rather than a smaller page, since every page
@@ -426,12 +430,88 @@ export function ChatPanel({
     mutationFn: () => api.post(`/conversations/${conversation.id}/close`),
     onSuccess: () => {
       toastWithUndo("Atendimento encerrado.", conversation.id, queryClient);
+      queryClient.invalidateQueries({ queryKey: ["my-day"] });
       onClosed();
     },
     onError: (err) => toast.error(getApiErrorMessage(err)),
   });
 
   const displayName = contactDisplayName(conversation.contact, conversation.channel);
+
+  // Atendimento's own helpers (not in Gestão's intervention panel): pin, "lembrar de retornar", "agendar envio".
+  const agentTools = !headerActions;
+  // With the client panel open the chat column is narrow — the header's buttons go icon-only until there's room.
+  const actionLabelClass = clientPanelOpen ? "hidden 2xl:inline" : "hidden sm:inline";
+  const customerTyping = useTypingStore((s) => Boolean(s.typing[conversation.id]));
+  const extras = useAgentExtras().data;
+  const pinned = Boolean(extras?.pinnedConversationIds.includes(conversation.id));
+  const reminder = extras?.reminders.find((r) => r.conversationId === conversation.id) ?? null;
+  const scheduled = extras?.scheduledMessages.filter((m) => m.conversationId === conversation.id) ?? [];
+  const [reminderOpen, setReminderOpen] = useState(false);
+  const invalidateExtras = () => queryClient.invalidateQueries({ queryKey: ["agent-extras"] });
+  const pinMutation = useMutation({
+    mutationFn: (next: boolean) => api.put(`/agent-tools/pins/${conversation.id}`, { pinned: next }),
+    onSuccess: (_res, next) => {
+      invalidateExtras();
+      toast.success(next ? "Conversa fixada no topo." : "Conversa desafixada.");
+    },
+    onError: (err) => toast.error(getApiErrorMessage(err)),
+  });
+  const reminderMutation = useMutation({
+    mutationFn: (input: { remindAt: Date; note: string }) =>
+      api.post("/agent-tools/reminders", { conversationId: conversation.id, remindAt: input.remindAt.toISOString(), note: input.note || null }),
+    onSuccess: (_res, input) => {
+      invalidateExtras();
+      setReminderOpen(false);
+      toast.success(`Vamos te lembrar às ${format(input.remindAt, "HH:mm")}.`);
+    },
+    onError: (err) => toast.error(getApiErrorMessage(err)),
+  });
+  const deleteReminderMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/agent-tools/reminders/${id}`),
+    onSuccess: invalidateExtras,
+    onError: (err) => toast.error(getApiErrorMessage(err)),
+  });
+  const cancelScheduledMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/agent-tools/scheduled-messages/${id}`),
+    onSuccess: () => {
+      invalidateExtras();
+      toast.success("Envio agendado cancelado.");
+    },
+    onError: (err) => toast.error(getApiErrorMessage(err)),
+  });
+
+  // Keyboard shortcuts for the open chat (the list's own — Alt+↓/↑, Alt+A, ? — live in AtendimentoPage).
+  useEffect(() => {
+    if (!agentTools) return;
+    function onKey(e: KeyboardEvent) {
+      const target = e.target as HTMLElement;
+      const typing = target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
+      if (e.key === "/" && !typing && !e.altKey && !e.ctrlKey && !e.metaKey && !lockedByIntervention) {
+        e.preventDefault();
+        setComposerMode("reply");
+        composerRef.current?.focus("/");
+        return;
+      }
+      if (!e.altKey || e.ctrlKey || e.metaKey) return;
+      if (e.code === "KeyN") {
+        e.preventDefault();
+        setComposerMode((m) => (m === "note" ? "reply" : "note"));
+      } else if (e.code === "KeyT" && canTransfer) {
+        e.preventDefault();
+        setTransferOpen(true);
+      } else if (e.code === "KeyE" && canClose) {
+        e.preventDefault();
+        setCloseConfirmOpen(true);
+      } else if (e.code === "KeyL") {
+        e.preventDefault();
+        setReminderOpen(true);
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [agentTools, canTransfer, canClose, lockedByIntervention]);
+
   const messageById = new Map(messages.map((m) => [m.id, m]));
 
   // A dragged file (or several) can be dropped anywhere over the
@@ -561,9 +641,14 @@ export function ChatPanel({
             </div>
           </ContactPhoto>
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold">{displayName}</p>
-            {conversation.contact.phone && (
-              <p className="flex items-center gap-1 text-xs text-muted">
+            <p className="flex items-center gap-1.5 truncate text-sm font-semibold">
+              {displayName}
+              {pinned && <Pin className="h-3 w-3 shrink-0 text-primary" aria-label="Fixada" />}
+            </p>
+            {customerTyping ? (
+              <p className="text-xs font-medium italic text-primary">digitando…</p>
+            ) : conversation.contact.phone && (
+              <p className="flex items-center gap-1 whitespace-nowrap text-xs text-muted">
                 <Phone className="h-3 w-3" /> {formatPhone(conversation.contact.phone)}
               </p>
             )}
@@ -574,7 +659,7 @@ export function ChatPanel({
             </span>
           )}
         </div>
-        <div className="flex shrink-0 gap-2">
+        <div className="relative flex shrink-0 gap-2">
           <button
             onClick={() => setSearchOpen(true)}
             className="focus-ring flex items-center gap-1.5 rounded-card border border-border p-1.5 text-muted hover:bg-surface-alt sm:px-2"
@@ -583,21 +668,88 @@ export function ChatPanel({
           >
             <Search className="h-3.5 w-3.5" />
           </button>
+          {agentTools && (
+            <button
+              onClick={() => pinMutation.mutate(!pinned)}
+              disabled={pinMutation.isPending}
+              className={clsx(
+                "focus-ring flex items-center rounded-card border p-1.5",
+                pinned ? "border-primary/30 bg-primary/10 text-primary" : "border-border text-muted hover:bg-surface-alt"
+              )}
+              aria-pressed={pinned}
+              aria-label={pinned ? "Desafixar conversa" : "Fixar conversa no topo"}
+              title={pinned ? "Desafixar conversa" : "Fixar conversa no topo"}
+            >
+              {pinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
+            </button>
+          )}
+          {agentTools && (
+            <>
+              <button
+                onClick={() => setReminderOpen((o) => !o)}
+                className={clsx(
+                  "focus-ring flex items-center gap-1 rounded-card border p-1.5 text-xs font-medium",
+                  reminder ? "border-warning/40 bg-warning-soft px-2 text-warning" : "border-border text-muted hover:bg-surface-alt"
+                )}
+                aria-label="Lembrar de retornar (Alt+L)"
+                title="Lembrar de retornar (Alt+L)"
+              >
+                <AlarmClock className="h-3.5 w-3.5" />
+                {reminder && <span className="hidden tabular-nums sm:inline">{reminder.firedAt ? "Agora" : format(new Date(reminder.remindAt), "HH:mm")}</span>}
+              </button>
+              {reminderOpen &&
+                (reminder ? (
+                  <div className="shadow-elevated absolute right-0 top-10 z-30 w-60 rounded-card border border-border bg-surface p-3 text-xs">
+                    <p className="font-semibold">Lembrete de retorno</p>
+                    <p className="mt-1 text-muted">
+                      {reminder.firedAt ? "Já passou da hora de retornar." : `Para ${format(new Date(reminder.remindAt), "dd/MM 'às' HH:mm")}.`}
+                    </p>
+                    {reminder.note && <p className="mt-1 rounded bg-surface-alt px-2 py-1">{reminder.note}</p>}
+                    <div className="mt-3 flex justify-end gap-2">
+                      <button onClick={() => setReminderOpen(false)} className="focus-ring rounded-lg border border-border px-3 py-1.5 hover:bg-surface-alt">
+                        Fechar
+                      </button>
+                      <button
+                        onClick={() => {
+                          deleteReminderMutation.mutate(reminder.id);
+                          setReminderOpen(false);
+                        }}
+                        className="focus-ring rounded-lg bg-primary px-3 py-1.5 font-semibold text-primary-fg"
+                      >
+                        {reminder.firedAt ? "Concluir" : "Remover"}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <WhenPicker
+                    title="Lembrar de retornar"
+                    confirmLabel="Lembrar"
+                    withNote
+                    busy={reminderMutation.isPending}
+                    className="right-0 top-10"
+                    onConfirm={(remindAt, note) => reminderMutation.mutate({ remindAt, note })}
+                    onClose={() => setReminderOpen(false)}
+                  />
+                ))}
+            </>
+          )}
           {headerActions}
           {canTransfer && (
             <button
               onClick={() => setTransferOpen(true)}
+              title="Transferir (Alt+T)"
               className="focus-ring flex items-center gap-1.5 rounded-card border border-border px-2 py-1.5 text-xs font-medium hover:bg-surface-alt sm:px-3"
             >
-              <ArrowRightLeft className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Transferir</span>
+              <ArrowRightLeft className="h-3.5 w-3.5" /> <span className={actionLabelClass}>Transferir</span>
             </button>
           )}
           {canClose && (
             <button
               onClick={() => setCloseConfirmOpen(true)}
+              title="Encerrar (Alt+E)"
               className="focus-ring flex items-center gap-1.5 rounded-card bg-primary px-2 py-1.5 text-xs font-semibold text-primary-fg hover:opacity-90 sm:px-3"
             >
-              <CheckCircle2 className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Encerrar</span>
+              <CheckCircle2 className="h-3.5 w-3.5" /> <span className={actionLabelClass}>Encerrar</span>
             </button>
           )}
           {onToggleClientPanel && (
@@ -694,6 +846,25 @@ export function ChatPanel({
             <strong>{conversation.intervention?.name}</strong> está intervindo nesta conversa. Você acompanha em tempo real e pode deixar notas para ele, mas não
             pode responder ao cliente, transferir nem encerrar.
           </span>
+        </div>
+      )}
+
+      {agentTools && scheduled.length > 0 && (
+        <div className="space-y-1 border-t border-border bg-surface px-4 py-2">
+          {scheduled.map((m) => (
+            <div key={m.id} className="flex items-center gap-2 rounded-lg bg-info-soft px-2.5 py-1.5 text-xs text-info">
+              <CalendarClock className="h-3.5 w-3.5 shrink-0" />
+              <span className="shrink-0 font-semibold tabular-nums">Agendada {format(new Date(m.sendAt), "dd/MM 'às' HH:mm")}</span>
+              <span className="min-w-0 flex-1 truncate text-[var(--color-text)]">{m.body}</span>
+              <button
+                onClick={() => cancelScheduledMutation.mutate(m.id)}
+                disabled={cancelScheduledMutation.isPending}
+                className="focus-ring shrink-0 rounded px-1.5 py-0.5 font-semibold hover:bg-surface"
+              >
+                Cancelar
+              </button>
+            </div>
+          ))}
         </div>
       )}
 
@@ -798,6 +969,21 @@ export function ChatPanel({
       ) : (
       <Composer
         ref={composerRef}
+        conversationId={conversation.id}
+        onScheduleText={
+          agentTools
+            ? async (body, sendAt) => {
+                try {
+                  await api.post("/agent-tools/scheduled-messages", { conversationId: conversation.id, body, sendAt: sendAt.toISOString() });
+                  invalidateExtras();
+                  toast.success(`Mensagem agendada para ${format(sendAt, "dd/MM 'às' HH:mm")}.`);
+                } catch (err) {
+                  toast.error(getApiErrorMessage(err));
+                  throw err;
+                }
+              }
+            : undefined
+        }
         disabled={sendTextMutation.isPending || connectionDisconnected}
         quickReplies={quickRepliesQuery.data}
         replyTo={replyTo}

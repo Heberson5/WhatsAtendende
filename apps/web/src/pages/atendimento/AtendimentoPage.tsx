@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import clsx from "clsx";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -20,6 +20,10 @@ import { GroupCard } from "../../components/atendimento/GroupCard";
 import { GroupChatPanel } from "../../components/atendimento/GroupChatPanel";
 import { GroupInfoPanel } from "../../components/atendimento/GroupInfoPanel";
 import { useActiveGroupStore } from "../../store/active-group-store";
+import { MyDayStrip } from "../../components/atendimento/MyDayStrip";
+import { ShortcutsHelp } from "../../components/atendimento/ShortcutsHelp";
+import { useAgentExtras } from "../../hooks/useAgentExtras";
+import { useDraftStore } from "../../store/draft-store";
 
 const CLIENT_PANEL_KEY = "client-panel-collapsed";
 // Below this width the chat needs the room, so the panel starts collapsed.
@@ -46,6 +50,8 @@ export default function AtendimentoPage() {
   const [listSearch, setListSearch] = useState("");
   const [listFilter, setListFilter] = useState<ListFilter>("all");
   const [clientPanelCollapsed, setClientPanelCollapsed] = useState(readClientPanelCollapsed);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const extras = useAgentExtras().data;
   const now = useNow();
   function toggleClientPanel() {
     setClientPanelCollapsed((c) => {
@@ -131,6 +137,11 @@ export default function AtendimentoPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, mineQuery.data]);
 
+  // Drafts of conversations that left this list (closed, transferred away) aren't kept around.
+  useEffect(() => {
+    if (user?.id && mineQuery.data) useDraftStore.getState().prune(user.id, mineQuery.data.map((c) => c.id));
+  }, [user?.id, mineQuery.data]);
+
   // WhatsApp groups (only on connections where an administrator turned them on) — each person's own unread counts.
   const groupsQuery = useQuery({
     queryKey: ["groups", connectionIds],
@@ -204,11 +215,17 @@ export default function AtendimentoPage() {
   const mine = mineQuery.data ?? [];
   const unreadCount = mine.filter((c) => c.unreadCount > 0).length;
   const noReplyCount = mine.filter((c) => minutesWaiting(c, now) >= NO_REPLY_WARNING_MINUTES).length;
-  const visibleMine = mine.filter(
+  const pinnedIds = new Set(extras?.pinnedConversationIds ?? []);
+  const reminderByConversation = new Map((extras?.reminders ?? []).map((r) => [r.conversationId, r]));
+  const filteredMine = mine.filter(
     (c) =>
       matchesSearch(c) &&
       (listFilter === "all" || (listFilter === "unread" ? c.unreadCount > 0 : minutesWaiting(c, now) >= NO_REPLY_WARNING_MINUTES))
   );
+  const pinnedMine = filteredMine.filter((c) => pinnedIds.has(c.id));
+  const otherMine = filteredMine.filter((c) => !pinnedIds.has(c.id));
+  // The order on screen (pinned first) — what Alt+↓/↑ walks through.
+  const visibleMine = [...pinnedMine, ...otherMine];
   const visibleQueue = (queueQuery.data ?? []).filter(matchesSearch);
   const visibleTransferred = (transferredOutQuery.data ?? []).filter(matchesSearch);
   const panelConversation = tab === "groups" ? null : (selectedConversation ?? watchingConversation);
@@ -217,6 +234,65 @@ export default function AtendimentoPage() {
   // The tab shows up once there's a group to see (an administrator turned groups on for a number this person attends).
   const showGroupsTab = canSeeGroups && (groups.length > 0 || tab === "groups");
   const chatOpen = tab === "groups" ? Boolean(selectedGroup) : Boolean(selectedConversation || watchingConversation);
+
+  function renderMineCard(c: ConversationListItemDTO) {
+    return (
+      <ConversationCard
+        key={c.id}
+        conversation={c}
+        selected={c.id === selectedId}
+        pinned={pinnedIds.has(c.id)}
+        reminder={reminderByConversation.get(c.id) ?? null}
+        onSelect={() => {
+          setWatchingConversation(null);
+          setSelectedId((current) => (current === c.id ? null : c.id));
+        }}
+      />
+    );
+  }
+
+  // List-level keyboard shortcuts (the open chat's own — Alt+N/T/E/L and "/" — live in ChatPanel).
+  const shortcutState = { visibleMine, selectedId, firstQueued: visibleQueue[0], paused: user?.presence === "AWAY", accepting: acceptMutation.isPending, shortcutsOpen };
+  const shortcutStateRef = useRef(shortcutState);
+  shortcutStateRef.current = shortcutState;
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const state = shortcutStateRef.current;
+      const target = e.target as HTMLElement;
+      const typing = target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
+      if (e.key === "?" && !typing && !state.shortcutsOpen) {
+        e.preventDefault();
+        setShortcutsOpen(true);
+        return;
+      }
+      // Esc closes the open chat — unless something on top of it (a modal, a menu) is handling it.
+      if (e.key === "Escape" && !typing && !state.shortcutsOpen && !document.querySelector("[role='dialog'], .drawer-backdrop, .fixed.inset-0")) {
+        setSelectedId(null);
+        setWatchingConversation(null);
+        return;
+      }
+      if (!e.altKey || e.ctrlKey || e.metaKey) return;
+      if (e.code === "ArrowDown" || e.code === "ArrowUp") {
+        e.preventDefault();
+        const list = state.visibleMine;
+        if (!list.length) return;
+        const index = list.findIndex((c) => c.id === state.selectedId);
+        const step = e.code === "ArrowDown" ? 1 : -1;
+        const next = index === -1 ? (step === 1 ? 0 : list.length - 1) : (index + step + list.length) % list.length;
+        setTab("mine");
+        setWatchingConversation(null);
+        setSelectedId(list[next].id);
+      } else if (e.code === "KeyA") {
+        e.preventDefault();
+        if (state.paused) toast.info("Você está pausado — retome o atendimento para aceitar conversas.");
+        else if (!state.firstQueued) toast.info("Nenhuma conversa aguardando na fila.");
+        else if (!state.accepting) acceptMutation.mutate(state.firstQueued.id);
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const tabs = [
     { value: "mine" as const, label: "Meus", count: mine.length },
@@ -248,6 +324,7 @@ export default function AtendimentoPage() {
           </div>
         )}
         <div className="space-y-2.5 border-b border-border px-3 pb-3 pt-3">
+          <MyDayStrip onShowShortcuts={() => setShortcutsOpen(true)} />
           <div className="flex items-center gap-1.5">
             {canFilterByConnection ? (
               <div className="min-w-0 flex-1">
@@ -340,17 +417,12 @@ export default function AtendimentoPage() {
         <div className="flex-1 overflow-y-auto">
           {tab === "mine" &&
             (visibleMine.length ? (
-              visibleMine.map((c) => (
-                <ConversationCard
-                  key={c.id}
-                  conversation={c}
-                  selected={c.id === selectedId}
-                  onSelect={() => {
-                    setWatchingConversation(null);
-                    setSelectedId((current) => (current === c.id ? null : c.id));
-                  }}
-                />
-              ))
+              <>
+                {pinnedMine.length > 0 && <SectionLabel>Fixadas</SectionLabel>}
+                {pinnedMine.map(renderMineCard)}
+                {pinnedMine.length > 0 && otherMine.length > 0 && <SectionLabel>Demais conversas</SectionLabel>}
+                {otherMine.map(renderMineCard)}
+              </>
             ) : (
               <EmptyState message={mine.length ? "Nenhuma conversa com esse filtro." : "Nenhum atendimento em andamento."} />
             ))}
@@ -454,6 +526,8 @@ export default function AtendimentoPage() {
         </div>
       )}
 
+      {shortcutsOpen && <ShortcutsHelp onClose={() => setShortcutsOpen(false)} />}
+
       {novaConversaOpen && (
         <NovaConversaModal
           fixedConnectionId={hasFixedConnection ? user!.whatsappConnectionId : null}
@@ -468,6 +542,10 @@ export default function AtendimentoPage() {
       )}
     </div>
   );
+}
+
+function SectionLabel({ children }: { children: string }) {
+  return <p className="border-b border-border bg-surface-alt px-3 py-1 text-[10.5px] font-semibold uppercase tracking-wide text-muted">{children}</p>;
 }
 
 function EmptyState({ message }: { message: string }) {
