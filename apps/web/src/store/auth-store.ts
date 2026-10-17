@@ -42,6 +42,8 @@ interface AuthState {
   // later remount of the Dashboard in this same session picks it up without
   // a refetch of the whole profile.
   updatePresenceChartHours: (startHour: number | null, endHour: number | null) => void;
+  // Same, for "Conversas que chegam ao longo do dia".
+  updateArrivalsChartHours: (startHour: number | null, endHour: number | null) => void;
   // Patches the newest Notas de versão release the user has seen, right
   // after PATCH /profile/release-notes-seen, so the sidebar badge and the
   // "O que há de novo" popup clear immediately.
@@ -71,6 +73,8 @@ export const useAuthStore = create<AuthState>((set) => ({
     set((state) => (state.user ? { user: { ...state.user, pauseReasonId, pauseReasonName } } : state)),
   updatePresenceChartHours: (presenceChartStartHour, presenceChartEndHour) =>
     set((state) => (state.user ? { user: { ...state.user, presenceChartStartHour, presenceChartEndHour } } : state)),
+  updateArrivalsChartHours: (arrivalsChartStartHour, arrivalsChartEndHour) =>
+    set((state) => (state.user ? { user: { ...state.user, arrivalsChartStartHour, arrivalsChartEndHour } } : state)),
   updateReleaseNotesSeen: (releaseNotesSeenVersion) =>
     set((state) => (state.user ? { user: { ...state.user, releaseNotesSeenVersion } } : state)),
 }));

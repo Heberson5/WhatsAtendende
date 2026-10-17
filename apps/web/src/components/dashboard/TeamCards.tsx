@@ -67,7 +67,7 @@ export function TeamNowCard({ team, onOpenUsers }: { team: TeamData | undefined;
     <div className="shadow-soft flex flex-col rounded-card border border-border bg-surface p-4">
       <div className="flex items-center gap-2">
         <h3 className="text-sm font-semibold">Equipe agora</h3>
-        <span className="text-xs text-muted">atualiza sozinho</span>
+        <span className="text-xs text-muted">só atendentes · atualiza sozinho</span>
         {onOpenUsers && (
           <button onClick={onOpenUsers} className="focus-ring ml-auto text-xs font-semibold text-primary hover:underline">
             Ver Usuários →

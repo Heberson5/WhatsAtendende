@@ -112,11 +112,16 @@ function toMinutes(hhmmValue: string): number {
  * Whether the schedule is open at `now`. The state sets the time zone; a holiday that applies to its state/city is closed all day,
  * except a date listed in `partialHolidays`; any other day follows the weekday window (missing = closed, allDay = open 24h).
  */
-export async function isWorkScheduleOpen(schedule: Pick<WorkSchedule, "state" | "city" | "days" | "partialHolidays">, now: Date = new Date()): Promise<boolean> {
+export async function isWorkScheduleOpen(
+  schedule: Pick<WorkSchedule, "state" | "city" | "days" | "partialHolidays">,
+  now: Date = new Date(),
+  // Checking many moments at once (e.g. the Dashboard's arrivals by hour) passes a cached lookup.
+  isHoliday: (dateKey: string, state: string, city: string) => Promise<unknown> = findApplicableHoliday
+): Promise<boolean> {
   const local = resolveLocalNow(now, stateUtcOffsetMinutes(schedule.state));
   const inside = (start: string, end: string) => local.minutesOfDay >= toMinutes(start) && local.minutesOfDay < toMinutes(end);
 
-  if (await findApplicableHoliday(local.dateKey, schedule.state, schedule.city)) {
+  if (await isHoliday(local.dateKey, schedule.state, schedule.city)) {
     const partial = (schedule.partialHolidays as unknown as WorkSchedulePartialHolidayDTO[]).find((h) => h.date === local.dateKey);
     return partial ? inside(partial.start, partial.end) : false;
   }

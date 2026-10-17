@@ -476,6 +476,15 @@ settingsRouter.patch(
   })
 );
 
+settingsRouter.patch(
+  "/arrivals-chart-hours",
+  asyncHandler(async (req, res) => {
+    const { startHour, endHour } = presenceChartHoursSchema.parse(req.body);
+    await service.setUserArrivalsChartHours(req.auth!.userId, startHour, endHour);
+    res.json({ startHour, endHour });
+  })
+);
+
 // ---------------------------------------------------------------------------
 // E-mail / SMTP (used to deliver the password-reset link — section 5/56).
 // ---------------------------------------------------------------------------

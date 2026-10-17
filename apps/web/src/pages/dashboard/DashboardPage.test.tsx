@@ -18,6 +18,7 @@ vi.mock("../../components/dashboard/SeriesChartCard", () => ({ SeriesChartCard: 
 vi.mock("../../components/dashboard/WordCloudCard", () => ({ WordCloudCard: () => null }));
 vi.mock("../../components/dashboard/SatisfactionCard", () => ({ SatisfactionCard: () => null }));
 vi.mock("../../components/dashboard/PresenceByHourChart", () => ({ PresenceByHourChart: () => null }));
+vi.mock("../../components/dashboard/ArrivalsByHourChart", () => ({ ArrivalsByHourChart: () => null }));
 
 const DASHBOARD = {
   conversations: { received: 10, unique: 8, inProgress: 2, closed: 7, waiting: 1 },

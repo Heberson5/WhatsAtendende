@@ -142,6 +142,9 @@ export interface UserDTO {
   // "Presença ao longo do dia" chart — both null means "show every hour".
   presenceChartStartHour: number | null;
   presenceChartEndHour: number | null;
+  /** Same, for "Conversas que chegam ao longo do dia" (see ArrivalsByHourDTO). */
+  arrivalsChartStartHour: number | null;
+  arrivalsChartEndHour: number | null;
   // Newest Notas de versão release this user has already seen — null until
   // the first time they open the page or dismiss the "O que há de novo" popup.
   releaseNotesSeenVersion: string | null;
@@ -197,6 +200,16 @@ export interface PauseReasonDTO {
 export interface PresenceByHourPoint {
   hour: number;
   counts: Record<string, number>;
+}
+
+/**
+ * Dashboard "Conversas que chegam ao longo do dia": for each hour of the day (0–23, the viewer's time), the new
+ * conversations opened by the customer in the period — inside or outside their connection's Horário de expediente
+ * (a connection without one counts everything as inside) — and how many attendants were online then, on average
+ * over the period's days that reach that hour.
+ */
+export interface ArrivalsByHourDTO {
+  hours: { hour: number; inside: number; outside: number; onlineAvg: number; days: number }[];
 }
 
 export interface PresenceByHourDTO {

@@ -238,6 +238,11 @@ export async function setUserPresenceChartHours(userId: string, startHour: numbe
   await prisma.user.update({ where: { id: userId }, data: { presenceChartStartHour: startHour, presenceChartEndHour: endHour } });
 }
 
+/** Same, for "Conversas que chegam ao longo do dia". */
+export async function setUserArrivalsChartHours(userId: string, startHour: number | null, endHour: number | null) {
+  await prisma.user.update({ where: { id: userId }, data: { arrivalsChartStartHour: startHour, arrivalsChartEndHour: endHour } });
+}
+
 // ---------------------------------------------------------------------------
 // SMTP / e-mail delivery (used for password-reset links) — section 5/56.
 // ---------------------------------------------------------------------------

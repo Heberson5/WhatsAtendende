@@ -1,5 +1,9 @@
 import { prisma } from "../../lib/prisma";
 import { firstResponseDiffs } from "../../lib/conversation-timings";
+import type { ArrivalsByHourDTO } from "@whatsatendende/types";
+import type { WorkSchedule } from "@prisma/client";
+import { findApplicableHoliday } from "../holidays/holidays.service";
+import { isWorkScheduleOpen } from "../work-schedules/work-schedules.service";
 
 function avgMs(diffs: number[]): number | null {
   if (diffs.length === 0) return null;
@@ -152,8 +156,9 @@ async function getPeriodTotals({ from, to, agentId, connectionIds }: DashboardPa
 export async function getTeam({ from, to, agentId }: { from: Date; to: Date; agentId?: string }) {
   const now = new Date();
   const [users, openPauses, agents, logs] = await Promise.all([
+    // "Equipe agora" counts attendants only — gestores and administradores are not part of the team on duty.
     prisma.user.findMany({
-      where: { status: "ACTIVE" },
+      where: { status: "ACTIVE", role: "AGENT" },
       select: { id: true, displayName: true, photoUrl: true, presence: true, pauseReason: { select: { name: true } } },
     }),
     prisma.agentStatusLog.findMany({ where: { status: "AWAY", endedAt: null }, select: { userId: true, startedAt: true } }),
@@ -224,9 +229,10 @@ export async function getTeam({ from, to, agentId }: { from: Date; to: Date; age
 // historical one like the rest of this dashboard.
 async function getUsersSummary() {
   const [online, active, total] = await Promise.all([
-    prisma.user.count({ where: { presence: "ONLINE" } }),
-    prisma.user.count({ where: { status: "ACTIVE" } }),
-    prisma.user.count(),
+    // Attendants only, like every figure of the Dashboard.
+    prisma.user.count({ where: { role: "AGENT", presence: "ONLINE" } }),
+    prisma.user.count({ where: { role: "AGENT", status: "ACTIVE" } }),
+    prisma.user.count({ where: { role: "AGENT" } }),
   ]);
   return { online, active, total };
 }
@@ -406,6 +412,88 @@ export async function getPresenceByHour({ from, to, agentId, tzOffsetMinutes }: 
 
   const hours = Array.from({ length: 24 }, (_, hour) => ({ hour, counts: countsByHour[hour] }));
   return { series, hours };
+}
+
+/**
+ * "Conversas que chegam ao longo do dia": each new conversation the customer opened (its first message is the
+ * customer's — not one an attendant started or the phone sent), counted at the hour of that message, split by the
+ * connection's Horário de expediente; plus the attendants online in each hour, averaged over the period's days.
+ */
+export async function getArrivalsByHour({ from, to, agentId, connectionIds, tzOffsetMinutes }: DashboardParams & { tzOffsetMinutes: number }): Promise<ArrivalsByHourDTO> {
+  const now = new Date();
+  const connectionFilter = connectionIds === undefined ? undefined : { in: connectionIds };
+  const [conversations, logs] = await Promise.all([
+    prisma.conversation.findMany({
+      where: {
+        createdAt: { gte: from, lte: to },
+        status: { not: "GROUP" as const },
+        ...(agentId ? { assignedAgentId: agentId } : {}),
+        ...(connectionFilter ? { whatsappConnectionId: connectionFilter } : {}),
+      },
+      select: {
+        whatsappConnection: { select: { workSchedule: true } },
+        metaConnection: { select: { workSchedule: true } },
+        messages: { orderBy: { createdAt: "asc" }, take: 1, select: { direction: true, createdAt: true } },
+      },
+    }),
+    prisma.agentStatusLog.findMany({
+      where: {
+        status: "ONLINE",
+        startedAt: { lt: to },
+        OR: [{ endedAt: null }, { endedAt: { gt: from } }],
+        user: { role: "AGENT", ...(agentId ? { id: agentId } : {}) },
+      },
+      select: { userId: true, startedAt: true, endedAt: true },
+    }),
+  ]);
+
+  const hours = Array.from({ length: 24 }, (_, hour) => ({ hour, inside: 0, outside: 0, onlineAvg: 0, days: 0 }));
+  const holidays = new Map<string, Promise<unknown>>();
+  const cachedHoliday = (dateKey: string, state: string, city: string) => {
+    const key = `${dateKey}|${state}|${city}`;
+    if (!holidays.has(key)) holidays.set(key, findApplicableHoliday(dateKey, state, city));
+    return holidays.get(key)!;
+  };
+  for (const conversation of conversations) {
+    const first = conversation.messages[0];
+    if (!first || first.direction !== "INBOUND") continue;
+    const hour = new Date(first.createdAt.getTime() - tzOffsetMinutes * 60_000).getUTCHours();
+    const schedule: WorkSchedule | null = conversation.whatsappConnection?.workSchedule ?? conversation.metaConnection?.workSchedule ?? null;
+    const inside = !schedule || (await isWorkScheduleOpen(schedule, first.createdAt, cachedHoliday));
+    hours[hour][inside ? "inside" : "outside"]++;
+  }
+
+  // Each attendant counts once per (day, hour) they were online in it — the same dedup as getPresenceByHour.
+  const touched = new Set<string>();
+  const onlineByHour = Array<number>(24).fill(0);
+  for (const log of logs) {
+    const segStart = Math.max(log.startedAt.getTime(), from.getTime());
+    const segEnd = Math.min((log.endedAt ?? now).getTime(), to.getTime(), now.getTime());
+    if (segEnd <= segStart) continue;
+    for (const cell of iterateHourCells(new Date(segStart), new Date(segEnd), tzOffsetMinutes)) {
+      const key = `${log.userId}|${cell.dateKey}|${cell.hour}`;
+      if (touched.has(key)) continue;
+      touched.add(key);
+      onlineByHour[cell.hour]++;
+    }
+  }
+  // How many of the period's days reach each hour ("Hoje" stops at now) — the average divides by these.
+  for (const cell of iterateHourCells(from, new Date(Math.min(to.getTime(), now.getTime())), tzOffsetMinutes)) hours[cell.hour].days++;
+  for (const h of hours) h.onlineAvg = h.days ? Math.round((onlineByHour[h.hour] / h.days) * 10) / 10 : 0;
+  return { hours };
+}
+
+/** One row per hour for Relatórios' exports (CSV/PDF/Excel) — the same columns as the screen's table. */
+export function arrivalsToRows(data: ArrivalsByHourDTO): Record<string, unknown>[] {
+  const decimal = (n: number) => n.toLocaleString("pt-BR", { maximumFractionDigits: 1 });
+  return data.hours.map((h) => ({
+    Hora: `${String(h.hour).padStart(2, "0")}h`,
+    "Dentro do expediente": h.inside,
+    "Fora do expediente": h.outside,
+    Total: h.inside + h.outside,
+    "Média por dia": h.days ? decimal((h.inside + h.outside) / h.days) : "0",
+    "Atendentes online (média)": decimal(h.onlineAvg),
+  }));
 }
 
 export async function getWordCloud({ from, to, agentId, connectionIds }: DashboardParams): Promise<{ word: string; count: number }[]> {

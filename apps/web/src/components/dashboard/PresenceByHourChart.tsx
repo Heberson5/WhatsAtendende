@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Area, Bar, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { ChartTypeMenu } from "./ChartTypeMenu";
 import { SERIES_KIND_OPTIONS, type SeriesKind } from "./SeriesChartCard";
-import { Settings2 } from "lucide-react";
+import { HourRangeMenu, formatHour, type HourRange } from "./HourRangeMenu";
 import type { PresenceByHourDTO } from "@whatsatendende/types";
 import { CHART_CARD_SHADOW, CHART_DEPTH_FILTER, CHART_TOOLTIP_PROPS, NEUTRAL_SERIES_COLOR, darken, gradientId, lighten } from "../../lib/chart-theme";
 
@@ -13,14 +13,7 @@ function seriesColor(index: number, primaryColor: string, secondaryColor: string
   return base[index % base.length];
 }
 
-function formatHour(hour: number): string {
-  return `${String(hour).padStart(2, "0")}h`;
-}
-
-export interface HourRange {
-  start: number;
-  end: number;
-}
+export type { HourRange };
 
 /**
  * Dashboard section 8 — "Presença ao longo do dia": stacked columns showing,
@@ -55,20 +48,7 @@ export function PresenceByHourChart({
   onActiveRangeChange?: (range: HourRange | null) => void;
 }) {
   const [range, setRange] = useState<HourRange | null>(initialRange);
-  const [gearOpen, setGearOpen] = useState(false);
   const [kind, setKind] = useState<SeriesKind>("bar");
-  const [draftStart, setDraftStart] = useState(initialRange?.start ?? 8);
-  const [draftEnd, setDraftEnd] = useState(initialRange?.end ?? 20);
-  const [draftAsDefault, setDraftAsDefault] = useState(false);
-  const gearRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (gearRef.current && !gearRef.current.contains(e.target as Node)) setGearOpen(false);
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
 
   useEffect(() => {
     onActiveRangeChange?.(range);
@@ -87,19 +67,6 @@ export function PresenceByHourChart({
       return row;
     });
 
-  function applyDraft() {
-    if (draftStart >= draftEnd) return;
-    setRange({ start: draftStart, end: draftEnd });
-    if (draftAsDefault) onSaveDefaultRange({ start: draftStart, end: draftEnd });
-    setGearOpen(false);
-  }
-
-  function showAllHours() {
-    setRange(null);
-    setGearOpen(false);
-    if (draftAsDefault) onSaveDefaultRange(null);
-  }
-
   const barIds = series.map((key, i) => gradientId("presbar", seriesColor(i, primaryColor, secondaryColor)));
 
   return (
@@ -108,69 +75,13 @@ export function PresenceByHourChart({
         <p className="text-xs font-medium text-muted">Presença ao longo do dia</p>
         <div className="flex items-center gap-1">
         <ChartTypeMenu value={kind} onChange={setKind} options={SERIES_KIND_OPTIONS} />
-        <div ref={gearRef} className="relative">
-          <button
-            onClick={() => setGearOpen((o) => !o)}
-            className="focus-ring rounded-md p-1 text-muted hover:bg-surface-alt hover:text-[var(--color-text)]"
-            title="Configurar faixa de horário"
-            aria-label="Configurar faixa de horário"
-          >
-            <Settings2 className="h-4 w-4" />
-          </button>
-          {gearOpen && (
-            <div className="shadow-soft absolute right-0 top-full z-20 mt-1 w-64 rounded-card border border-border bg-surface p-3">
-              <p className="mb-2 text-xs font-semibold">Faixa de horário exibida</p>
-              <div className="flex items-center gap-2 text-sm">
-                <span className="text-muted">De</span>
-                <select
-                  value={draftStart}
-                  onChange={(e) => setDraftStart(Number(e.target.value))}
-                  className="focus-ring flex-1 rounded-card border border-border bg-transparent px-2 py-1.5 text-sm"
-                >
-                  {Array.from({ length: 24 }, (_, h) => (
-                    <option key={h} value={h}>
-                      {formatHour(h)}
-                    </option>
-                  ))}
-                </select>
-                <span className="text-muted">até</span>
-                <select
-                  value={draftEnd}
-                  onChange={(e) => setDraftEnd(Number(e.target.value))}
-                  className="focus-ring flex-1 rounded-card border border-border bg-transparent px-2 py-1.5 text-sm"
-                >
-                  {Array.from({ length: 24 }, (_, h) => (
-                    <option key={h} value={h}>
-                      {formatHour(h)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              {draftStart >= draftEnd && <p className="mt-1 text-xs text-red-600">O horário inicial deve ser antes do final.</p>}
-              <label className="mt-2 flex items-center gap-2 text-xs text-muted">
-                <input
-                  type="checkbox"
-                  checked={draftAsDefault}
-                  onChange={(e) => setDraftAsDefault(e.target.checked)}
-                  className="h-3.5 w-3.5 accent-primary"
-                />
-                Definir como padrão pro meu Dashboard
-              </label>
-              <div className="mt-3 flex items-center justify-between gap-2">
-                <button onClick={showAllHours} className="text-xs text-muted hover:underline">
-                  Mostrar todas as horas
-                </button>
-                <button
-                  onClick={applyDraft}
-                  disabled={draftStart >= draftEnd}
-                  className="focus-ring rounded-card bg-primary px-3 py-1.5 text-xs font-semibold text-primary-fg disabled:opacity-60"
-                >
-                  Aplicar
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+        <HourRangeMenu
+          range={range}
+          onChange={(next, asDefault) => {
+            setRange(next);
+            if (asDefault) onSaveDefaultRange(next);
+          }}
+        />
         </div>
       </div>
 
