@@ -11,6 +11,49 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.14.0",
+    date: "17 out 2026",
+    name: "Gráfico de chegada de conversas e Equipe agora só com atendentes",
+    summary: "O Dashboard ganhou o gráfico \"Conversas que chegam ao longo do dia\", que mostra em que horas os clientes abrem conversas, dentro e fora do expediente, e quantos atendentes estavam online. O mesmo gráfico está em Relatórios e na apresentação. O Dashboard deixa de contar gestores e administradores como equipe.",
+    notes: [
+      {
+        type: "novo",
+        area: "dashboard",
+        title: "Conversas que chegam ao longo do dia",
+        text: "Logo abaixo de Presença ao longo do dia, o novo gráfico conta as conversas novas abertas pelo cliente, pela hora da primeira mensagem dele, somando todos os dias do período. A barra separa o que chegou dentro e fora do Horário de expediente da conexão (conexão sem horário conta tudo como dentro). A linha mostra a média de atendentes online em cada hora, para comparar a demanda com a equipe. Passe o mouse na barra para ver o total e a média por dia. No topo aparecem o horário de pico, o total de conversas e quanto chegou fora do expediente.",
+        where: "Dashboard",
+        requires: [PERMISSION.DASHBOARD_ACESSAR],
+        images: [{ src: "/notas-de-versao/dashboard-chegadas.webp", caption: "Chegadas por hora, dentro e fora do expediente, com a linha de atendentes online" }],
+      },
+      {
+        type: "novo",
+        area: "dashboard",
+        title: "Faixa de horário própria no gráfico de chegadas",
+        text: "A engrenagem do gráfico escolhe de que hora até que hora mostrar. Marque \"Definir como padrão pro meu Dashboard\" para guardar a faixa, ou use \"Mostrar todas as horas\" para voltar às 24 horas. Ela é separada da faixa do gráfico de Presença.",
+        where: "Dashboard › Conversas que chegam ao longo do dia › engrenagem",
+        requires: [PERMISSION.DASHBOARD_ACESSAR],
+        images: [{ src: "/notas-de-versao/dashboard-chegadas-faixa.webp", caption: "Escolhendo a faixa de horário", size: "small" }],
+      },
+      {
+        type: "melhoria",
+        area: "dashboard",
+        title: "Equipe agora conta só atendentes",
+        text: "Os números de Online, Em pausa e Offline em Equipe agora, os gráficos de presença e a linha de atendentes online consideram só os usuários com perfil Atendente. Gestores e administradores logados não entram mais na conta.",
+        where: "Dashboard › Equipe agora",
+        requires: [PERMISSION.DASHBOARD_ACESSAR],
+      },
+      {
+        type: "novo",
+        area: "dashboard",
+        title: "Chegadas por hora em Relatórios e na apresentação",
+        text: "Em Relatórios há a nova aba \"Chegadas por hora\", com o gráfico e a tabela hora a hora (dentro, fora, total, média por dia e atendentes online), que pode ser exportada em Excel, CSV ou PDF. A Apresentação (PPT) do Dashboard ganhou o slide \"Quando as conversas chegam\".",
+        where: "Relatórios › Chegadas por hora",
+        requires: [PERMISSION.RELATORIOS_ACESSAR],
+        images: [{ src: "/notas-de-versao/relatorios-chegadas.webp", caption: "A aba Chegadas por hora em Relatórios" }],
+      },
+    ],
+  },
+  {
     version: "2.13.0",
     date: "16 out 2026",
     name: "Fluxo Univida, fotos e botões no Fluxo, transferência por pessoas e fila de Abandonados",

@@ -7,7 +7,7 @@ import { requirePermission } from "../../lib/permissions";
 import { resolvePeriod, optionalDateQueryParam } from "../../lib/period";
 import { parseListParam } from "../../lib/parse-list-param";
 import { resolveAllowedConnectionIds } from "../../lib/connection-access";
-import { getDashboard, getPresenceByHour, getTeam, getWordCloud } from "./dashboard.service";
+import { getArrivalsByHour, getDashboard, getPresenceByHour, getTeam, getWordCloud } from "./dashboard.service";
 import { getSatisfactionSummary } from "../satisfaction/satisfaction.service";
 import { getSatisfactionOverview } from "../satisfaction/satisfaction-report.service";
 
@@ -52,6 +52,16 @@ dashboardRouter.get(
     const { from, to } = resolvePeriod(query.period, query.from, query.to, query.tzOffsetMinutes);
     const data = await getPresenceByHour({ from, to, agentId: query.agentId, tzOffsetMinutes: query.tzOffsetMinutes });
     res.json(data);
+  })
+);
+
+dashboardRouter.get(
+  "/arrivals-by-hour",
+  asyncHandler(async (req, res) => {
+    const query = querySchema.parse(req.query);
+    const { from, to } = resolvePeriod(query.period, query.from, query.to, query.tzOffsetMinutes);
+    const connectionIds = await resolveAllowedConnectionIds(req.auth!, parseListParam(query.connectionId));
+    res.json(await getArrivalsByHour({ from, to, agentId: query.agentId, connectionIds, tzOffsetMinutes: query.tzOffsetMinutes }));
   })
 );
 

@@ -1,8 +1,9 @@
 import type PptxGenJS from "pptxgenjs";
 import { NPS_SMALL_SAMPLE } from "@whatsatendende/types";
-import type { PresenceByHourDTO, SatisfactionOverviewDTO, SatisfactionReportDTO, SatisfactionResponseDTO } from "@whatsatendende/types";
+import type { ArrivalsByHourDTO, PresenceByHourDTO, SatisfactionOverviewDTO, SatisfactionReportDTO, SatisfactionResponseDTO } from "@whatsatendende/types";
 import type { TeamData } from "../components/dashboard/TeamCards";
 import type { HourRange } from "../components/dashboard/PresenceByHourChart";
+import { arrivalsSummary } from "../components/dashboard/ArrivalsByHourChart";
 import { darken, lighten } from "./chart-theme";
 import {
   compareWithPrevious,
@@ -59,6 +60,8 @@ export interface PresentationInput {
   wordCloud: { word: string; count: number }[];
   presenceByHour: PresenceByHourDTO | null;
   presenceHourRange: HourRange | null;
+  arrivalsByHour?: ArrivalsByHourDTO | null;
+  arrivalsHourRange?: HourRange | null;
   now: Date;
 }
 
@@ -1129,6 +1132,81 @@ export function buildDashboardPresentation(PptxGen: typeof PptxGenJS, input: Pre
           (range ? `, na faixa das ${range.start}h às ${range.end}h escolhida no Dashboard` : "") +
           "." +
           (snapshot ? ` No momento em que o relatório foi gerado: ${snapshot.online} online, ${snapshot.paused} em pausa e ${snapshot.offline} offline.` : "")
+      );
+    }
+  }
+
+  // ---- 10b. Quando as conversas chegam ----
+  if (input.arrivalsByHour) {
+    const summary = arrivalsSummary(input.arrivalsByHour);
+    const range = input.arrivalsHourRange;
+    const isToday = input.period.period === "today";
+    const currentHour = input.now.getHours();
+    const points = input.arrivalsByHour.hours
+      .filter((p) => !range || (p.hour >= range.start && p.hour <= range.end))
+      .filter((p) => !isToday || p.hour <= currentHour);
+    if (summary.total > 0 && points.length > 0) {
+      const slide = contentSlide("Equipe", "Equipe", "Quando as conversas chegam");
+      const figures = [
+        { label: "horário de pico", value: summary.peakHour !== null ? `${String(summary.peakHour).padStart(2, "0")}h` : "—" },
+        { label: "conversas no período", value: formatNumber(summary.total) },
+        { label: "fora do expediente", value: `${summary.outsideShare}%` },
+      ];
+      figures.forEach((f, i) => {
+        const px = M + i * 2.75;
+        card(slide, px, CONTENT_TOP, 2.5, 0.7, `Chegadas - ${f.label}`);
+        text(
+          slide,
+          [
+            { text: `${f.value} `, options: { bold: true, color: INK, fontSize: 20 } },
+            { text: f.label, options: { color: MUTED, fontSize: 12 } },
+          ],
+          { x: px + 0.2, y: CONTENT_TOP, w: 2.2, h: 0.7, valign: "middle" }
+        );
+      });
+      const top = CONTENT_TOP + 0.95;
+      card(slide, M, top, CONTENT_W, CONTENT_BOTTOM - top, "Conversas por hora");
+      const labels = points.map((p) => `${String(p.hour).padStart(2, "0")}h`);
+      // A combo chart (columns + a line on its own scale): pptxgenjs takes the options in place of the data here.
+      const addCombo = slide.addChart.bind(slide) as unknown as (types: unknown[], options: Record<string, unknown>) => void;
+      addCombo(
+        [
+          {
+            type: pptx.ChartType.bar,
+            data: [
+              { name: "Dentro do expediente", labels, values: points.map((p) => p.inside) },
+              { name: "Fora do expediente", labels, values: points.map((p) => p.outside) },
+            ],
+            options: { barDir: "col", barGrouping: "stacked", barGapWidthPct: 40, chartColors: [C.brand, AMBER] },
+          },
+          {
+            type: pptx.ChartType.line,
+            data: [{ name: "Atendentes online (média)", labels, values: points.map((p) => p.onlineAvg) }],
+            options: { chartColors: [SLATE], lineSize: 2, lineDataSymbol: "circle", lineDataSymbolSize: 6, secondaryValAxis: true, secondaryCatAxis: true },
+          },
+        ],
+        {
+          x: M + 0.3,
+          y: top + 0.15,
+          w: CONTENT_W - 0.6,
+          h: CONTENT_BOTTOM - top - 0.3,
+          showLegend: true,
+          legendPos: "t",
+          legendFontSize: 13,
+          legendColor: BODY,
+          ...chartText,
+          valAxes: [
+            { showValAxisTitle: false, valAxisLabelColor: MUTED, valAxisLabelFontSize: 11, valAxisLabelFormatCode: "0", valGridLine: { color: LINE, size: 0.75 } },
+            { showValAxisTitle: false, valAxisLabelColor: MUTED, valAxisLabelFontSize: 11, valAxisLabelFormatCode: "0.0", valGridLine: { style: "none" } },
+          ],
+          catAxes: [{ catAxisTitle: "", catAxisLabelFontSize: 11 }, { catAxisHidden: true }],
+          objectName: "Gráfico de conversas por hora",
+        }
+      );
+      slide.addNotes(
+        "Conversas novas abertas pelo cliente em cada hora do dia, somando todos os dias do período, separadas entre dentro e fora do Horário de expediente da conexão. A linha mostra quantos atendentes estavam online, em média, em cada hora" +
+          (range ? `; faixa das ${range.start}h às ${range.end}h escolhida no Dashboard` : "") +
+          `. Horário de pico: ${figures[0].value}; ${summary.outsideShare}% chegaram fora do expediente.`
       );
     }
   }

@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import type { ArrivalsByHourDTO } from "@whatsatendende/types";
 import { ChevronDown, Download, FileSpreadsheet, FileText } from "lucide-react";
 import { api } from "../../lib/api";
 import { PeriodFilter, type PeriodValue } from "../../components/common/PeriodFilter";
@@ -7,13 +8,18 @@ import { ConnectionFilter } from "../../components/common/ConnectionFilter";
 import { SatisfactionReport } from "../../components/reports/SatisfactionReport";
 import { ColumnViewMenu } from "../../components/common/ColumnViewMenu";
 import { useColumnView } from "../../hooks/useColumnView";
+import { ArrivalsByHourChart } from "../../components/dashboard/ArrivalsByHourChart";
+import { formatHour, type HourRange } from "../../components/dashboard/HourRangeMenu";
+import { useAuthStore } from "../../store/auth-store";
+import { useBranding } from "../../hooks/useBranding";
 
-type ReportKind = "attendance" | "per-agent" | "messages" | "satisfaction";
+type ReportKind = "attendance" | "per-agent" | "messages" | "arrivals" | "satisfaction";
 
 const TABS: { key: ReportKind; label: string }[] = [
   { key: "attendance", label: "Atendimentos" },
   { key: "per-agent", label: "Por atendente" },
   { key: "messages", label: "Mensagens" },
+  { key: "arrivals", label: "Chegadas por hora" },
   { key: "satisfaction", label: "Pesquisa de satisfação" },
 ];
 
@@ -73,6 +79,7 @@ export default function RelatoriosPage() {
           from: period.from,
           to: period.to,
           connectionId: connectionIds.length ? connectionIds : undefined,
+          tzOffsetMinutes: new Date().getTimezoneOffset(),
         },
       });
       return res.data;
@@ -95,7 +102,10 @@ export default function RelatoriosPage() {
         to: period.to,
         connectionId: connectionIds.length ? connectionIds : undefined,
         format,
-        columns: satisfactionTable
+        // Chegadas por hora exports every column of its table.
+        columns: tab === "arrivals"
+          ? undefined
+          : satisfactionTable
           ? (satisfactionTable === "agents" ? satisfactionAgentsView : satisfactionResponsesView).visibleKeys
               .flatMap((key) => SATISFACTION_EXPORT_COLUMNS[satisfactionTable][key])
               .join(",")
@@ -226,7 +236,9 @@ export default function RelatoriosPage() {
         <SatisfactionReport period={period} connectionIds={connectionIds} agentId={satisfactionAgentId} onAgentsLoaded={rememberSatisfactionAgents} />
       )}
 
-      {tab !== "messages" && tab !== "satisfaction" && (
+      {tab === "arrivals" && <ArrivalsReport data={data as ArrivalsByHourDTO | undefined} isLoading={isLoading} isToday={period.period === "today"} />}
+
+      {tab !== "messages" && tab !== "satisfaction" && tab !== "arrivals" && (
         <div className="shadow-soft flex-1 overflow-auto rounded-card border border-border bg-surface">
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-surface-alt text-left text-xs uppercase tracking-wide text-muted">
@@ -270,6 +282,56 @@ export default function RelatoriosPage() {
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Relatórios › Chegadas por hora: the Dashboard's chart (same saved range) and the hour-by-hour table the exports carry. */
+function ArrivalsReport({ data, isLoading, isToday }: { data: ArrivalsByHourDTO | undefined; isLoading: boolean; isToday: boolean }) {
+  const user = useAuthStore((s) => s.user);
+  const updateArrivalsChartHours = useAuthStore((s) => s.updateArrivalsChartHours);
+  const { data: branding } = useBranding();
+  const primaryColor = branding?.primaryColor ?? "#0097B4";
+  const saveDefault = useMutation({
+    mutationFn: (range: HourRange | null) => api.patch("/settings/arrivals-chart-hours", { startHour: range?.start ?? null, endHour: range?.end ?? null }),
+    onSuccess: (_res, range) => updateArrivalsChartHours(range?.start ?? null, range?.end ?? null),
+  });
+  const decimal = (n: number) => n.toLocaleString("pt-BR", { maximumFractionDigits: 1 });
+  return (
+    <div className="flex-1 space-y-4 overflow-auto">
+      <ArrivalsByHourChart
+        data={data}
+        isLoading={isLoading}
+        isToday={isToday}
+        primaryColor={primaryColor}
+        initialRange={user?.arrivalsChartStartHour != null && user?.arrivalsChartEndHour != null ? { start: user.arrivalsChartStartHour, end: user.arrivalsChartEndHour } : null}
+        onSaveDefaultRange={(range) => saveDefault.mutate(range)}
+      />
+      <div className="shadow-soft overflow-auto rounded-card border border-border bg-surface">
+        <table className="w-full text-sm">
+          <thead className="bg-surface-alt text-left text-xs uppercase tracking-wide text-muted">
+            <tr>
+              {["Hora", "Dentro do expediente", "Fora do expediente", "Total", "Média por dia", "Atendentes online (média)"].map((label) => (
+                <th key={label} className="whitespace-nowrap px-4 py-3">
+                  {label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {(data?.hours ?? []).map((h) => (
+              <tr key={h.hour} className="border-t border-border hover:bg-surface-alt">
+                <td className="px-4 py-2 font-medium tabular-nums">{formatHour(h.hour)}</td>
+                <td className="px-4 py-2 tabular-nums">{h.inside}</td>
+                <td className="px-4 py-2 tabular-nums">{h.outside}</td>
+                <td className="px-4 py-2 font-semibold tabular-nums">{h.inside + h.outside}</td>
+                <td className="px-4 py-2 tabular-nums">{h.days ? decimal((h.inside + h.outside) / h.days) : "0"}</td>
+                <td className="px-4 py-2 tabular-nums">{decimal(h.onlineAvg)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

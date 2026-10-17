@@ -15,6 +15,7 @@ import { writeAudit } from "../../lib/audit";
 import { getExportBranding } from "../settings/settings.service";
 import * as service from "./reports.service";
 import { agentsToRows, getSatisfactionReport, responsesToRows } from "../satisfaction/satisfaction-report.service";
+import { arrivalsToRows, getArrivalsByHour } from "../dashboard/dashboard.service";
 
 /** The exports' own logo/cor/nome — configured in Configurações >
  * Exportações, independent from the app's Identidade visual. See PROMPT:
@@ -129,6 +130,25 @@ reportsRouter.get(
     if (query.format === "json") return res.json(data);
     // The other export formats need rows, not a single stats object — wrap it as one row.
     await respond(res, [data], query.format, "relatorio-mensagens", "Relatório de Mensagens", query.tzOffsetMinutes);
+  })
+);
+
+// Relatórios › Chegadas por hora: the Dashboard's "Conversas que chegam ao longo do dia" — JSON for the screen's chart,
+// one row per hour in the exports.
+reportsRouter.get(
+  "/arrivals",
+  asyncHandler(async (req, res) => {
+    const query = querySchema.parse(req.query);
+    const { from, to } = resolvePeriod(query.period, query.from, query.to, query.tzOffsetMinutes);
+    const data = await getArrivalsByHour({
+      from,
+      to,
+      agentId: query.agentId,
+      connectionIds: await resolveAllowedConnectionIds(req.auth!, parseListParam(query.connectionId)),
+      tzOffsetMinutes: query.tzOffsetMinutes,
+    });
+    if (query.format === "json") return res.json(data);
+    await respond(res, arrivalsToRows(data), query.format, "relatorio-chegadas-por-hora", "Chegadas de conversas por hora", query.tzOffsetMinutes, parseListParam(query.columns));
   })
 );
 

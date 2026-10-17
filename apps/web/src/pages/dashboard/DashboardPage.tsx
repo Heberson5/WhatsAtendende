@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { CheckCircle2, Clock, Inbox, MessageSquare, Presentation, Timer, Users } from "lucide-react";
 import { toast } from "sonner";
-import { PERMISSION, type PresenceByHourDTO, type SatisfactionOverviewDTO, type SatisfactionReportDTO } from "@whatsatendende/types";
+import { PERMISSION, type ArrivalsByHourDTO, type PresenceByHourDTO, type SatisfactionOverviewDTO, type SatisfactionReportDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
 import { PeriodFilter, type PeriodValue } from "../../components/common/PeriodFilter";
@@ -16,6 +16,7 @@ import { WordCloudCard } from "../../components/dashboard/WordCloudCard";
 import { SatisfactionCard } from "../../components/dashboard/SatisfactionCard";
 import { SatisfactionDetailSection } from "../../components/dashboard/SatisfactionDetailSection";
 import { PresenceByHourChart, type HourRange } from "../../components/dashboard/PresenceByHourChart";
+import { ArrivalsByHourChart } from "../../components/dashboard/ArrivalsByHourChart";
 import { useBranding } from "../../hooks/useBranding";
 import { useExportBranding } from "../../hooks/useExportBranding";
 import { NEUTRAL_SERIES_COLOR } from "../../lib/chart-theme";
@@ -51,6 +52,7 @@ export default function DashboardPage() {
   const permissions = useAuthStore((s) => s.permissions);
   const user = useAuthStore((s) => s.user);
   const updatePresenceChartHours = useAuthStore((s) => s.updatePresenceChartHours);
+  const updateArrivalsChartHours = useAuthStore((s) => s.updateArrivalsChartHours);
   const canOpenGestao = permissions?.[PERMISSION.GESTAO_ACESSAR];
   const canOpenUsuarios = permissions?.[PERMISSION.USUARIOS_VISUALIZAR];
   // The presentation is for the board: managers and administrators make it, even where agents were given the Dashboard.
@@ -168,6 +170,32 @@ export default function DashboardPage() {
       ).data,
   });
 
+  // "Conversas que chegam ao longo do dia" — new conversations per hour, inside/outside the hours, and attendants online.
+  const { data: arrivalsByHour, isLoading: isArrivalsByHourLoading } = useQuery({
+    queryKey: ["dashboard-arrivals-by-hour", period, agentId, connectionIds],
+    queryFn: async () =>
+      (
+        await api.get<ArrivalsByHourDTO>("/dashboard/arrivals-by-hour", {
+          params: {
+            period: period.period,
+            from: period.from,
+            to: period.to,
+            agentId: agentId === "all" ? undefined : agentId,
+            connectionId: connectionIds.length ? connectionIds : undefined,
+            tzOffsetMinutes: new Date().getTimezoneOffset(),
+          },
+        })
+      ).data,
+  });
+  const savedArrivalsRange: HourRange | null =
+    user?.arrivalsChartStartHour != null && user?.arrivalsChartEndHour != null ? { start: user.arrivalsChartStartHour, end: user.arrivalsChartEndHour } : null;
+  const [activeArrivalsRange, setActiveArrivalsRange] = useState<HourRange | null>(savedArrivalsRange);
+  const saveDefaultArrivalsRangeMutation = useMutation({
+    mutationFn: (range: HourRange | null) =>
+      api.patch("/settings/arrivals-chart-hours", { startHour: range?.start ?? null, endHour: range?.end ?? null }),
+    onSuccess: (_res, range) => updateArrivalsChartHours(range?.start ?? null, range?.end ?? null),
+  });
+
   const [activeHourRange, setActiveHourRange] = useState<HourRange | null>(
     user?.presenceChartStartHour != null && user?.presenceChartEndHour != null
       ? { start: user.presenceChartStartHour, end: user.presenceChartEndHour }
@@ -227,6 +255,8 @@ export default function DashboardPage() {
         wordCloud: wordCloud ?? [],
         presenceByHour: presenceByHour ?? null,
         presenceHourRange: activeHourRange,
+        arrivalsByHour: arrivalsByHour ?? null,
+        arrivalsHourRange: activeArrivalsRange,
       });
     } catch (err) {
       toast.error(`Não foi possível gerar a apresentação: ${getApiErrorMessage(err, "erro inesperado")}`);
@@ -344,6 +374,18 @@ export default function DashboardPage() {
               }
               onSaveDefaultRange={(range) => saveDefaultHourRangeMutation.mutate(range)}
               onActiveRangeChange={setActiveHourRange}
+            />
+          </section>
+
+          <section>
+            <ArrivalsByHourChart
+              data={arrivalsByHour}
+              isLoading={isArrivalsByHourLoading}
+              isToday={period.period === "today"}
+              primaryColor={primaryColor}
+              initialRange={savedArrivalsRange}
+              onSaveDefaultRange={(range) => saveDefaultArrivalsRangeMutation.mutate(range)}
+              onActiveRangeChange={setActiveArrivalsRange}
             />
           </section>
 

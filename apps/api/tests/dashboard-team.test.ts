@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import request from "supertest";
 import { createApp } from "../src/app";
 import { prisma } from "../src/lib/prisma";
-import { resetDatabase, createTestUser, TEST_PASSWORD } from "./helpers";
+import { resetDatabase, createTestUser, createTestConnection, TEST_PASSWORD } from "./helpers";
 
 const app = createApp();
 const HOUR = 60 * 60 * 1000;
@@ -37,8 +37,8 @@ describe("dashboard: team now and presence durations", () => {
       .query({ period: "custom", from: new Date(now - 24 * HOUR).toISOString(), to: new Date(now + HOUR).toISOString() })
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
-    // Admin just logged in (ONLINE); Paula is paused.
-    expect(res.body.now).toMatchObject({ online: 1, paused: 1, offline: 0 });
+    // The admin just logged in (ONLINE) but only attendants count; Paula is paused.
+    expect(res.body.now).toMatchObject({ online: 0, paused: 1, offline: 0 });
     expect(res.body.now.pausedUsers[0]).toMatchObject({ name: "Paula", reasonName: "Almoço" });
 
     const row = res.body.agents.find((a: { agentName: string }) => a.agentName === "Paula");
@@ -51,5 +51,47 @@ describe("dashboard: team now and presence durations", () => {
     const res = await request(app).get("/api/dashboard").query({ period: "today" }).set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(res.body.previous).toEqual({ received: 0, unique: 0, closed: 0, messagesTotal: 0, avgFirstResponseMs: null });
+  });
+
+  it("counts conversations the customer opened, by the hour of their first message, inside and outside the connection's hours", async () => {
+    const open = await createTestConnection("Sem expediente");
+    const schedule = await prisma.workSchedule.create({ data: { name: "Fechado", state: "MT", city: "Cuiabá", days: {}, closedMessage: "Fechado." } });
+    const closed = await prisma.whatsAppConnection.create({ data: { name: "Fechada", status: "CONNECTED", workScheduleId: schedule.id } });
+    const now = Date.now();
+    const at = new Date(now - 2 * HOUR);
+    const conversation = async (connectionId: string, phone: string, direction: "INBOUND" | "OUTBOUND") => {
+      const contact = await prisma.contact.create({ data: { phone, name: phone, whatsappConnectionId: connectionId } });
+      await prisma.conversation.create({
+        data: {
+          contactId: contact.id,
+          whatsappConnectionId: connectionId,
+          status: "CLOSED",
+          createdAt: at,
+          lastMessageAt: at,
+          messages: { create: { direction, type: "TEXT", body: "Oi", createdAt: at } },
+        },
+      });
+    };
+    await conversation(open.id, "5565990000001", "INBOUND");
+    await conversation(closed.id, "5565990000002", "INBOUND");
+    // Started by the company (first message is ours): not an arrival.
+    await conversation(open.id, "5565990000003", "OUTBOUND");
+
+    const paula = await createTestUser({ email: "paula@test.dev", role: "AGENT", displayName: "Paula" });
+    const gestor = await createTestUser({ email: "gestor@test.dev", role: "MANAGER", displayName: "Gestor" });
+    await prisma.agentStatusLog.createMany({
+      data: [paula, gestor].map((u) => ({ userId: u.id, status: "ONLINE" as const, startedAt: new Date(at.getTime() - HOUR / 2), endedAt: new Date(at.getTime() + HOUR / 2) })),
+    });
+
+    const res = await request(app)
+      .get("/api/dashboard/arrivals-by-hour")
+      .query({ period: "custom", from: new Date(now - 3 * HOUR).toISOString(), to: new Date(now).toISOString(), tzOffsetMinutes: 0 })
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    const hour = res.body.hours.find((h: { hour: number }) => h.hour === at.getUTCHours());
+    // The manager and the admin were online too, but only attendants count.
+    expect(hour).toMatchObject({ inside: 1, outside: 1, onlineAvg: 1, days: 1 });
+    const totals = res.body.hours.reduce((sum: number, h: { inside: number; outside: number }) => sum + h.inside + h.outside, 0);
+    expect(totals).toBe(2);
   });
 });
