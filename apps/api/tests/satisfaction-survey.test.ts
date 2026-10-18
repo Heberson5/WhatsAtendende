@@ -301,7 +301,7 @@ describe("Pesquisa de satisfação (NPS)", () => {
       await sendCloseFollowUp(conversation.id, held);
       expect(sent.map((m) => m.text)).toEqual([QUESTION]); // the closing message does not go with it
       const survey = await prisma.satisfactionSurvey.findUniqueOrThrow({ where: { conversationId: conversation.id } });
-      expect(survey).toMatchObject({ closingText: CLOSING.text, closingSenderId: agentId, closingSenderName: "Ana", closingResolvedAt: null, closingOutcome: null });
+      expect(survey).toMatchObject({ closingText: CLOSING.text, closingSenderId: agentId, closingResolvedAt: null, closingOutcome: null });
       expect(await prisma.message.count({ where: { conversationId: conversation.id, body: CLOSING.text } })).toBe(0);
     });
 
@@ -337,6 +337,7 @@ describe("Pesquisa de satisfação (NPS)", () => {
 
       await sendCloseFollowUp(conversation.id, held);
       expect(sent.map((m) => m.text)).toEqual([CLOSING.text]);
+      expect(sent[0].sender).toBe("Ana"); // no survey: the agent's name goes with it
       expect(await prisma.satisfactionSurvey.count()).toBe(0);
     });
 
@@ -438,7 +439,7 @@ describe("Pesquisa de satisfação (NPS)", () => {
 
       expect(await sweepAfter(11_000)).toBe(1);
       expect(texts()).toEqual(["Obrigado!", CLOSING.text]);
-      expect(sent.at(-1)?.sender).toBe("Ana"); // goes out as the agent who closed
+      expect(sent.at(-1)?.sender).toBeNull(); // after the survey, without the agent's name on top
       const message = await prisma.message.findFirstOrThrow({ where: { conversationId: conversation.id, body: CLOSING.text } });
       expect(message).toMatchObject({ direction: "OUTBOUND", senderAgentId: agentId, automatedBy: null });
       expect(await surveyOf(conversation.id)).toMatchObject({ closingOutcome: "SENT" });

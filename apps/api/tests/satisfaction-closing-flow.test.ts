@@ -119,11 +119,11 @@ describe("encerrar com a mensagem de encerramento e a pesquisa de satisfação l
     expect(await conversationsOf(conversation.contactId)).toBe(1); // the score did not open a conversation
     expect((await surveyOf(conversation.id)).score).toBe(10);
 
-    // Ten seconds after the score, the sweep sends the closing message — as the agent who closed.
+    // Ten seconds after the score, the sweep sends the closing message — without the agent's name on top.
     expect(await processDueClosingMessages(new Date(Date.now() + 11_000))).toBe(1);
     const texts = sentSince();
     expect(texts).toHaveLength(3);
-    expect(texts[2]).toContain("*Ana:*");
+    expect(texts[2]).not.toContain("*Ana:*");
     expect(texts[2]).toContain("Obrigado, *Joana Cliente*! Foi um prazer atender você.");
   }, 20000);
 
@@ -138,7 +138,7 @@ describe("encerrar com a mensagem de encerramento e a pesquisa de satisfação l
     expect(await processDueClosingMessages(new Date(Date.now() + 31 * 60_000))).toBe(1);
     const texts = sentSince();
     expect(texts).toHaveLength(2);
-    expect(texts[1]).toContain("*Ana:*");
+    expect(texts[1]).not.toContain("*Ana:*");
     expect(texts[1]).toContain("Obrigado, *Joana Cliente*");
   }, 20000);
 

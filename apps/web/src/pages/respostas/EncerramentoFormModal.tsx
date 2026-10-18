@@ -193,7 +193,11 @@ export function EncerramentoFormModal({
             onChange={setMedia}
           />
 
-          <SenderNameToggle checked={values.showSenderName} onChange={(showSenderName) => setValues((v) => ({ ...v, showSenderName }))} />
+          <SenderNameToggle
+            checked={values.showSenderName}
+            onChange={(showSenderName) => setValues((v) => ({ ...v, showSenderName }))}
+            note="Com a pesquisa de satisfação ligada, a mensagem sai depois da pesquisa sempre sem o nome."
+          />
 
           <AutoMessagePreview senderName={values.showSenderName ? AGENT_EXAMPLE.fullName : null} text={previewText} />
 

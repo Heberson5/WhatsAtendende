@@ -11,6 +11,22 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.14.2",
+    date: "18 out 2026",
+    name: "Mensagem de encerramento sem o nome do atendente depois da pesquisa",
+    summary: "Com a pesquisa de satisfação ligada, a mensagem de encerramento que sai depois da pesquisa não leva mais o nome do atendente no topo.",
+    notes: [
+      {
+        type: "melhoria",
+        area: "respostas",
+        title: "Encerramento sem o nome depois da pesquisa",
+        text: "Quando a pesquisa de satisfação está ligada, a mensagem de encerramento sai depois da nota do cliente (ou quando a espera acaba) só com o texto, sem o nome do atendente em negrito. Com a pesquisa desligada, continua como antes: o nome vai junto se \"Mostrar o nome do atendente no topo\" estiver marcado.",
+        where: "Respostas › Encerramento",
+        requires: [PERMISSION.RESPOSTAS_ENCERRAMENTO_VISUALIZAR],
+      },
+    ],
+  },
+  {
     version: "2.14.1",
     date: "18 out 2026",
     name: "Cores da empresa mudam na hora, inclusive no aplicativo do computador",

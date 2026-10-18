@@ -22,12 +22,13 @@ export function AutoMessagePreview({ senderName, text }: { senderName: string | 
 }
 
 /** "Mostrar o nome do atendente no topo" — on by default; off sends the text alone. */
-export function SenderNameToggle({ checked, onChange }: { checked: boolean; onChange: (checked: boolean) => void }) {
+export function SenderNameToggle({ checked, onChange, note }: { checked: boolean; onChange: (checked: boolean) => void; note?: string }) {
   return (
     <label className="flex items-center justify-between gap-3 rounded-card border border-border px-3 py-2">
       <span>
         <span className="block text-sm font-medium">Mostrar o nome do atendente no topo</span>
         <span className="block text-xs text-muted">Desmarcado, o cliente recebe só o texto, sem o nome em negrito.</span>
+        {note && <span className="block text-xs text-muted">{note}</span>}
       </span>
       <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="h-4 w-4 shrink-0 accent-primary" />
     </label>
