@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
 import { encryptSecret, decryptSecret } from "../../lib/crypto";
+import { realtimeEvents } from "../../realtime/realtime";
 
 export const BRANDING_KEY = "branding";
 
@@ -66,6 +67,7 @@ export async function updateBranding(patch: Partial<BrandingSettings>): Promise<
     update: { value: next as unknown as Prisma.InputJsonValue },
     create: { key: BRANDING_KEY, value: next as unknown as Prisma.InputJsonValue },
   });
+  realtimeEvents.brandingChanged();
   return next;
 }
 
@@ -101,6 +103,7 @@ export async function updateExportBranding(patch: Partial<ExportBrandingSettings
     update: { value: next as unknown as Prisma.InputJsonValue },
     create: { key: EXPORT_BRANDING_KEY, value: next as unknown as Prisma.InputJsonValue },
   });
+  realtimeEvents.brandingChanged();
   return next;
 }
 

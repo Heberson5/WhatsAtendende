@@ -26,6 +26,10 @@ export function useSocketEvents(activeConversationId: string | null) {
     const socket = getSocket();
     if (!socket) return;
 
+    const onBrandingUpdated = () => {
+      queryClient.invalidateQueries({ queryKey: ["branding"] });
+      queryClient.invalidateQueries({ queryKey: ["export-branding"] });
+    };
     const onQueueUpdated = () => queryClient.invalidateQueries({ queryKey: ["queue"] });
     const onNewQueueConversation = (payload: { conversationId: string; contactName: string }) => {
       queryClient.invalidateQueries({ queryKey: ["queue"] });
@@ -167,6 +171,7 @@ export function useSocketEvents(activeConversationId: string | null) {
     socket.on("agent:extras", onAgentExtras);
     socket.on("abandoned:updated", onAbandoned);
     socket.on("reminder:due", onReminderDue);
+    socket.on("branding:updated", onBrandingUpdated);
 
     return () => {
       socket.off("queue:updated", onQueueUpdated);
@@ -184,6 +189,7 @@ export function useSocketEvents(activeConversationId: string | null) {
       socket.off("conversation:notes", onNotes);
       socket.off("whatsapp:status", onWhatsappStatus);
       socket.off("presence:self", onPresenceSelf);
+      socket.off("branding:updated", onBrandingUpdated);
       socket.off("notification:new", onNotificationNew);
       socket.off("group:message", onGroupMessage);
       socket.off("group:read", onGroupsUpdated);
