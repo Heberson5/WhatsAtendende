@@ -21,12 +21,14 @@ import { InstallAppLink } from "./InstallAppLink";
 // path (see the login-drift-* keyframes in index.css) — a first pass with a
 // small wobble read as motionless against the blur, and a rotating version
 // before that read as jarring, so this is translation only, sized to
-// actually be seen.
-const GLOW_SPOTS: { className: string; color: "primary" | "secondary"; strength: number; drift: string }[] = [
-  { className: "-left-32 -top-36 h-[520px] w-[520px]", color: "primary", strength: 18, drift: "animate-login-drift-a" },
-  { className: "-right-36 -top-32 h-[480px] w-[480px]", color: "secondary", strength: 24, drift: "animate-login-drift-b" },
-  { className: "-bottom-40 left-[20%] h-[560px] w-[560px]", color: "primary", strength: 14, drift: "animate-login-drift-c" },
-  { className: "-bottom-36 -right-32 h-[440px] w-[440px]", color: "secondary", strength: 14, drift: "animate-login-drift-d" },
+// actually be seen. Strength is per theme: on the light background the
+// tint needs far more color to show (a pastel secondary vanishes on white),
+// and the dark one a little more than a whisper.
+const GLOW_SPOTS: { className: string; color: "primary" | "secondary"; strength: { light: number; dark: number }; drift: string }[] = [
+  { className: "-left-32 -top-36 h-[520px] w-[520px]", color: "primary", strength: { light: 42, dark: 30 }, drift: "animate-login-drift-a" },
+  { className: "-right-36 -top-32 h-[480px] w-[480px]", color: "secondary", strength: { light: 70, dark: 34 }, drift: "animate-login-drift-b" },
+  { className: "-bottom-40 left-[20%] h-[560px] w-[560px]", color: "primary", strength: { light: 34, dark: 24 }, drift: "animate-login-drift-c" },
+  { className: "-bottom-36 -right-32 h-[440px] w-[440px]", color: "secondary", strength: { light: 60, dark: 24 }, drift: "animate-login-drift-d" },
 ];
 
 export default function LoginPage() {
@@ -116,7 +118,7 @@ export default function LoginPage() {
             key={i}
             className={`absolute rounded-full blur-[70px] ${spot.className} ${spot.drift}`}
             style={{
-              background: `radial-gradient(circle, color-mix(in srgb, var(--color-${spot.color}) ${spot.strength}%, transparent), transparent 68%)`,
+              background: `radial-gradient(circle, color-mix(in srgb, var(--color-${spot.color}) ${isDark ? spot.strength.dark : spot.strength.light}%, transparent), transparent 68%)`,
             }}
           />
         ))}

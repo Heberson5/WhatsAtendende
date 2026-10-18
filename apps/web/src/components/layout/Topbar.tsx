@@ -180,15 +180,18 @@ export function Topbar({ title, onMenuClick }: { title: string; onMenuClick?: ()
             <span className="relative">
               <span className="block h-8 w-8 shrink-0 overflow-hidden rounded-full bg-primary text-sm font-semibold text-primary-fg">
                 {user?.photoUrl ? (
-                  <img src={user.photoUrl} alt={user.displayName} className="h-full w-full object-cover" />
+                  <img src={user.photoUrl} alt={user.fullName} className="h-full w-full object-cover" />
                 ) : (
-                  <span className="flex h-full w-full items-center justify-center">{user?.displayName.slice(0, 1).toUpperCase()}</span>
+                  <span className="flex h-full w-full items-center justify-center">{user?.fullName.slice(0, 1).toUpperCase()}</span>
                 )}
               </span>
               {user && <span className={clsx("absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-surface", PRESENCE_DOT[user.presence])} />}
             </span>
             <span className="hidden text-left leading-tight sm:block">
-              <span className="block max-w-[140px] truncate text-sm font-medium">{user?.displayName}</span>
+              {/* The person's own name (Nome completo), not the Nome de exibição customers see on messages. */}
+              <span className="block max-w-[140px] truncate text-sm font-medium" title={user?.fullName}>
+                {user?.fullName}
+              </span>
               <span className={clsx("block max-w-[140px] truncate text-xs", paused ? "text-warning" : "text-muted")}>
                 {paused && user.pauseReasonName ? `Pausado — ${user.pauseReasonName}` : user ? PRESENCE_LABEL[user.presence] : ""}
               </span>
@@ -198,7 +201,7 @@ export function Topbar({ title, onMenuClick }: { title: string; onMenuClick?: ()
           {menuOpen && (
             <div role="menu" className="absolute right-0 top-12 z-20 w-60 rounded-card border border-border bg-surface p-1.5 shadow-elevated">
               <div className="mb-1 border-b border-border px-2.5 pb-2.5 pt-1.5">
-                <p className="truncate text-sm font-semibold">{user?.fullName ?? user?.displayName}</p>
+                <p className="truncate text-sm font-semibold">{user?.fullName}</p>
                 <p className="truncate text-xs text-muted">{user?.email}</p>
               </div>
               <button

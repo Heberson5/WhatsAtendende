@@ -11,6 +11,28 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.14.3",
+    date: "18 out 2026",
+    name: "Seu nome ao lado da foto e fundo da tela de entrada mais visível",
+    summary: "Ao lado da foto do perfil aparece o nome completo da pessoa, não mais o nome de exibição. O efeito animado no fundo da tela de entrada ficou visível no tema claro e mais forte no escuro.",
+    notes: [
+      {
+        type: "melhoria",
+        area: "geral",
+        title: "Nome completo ao lado da foto do perfil",
+        text: "No canto de cima, ao lado da foto, aparece o Nome completo do cadastro de quem está logado (atendente, gestor ou administrador). O Nome de exibição continua sendo o que o cliente vê nas mensagens.",
+        where: "Topo da tela, ao lado da foto",
+      },
+      {
+        type: "melhoria",
+        area: "geral",
+        title: "Fundo animado da tela de entrada",
+        text: "As manchas de cor que se movem no fundo da tela de entrada ficaram mais fortes: no tema claro agora dá para ver o efeito, e no escuro ele aparece um pouco mais.",
+        where: "Tela de entrada",
+      },
+    ],
+  },
+  {
     version: "2.14.2",
     date: "18 out 2026",
     name: "Mensagem de encerramento sem o nome do atendente depois da pesquisa",
