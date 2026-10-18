@@ -6,6 +6,9 @@ import App from "./App";
 import { ThemedToaster } from "./components/common/ThemedToaster";
 import "@fontsource-variable/inter";
 import "./styles/index.css";
+import { applySavedBrandColors } from "./lib/brand-colors";
+
+applySavedBrandColors();
 
 const queryClient = new QueryClient({
   defaultOptions: {

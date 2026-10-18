@@ -11,6 +11,28 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.14.1",
+    date: "18 out 2026",
+    name: "Cores da empresa mudam na hora, inclusive no aplicativo do computador",
+    summary: "Quando a Identidade visual muda, todas as telas abertas trocam de cor sozinhas, sem precisar atualizar a página, e a barra de cima do aplicativo do computador acompanha a cor da empresa.",
+    notes: [
+      {
+        type: "correcao",
+        area: "geral",
+        title: "Barra do aplicativo do computador na cor da empresa",
+        text: "A barra de cima do aplicativo instalado no computador ficava sempre azul. Agora ela usa a cor principal da Identidade visual e já abre na cor certa.",
+        where: "Aplicativo do computador",
+      },
+      {
+        type: "correcao",
+        area: "geral",
+        title: "Cores e logo atualizam sem recarregar",
+        text: "Ao salvar a Identidade visual ou as Exportações, todas as telas abertas, de todos os usuários, recebem as novas cores e o novo logo na hora. A tela de entrada atualiza assim que a janela volta para a frente.",
+        where: "Configurações › Identidade visual",
+      },
+    ],
+  },
+  {
     version: "2.14.0",
     date: "17 out 2026",
     name: "Gráfico de chegada de conversas e Equipe agora só com atendentes",

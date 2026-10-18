@@ -21,6 +21,10 @@ export const ROOMS = {
 };
 
 export const realtimeEvents = {
+  /** Identidade visual or Exportações changed — every open screen re-reads its colors/logo without a reload. */
+  brandingChanged: () => {
+    getIO()?.emit("branding:updated");
+  },
   /** A new message in a WhatsApp group, sent to each person who sees it; `notify` = pop a notice for them. */
   groupMessage: (
     userId: string,

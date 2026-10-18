@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
 import { api } from "../lib/api";
 import { setNotificationIcon } from "./useDesktopNotifications";
+import { applyBrandColors } from "../lib/brand-colors";
 
 export interface Branding {
   companyName: string;
@@ -27,12 +28,14 @@ export function useBranding() {
     queryKey: ["branding"],
     queryFn: async () => (await api.get<Branding>("/settings/branding")).data,
     staleTime: 5 * 60 * 1000,
+    // Logged in, a change arrives over the socket ("branding:updated"); the login screen has no socket,
+    // so it re-reads whenever the window comes back to the front.
+    refetchOnWindowFocus: "always",
   });
 
   useEffect(() => {
     if (!query.data) return;
-    document.documentElement.style.setProperty("--color-primary", query.data.primaryColor);
-    document.documentElement.style.setProperty("--color-secondary", query.data.secondaryColor);
+    applyBrandColors(query.data.primaryColor, query.data.secondaryColor);
     if (query.data.readReceiptColor) {
       document.documentElement.style.setProperty("--color-read-receipt", query.data.readReceiptColor);
     } else {
