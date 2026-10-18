@@ -289,7 +289,6 @@ export async function sendCloseFollowUp(conversationId: string, closingMessage?:
         ...(closingMessage && {
           closingText: closingMessage.text,
           closingSenderId: closingMessage.senderId,
-          closingSenderName: closingMessage.senderDisplayName,
           ...(closingMessage.media && { closingMedia: { ...closingMessage.media } }),
         }),
       },
@@ -335,7 +334,6 @@ async function deliverClosingMessage(surveyId: string, now: Date): Promise<strin
         sentAt: true,
         closingText: true,
         closingSenderId: true,
-        closingSenderName: true,
         closingMedia: true,
         conversation: { select: { id: true, status: true, whatsappConnectionId: true, assignedAgentId: true, contact: { select: { phone: true } } } },
       },
@@ -349,11 +347,10 @@ async function deliverClosingMessage(surveyId: string, now: Date): Promise<strin
     const sender = survey.closingSenderId ? await prisma.user.findUnique({ where: { id: survey.closingSenderId }, select: { id: true } }) : null;
     const media = heldMediaOf(survey.closingMedia);
     const message = await createSystemOutboundMessage({ conversationId: conversation.id, type: closingMessageType(media), body: survey.closingText, agentId: sender?.id, allowClosed: true });
-    // Null: the closing message was set to go without the agent's name on top.
-    const senderName = survey.closingSenderName;
+    // After the survey the closing message goes without the "*Nome:*" on top — the name only goes with it when there is no survey.
     const sent = media
-      ? await sendClosingMedia(conversation.whatsappConnectionId, message.id, conversation.contact.phone, media, survey.closingText, senderName)
-      : await whatsappService.sendOutboundText(conversation.whatsappConnectionId, message.id, conversation.contact.phone, survey.closingText, senderName);
+      ? await sendClosingMedia(conversation.whatsappConnectionId, message.id, conversation.contact.phone, media, survey.closingText, null)
+      : await whatsappService.sendOutboundText(conversation.whatsappConnectionId, message.id, conversation.contact.phone, survey.closingText, null);
     realtimeEvents.newMessage(conversation.id, conversation.assignedAgentId);
     return await finish(sent?.status === "FAILED" ? CLOSING_FAILED : CLOSING_SENT);
   } catch (err) {

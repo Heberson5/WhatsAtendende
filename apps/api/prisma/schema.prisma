@@ -1355,14 +1355,13 @@ model SatisfactionSurvey {
   answeredAt           DateTime?
 
   // The agent's closing message while it waits for the customer's score — kept here
-  // (already rendered, with who it goes out as) rather than in a timer, so the wait
+  // (already rendered, with who sent it; it goes out without the agent's name on top) rather than in a timer, so the wait
   // survives a restart. It goes out 10 s after the score, or at closingDueAt if the
   // customer never answers; a message from the customer that wants to keep talking
   // cancels it. closingDueAt also marks how long a "thanks" from the customer is
   // still treated as part of the wait (it is set even when there is no message to send).
   closingText       String?
   closingSenderId   String?
-  closingSenderName String?
   // The closing message's attachment, copied for this conversation when it was closed (see HeldClosingMessage).
   closingMedia      Json?
   closingDueAt      DateTime?
