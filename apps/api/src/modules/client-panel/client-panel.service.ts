@@ -1,4 +1,6 @@
-import type { ContactPanelDTO, ConversationNoteDTO, TagDTO } from "@whatsatendende/types";
+import type { ContactPanelDTO, ConversationNoteDTO, PreviousConversationDetailDTO, TagDTO } from "@whatsatendende/types";
+import { toMessageDTO } from "../messages/messages.mapper";
+import { messageInclude } from "../messages/messages.service";
 import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
 
@@ -38,7 +40,8 @@ export async function findOrCreateTag(name: string): Promise<TagDTO> {
 }
 
 export async function getContactPanel(conversationId: string, contactId: string, firstConversationAt: Date): Promise<ContactPanelDTO> {
-  const [tags, previous, previousCount] = await Promise.all([
+  const [contact, tags, previous, previousCount] = await Promise.all([
+    prisma.contact.findUniqueOrThrow({ where: { id: contactId }, select: { pinnedNote: true, pinnedNoteUpdatedAt: true, pinnedNoteUpdatedBy: true } }),
     prisma.contactTag.findMany({ where: { contactId }, include: { tag: true }, orderBy: { createdAt: "asc" } }),
     prisma.conversation.findMany({
       where: { contactId, id: { not: conversationId } },
@@ -67,6 +70,39 @@ export async function getContactPanel(conversationId: string, contactId: string,
       messageCount: c._count.messages,
     })),
     previousConversationCount: previousCount,
+    pinnedNote: contact.pinnedNote
+      ? { text: contact.pinnedNote, updatedAt: contact.pinnedNoteUpdatedAt!.toISOString(), updatedByName: contact.pinnedNoteUpdatedBy }
+      : null,
+  };
+}
+
+export async function setPinnedNote(contactId: string, text: string | null, userName: string) {
+  await prisma.contact.update({
+    where: { id: contactId },
+    data: text ? { pinnedNote: text, pinnedNoteUpdatedAt: new Date(), pinnedNoteUpdatedBy: userName } : { pinnedNote: null, pinnedNoteUpdatedAt: null, pinnedNoteUpdatedBy: null },
+  });
+}
+
+/** One earlier conversation of the same contact, read-only: its messages, notes and survey score. */
+export async function getPreviousConversation(contactId: string, previousId: string): Promise<PreviousConversationDetailDTO> {
+  const conversation = await prisma.conversation.findFirst({
+    where: { id: previousId, contactId },
+    include: { assignedAgent: { select: { displayName: true } }, satisfactionSurvey: { select: { score: true, answerText: true } } },
+  });
+  if (!conversation) throw Errors.notFound("Conversa nao encontrada");
+  const [messages, notes] = await Promise.all([
+    prisma.message.findMany({ where: { conversationId: previousId, deletedAt: null }, orderBy: { createdAt: "asc" }, include: messageInclude }),
+    listNotes(previousId),
+  ]);
+  return {
+    id: conversation.id,
+    status: conversation.status,
+    agentName: conversation.assignedAgent?.displayName ?? null,
+    startedAt: conversation.enteredQueueAt.toISOString(),
+    closedAt: conversation.closedAt ? conversation.closedAt.toISOString() : null,
+    messages: messages.map(toMessageDTO),
+    notes,
+    survey: conversation.satisfactionSurvey ? { score: conversation.satisfactionSurvey.score, answerText: conversation.satisfactionSurvey.answerText } : null,
   };
 }
 

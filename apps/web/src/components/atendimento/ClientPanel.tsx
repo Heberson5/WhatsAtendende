@@ -6,6 +6,7 @@ import clsx from "clsx";
 import { ChevronsLeft, ChevronsRight, Clock, Plus, Tag as TagIcon, User, X } from "lucide-react";
 import { toast } from "sonner";
 import type { ContactPanelDTO, ConversationListItemDTO, TagDTO } from "@whatsatendende/types";
+import { PreviousConversationDrawer } from "./PreviousConversationDrawer";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { contactDisplayName } from "../../lib/contact-display";
 import { formatPhone } from "../../lib/format-phone";
@@ -81,6 +82,7 @@ export function ClientPanel({
   const queryKey = ["contact-panel", conversation.id];
   const [addingTag, setAddingTag] = useState(false);
   const [tagInput, setTagInput] = useState("");
+  const [openPrevious, setOpenPrevious] = useState<string | null>(null);
 
   const { data: panel } = useQuery({
     queryKey,
@@ -271,16 +273,23 @@ export function ClientPanel({
           {panel && panel.previousConversations.length === 0 && <p className="text-xs text-muted">Primeira conversa deste cliente.</p>}
           <div className="space-y-1.5">
             {panel?.previousConversations.map((c) => (
-              <div key={c.id} className="flex items-center justify-between gap-2 rounded-lg border border-border px-2.5 py-2 text-xs">
+              <button
+                type="button"
+                key={c.id}
+                onClick={() => setOpenPrevious(c.id)}
+                className="focus-ring flex w-full items-center justify-between gap-2 rounded-lg border border-border px-2.5 py-2 text-left text-xs hover:bg-surface-alt"
+                title="Abrir conversa (somente leitura)"
+              >
                 <span className="min-w-0 truncate">
                   <span className="font-medium">{format(new Date(c.startedAt), "dd MMM yyyy", { locale: ptBR })}</span>
                   {c.agentName && <span className="text-muted"> · {c.agentName}</span>}
                 </span>
                 <span className="shrink-0 text-muted">{STATUS_LABEL[c.status] ?? c.status}</span>
-              </div>
+              </button>
             ))}
           </div>
         </Section>
+        {openPrevious && <PreviousConversationDrawer conversationId={conversation.id} previousId={openPrevious} onClose={() => setOpenPrevious(null)} />}
       </div>
     </aside>
   );

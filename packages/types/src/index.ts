@@ -1097,6 +1097,7 @@ export const PERMISSION = {
   CONTATOS_EDITAR: "contatos.editar",
   CONTATOS_IMPORTAR_EXPORTAR: "contatos.importar_exportar",
   CONTATOS_ETIQUETAS_GERENCIAR: "contatos.etiquetas_gerenciar",
+  CONTATOS_OBSERVACAO_EDITAR: "contatos.observacao_editar",
   RESPOSTAS_RAPIDAS_GERENCIAR: "respostas_rapidas.gerenciar",
   // Each layered ON TOP of RESPOSTAS_RAPIDAS_GERENCIAR (need both) — see
   // that key's own doc comment. Respostas rápidas itself now also gets its
@@ -1471,6 +1472,14 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     group: "Contatos",
     label: "Contatos — gerenciar etiquetas",
     description: "Renomear, mudar a cor e excluir etiquetas (a exclusão tira a etiqueta de todos os contatos).",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.CONTATOS_OBSERVACAO_EDITAR,
+    group: "Contatos",
+    label: "Contatos — editar observação fixa",
+    description: "Escrever ou apagar a observação fixa do contato, que aparece no topo de todas as conversas dele.",
     editableRoles: ["AGENT", "MANAGER"],
     defaultAllowed: { AGENT: false, MANAGER: true },
   },
@@ -1967,6 +1976,21 @@ export interface ContactPanelDTO {
     messageCount: number;
   }[];
   previousConversationCount: number;
+  /** "Observação fixa" of the contact — shown at the top of every conversation of theirs. */
+  pinnedNote: { text: string; updatedAt: string; updatedByName: string | null } | null;
+}
+
+/** A previous conversation opened read-only from the client panel. */
+export interface PreviousConversationDetailDTO {
+  id: string;
+  status: ConversationStatus;
+  agentName: string | null;
+  startedAt: string;
+  closedAt: string | null;
+  messages: MessageDTO[];
+  notes: ConversationNoteDTO[];
+  /** Pesquisa de satisfação answered for it, if any (score 0-10, or 1-5 on old surveys). */
+  survey: { score: number | null; answerText: string | null } | null;
 }
 
 // ---------------------------------------------------------------------------
