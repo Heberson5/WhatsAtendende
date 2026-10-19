@@ -902,6 +902,8 @@ export interface MessageDTO {
   deliveredAt: string | null;
   readAt: string | null;
   replyToMessageId: string | null;
+  /** A copy sent with "Encaminhar" from another message. */
+  forwarded: boolean;
   /** Set when this message replies to a WhatsApp Status/Story rather than to another message in the conversation — the story itself is never fetched/stored, only the small preview WhatsApp embeds directly in the reply. Deliberately carries no id/link to navigate to: there is nothing to navigate to. */
   replyToStory: { text: string | null; thumbnailUrl: string | null } | null;
   /** Link-preview card (WhatsApp Web parity) for a TEXT message whose body contains a URL. */

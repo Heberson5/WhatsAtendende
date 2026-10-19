@@ -443,6 +443,87 @@ messagesRouter.post(
   })
 );
 
+// "Encaminhar" — copies one message (text, photo, video, document or audio)
+// into up to 10 of the agent's own conversations, each one a normal send
+// (agent-name prefix included) that remembers which message it came from.
+const FORWARDABLE_TYPES = ["TEXT", "IMAGE", "VIDEO", "DOCUMENT", "AUDIO"];
+const forwardSchema = z.object({ conversationIds: z.array(z.string().uuid()).min(1).max(10) });
+messagesRouter.post(
+  "/:messageId/forward",
+  requireAttendanceAccess,
+  asyncHandler(async (req, res) => {
+    const { conversationIds } = forwardSchema.parse(req.body);
+    const original = await prisma.message.findUnique({ where: { id: req.params.messageId }, include: { conversation: true, attachments: true } });
+    if (!original || original.deletedAt) throw Errors.notFound("Mensagem nao encontrada");
+    if (req.auth!.role === "AGENT") await assertAgentCanReadContactHistory(original.conversation.contactId, req.auth!);
+    if (!FORWARDABLE_TYPES.includes(original.type)) throw Errors.badRequest("Este tipo de mensagem nao pode ser encaminhado");
+    const attachment = original.type === "TEXT" ? null : original.attachments[0];
+    if (original.type !== "TEXT" && !attachment?.storageKey) throw Errors.badRequest("O arquivo desta mensagem nao esta disponivel");
+    const targets = await Promise.all([...new Set(conversationIds)].map((id) => loadConversationForAgent(id, req.auth!.userId)));
+    if (attachment) for (const target of targets) assertWhatsAppChannel(target, "Encaminhar arquivos");
+    const buffer = attachment ? fs.readFileSync(path.join(env.UPLOAD_DIR, attachment.storageKey)) : null;
+
+    const sent = [];
+    for (const target of targets) {
+      const message = await service.createOutboundMessage({
+        conversationId: target.id,
+        agentId: req.auth!.userId,
+        type: original.type,
+        body: original.body,
+        forwardedFromMessageId: original.id,
+      });
+      let dto;
+      if (!attachment) {
+        dto =
+          target.channel === "WHATSAPP"
+            ? await whatsappService.sendOutboundText(target.whatsappConnectionId!, message.id, target.contact.phone!, original.body!, req.auth!.displayName)
+            : await metaService.sendMetaMessage(target.channel, message.id, target.contact.externalUserId!, original.body!);
+      } else {
+        const storageKey = `${randomUUID()}${path.extname(attachment.storageKey)}`;
+        fs.writeFileSync(path.join(env.UPLOAD_DIR, storageKey), buffer!);
+        await service.addAttachment(message.id, {
+          fileName: attachment.fileName,
+          mimeType: attachment.mimeType,
+          sizeBytes: attachment.sizeBytes,
+          storageKey,
+          kind: attachment.kind,
+        });
+        dto =
+          original.type === "AUDIO" && attachment.mimeType.startsWith("audio/ogg")
+            ? await whatsappService.sendOutboundAudio(target.whatsappConnectionId!, message.id, target.contact.phone!, buffer!, "audio/ogg; codecs=opus")
+            : await whatsappService.sendOutboundFile(
+                target.whatsappConnectionId!,
+                message.id,
+                target.contact.phone!,
+                buffer!,
+                attachment.fileName,
+                attachment.mimeType,
+                req.auth!.displayName,
+                original.body ?? undefined
+              );
+      }
+      await writeAudit({
+        userId: req.auth!.userId,
+        action: "MESSAGE_FORWARDED",
+        entity: "Message",
+        entityId: message.id,
+        ipAddress: req.ip ?? null,
+        metadata: {
+          conversationId: target.id,
+          fromMessageId: original.id,
+          fromConversationId: original.conversationId,
+          contactName: target.contact.name,
+          contactPhone: target.contact.phone,
+          text: original.body ?? `Arquivo: ${attachment?.fileName}`,
+        },
+      });
+      realtimeEvents.newMessage(target.id, req.auth!.userId);
+      sent.push(dto);
+    }
+    res.status(201).json(sent);
+  })
+);
+
 const reactionSchema = z.object({ emoji: z.string().max(8).nullable() });
 messagesRouter.post(
   "/:messageId/reaction",

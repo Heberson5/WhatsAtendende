@@ -15,6 +15,7 @@ import { useAuthStore } from "../../store/auth-store";
 import { MessageBubble } from "./MessageBubble";
 import { Composer, type ComposerHandle } from "./Composer";
 import { TransferModal } from "./TransferModal";
+import { ForwardModal } from "./ForwardModal";
 import { SendTemplateModal } from "./SendTemplateModal";
 import { TransferNoteCard } from "./TransferNoteCard";
 import { TimelineByDay, type TimelineEntry } from "./TimelineByDay";
@@ -22,6 +23,11 @@ import { ContactPhoto } from "../common/ContactPhoto";
 import { useAgentExtras } from "../../hooks/useAgentExtras";
 import { useTypingStore } from "../../store/typing-store";
 import { WhenPicker } from "./WhenPicker";
+
+/** Lowercase without accents, so "aviso" also finds "Avíso" and "nao" finds "não". */
+function foldForSearch(value: string) {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
 
 async function fetchMessages(conversationId: string, cursor?: string) {
   // 100 (the API's own max) rather than a smaller page, since every page
@@ -112,6 +118,7 @@ export function ChatPanel({
   // conversation, so by the time an agent deliberately opens search it's
   // realistically already there).
   const [searchOpen, setSearchOpen] = useState(false);
+  const [forwarding, setForwarding] = useState<MessageDTO | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [matchIndex, setMatchIndex] = useState(0);
   const messageElementsRef = useRef(new Map<string, HTMLDivElement>());
@@ -227,9 +234,9 @@ export function ChatPanel({
   }, []);
 
   const searchMatches = useMemo(() => {
-    const normalized = searchQuery.trim().toLowerCase();
+    const normalized = foldForSearch(searchQuery.trim());
     if (!normalized) return [];
-    return messages.filter((m) => m.body?.toLowerCase().includes(normalized));
+    return messages.filter((m) => m.body && foldForSearch(m.body).includes(normalized));
   }, [messages, searchQuery]);
 
   // A fresh search starts at the most recent match — the one an agent is
@@ -341,12 +348,15 @@ export function ChatPanel({
   // a very long conversation could otherwise mean dozens of requests
   // bursting in the same instant against the single API process that is
   // also running the live WhatsApp connection.
+  // While the agent is searching, older pages load without the pacing delay
+  // so the search reaches messages that weren't on screen yet as fast as possible.
+  const searching = searchOpen && searchQuery.trim().length > 0;
   useEffect(() => {
     if (!cursor) return;
-    const timer = setTimeout(() => loadOlder(), 300);
+    const timer = setTimeout(() => loadOlder(), searching ? 0 : 300);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cursor]);
+  }, [cursor, searching]);
 
   const sendTextMutation = useMutation({
     mutationFn: (input: { body: string; replyToMessageId?: string }) =>
@@ -593,6 +603,7 @@ export function ChatPanel({
             onReact={(m, emoji) => reactMutation.mutate({ messageId: m.id, emoji })}
             canDelete={isAdmin}
             onDelete={(m) => deleteMessageMutation.mutate(m.id)}
+            onForward={setForwarding}
             onStartConversation={onConversationStarted ? (phone, name) => startConversationMutation.mutate({ phone, name }) : undefined}
             highlighted={flashedId === message.id || (searchOpen && searchMatches[matchIndex]?.id === message.id)}
           />
@@ -785,6 +796,7 @@ export function ChatPanel({
           />
           <span className="shrink-0 text-xs text-muted">
             {searchQuery.trim() ? (searchMatches.length > 0 ? `${matchIndex + 1}/${searchMatches.length}` : "0/0") : ""}
+            {searching && cursor ? " · buscando em mensagens antigas..." : ""}
           </span>
           <button
             onClick={() => goToMatch(-1)}
@@ -1024,6 +1036,8 @@ export function ChatPanel({
           }}
         />
       )}
+
+      {forwarding && <ForwardModal message={forwarding} currentConversationId={conversation.id} onClose={() => setForwarding(null)} />}
 
       {transferOpen && (
         <TransferModal

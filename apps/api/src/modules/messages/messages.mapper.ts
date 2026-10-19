@@ -36,6 +36,7 @@ export function toMessageDTO(message: MessageWithRelations): MessageDTO {
     deliveredAt: message.deliveredAt ? message.deliveredAt.toISOString() : null,
     readAt: message.readAt ? message.readAt.toISOString() : null,
     replyToMessageId: message.replyToMessageId,
+    forwarded: message.forwardedFromMessageId !== null,
     replyToStory: message.isStoryReply
       ? { text: message.storyReplyText, thumbnailUrl: base64ToDataUrl(message.storyReplyThumbnail) }
       : null,

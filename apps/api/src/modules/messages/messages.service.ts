@@ -54,6 +54,8 @@ export interface CreateOutboundMessageInput {
   replyToMessageId?: string | null;
   /** Sent by the system on the agent's behalf (the closing message on Encerrar) — never the agent's first response. */
   automatic?: boolean;
+  /** "Encaminhar": the original message this one copies. */
+  forwardedFromMessageId?: string;
 }
 
 /**
@@ -80,6 +82,7 @@ export async function createOutboundMessage(input: CreateOutboundMessageInput) {
       body: input.body ?? null,
       senderAgentId: input.agentId,
       replyToMessageId: input.replyToMessageId ?? null,
+      forwardedFromMessageId: input.forwardedFromMessageId ?? null,
     },
     include: messageInclude,
   });

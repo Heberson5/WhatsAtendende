@@ -58,6 +58,7 @@ function message(id: string, body: string, createdAt: string, over: Partial<Mess
     deliveredAt: null,
     readAt: null,
     replyToMessageId: null,
+    forwarded: false,
     replyToStory: null,
     linkPreview: null,
     attachments: [],
