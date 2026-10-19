@@ -29,6 +29,7 @@ import { workSchedulesRouter } from "./modules/work-schedules/work-schedules.rou
 import { columnViewsRouter } from "./modules/column-views/column-views.routes";
 import { agentToolsRouter } from "./modules/agent-tools/agent-tools.routes";
 import { goalsRouter } from "./modules/goals/goals.routes";
+import { dataSourcesRouter } from "./modules/data-sources/data-sources.routes";
 import { contactsRouter } from "./modules/contacts/contacts.routes";
 import { linkPreviewRouter } from "./modules/link-preview/link-preview.routes";
 import { notificationsRouter } from "./modules/notifications/notifications.routes";
@@ -153,6 +154,7 @@ export function createApp() {
   app.use("/api/column-views", columnViewsRouter);
   app.use("/api/agent-tools", agentToolsRouter);
   app.use("/api/goals", goalsRouter);
+  app.use("/api/data-sources", dataSourcesRouter);
   app.use("/api/notifications", notificationsRouter);
   app.use("/api/holidays", holidaysRouter);
   app.use("/api/groups", groupsRouter);

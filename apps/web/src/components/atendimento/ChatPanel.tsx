@@ -17,6 +17,7 @@ import { Composer, type ComposerHandle } from "./Composer";
 import { TransferModal } from "./TransferModal";
 import { ForwardModal } from "./ForwardModal";
 import { PinnedContactNote } from "./PinnedContactNote";
+import { SuspensionWarningModal } from "./SuspensionWarningModal";
 import { SendTemplateModal } from "./SendTemplateModal";
 import { TransferNoteCard } from "./TransferNoteCard";
 import { TimelineByDay, type TimelineEntry } from "./TimelineByDay";
@@ -1039,6 +1040,9 @@ export function ChatPanel({
           }}
         />
       )}
+
+      {/* The attendant's warning — someone only watching (Gestão) must not use up their once-per-conversation popup. */}
+      {conversation.assignedAgentId === userId && <SuspensionWarningModal conversationId={conversation.id} />}
 
       {forwarding && <ForwardModal message={forwarding} currentConversationId={conversation.id} onClose={() => setForwarding(null)} />}
 

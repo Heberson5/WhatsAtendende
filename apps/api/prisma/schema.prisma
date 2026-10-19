@@ -773,6 +773,10 @@ model Conversation {
   // Started or answered on the linked phone: the customer already has someone talking to them, so
   // accepting it later sends no "Aceite" message (it would look like a second person taking over).
   startedOnDevice      Boolean   @default(false)
+  // Dados do cliente: which client of the data source this conversation is about (a phone can belong to several),
+  // and when the agent acknowledged the "contrato suspenso" warning (shown once per conversation).
+  dataClientKey        String?
+  dataSuspensionAckAt  DateTime?
 
   // optimistic-lock version, used together with a conditional UPDATE to
   // guarantee only one agent can accept a conversation (see conversations
@@ -1512,4 +1516,53 @@ model Goal {
   agentIds      String[]  @default([])
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+}
+
+// Fontes de dados: where "Dados do cliente", the {{dados.coluna}} tags and the
+// boleto come from. Only one source is active at a time.
+enum DataSourceKind {
+  LINK // OneDrive "Qualquer pessoa" or Google Sheets link (the default)
+  MICROSOFT // private OneDrive/SharePoint file read with a Microsoft sign-in
+  UPLOAD // CSV/XLSX sent through the screen
+  DATABASE // SQL Server, PostgreSQL or MySQL, read-only query
+}
+
+model DataSource {
+  id                  String          @id @default(uuid())
+  name                String
+  kind                DataSourceKind
+  active              Boolean         @default(false)
+  // Non-secret settings per kind: { url } | { shareUrl, tenantId, clientId } | { fileName } | { dialect, host, port, database, user, query }
+  config              Json            @default("{}")
+  // Encrypted JSON (lib/crypto): { clientSecret, refreshToken } | { password }
+  secrets             String?
+  // Which column plays each role (phone, contract, due date...) — see DATA_SOURCE_ROLES.
+  columnMap           Json            @default("{}")
+  sensitiveColumns    String[]        @default([])
+  // The spreadsheet's name replaces the contact's name (when the phone has only one client).
+  overrideContactName Boolean         @default(false)
+  maxAgeHours         Int             @default(24)
+  refreshMinutes      Int             @default(60)
+  columns             String[]        @default([])
+  rowCount            Int             @default(0)
+  // When the data itself was produced (file's last modification) — what "Dados de dd/mm hh:mm" shows.
+  dataUpdatedAt       DateTime?
+  lastSyncAt          DateTime?
+  lastSyncError       String?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+  rows                DataSourceRow[]
+}
+
+model DataSourceRow {
+  id           String     @id @default(uuid())
+  dataSource   DataSource @relation(fields: [dataSourceId], references: [id], onDelete: Cascade)
+  dataSourceId String
+  // 55 + DDD + last 8 digits: matches with or without 55 and with or without the extra 9.
+  phoneKey     String
+  // Position in the file, so contracts and clients keep the spreadsheet's order.
+  line         Int
+  data         Json
+
+  @@index([dataSourceId, phoneKey])
 }

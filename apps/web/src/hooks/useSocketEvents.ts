@@ -90,6 +90,10 @@ export function useSocketEvents(activeConversationId: string | null) {
     // on the phone, without waiting for the 20s poll.
     const onConversationRead = () => queryClient.invalidateQueries({ queryKey: ["mine"] });
     const onGoalsChanged = () => queryClient.invalidateQueries({ queryKey: ["my-day"] });
+    // A data source started or stopped working: tags, quick replies with tags and Dados do cliente follow at once.
+    const onDataSourceStatus = () => {
+      for (const key of ["client-data", "quick-replies", "data-sources"]) queryClient.invalidateQueries({ queryKey: [key] });
+    };
     const onOversightUpdated = () => queryClient.invalidateQueries({ queryKey: ["oversight"] });
     const onNotes = (payload: { conversationId: string }) => queryClient.invalidateQueries({ queryKey: ["notes", payload.conversationId] });
     // Gestão › Intervir started/ended: the agent's chat locks or unlocks, the manager's panel follows.
@@ -163,6 +167,7 @@ export function useSocketEvents(activeConversationId: string | null) {
     socket.on("message:status", onMessageStatus);
     socket.on("conversation:read", onConversationRead);
     socket.on("goals:changed", onGoalsChanged);
+    socket.on("data-source:status", onDataSourceStatus);
     socket.on("oversight:updated", onOversightUpdated);
     socket.on("conversation:intervention", onIntervention);
     socket.on("conversation:notes", onNotes);
@@ -190,6 +195,7 @@ export function useSocketEvents(activeConversationId: string | null) {
       socket.off("message:status", onMessageStatus);
       socket.off("conversation:read", onConversationRead);
       socket.off("goals:changed", onGoalsChanged);
+      socket.off("data-source:status", onDataSourceStatus);
       socket.off("oversight:updated", onOversightUpdated);
       socket.off("conversation:intervention", onIntervention);
       socket.off("conversation:notes", onNotes);

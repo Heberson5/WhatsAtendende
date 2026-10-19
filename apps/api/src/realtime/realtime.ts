@@ -86,6 +86,10 @@ export const realtimeEvents = {
     getIO()?.to(ROOMS.oversight()).emit("oversight:updated");
   },
   /** The attendant's pins, reminders or scheduled messages changed (from another tab, or a message went out). */
+  /** A data source became usable or stopped being usable — tags, quick replies and Dados do cliente refetch. */
+  dataSourceStatusChanged: () => {
+    getIO()?.emit("data-source:status");
+  },
   /** Metas changed — every "Meu dia" refetches its progress. */
   goalsChanged: () => {
     getIO()?.emit("goals:changed");

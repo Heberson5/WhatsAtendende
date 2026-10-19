@@ -263,6 +263,10 @@ export interface QuickReplyDTO {
   connectionScope: ConnectionScopeDTO;
   createdAt: string;
   updatedAt: string;
+  /** In a conversation's picker only: the text with {{dados.coluna}} already filled for this client. */
+  filledText?: string;
+  /** In a conversation's picker only: uses {{dados.*}} but no data source is usable (managers still see it, agents don't). */
+  dataUnavailable?: boolean;
 }
 
 /** "Todas as conexões" or an explicit list — shared by respostas rápidas, Transferência/Aceite and Encerramento. */
@@ -1093,6 +1097,11 @@ export const PERMISSION = {
   CONFIGURACOES_VISOES_VISUALIZAR: "configuracoes.visoes.visualizar",
   CONFIGURACOES_VISOES_EDITAR: "configuracoes.visoes.editar",
   AUDITORIA_ACESSAR: "auditoria.acessar",
+  FONTES_DADOS_VER: "fontes_dados.ver",
+  FONTES_DADOS_ADICIONAR: "fontes_dados.adicionar",
+  FONTES_DADOS_EDITAR: "fontes_dados.editar",
+  FONTES_DADOS_EXCLUIR: "fontes_dados.excluir",
+  CLIENTE_DADOS_SENSIVEIS_VER: "cliente.dados_sensiveis_ver",
   CONTATOS_ACESSAR: "contatos.acessar",
   CONTATOS_EDITAR: "contatos.editar",
   CONTATOS_IMPORTAR_EXPORTAR: "contatos.importar_exportar",
@@ -1480,6 +1489,46 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     group: "Contatos",
     label: "Contatos — editar observação fixa",
     description: "Escrever ou apagar a observação fixa do contato, que aparece no topo de todas as conversas dele.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.FONTES_DADOS_VER,
+    group: "Fontes de dados",
+    label: "Fontes de dados — ver",
+    description: "Abrir Configurações › Fontes de dados e ver as planilhas, links e bancos ligados, quando atualizaram e se deram erro.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.FONTES_DADOS_ADICIONAR,
+    group: "Fontes de dados",
+    label: "Fontes de dados — adicionar",
+    description: "Ligar uma nova planilha (link do OneDrive ou Google, conta Microsoft, arquivo enviado) ou um banco de dados.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: false },
+  },
+  {
+    key: PERMISSION.FONTES_DADOS_EDITAR,
+    group: "Fontes de dados",
+    label: "Fontes de dados — editar",
+    description: "Alterar, ativar, desativar e atualizar agora uma fonte de dados, e escolher as colunas sensíveis.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: false },
+  },
+  {
+    key: PERMISSION.FONTES_DADOS_EXCLUIR,
+    group: "Fontes de dados",
+    label: "Fontes de dados — excluir",
+    description: "Excluir uma fonte de dados e os dados que ela trouxe.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: false },
+  },
+  {
+    key: PERMISSION.CLIENTE_DADOS_SENSIVEIS_VER,
+    group: "Fontes de dados",
+    label: "Ver dados sensíveis do cliente",
+    description: "Revelar as colunas marcadas como sensíveis (ex.: CPF) em Dados do cliente e enviá-las por tag. Cada revelação fica registrada na auditoria.",
     editableRoles: ["AGENT", "MANAGER"],
     defaultAllowed: { AGENT: false, MANAGER: true },
   },
@@ -2146,4 +2195,142 @@ export interface MyDayGoalDTO {
   /** Same unit as target; null when there is nothing to measure yet (no reply / no survey answer). */
   current: number | null;
   achieved: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Fontes de dados: a spreadsheet (link, Microsoft account or upload) or a
+// database the client panel, the {{dados.coluna}} tags and the boleto read.
+// Only one source is active at a time, and nothing is shown unless it is
+// active, synced without error and not older than its limit.
+// ---------------------------------------------------------------------------
+
+export type DataSourceKind = "LINK" | "MICROSOFT" | "UPLOAD" | "DATABASE";
+export type DataSourceDialect = "sqlserver" | "postgres" | "mysql";
+/** OK = usable; the others explain why nothing is shown to the attendant. */
+export type DataSourceStatus = "OK" | "INACTIVE" | "ERROR" | "STALE" | "EMPTY";
+
+/** The columns the system understands, with the column name the WhatsAtendende spreadsheet script produces. */
+export const DATA_SOURCE_ROLES = {
+  phone: { label: "Telefone (WhatsApp)", column: "telefone_whatsapp" },
+  clientKey: { label: "Código do cliente", column: "codigo_cliente" },
+  clientName: { label: "Nome do cliente", column: "nome_cliente" },
+  cpf: { label: "CPF/CNPJ", column: "cpf_cnpj" },
+  contract: { label: "Número do contrato", column: "numero_contrato" },
+  plan: { label: "Plano", column: "plano" },
+  contractStatus: { label: "Situação do contrato", column: "situacao_contrato" },
+  beneficiaries: { label: "Beneficiários", column: "beneficiarios" },
+  suspensionThreshold: { label: "Parcelas para suspender", column: "parcelas_suspensao" },
+  document: { label: "Documento da parcela", column: "documento" },
+  parcelDue: { label: "Vencimento da parcela", column: "vencimento_parcela" },
+  daysLate: { label: "Dias em atraso", column: "dias_em_atraso" },
+  parcelValue: { label: "Saldo da parcela", column: "saldo" },
+  paymentMethod: { label: "Forma de pagamento", column: "forma_pagamento" },
+  boletoDue: { label: "Vencimento do boleto", column: "vencimento_boleto" },
+  boletoValue: { label: "Valor do boleto", column: "valor_boleto" },
+  ourNumber: { label: "Nosso número", column: "nosso_numero" },
+  bankCode: { label: "Código do banco", column: "banco_codigo" },
+  agency: { label: "Agência do beneficiário", column: "agencia_beneficiario" },
+  account: { label: "Conta do beneficiário", column: "conta_beneficiario" },
+  agreement: { label: "Convênio", column: "convenio" },
+  wallet: { label: "Carteira", column: "carteira" },
+  walletVariation: { label: "Variação da carteira", column: "variacao_carteira" },
+  payeeName: { label: "Beneficiário (empresa)", column: "beneficiario_nome" },
+  payeeDocument: { label: "CNPJ do beneficiário", column: "beneficiario_cnpj" },
+  payerAddress: { label: "Endereço do cliente", column: "endereco" },
+  payerCity: { label: "Cidade do cliente", column: "cidade" },
+  payerZip: { label: "CEP do cliente", column: "cep" },
+} as const;
+export type DataSourceRole = keyof typeof DATA_SOURCE_ROLES;
+
+export interface DataSourceDTO {
+  id: string;
+  name: string;
+  kind: DataSourceKind;
+  active: boolean;
+  status: DataSourceStatus;
+  /** LINK: url · MICROSOFT: shareUrl/tenantId/clientId · UPLOAD: fileName · DATABASE: dialect/host/port/database/user/query. Never secrets. */
+  config: Record<string, string | number | null>;
+  /** MICROSOFT: a Microsoft account is signed in. DATABASE: a password is saved. */
+  hasSecrets: boolean;
+  columnMap: Partial<Record<DataSourceRole, string>>;
+  sensitiveColumns: string[];
+  overrideContactName: boolean;
+  maxAgeHours: number;
+  refreshMinutes: number;
+  columns: string[];
+  rowCount: number;
+  dataUpdatedAt: string | null;
+  lastSyncAt: string | null;
+  lastSyncError: string | null;
+}
+
+export interface ClientBeneficiaryDTO {
+  name: string;
+  relation: string | null;
+  /** Computed from the birth date; null when the source has none. */
+  age: number | null;
+  aggregated: boolean;
+  holder: boolean;
+}
+
+export interface ClientParcelDTO {
+  /** DataSourceRow id — what the boleto sending refers to. */
+  id: string;
+  document: string | null;
+  due: string | null;
+  daysLate: number;
+  value: string | null;
+  paymentMethod: string | null;
+  overdue: boolean;
+}
+
+export interface ClientContractDTO {
+  number: string;
+  plan: string | null;
+  status: string | null;
+  overdueCount: number;
+  /** ≥ this many overdue parcels suspends the contract (ERP parameter); null when the source doesn't say. */
+  suspensionThreshold: number | null;
+  suspended: boolean;
+  beneficiaries: ClientBeneficiaryDTO[];
+  parcels: ClientParcelDTO[];
+}
+
+export interface ClientDataFieldDTO {
+  column: string;
+  /** Masked ("•••") for a sensitive column until revealed. */
+  value: string;
+  sensitive: boolean;
+}
+
+export interface ClientDataDTO {
+  /** NO_SOURCE: no active source · UNAVAILABLE: error or stale beyond the limit · NOT_FOUND: phone not in the data · OK. */
+  status: "NO_SOURCE" | "UNAVAILABLE" | "NOT_FOUND" | "OK";
+  /** Why it's unavailable — only for people who can see Fontes de dados. */
+  reason: string | null;
+  dataUpdatedAt: string | null;
+  /** Several clients share this phone and none was picked yet: the attendant chooses (name + partial CPF). */
+  clients: { key: string; name: string; cpfPartial: string | null }[];
+  selectedClientKey: string | null;
+  client: {
+    key: string;
+    name: string | null;
+    fields: ClientDataFieldDTO[];
+    contracts: ClientContractDTO[];
+  } | null;
+  /** A contract is suspended and this conversation hasn't shown the warning yet. */
+  suspensionWarningPending: boolean;
+}
+
+/** Result of filling the {{dados.coluna}} tags for a conversation. */
+export interface DataTagRenderDTO {
+  text: string;
+  /** Tags with no value for this client — the message can't be sent. */
+  missing: string[];
+}
+
+/** Columns available as {{dados.coluna}} tags right now — empty when no source is usable. */
+export interface DataTagsDTO {
+  available: boolean;
+  columns: string[];
 }
