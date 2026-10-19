@@ -2234,6 +2234,7 @@ export const DATA_SOURCE_ROLES = {
   agreement: { label: "Convênio", column: "convenio" },
   wallet: { label: "Carteira", column: "carteira" },
   walletVariation: { label: "Variação da carteira", column: "variacao_carteira" },
+  sicrediPost: { label: "Posto (Sicredi)", column: "posto_sicredi" },
   payeeName: { label: "Beneficiário (empresa)", column: "beneficiario_nome" },
   payeeDocument: { label: "CNPJ do beneficiário", column: "beneficiario_cnpj" },
   payerAddress: { label: "Endereço do cliente", column: "endereco" },
@@ -2333,4 +2334,45 @@ export interface DataTagRenderDTO {
 export interface DataTagsDTO {
   available: boolean;
   columns: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Boleto: sent from Dados do cliente, built only from the data source (never
+// from a linha typed by someone). A bank is only enabled after its boletos
+// matched 3 real ones (Configurações › Fontes de dados).
+// ---------------------------------------------------------------------------
+
+export const BOLETO_SAMPLES_REQUIRED = 3;
+
+export interface BoletoBankValidationDTO {
+  code: string;
+  name: string;
+  matched: number;
+  required: number;
+  enabled: boolean;
+  lastFailure: string | null;
+}
+
+export interface BoletoPreviewItemDTO {
+  parcelId: string;
+  contract: string;
+  document: string | null;
+  due: string;
+  value: string;
+  overdue: boolean;
+  linha: string;
+}
+
+export interface BoletoPreviewDTO {
+  items: BoletoPreviewItemDTO[];
+  /** Suggested message, editable before sending. */
+  message: string;
+  /** "Boleto vencido em ..." — must be confirmed, the due date is never changed. */
+  warnings: string[];
+}
+
+/** Why a parcel can't get a boleto (shown next to it), or null when it can. */
+export interface BoletoAvailabilityDTO {
+  parcelId: string;
+  blockedReason: string | null;
 }

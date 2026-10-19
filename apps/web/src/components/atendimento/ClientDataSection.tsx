@@ -3,11 +3,12 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import clsx from "clsx";
-import { AlertTriangle, Copy, Eye, Users } from "lucide-react";
+import { AlertTriangle, Copy, Eye, FileText, Users } from "lucide-react";
 import { PERMISSION, type ClientContractDTO, type ClientDataDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
 import { clientDataKey, useClientData } from "../../hooks/useClientData";
+import { BoletoSendModal } from "./BoletoSendModal";
 
 export const CLIENT_DATA_UNAVAILABLE = "Dados do cliente indisponíveis no momento";
 
@@ -26,8 +27,26 @@ function CopyButton({ value }: { value: string }) {
   );
 }
 
-function ContractCard({ contract, children }: { contract: ClientContractDTO; children?: React.ReactNode }) {
+// Same rule as the API: these never get a boleto.
+const NO_BOLETO_METHODS = [/cart[aã]o recorrente/i, /sem boleto/i];
+
+function ContractCard({ contract, conversationId, canSendBoleto }: { contract: ClientContractDTO; conversationId: string; canSendBoleto: boolean }) {
   const holderFirst = [...contract.beneficiaries].sort((a, b) => Number(b.holder) - Number(a.holder));
+  const [selected, setSelected] = useState<string[]>([]);
+  const [sending, setSending] = useState(false);
+
+  /** Boletos go oldest first: checking a parcel checks every older one, unchecking clears every newer one. */
+  function toggle(index: number) {
+    const parcel = contract.parcels[index];
+    if (selected.includes(parcel.id)) {
+      setSelected(contract.parcels.slice(0, index).map((p) => p.id).filter((id) => selected.includes(id)));
+      return;
+    }
+    const older = contract.parcels.slice(0, index).filter((p) => !selected.includes(p.id));
+    if (older.length > 0) toast.info(`Envie primeiro a parcela de ${older[0].due} — não é possível pular parcelas mais antigas`);
+    setSelected(contract.parcels.slice(0, index + 1).map((p) => p.id));
+  }
+
   return (
     <div className={clsx("overflow-hidden rounded-lg border text-xs", contract.suspended ? "border-danger" : "border-border")}>
       {contract.suspended && (
@@ -49,6 +68,38 @@ function ContractCard({ contract, children }: { contract: ClientContractDTO; chi
             {contract.suspensionThreshold && ` · suspende com ${contract.suspensionThreshold}`}
           </p>
         )}
+        {contract.parcels.length > 0 && (
+          <ul className="space-y-1">
+            {contract.parcels.map((parcel, index) => {
+              const noBoleto = NO_BOLETO_METHODS.some((re) => re.test(parcel.paymentMethod ?? ""));
+              return (
+                <li key={parcel.id} className="flex items-center gap-1.5">
+                  {canSendBoleto && (
+                    <input
+                      type="checkbox"
+                      checked={selected.includes(parcel.id)}
+                      disabled={noBoleto}
+                      onChange={() => toggle(index)}
+                      title={noBoleto ? `Sem boleto: ${parcel.paymentMethod}` : "Selecionar para enviar o boleto"}
+                      className="h-3.5 w-3.5 accent-[var(--color-primary)] disabled:opacity-40"
+                    />
+                  )}
+                  <span className={clsx("tabular-nums", parcel.overdue && "font-medium text-danger")}>{parcel.due ?? "—"}</span>
+                  <span className="tabular-nums">{parcel.value ?? ""}</span>
+                  <span className="min-w-0 truncate text-muted">
+                    {parcel.overdue ? `${parcel.daysLate} dias de atraso` : "a vencer"}
+                    {noBoleto && ` · ${parcel.paymentMethod}`}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        {canSendBoleto && selected.length > 0 && (
+          <button type="button" onClick={() => setSending(true)} className="focus-ring inline-flex items-center gap-1 rounded-card bg-primary px-2.5 py-1 text-xs font-semibold text-primary-fg">
+            <FileText className="h-3.5 w-3.5" /> Enviar boleto{selected.length > 1 ? `s (${selected.length})` : ""}
+          </button>
+        )}
         {holderFirst.length > 0 && (
           <div>
             <p className="mb-1 flex items-center gap-1 font-medium">
@@ -68,8 +119,18 @@ function ContractCard({ contract, children }: { contract: ClientContractDTO; chi
             </ul>
           </div>
         )}
-        {children}
       </div>
+      {sending && (
+        <BoletoSendModal
+          conversationId={conversationId}
+          parcelIds={selected}
+          onClose={() => setSending(false)}
+          onSent={() => {
+            setSending(false);
+            setSelected([]);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -79,16 +140,7 @@ function ContractCard({ contract, children }: { contract: ClientContractDTO; chi
  * source is off, failing or past its limit, the attendant only sees that the
  * data is unavailable (managers also see why).
  */
-export function ClientDataSection({
-  conversationId,
-  readOnly,
-  renderContractExtra,
-}: {
-  conversationId: string;
-  readOnly?: boolean;
-  /** Boleto sending hooks in here, per contract. */
-  renderContractExtra?: (contract: ClientContractDTO, data: ClientDataDTO) => React.ReactNode;
-}) {
+export function ClientDataSection({ conversationId, readOnly }: { conversationId: string; readOnly?: boolean }) {
   const queryClient = useQueryClient();
   const canReveal = useAuthStore((s) => Boolean(s.permissions?.[PERMISSION.CLIENTE_DADOS_SENSIVEIS_VER]));
   const { data } = useClientData(conversationId);
@@ -159,9 +211,7 @@ export function ClientDataSection({
         </select>
       )}
       {data.client.contracts.map((contract) => (
-        <ContractCard key={contract.number} contract={contract}>
-          {renderContractExtra?.(contract, data)}
-        </ContractCard>
+        <ContractCard key={contract.number} contract={contract} conversationId={conversationId} canSendBoleto={!readOnly} />
       ))}
       <div className="space-y-0.5">
         {visibleFields.map((field) => {

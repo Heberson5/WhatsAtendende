@@ -25,6 +25,7 @@ import { toMessageTemplateDTO } from "../message-templates/message-templates.map
 import { realtimeEvents } from "../../realtime/realtime";
 import * as groupsService from "../groups/groups.service";
 import * as dataSources from "../data-sources/data-sources.service";
+import * as boletos from "../boletos/boletos.service";
 import { assertCanReplyToConversation, assertAgentCanReadContactHistory, assertAgentCanReadConversation, getConversationOrThrow } from "../conversations/conversations.service";
 
 export const messagesRouter = Router();
@@ -526,6 +527,64 @@ messagesRouter.post(
       sent.push(dto);
     }
     res.status(201).json(sent);
+  })
+);
+
+// Boleto from Dados do cliente: preview first, then the editable message, one PDF per parcel and its linha digitável.
+const boletoSelectionSchema = z.object({ parcelIds: z.array(z.string().uuid()).min(1).max(24) });
+messagesRouter.post(
+  "/conversations/:conversationId/boletos/preview",
+  requireAttendanceAccess,
+  asyncHandler(async (req, res) => {
+    const conversation = await loadConversationForAgent(req.params.conversationId, req.auth!.userId);
+    assertWhatsAppChannel(conversation, "Envio de boleto");
+    const { parcelIds } = boletoSelectionSchema.parse(req.body);
+    res.json(await boletos.previewBoletos(conversation, parcelIds));
+  })
+);
+
+const boletoSendSchema = boletoSelectionSchema.extend({ message: z.string().max(4096), confirmOverdue: z.boolean().default(false) });
+messagesRouter.post(
+  "/conversations/:conversationId/boletos/send",
+  requireAttendanceAccess,
+  asyncHandler(async (req, res) => {
+    const conversation = await loadConversationForAgent(req.params.conversationId, req.auth!.userId);
+    assertWhatsAppChannel(conversation, "Envio de boleto");
+    const input = boletoSendSchema.parse(req.body);
+    const prepared = await boletos.prepareBoletos(conversation, input.parcelIds, input.confirmOverdue);
+    const message = input.message.trim() ? await dataSources.fillDataTagsOrThrow(conversation, input.message.trim(), req.auth!.role) : "";
+    const connectionId = conversation.whatsappConnectionId!;
+    const phone = conversation.contact.phone!;
+    const sendText = async (body: string) => {
+      const created = await service.createOutboundMessage({ conversationId: conversation.id, agentId: req.auth!.userId, type: "TEXT", body });
+      await whatsappService.sendOutboundText(connectionId, created.id, phone, body, req.auth!.displayName);
+    };
+
+    if (message) await sendText(message);
+    for (const boleto of prepared) {
+      const created = await service.createOutboundMessage({ conversationId: conversation.id, agentId: req.auth!.userId, type: "DOCUMENT" });
+      await service.addAttachment(created.id, { fileName: boleto.fileName, mimeType: "application/pdf", sizeBytes: boleto.pdf.length, storageKey: boleto.storageKey, kind: "DOCUMENT" });
+      await whatsappService.sendOutboundFile(connectionId, created.id, phone, boleto.pdf, boleto.fileName, "application/pdf", req.auth!.displayName);
+      await sendText(`Linha digitável (vencimento ${boleto.item.due}, ${boleto.item.value}):\n${boleto.item.linha}`);
+      await prisma.conversationNote.create({
+        data: {
+          conversationId: conversation.id,
+          authorId: null,
+          body: `Boleto enviado por ${req.auth!.displayName}: contrato ${boleto.item.contract}, vencimento ${boleto.item.due}, ${boleto.item.value}${boleto.item.overdue ? " (já vencido, envio confirmado)" : ""}.`,
+        },
+      });
+      await writeAudit({
+        userId: req.auth!.userId,
+        action: "BOLETO_SENT",
+        entity: "Conversation",
+        entityId: conversation.id,
+        ipAddress: req.ip ?? null,
+        metadata: { ...boleto.item, contactName: conversation.contact.name, contactPhone: phone },
+      });
+    }
+    realtimeEvents.newMessage(conversation.id, req.auth!.userId);
+    realtimeEvents.notesChanged(conversation.id, [req.auth!.userId]);
+    res.status(201).json({ sent: prepared.map((b) => b.item) });
   })
 );
 
