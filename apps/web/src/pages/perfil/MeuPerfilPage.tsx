@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Camera, Trash2, X } from "lucide-react";
+import { Camera, Trash2, Volume2, X } from "lucide-react";
 import { toast } from "sonner";
 import type { UserDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
+import { playAlertSound } from "../../lib/alert-sounds";
 
 const ROLE_LABEL: Record<string, string> = { ADMIN: "Administrador", MANAGER: "Gestor", AGENT: "Atendente" };
 
@@ -158,6 +159,8 @@ export default function MeuPerfilPage() {
           <p className="text-xs text-muted">Para alterar o nome, fale com o gestor ou o administrador.</p>
         </section>
 
+        <SoundsSection user={user} onSaved={applyUser} />
+
         <form onSubmit={handlePasswordSubmit} className="shadow-soft space-y-3 rounded-card border border-border bg-surface p-6">
           <h2 className="mb-1 text-base font-semibold">Alterar senha</h2>
           <Field label="Senha atual">
@@ -178,6 +181,53 @@ export default function MeuPerfilPage() {
         </form>
       </div>
     </div>
+  );
+}
+
+type SoundPatch = Partial<Pick<UserDTO, "soundNewMessage" | "soundNewQueue" | "soundVolume">>;
+
+function SoundsSection({ user, onSaved }: { user: UserDTO; onSaved: (user: UserDTO) => void }) {
+  const [volume, setVolume] = useState(user.soundVolume);
+  const soundsMutation = useMutation({
+    mutationFn: async (patch: SoundPatch) => (await api.patch<UserDTO>("/profile/sounds", patch)).data,
+    onSuccess: onSaved,
+    onError: (err) => toast.error(getApiErrorMessage(err)),
+  });
+
+  return (
+    <section className="shadow-soft space-y-3 rounded-card border border-border bg-surface p-6">
+      <h2 className="mb-1 text-base font-semibold">Sons</h2>
+      {(
+        [
+          ["soundNewMessage", "newMessage", "Nova mensagem de cliente"],
+          ["soundNewQueue", "newQueue", "Nova conversa na fila"],
+        ] as const
+      ).map(([field, sound, label]) => (
+        <div key={field} className="flex items-center justify-between gap-3">
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={user[field]} onChange={(e) => soundsMutation.mutate({ [field]: e.target.checked })} className="h-4 w-4 accent-[var(--color-primary)]" />
+            {label}
+          </label>
+          <button type="button" onClick={() => playAlertSound(sound, volume)} className="focus-ring inline-flex items-center gap-1 rounded-card px-2 py-1 text-xs text-muted hover:bg-surface-alt">
+            <Volume2 className="h-3.5 w-3.5" /> Ouvir
+          </button>
+        </div>
+      ))}
+      <Field label={`Volume: ${volume}%`}>
+        <input
+          type="range"
+          min={0}
+          max={100}
+          step={5}
+          value={volume}
+          onChange={(e) => setVolume(Number(e.target.value))}
+          onPointerUp={() => soundsMutation.mutate({ soundVolume: volume })}
+          onKeyUp={() => soundsMutation.mutate({ soundVolume: volume })}
+          className="w-full accent-[var(--color-primary)]"
+        />
+      </Field>
+      <p className="text-xs text-muted">Valem só para você, em qualquer computador em que entrar.</p>
+    </section>
   );
 }
 

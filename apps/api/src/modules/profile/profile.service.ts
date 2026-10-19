@@ -15,6 +15,10 @@ export async function markReleaseNotesSeen(userId: string, version: string) {
   await prisma.user.update({ where: { id: userId }, data: { releaseNotesSeenVersion: version } });
 }
 
+export async function updateOwnSounds(userId: string, sounds: { soundNewMessage?: boolean; soundNewQueue?: boolean; soundVolume?: number }) {
+  return prisma.user.update({ where: { id: userId }, data: sounds, include: withConnection });
+}
+
 export async function updateOwnPhoto(userId: string, photoUrl: string | null) {
   return prisma.user.update({ where: { id: userId }, data: { photoUrl }, include: withConnection });
 }

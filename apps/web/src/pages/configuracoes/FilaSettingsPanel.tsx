@@ -5,11 +5,20 @@ import { PERMISSION } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { UnsavedChangesBar } from "../../components/common/UnsavedChangesBar";
 import { useAuthStore } from "../../store/auth-store";
+import { DEFAULT_ALERT_THRESHOLDS, type AlertThresholds } from "../../hooks/useAlertThresholds";
 
-interface BusinessSettings {
+interface BusinessSettings extends Partial<AlertThresholds> {
   queueReminderIntervalMinutes?: number;
   dailyConversationGoal?: number | null;
 }
+
+const MAX_ALERT_MINUTES = 240;
+const ALERT_FIELDS: { key: keyof AlertThresholds; label: string }[] = [
+  { key: "noReplyWarningMinutes", label: "Sem resposta: amarelo após (min)" },
+  { key: "noReplyDangerMinutes", label: "Sem resposta: vermelho após (min)" },
+  { key: "queueWarningMinutes", label: "Na fila: amarelo após (min)" },
+  { key: "queueDangerMinutes", label: "Na fila: vermelho após (min)" },
+];
 
 const MIN_MINUTES = 1;
 const MAX_MINUTES = 60; // matches the backend's zod schema
@@ -30,15 +39,23 @@ export function FilaSettingsPanel() {
   // Empty = no goal: "Meu dia" in Atendimento shows no bar.
   const [goal, setGoal] = useState("");
   const savedGoal = data?.dailyConversationGoal ? String(data.dailyConversationGoal) : "";
+  const savedAlerts: AlertThresholds = { ...DEFAULT_ALERT_THRESHOLDS, ...data };
+  const [alerts, setAlerts] = useState<AlertThresholds>(DEFAULT_ALERT_THRESHOLDS);
   useEffect(() => {
     if (data?.queueReminderIntervalMinutes) setMinutes(data.queueReminderIntervalMinutes);
     setGoal(data?.dailyConversationGoal ? String(data.dailyConversationGoal) : "");
+    setAlerts({ ...DEFAULT_ALERT_THRESHOLDS, ...data });
   }, [data]);
   const goalValid = goal === "" || (Number.isInteger(Number(goal)) && Number(goal) >= 1 && Number(goal) <= MAX_GOAL);
-  const canSave = minutes >= MIN_MINUTES && minutes <= MAX_MINUTES && goalValid;
+  const alertsValid =
+    Object.values(alerts).every((v) => Number.isInteger(v) && v >= 1 && v <= MAX_ALERT_MINUTES) &&
+    alerts.noReplyDangerMinutes > alerts.noReplyWarningMinutes &&
+    alerts.queueDangerMinutes > alerts.queueWarningMinutes;
+  const alertsDirty = ALERT_FIELDS.some(({ key }) => alerts[key] !== savedAlerts[key]);
+  const canSave = minutes >= MIN_MINUTES && minutes <= MAX_MINUTES && goalValid && alertsValid;
 
   const saveMutation = useMutation({
-    mutationFn: () => api.patch("/settings/queue", { queueReminderIntervalMinutes: minutes, dailyConversationGoal: goal === "" ? null : Number(goal) }),
+    mutationFn: () => api.patch("/settings/queue", { queueReminderIntervalMinutes: minutes, dailyConversationGoal: goal === "" ? null : Number(goal), ...alerts }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["business-settings"] });
       queryClient.invalidateQueries({ queryKey: ["my-day"] });
@@ -70,6 +87,31 @@ export function FilaSettingsPanel() {
           className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm disabled:opacity-60"
         />
       </label>
+
+      <div className="border-t border-border pt-5">
+        <h2 className="text-base font-semibold">Alertas de tempo</h2>
+        <p className="mt-1 text-sm text-muted">
+          O cartão da conversa fica amarelo e depois vermelho quando o cliente espera demais por uma resposta (Meus) ou para ser aceito (Fila).
+        </p>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          {ALERT_FIELDS.map(({ key, label }) => (
+            <label key={key} className="block">
+              <span className="mb-1 block text-sm font-medium">{label}</span>
+              <input
+                type="number"
+                min={1}
+                max={MAX_ALERT_MINUTES}
+                step={1}
+                value={alerts[key]}
+                disabled={!canEditar}
+                onChange={(e) => setAlerts((prev) => ({ ...prev, [key]: Number(e.target.value) }))}
+                className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm disabled:opacity-60"
+              />
+            </label>
+          ))}
+        </div>
+        {!alertsValid && <p className="mt-2 text-xs text-danger">O vermelho precisa vir depois do amarelo (entre 1 e {MAX_ALERT_MINUTES} minutos).</p>}
+      </div>
 
       <div className="border-t border-border pt-5">
         <h2 className="text-base font-semibold">Meta diária</h2>
@@ -104,13 +146,14 @@ export function FilaSettingsPanel() {
       )}
       {canEditar && data && (
         <UnsavedChangesBar
-          dirty={(data.queueReminderIntervalMinutes !== undefined && minutes !== data.queueReminderIntervalMinutes) || goal !== savedGoal}
+          dirty={(data.queueReminderIntervalMinutes !== undefined && minutes !== data.queueReminderIntervalMinutes) || goal !== savedGoal || alertsDirty}
           saving={saveMutation.isPending}
           canSave={canSave}
           onSave={() => saveMutation.mutate()}
           onDiscard={() => {
             setMinutes(data.queueReminderIntervalMinutes ?? 1);
             setGoal(savedGoal);
+            setAlerts(savedAlerts);
           }}
         />
       )}

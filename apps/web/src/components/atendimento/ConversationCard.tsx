@@ -10,11 +10,8 @@ import { ContactPhoto } from "../common/ContactPhoto";
 import { useAuthStore } from "../../store/auth-store";
 import { draftKey, useDraftStore } from "../../store/draft-store";
 import { useTypingStore } from "../../store/typing-store";
+import { useAlertThresholds } from "../../hooks/useAlertThresholds";
 
-// Customer waiting this long for a reply gets the "sem resposta" warning;
-// past the second threshold it turns red.
-export const NO_REPLY_WARNING_MINUTES = 5;
-export const NO_REPLY_DANGER_MINUTES = 15;
 
 function shortTime(iso: string) {
   const d = new Date(iso);
@@ -26,6 +23,10 @@ function shortTime(iso: string) {
 function shortReminderTime(iso: string) {
   const d = new Date(iso);
   return isToday(d) ? format(d, "HH:mm") : format(d, "dd/MM HH:mm");
+}
+
+function minutesSince(iso: string, now: number) {
+  return Math.floor((now - new Date(iso).getTime()) / 60_000);
 }
 
 export function minutesWaiting(conversation: ConversationListItemDTO, now: number) {
@@ -92,9 +93,16 @@ export function ConversationCard({
   // A disconnected connection can't actually deliver anything — accepting
   // from here would just leave the customer with no reply possible.
   const connectionDisconnected = conversation.whatsappConnectionStatus !== "CONNECTED";
+  const thresholds = useAlertThresholds();
+  // Fila: how long it has waited to be accepted; Meus: how long the customer has waited for a reply.
+  const queueMinutes = onAccept ? minutesSince(conversation.enteredQueueAt, now) : 0;
+  const queueWarning = Boolean(onAccept) && queueMinutes >= thresholds.queueWarningMinutes;
+  const queueDanger = Boolean(onAccept) && queueMinutes >= thresholds.queueDangerMinutes;
   const waitingMinutes = transferredOutView ? 0 : minutesWaiting(conversation, now);
-  const noReply = waitingMinutes >= NO_REPLY_WARNING_MINUTES;
-  const noReplyDanger = waitingMinutes >= NO_REPLY_DANGER_MINUTES;
+  const noReply = waitingMinutes >= thresholds.noReplyWarningMinutes;
+  const noReplyDanger = waitingMinutes >= thresholds.noReplyDangerMinutes;
+  const alertDanger = noReplyDanger || queueDanger;
+  const alertWarning = !alertDanger && (noReply || queueWarning);
   const timeLabel = noReply
     ? `há ${formatDistanceToNow(new Date(conversation.awaitingReplySince!), { locale: ptBR })}`
     : onAccept
@@ -111,9 +119,12 @@ export function ConversationCard({
       className={clsx(
         "focus-ring relative flex items-start gap-3 border-b border-border px-3 py-3 transition-colors",
         onSelect && "cursor-pointer",
-        selected ? "bg-primary/[0.07]" : "hover:bg-surface-alt"
+        selected ? "bg-primary/[0.07]" : alertDanger ? "bg-danger-soft/60 hover:bg-danger-soft" : alertWarning ? "bg-warning-soft/60 hover:bg-warning-soft" : "hover:bg-surface-alt"
       )}
     >
+      {!selected && (alertDanger || alertWarning) && (
+        <span className={clsx("absolute inset-y-0 left-0 w-[3px]", alertDanger ? "bg-danger" : "bg-warning")} aria-hidden />
+      )}
       {selected && <span className="absolute inset-y-2 left-0 w-[3px] rounded-r bg-primary" aria-hidden />}
       <div className="relative shrink-0">
         {conversation.contact.photoUrl ? (
@@ -137,7 +148,7 @@ export function ConversationCard({
           <span
             className={clsx(
               "shrink-0 text-[11px]",
-              noReplyDanger ? "font-semibold text-danger" : noReply ? "font-semibold text-warning" : "text-muted"
+              alertDanger ? "font-semibold text-danger" : alertWarning ? "font-semibold text-warning" : "text-muted"
             )}
           >
             {timeLabel}

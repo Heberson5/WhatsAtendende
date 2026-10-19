@@ -31,5 +31,8 @@ export function toUserDTO(user: UserWithConnection): UserDTO {
     arrivalsChartStartHour: user.arrivalsChartStartHour,
     arrivalsChartEndHour: user.arrivalsChartEndHour,
     releaseNotesSeenVersion: user.releaseNotesSeenVersion,
+    soundNewMessage: user.soundNewMessage,
+    soundNewQueue: user.soundNewQueue,
+    soundVolume: user.soundVolume,
   };
 }
