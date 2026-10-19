@@ -1,5 +1,6 @@
 import type { Role } from "@prisma/client";
 import type { AgentExtrasDTO, ConversationReminderDTO, MyDayDTO, ScheduledMessageDTO } from "@whatsatendende/types";
+import { goalProgress, goalsForUser } from "../goals/goals.service";
 import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
 import { logger } from "../../lib/logger";
@@ -11,7 +12,6 @@ import { assertAgentCanAccessConversation, assertCanReplyToConversation, getConv
 import { createOutboundMessage } from "../messages/messages.service";
 import * as whatsappService from "../whatsapp/whatsapp.service";
 import * as metaService from "../meta/meta.service";
-import { getBusinessSettings } from "../settings/settings.service";
 import { calculateNps } from "../satisfaction/satisfaction.service";
 
 const OPEN_STATUSES = ["IN_PROGRESS", "TRANSFERRED"] as const;
@@ -169,7 +169,8 @@ export async function sendDueScheduledMessages(now = new Date()) {
 export async function getMyDay(userId: string, tzOffsetMinutes: number): Promise<MyDayDTO> {
   const today = resolvePeriod("today", undefined, undefined, tzOffsetMinutes);
   const month = resolvePeriod("month", undefined, undefined, tzOffsetMinutes);
-  const [closedToday, firstResponses, scores, settings] = await Promise.all([
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { whatsappConnectionId: true } });
+  const [closedToday, firstResponses, scores, goals] = await Promise.all([
     prisma.conversation.count({ where: { assignedAgentId: userId, status: "CLOSED", closedAt: { gte: today.from, lte: today.to } } }),
     prisma.conversation.findMany({
       where: { assignedAgentId: userId, firstResponseAt: { gte: today.from, lte: today.to }, acceptedAt: { not: null } },
@@ -180,16 +181,15 @@ export async function getMyDay(userId: string, tzOffsetMinutes: number): Promise
       where: { agentId: userId, score: { not: null }, questionId: { not: null }, sentAt: { gte: month.from, lte: month.to } },
       _count: { _all: true },
     }),
-    getBusinessSettings(),
+    goalsForUser(userId, user.whatsappConnectionId),
   ]);
   const diffs = firstResponses.map((c) => c.firstResponseAt!.getTime() - c.acceptedAt!.getTime()).filter((ms) => ms >= 0);
   const distribution = Array<number>(11).fill(0);
   for (const row of scores) if (row.score !== null) distribution[row.score] += row._count._all;
-  const goal = settings.dailyConversationGoal;
-  return {
+  const values = {
     closedToday,
     avgFirstResponseMs: diffs.length ? Math.round(diffs.reduce((a, b) => a + b, 0) / diffs.length) : null,
     npsThisMonth: calculateNps(distribution).nps,
-    goal: typeof goal === "number" ? goal : null,
   };
+  return { ...values, goals: goals.map((goal) => goalProgress(goal, values)) };
 }

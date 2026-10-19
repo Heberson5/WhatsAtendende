@@ -86,6 +86,10 @@ export const realtimeEvents = {
     getIO()?.to(ROOMS.oversight()).emit("oversight:updated");
   },
   /** The attendant's pins, reminders or scheduled messages changed (from another tab, or a message went out). */
+  /** Metas changed — every "Meu dia" refetches its progress. */
+  goalsChanged: () => {
+    getIO()?.emit("goals:changed");
+  },
   agentExtrasChanged: (userId: string) => {
     getIO()?.to(ROOMS.user(userId)).emit("agent:extras");
   },
