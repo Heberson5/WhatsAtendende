@@ -5,11 +5,9 @@ import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
 
 const PREVIOUS_CONVERSATIONS_LIMIT = 10;
-// Palette new tags cycle through, so two consecutive tags never share a color.
-const TAG_COLORS = ["#0097B4", "#7C3AED", "#DB2777", "#059669", "#EA580C", "#2563EB", "#CA8A04", "#64748B"];
 
-export function toTagDTO(tag: { id: string; name: string; color: string }): TagDTO {
-  return { id: tag.id, name: tag.name, color: tag.color };
+export function toTagDTO(tag: { id: string; name: string; color: string; skipSurvey: boolean }): TagDTO {
+  return { id: tag.id, name: tag.name, color: tag.color, skipSurvey: tag.skipSurvey };
 }
 
 // A note with no author was written by the system (e.g. why a conversation came from Abandonados).
@@ -29,14 +27,6 @@ export function toNoteDTO(note: { id: string; conversationId: string; authorId: 
 export async function listTags(): Promise<TagDTO[]> {
   const tags = await prisma.tag.findMany({ orderBy: { name: "asc" } });
   return tags.map(toTagDTO);
-}
-
-/** Case-insensitive find-or-create, so "vip" and "VIP" stay one tag. */
-export async function findOrCreateTag(name: string): Promise<TagDTO> {
-  const existing = await prisma.tag.findFirst({ where: { name: { equals: name, mode: "insensitive" } } });
-  if (existing) return toTagDTO(existing);
-  const count = await prisma.tag.count();
-  return toTagDTO(await prisma.tag.create({ data: { name, color: TAG_COLORS[count % TAG_COLORS.length] } }));
 }
 
 export async function getContactPanel(conversationId: string, contactId: string, firstConversationAt: Date): Promise<ContactPanelDTO> {

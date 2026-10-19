@@ -7,7 +7,7 @@ import type {
   SatisfactionScoreStatsDTO,
 } from "@whatsatendende/types";
 import { prisma } from "../../lib/prisma";
-import { calculateNps, getCurrentQuestion, getSatisfactionSettings } from "./satisfaction.service";
+import { calculateNps, getCurrentQuestion, getSatisfactionSettings, npsExcludedContactIds } from "./satisfaction.service";
 import { parseSurveyScore } from "./survey-score";
 
 /** A recorded score the current reading rules would read differently ("1o" once read as 1) — unless a manager already fixed it. */
@@ -76,6 +76,7 @@ async function previousPeriod(params: SatisfactionReportParams): Promise<{ previ
     where: {
       sentAt: { gte: from, lte: to },
       questionId: { not: null },
+      contactId: { notIn: await npsExcludedContactIds() },
       ...(params.agentId && { agentId: params.agentId }),
       ...(params.connectionIds && { whatsappConnectionId: { in: params.connectionIds } }),
     },
@@ -98,6 +99,7 @@ export async function getSatisfactionReport(params: SatisfactionReportParams): P
     where: {
       sentAt: { gte: params.from, lte: params.to },
       questionId: { not: null },
+      contactId: { notIn: await npsExcludedContactIds() },
       ...(params.agentId && { agentId: params.agentId }),
       ...(params.connectionIds && { whatsappConnectionId: { in: params.connectionIds } }),
     },

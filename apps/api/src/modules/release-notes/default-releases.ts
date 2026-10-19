@@ -11,6 +11,60 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.16.0",
+    date: "20 out 2026",
+    name: "Encerramento por falta de retorno, menu Etiquetas e valor atualizado das parcelas",
+    summary:
+      "Conversas sem resposta do cliente podem ser encerradas com uma mensagem própria (pelo atendente ou sozinhas, com lembrete antes), as etiquetas ganharam menu próprio com a opção de não enviar a pesquisa, e o painel do cliente mostra multa, juros e valor atualizado de cada parcela.",
+    notes: [
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "Encerrar por falta de retorno",
+        text: "Na confirmação de Encerrar há a opção Encerrar por falta de retorno: o cliente recebe a mensagem de falta de retorno, sem pesquisa de satisfação. Conta na meta do atendente e aparece à parte como Sem retorno do cliente no Dashboard e nos Relatórios.",
+        where: "Atendimento › Encerrar",
+      },
+      {
+        type: "novo",
+        area: "respostas",
+        title: "Encerramento automático por falta de retorno",
+        text: "Quando ligado, depois da última mensagem do atendente o cliente recebe um lembrete após X minutos sem resposta e, se continuar sem responder, a conversa é encerrada Y minutos depois. O tempo só corre no horário de expediente. Não encerra se a última mensagem for do cliente, se houver Lembrar de retornar ou envio agendado pendente, ou se o atendente marcar Aguardar cliente. O cartão mostra \"encerra em N min\" e o atendente é avisado 1 minuto antes, com Manter aberta e Encerrar agora. Vem desligado.",
+        where: "Respostas › Encerramento",
+        requires: [PERMISSION.RESPOSTAS_ENCERRAMENTO_VISUALIZAR],
+      },
+      {
+        type: "melhoria",
+        area: "atendimento",
+        title: "Cliente que volta depois da falta de retorno",
+        text: "Se o cliente escrever depois de um encerramento por falta de retorno, a conversa vai direto para o mesmo atendente (se estiver online; senão, para a fila), com a nota \"Cliente voltou após encerramento por falta de retorno\".",
+        where: "Atendimento",
+      },
+      {
+        type: "novo",
+        area: "contatos",
+        title: "Menu Etiquetas",
+        text: "As etiquetas agora são cadastradas só em Automação › Etiquetas. No atendimento, atendentes, gestores e administradores apenas escolhem da lista.",
+        where: "Automação › Etiquetas",
+        requires: [PERMISSION.ETIQUETAS_VISUALIZAR],
+      },
+      {
+        type: "novo",
+        area: "contatos",
+        title: "Etiqueta que não envia pesquisa",
+        text: "Etiquetas marcadas com Não enviar pesquisa (por exemplo, para funcionários) fazem o contato receber só a mensagem de encerramento. Esses contatos ficam fora do NPS em todo lugar, inclusive as respostas antigas.",
+        where: "Automação › Etiquetas",
+        requires: [PERMISSION.ETIQUETAS_VISUALIZAR],
+      },
+      {
+        type: "melhoria",
+        area: "atendimento",
+        title: "Valor atualizado das parcelas",
+        text: "Cada parcela no painel do cliente mostra multa, juros e o valor atualizado, quando a planilha traz essas colunas. O boleto continua com o valor registrado.",
+        where: "Atendimento › painel do cliente",
+      },
+    ],
+  },
+  {
     version: "2.15.1",
     date: "19 out 2026",
     name: "Aviso de cliente esperando, @ nos grupos e boleto do Banco do Brasil",
@@ -1742,7 +1796,7 @@ export const DEFAULT_RELEASES: ReleaseContent[] = [
         title: "Gerenciar etiquetas",
         text: "Crie, renomeie, troque a cor ou exclua etiquetas e veja quantos contatos usam cada uma. Ao excluir, a etiqueta sai de todos os contatos.",
         where: "Contatos › Etiquetas",
-        requires: [PERMISSION.CONTATOS_ETIQUETAS_GERENCIAR],
+        requires: [PERMISSION.ETIQUETAS_VISUALIZAR],
         images: [{ src: "/notas-de-versao/contatos-etiquetas.webp", caption: "Cada etiqueta com sua cor e quantos contatos a usam.", size: "small" }],
       },
       {

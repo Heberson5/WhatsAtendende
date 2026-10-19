@@ -16,12 +16,12 @@ async function loginAs(email: string) {
 
 // Fictitious data in the shape the WhatsAtendende script produces (SQL Server Management Studio CSV).
 const CSV = [
-  "telefone_whatsapp,codigo_cliente,nome_cliente,cpf_cnpj,numero_contrato,plano,situacao_contrato,beneficiarios,parcelas_suspensao,documento,vencimento_parcela,dias_em_atraso,saldo,forma_pagamento",
-  "5565999990001,10,Maria Teste,12345678901,C-1,Plano Ouro,Ativo,Maria Teste;Titular;01/02/1980;Não | João Teste;Filho;15/06/2010;Não,2,D-1,10/08/2026,70,89.90,Boleto",
-  "5565999990001,10,Maria Teste,12345678901,C-1,Plano Ouro,Ativo,Maria Teste;Titular;01/02/1980;Não | João Teste;Filho;15/06/2010;Não,2,D-2,10/09/2026,39,89.90,Boleto",
-  "5565999990001,10,Maria Teste,12345678901,C-1,Plano Ouro,Ativo,Maria Teste;Titular;01/02/1980;Não | João Teste;Filho;15/06/2010;Não,2,D-3,10/11/2026,0,89.90,Boleto",
-  "6599990002,20,Ana Um,11122233344,C-2,Plano Prata,Ativo,,3,,,,,",
-  "556599990002,21,Ana Dois,55566677788,C-3,Plano Prata,Ativo,,3,,,,,",
+  "telefone_whatsapp,codigo_cliente,nome_cliente,cpf_cnpj,numero_contrato,plano,situacao_contrato,beneficiarios,parcelas_suspensao,documento,vencimento_parcela,dias_em_atraso,saldo,multa,juros,valor_atualizado,forma_pagamento",
+  "5565999990001,10,Maria Teste,12345678901,C-1,Plano Ouro,Ativo,Maria Teste;Titular;01/02/1980;Não | João Teste;Filho;15/06/2010;Não,2,D-1,10/08/2026,70,89.90,1.80,2.10,93.80,Boleto",
+  "5565999990001,10,Maria Teste,12345678901,C-1,Plano Ouro,Ativo,Maria Teste;Titular;01/02/1980;Não | João Teste;Filho;15/06/2010;Não,2,D-2,10/09/2026,39,89.90,1.80,1.17,92.87,Boleto",
+  "5565999990001,10,Maria Teste,12345678901,C-1,Plano Ouro,Ativo,Maria Teste;Titular;01/02/1980;Não | João Teste;Filho;15/06/2010;Não,2,D-3,10/11/2026,0,89.90,0.00,0.00,89.90,Boleto",
+  "6599990002,20,Ana Um,11122233344,C-2,Plano Prata,Ativo,,3,,,,,,,,",
+  "556599990002,21,Ana Dois,55566677788,C-3,Plano Prata,Ativo,,3,,,,,,,,",
 ].join("\n");
 
 describe("Fontes de dados", () => {
@@ -109,6 +109,7 @@ describe("Fontes de dados", () => {
     const [contract] = data.client.contracts;
     expect(contract).toMatchObject({ number: "C-1", overdueCount: 2, suspensionThreshold: 2, suspended: true });
     expect(contract.parcels.map((p: { document: string }) => p.document)).toEqual(["D-1", "D-2", "D-3"]);
+    expect(contract.parcels[0]).toMatchObject({ value: "89.90", fine: "1.80", interest: "2.10", updatedValue: "93.80" });
     expect(contract.beneficiaries.map((b: { name: string; holder: boolean }) => [b.name, b.holder])).toEqual([["Maria Teste", true], ["João Teste", false]]);
     expect(data.suspensionWarningPending).toBe(true);
     expect(data.client.fields.find((f: { column: string }) => f.column === "cpf_cnpj").value).not.toContain("12345678");

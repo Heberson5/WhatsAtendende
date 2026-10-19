@@ -98,7 +98,7 @@ export function ClientPanel({
   });
 
   const addTag = useMutation({
-    mutationFn: (input: { tagId: string } | { name: string }) => api.post<ContactPanelDTO>(`/conversations/${conversation.id}/contact-tags`, input),
+    mutationFn: (input: { tagId: string }) => api.post<ContactPanelDTO>(`/conversations/${conversation.id}/contact-tags`, input),
     onSuccess: (res) => {
       queryClient.setQueryData(queryKey, res.data);
       queryClient.invalidateQueries({ queryKey: ["tags"] });
@@ -154,7 +154,6 @@ export function ClientPanel({
   const usedTagIds = new Set(panel?.tags.map((t) => t.id));
   const typed = tagInput.trim();
   const suggestions = (allTags ?? []).filter((t) => !usedTagIds.has(t.id) && (!typed || t.name.toLowerCase().includes(typed.toLowerCase()))).slice(0, 6);
-  const exactExists = (allTags ?? []).some((t) => t.name.toLowerCase() === typed.toLowerCase());
 
   return (
     <aside className="flex h-full w-full flex-col overflow-hidden border-l border-border bg-surface" aria-label="Painel do cliente">
@@ -241,12 +240,12 @@ export function ClientPanel({
                   if (e.key === "Escape") setAddingTag(false);
                   if (e.key === "Enter" && typed) {
                     e.preventDefault();
-                    const match = allTags?.find((t) => t.name.toLowerCase() === typed.toLowerCase());
-                    addTag.mutate(match ? { tagId: match.id } : { name: typed });
+                    const match = allTags?.find((t) => t.name.toLowerCase() === typed.toLowerCase()) ?? suggestions[0];
+                    if (match) addTag.mutate({ tagId: match.id });
                   }
                 }}
                 maxLength={40}
-                placeholder="Buscar ou criar etiqueta"
+                placeholder="Buscar etiqueta"
                 className="focus-ring w-full rounded-md border border-border bg-surface px-2 py-1.5 text-xs"
               />
               <div className="mt-1.5 flex flex-wrap gap-1">
@@ -261,14 +260,8 @@ export function ClientPanel({
                     {tag.name}
                   </button>
                 ))}
-                {typed && !exactExists && (
-                  <button
-                    type="button"
-                    onClick={() => addTag.mutate({ name: typed })}
-                    className="focus-ring rounded-full border border-dashed border-primary px-2 py-0.5 text-xs font-medium text-primary"
-                  >
-                    Criar “{typed}”
-                  </button>
+                {suggestions.length === 0 && (
+                  <span className="text-[11px] text-muted">Nenhuma etiqueta encontrada. As etiquetas são cadastradas em Automação › Etiquetas.</span>
                 )}
               </div>
               <button type="button" onClick={() => setAddingTag(false)} className="focus-ring mt-1.5 text-[11px] text-muted hover:underline">

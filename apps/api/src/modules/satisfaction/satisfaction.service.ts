@@ -156,8 +156,18 @@ type SurveyConversation = Prisma.ConversationGetPayload<{ select: typeof surveyC
  * The survey this conversation gets once it is closed — status aside, so it also answers for one that is still
  * open. Null when none is due.
  */
+/**
+ * Contacts with a tag marked "Não enviar pesquisa" (e.g. staff): never asked, and left out of every NPS — their
+ * older answers included.
+ */
+export async function npsExcludedContactIds(): Promise<string[]> {
+  const rows = await prisma.contactTag.findMany({ where: { tag: { skipSurvey: true } }, select: { contactId: true }, distinct: ["contactId"] });
+  return rows.map((r) => r.contactId);
+}
+
 async function surveyDueFor(conversation: SurveyConversation): Promise<SatisfactionSurveyConfig | null> {
   if (conversation.channel !== "WHATSAPP" || conversation.satisfactionSurvey) return null;
+  if (await prisma.contactTag.count({ where: { contactId: conversation.contactId, tag: { skipSurvey: true } } })) return null;
   // Only an attended conversation is rated — not one closed straight from the queue.
   if (!conversation.whatsappConnectionId || !conversation.assignedAgentId || !conversation.contact.phone) return null;
   const survey = await getSurveyFor(conversation.whatsappConnectionId);
@@ -533,6 +543,7 @@ function summarizeQuestion(
 export async function getSatisfactionSummary(params: { from: Date; to: Date; agentId?: string; connectionIds?: string[] }): Promise<SatisfactionSummaryDTO> {
   const where: Prisma.SatisfactionSurveyWhereInput = {
     sentAt: { gte: params.from, lte: params.to },
+    contactId: { notIn: await npsExcludedContactIds() },
     ...(params.agentId && { agentId: params.agentId }),
     ...(params.connectionIds && { whatsappConnectionId: { in: params.connectionIds } }),
   };
@@ -569,12 +580,14 @@ export async function getSatisfactionSummary(params: { from: Date; to: Date; age
 
 /** NPS (0 a 100) and number of answers per rated agent (0–10 scale only) — for Relatórios › Por atendente. */
 export async function getSatisfactionByAgent(params: { from: Date; to: Date; connectionIds?: string[] }) {
+  const excluded = await npsExcludedContactIds();
   const rows = await prisma.satisfactionSurvey.groupBy({
     by: ["agentId", "score"],
     where: {
       sentAt: { gte: params.from, lte: params.to },
       score: { not: null },
       questionId: { not: null },
+      contactId: { notIn: excluded },
       ...(params.connectionIds && { whatsappConnectionId: { in: params.connectionIds } }),
     },
     _count: { _all: true },
@@ -594,6 +607,7 @@ export async function getSatisfactionByAgent(params: { from: Date; to: Date; con
       score: null,
       expiresAt: { lte: new Date() },
       questionId: { not: null },
+      contactId: { notIn: excluded },
       ...(params.connectionIds && { whatsappConnectionId: { in: params.connectionIds } }),
     },
     _count: { _all: true },

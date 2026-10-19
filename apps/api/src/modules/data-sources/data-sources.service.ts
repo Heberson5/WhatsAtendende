@@ -377,7 +377,18 @@ export function buildContracts(rows: { id: string; data: Row }[], map: ColumnMap
       if (seen.has(key)) continue;
       seen.add(key);
       const daysLate = toInt(col(data, "daysLate"));
-      parcels.push({ id, document, due, daysLate, value: col(data, "parcelValue") || null, paymentMethod: col(data, "paymentMethod") || null, overdue: daysLate > 0 });
+      parcels.push({
+        id,
+        document,
+        due,
+        daysLate,
+        value: col(data, "parcelValue") || null,
+        fine: col(data, "fine") || null,
+        interest: col(data, "interest") || null,
+        updatedValue: col(data, "updatedValue") || null,
+        paymentMethod: col(data, "paymentMethod") || null,
+        overdue: daysLate > 0,
+      });
     }
     parcels.sort((a, b) => (parseBrDate(a.due ?? undefined)?.getTime() ?? 0) - (parseBrDate(b.due ?? undefined)?.getTime() ?? 0));
     const overdueCount = parcels.filter((p) => p.overdue).length;

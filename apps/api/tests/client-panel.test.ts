@@ -36,14 +36,17 @@ describe("client panel: tags, earlier conversations and internal notes", () => {
     await prisma.$disconnect();
   });
 
-  it("tags the contact (reusing an existing tag case-insensitively) and lists earlier conversations", async () => {
+  it("tags the contact with a registered tag (never creates one) and lists earlier conversations", async () => {
     await prisma.conversation.create({
       data: { contactId, whatsappConnectionId: connectionId, status: "CLOSED", enteredQueueAt: new Date("2026-09-01"), closedAt: new Date("2026-09-01T01:00:00Z"), assignedAgentId: ownerId },
     });
 
-    const first = await request(app).post(`/api/conversations/${conversationId}/contact-tags`).set("Authorization", `Bearer ${ownerToken}`).send({ name: "VIP" });
+    const vip = await prisma.tag.create({ data: { name: "VIP", color: "#0097B4" } });
+    const byName = await request(app).post(`/api/conversations/${conversationId}/contact-tags`).set("Authorization", `Bearer ${ownerToken}`).send({ name: "Novo" });
+    expect(byName.status).toBe(400);
+    const first = await request(app).post(`/api/conversations/${conversationId}/contact-tags`).set("Authorization", `Bearer ${ownerToken}`).send({ tagId: vip.id });
     expect(first.status).toBe(201);
-    const again = await request(app).post(`/api/conversations/${conversationId}/contact-tags`).set("Authorization", `Bearer ${ownerToken}`).send({ name: "vip" });
+    const again = await request(app).post(`/api/conversations/${conversationId}/contact-tags`).set("Authorization", `Bearer ${ownerToken}`).send({ tagId: vip.id });
     expect(again.status).toBe(201);
     expect(again.body.tags).toHaveLength(1);
     expect(await prisma.tag.count()).toBe(1);
@@ -63,7 +66,8 @@ describe("client panel: tags, earlier conversations and internal notes", () => {
   it("keeps another agent's conversation off limits", async () => {
     const panel = await request(app).get(`/api/conversations/${conversationId}/contact-panel`).set("Authorization", `Bearer ${otherToken}`);
     expect(panel.status).toBe(403);
-    const tag = await request(app).post(`/api/conversations/${conversationId}/contact-tags`).set("Authorization", `Bearer ${otherToken}`).send({ name: "VIP" });
+    const vip = await prisma.tag.create({ data: { name: "VIP", color: "#0097B4" } });
+    const tag = await request(app).post(`/api/conversations/${conversationId}/contact-tags`).set("Authorization", `Bearer ${otherToken}`).send({ tagId: vip.id });
     expect(tag.status).toBe(403);
     const note = await request(app).post(`/api/conversations/${conversationId}/notes`).set("Authorization", `Bearer ${otherToken}`).send({ body: "oi" });
     expect(note.status).toBe(403);

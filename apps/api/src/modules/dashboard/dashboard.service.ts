@@ -1,4 +1,5 @@
 import { prisma } from "../../lib/prisma";
+import { NO_RETURN_CLOSE_REASON } from "../conversations/conversations.service";
 import { firstResponseDiffs } from "../../lib/conversation-timings";
 import type { ArrivalsByHourDTO } from "@whatsatendende/types";
 import type { WorkSchedule } from "@prisma/client";
@@ -44,6 +45,7 @@ export async function getDashboard({ from, to, agentId, connectionIds }: Dashboa
         acceptedAt: true,
         firstResponseAt: true,
         closedAt: true,
+        closeReason: true,
         assignedAgentId: true,
       },
     }),
@@ -109,6 +111,8 @@ export async function getDashboard({ from, to, agentId, connectionIds }: Dashboa
       unique: uniqueContacts,
       inProgress: (statusCounts.IN_PROGRESS ?? 0) + (statusCounts.TRANSFERRED ?? 0),
       closed: statusCounts.CLOSED ?? 0,
+      // Part of `closed`, shown apart: closed for "falta de retorno" (the customer stopped answering).
+      closedNoReturn: conversationsInPeriod.filter((c) => c.status === "CLOSED" && c.closeReason === NO_RETURN_CLOSE_REASON).length,
       waiting: waitingCount,
     },
     messages: { received, sent, total: received + sent },
@@ -244,7 +248,7 @@ async function getPerAgentBreakdown(from: Date, to: Date, connectionFilter?: { i
     agents.map(async (agent) => {
       const conversations = await prisma.conversation.findMany({
         where: { assignedAgentId: agent.id, createdAt: { gte: from, lte: to }, ...(connectionFilter ? { whatsappConnectionId: connectionFilter } : {}) },
-        select: { id: true, acceptedAt: true, closedAt: true, enteredQueueAt: true },
+        select: { id: true, status: true, closeReason: true, acceptedAt: true, closedAt: true, enteredQueueAt: true },
       });
       const sentCount = await prisma.message.count({
         where: {
@@ -273,6 +277,7 @@ async function getPerAgentBreakdown(from: Date, to: Date, connectionFilter?: { i
         agentId: agent.id,
         agentName: agent.displayName,
         conversations: conversations.length,
+        closedNoReturn: conversations.filter((c) => c.status === "CLOSED" && c.closeReason === NO_RETURN_CLOSE_REASON).length,
         messagesSent: sentCount,
         messagesReceived: receivedCount,
         avgHandlingMs: avgMs(handlingDiffs),

@@ -3,7 +3,7 @@ import { COLUMN_SCREENS, DEFAULT_PHONE_SETTINGS, brazilianPhoneVariants, normali
 import type { ContactDetailDTO, ContactImportResultDTO, ContactListItemDTO, ContactSortField, ManagedTagDTO, PhoneSettingsDTO, TagDTO } from "@whatsatendende/types";
 import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
-import { findOrCreateTag, toTagDTO } from "../client-panel/client-panel.service";
+import { toTagDTO } from "../client-panel/client-panel.service";
 import { getPhoneSettings } from "../phone-numbers/phone-settings.service";
 
 /**
@@ -254,7 +254,8 @@ export async function importContactsCsv(csv: string, whatsappConnectionId: strin
   if (col.phone === -1) throw Errors.badRequest('A planilha precisa de uma coluna "Telefone"');
 
   const result: ContactImportResultDTO = { created: 0, updated: 0, errors: [] };
-  const tagCache = new Map<string, TagDTO>();
+  // Only tags already in Automação › Etiquetas — an unknown name is reported, never created.
+  const tagsByName = new Map((await prisma.tag.findMany()).map((t) => [t.name.toLowerCase(), t]));
   const phoneSettings = await getPhoneSettings();
   for (let i = 1; i < lines.length; i++) {
     const cells = splitCsvLine(lines[i], delimiter);
@@ -276,9 +277,11 @@ export async function importContactsCsv(csv: string, whatsappConnectionId: strin
     else result.created++;
 
     for (const tagName of tagNames) {
-      const key = tagName.toLowerCase();
-      const tag = tagCache.get(key) ?? (await findOrCreateTag(tagName));
-      tagCache.set(key, tag);
+      const tag = tagsByName.get(tagName.toLowerCase());
+      if (!tag) {
+        result.errors.push({ line: i + 1, reason: `Etiqueta "${tagName}" não está cadastrada em Automação › Etiquetas` });
+        continue;
+      }
       await prisma.contactTag.upsert({
         where: { contactId_tagId: { contactId: contact.id, tagId: tag.id } },
         update: {},
@@ -301,12 +304,12 @@ async function assertTagNameFree(name: string, excludeId?: string) {
   if (clash) throw Errors.conflict(`Já existe a etiqueta "${clash.name}"`);
 }
 
-export async function createTag(input: { name: string; color: string }): Promise<TagDTO> {
+export async function createTag(input: { name: string; color: string; skipSurvey: boolean }): Promise<TagDTO> {
   await assertTagNameFree(input.name);
   return toTagDTO(await prisma.tag.create({ data: input }));
 }
 
-export async function updateTag(id: string, input: { name?: string; color?: string }): Promise<TagDTO> {
+export async function updateTag(id: string, input: { name?: string; color?: string; skipSurvey?: boolean }): Promise<TagDTO> {
   const tag = await prisma.tag.findUnique({ where: { id } });
   if (!tag) throw Errors.notFound("Etiqueta não encontrada");
   if (input.name) await assertTagNameFree(input.name, id);

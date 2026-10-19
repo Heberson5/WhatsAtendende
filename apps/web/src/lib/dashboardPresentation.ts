@@ -30,7 +30,7 @@ import {
  */
 
 export interface DashboardSnapshot {
-  conversations: { received: number; unique: number; inProgress: number; closed: number; waiting: number };
+  conversations: { received: number; unique: number; inProgress: number; closed: number; closedNoReturn: number; waiting: number };
   messages: { received: number; sent: number; total: number };
   timings: { avgAcceptMs: number | null; avgFirstResponseMs: number | null; avgHandlingMs: number | null; avgClosingMs: number | null };
   perAgent: { agentId: string; agentName: string; conversations: number; messagesSent: number; messagesReceived: number; avgHandlingMs: number | null }[];

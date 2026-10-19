@@ -32,6 +32,7 @@ export const TITLES: Record<string, string> = {
   "/landing-page": "Landing Page",
   "/respostas": "Respostas",
   "/fluxo": "Fluxo",
+  "/etiquetas": "Etiquetas",
   "/notas-de-versao": "Notas de versão",
 };
 

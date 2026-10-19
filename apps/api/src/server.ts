@@ -8,6 +8,7 @@ import { realtimeEvents } from "./realtime/realtime";
 import { processDueClosingMessages } from "./modules/satisfaction/satisfaction.service";
 import { runHolidaySyncIfDue } from "./modules/holidays/holidays.service";
 import { sendNoReplyRemindersIfDue, sendQueueRemindersIfDue } from "./lib/queue-reminder";
+import { processNoReturnConversations } from "./modules/conversations/no-return.service";
 import { endIdleSessions } from "./modules/auth/auth.service";
 import { syncDefaultReleaseNotes } from "./modules/release-notes/release-notes.service";
 import { syncDefaultFlows } from "./modules/flows/default-flows";
@@ -80,6 +81,7 @@ async function main() {
   const queueReminderTimer = setInterval(() => {
     sendQueueRemindersIfDue().catch((err) => logger.error({ err }, "failed to check/send queue reminders"));
     sendNoReplyRemindersIfDue().catch((err) => logger.error({ err }, "failed to check/send no-reply reminders"));
+    processNoReturnConversations().catch((err) => logger.error({ err }, "failed to process falta de retorno"));
   }, QUEUE_REMINDER_CHECK_INTERVAL_MS);
   queueReminderTimer.unref();
 

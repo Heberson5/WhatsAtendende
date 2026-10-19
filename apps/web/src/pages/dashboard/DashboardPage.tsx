@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { CheckCircle2, Clock, Inbox, MessageSquare, Presentation, Timer, Users } from "lucide-react";
+import { CheckCircle2, Clock, Inbox, MessageSquare, MessageSquareOff, Presentation, Timer, Users } from "lucide-react";
 import { toast } from "sonner";
 import { PERMISSION, type ArrivalsByHourDTO, type PresenceByHourDTO, type SatisfactionOverviewDTO, type SatisfactionReportDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
@@ -28,10 +28,10 @@ interface AgentOption {
 }
 
 interface DashboardData {
-  conversations: { received: number; unique: number; inProgress: number; closed: number; waiting: number };
+  conversations: { received: number; unique: number; inProgress: number; closed: number; closedNoReturn: number; waiting: number };
   messages: { received: number; sent: number; total: number };
   timings: { avgAcceptMs: number | null; avgFirstResponseMs: number | null; avgHandlingMs: number | null; avgClosingMs: number | null };
-  perAgent: { agentId: string; agentName: string; conversations: number; messagesSent: number; messagesReceived: number; avgHandlingMs: number | null }[];
+  perAgent: { agentId: string; agentName: string; conversations: number; closedNoReturn: number; messagesSent: number; messagesReceived: number; avgHandlingMs: number | null }[];
   users: { online: number; active: number; total: number };
   previous: { received: number; unique: number; closed: number; messagesTotal: number; avgFirstResponseMs: number | null };
 }
@@ -402,6 +402,12 @@ export default function DashboardPage() {
                 icon={MessageSquare}
                 onClick={canOpenGestao ? () => goToGestao(["IN_PROGRESS", "TRANSFERRED"], true) : undefined}
                 goToLabel="Ver na Gestão →"
+              />
+              <StatCard
+                label="Sem retorno do cliente"
+                value={data.conversations.closedNoReturn}
+                icon={MessageSquareOff}
+                hint={`de ${data.conversations.closed.toLocaleString("pt-BR")} encerradas`}
               />
               <StatCard label="Mensagens recebidas" value={data.messages.received.toLocaleString("pt-BR")} icon={MessageSquare} />
               <StatCard label="Mensagens enviadas" value={data.messages.sent.toLocaleString("pt-BR")} icon={MessageSquare} />

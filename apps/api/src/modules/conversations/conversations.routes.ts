@@ -16,9 +16,10 @@ import { resolveAllowedConnectionIds, canManagerAccessConnection } from "../../l
 import { toConversationListItemDTO } from "./conversations.mapper";
 import * as service from "./conversations.service";
 import { realtimeEvents } from "../../realtime/realtime";
-import { syncReadReceiptToDevice, requestOlderHistory, sendOutboundText } from "../whatsapp/whatsapp.service";
-import { sendMetaMessage } from "../meta/meta.service";
+import { syncReadReceiptToDevice, requestOlderHistory } from "../whatsapp/whatsapp.service";
 import { createOutboundMessage, createSystemOutboundMessage } from "../messages/messages.service";
+import { sendOutboundTextViaChannel } from "../messages/send-via-channel";
+import { closeForNoReturn, setNoReturnHold } from "./no-return.service";
 import { getActiveClosingMessageForAgent } from "../closing-messages/closing-messages.service";
 import { resolveNumberToStart } from "../phone-numbers/resolve-number.service";
 import { closingMessageType, sendClosingMedia, willSendSurveyOnClose, type HeldClosingMessage } from "../satisfaction/satisfaction.service";
@@ -257,24 +258,6 @@ conversationsRouter.get(
 // of which table it's actually from.
 function connectionIdOf(conversation: { whatsappConnectionId: string | null; metaConnectionId: string | null }): string {
   return conversation.whatsappConnectionId ?? conversation.metaConnectionId!;
-}
-
-// Shared by sendAutoMessage below and the closing-message sends in
-// /gestao-close and /close — a conversation's connection is exactly one of
-// whatsappConnectionId/metaConnectionId depending on `channel` (see
-// Channel's doc comment in schema.prisma); Instagram/Messenger support
-// plain text via the same Send API metaService.sendMetaMessage already
-// uses for agent-typed replies (see messages.routes.ts's /text route).
-async function sendOutboundTextViaChannel(
-  conversation: { channel: Channel; whatsappConnectionId: string | null; contact: { phone: string | null; externalUserId: string | null } },
-  messageId: string,
-  text: string,
-  senderDisplayName: string | null
-) {
-  if (conversation.channel === "WHATSAPP") {
-    return sendOutboundText(conversation.whatsappConnectionId!, messageId, conversation.contact.phone!, text, senderDisplayName);
-  }
-  return sendMetaMessage(conversation.channel, messageId, conversation.contact.externalUserId!, text);
 }
 
 async function sendAutoMessage(
@@ -672,6 +655,42 @@ conversationsRouter.post(
     const conversation = await service.closeConversation(req.params.id, req.auth!.userId, heldClosingMessage);
     await writeAudit({ userId: req.auth!.userId, action: "CONVERSATION_CLOSED", entity: "Conversation", entityId: conversation.id, ipAddress: req.ip ?? null });
     realtimeEvents.conversationClosed(conversation.id, req.auth!.userId);
+    res.json(toConversationListItemDTO(conversation, true));
+  })
+);
+
+// "Encerrar por falta de retorno": the no-return message goes out, no satisfaction survey, counted apart in the reports.
+conversationsRouter.post(
+  "/:id/close-no-return",
+  requireAttendanceAccess,
+  requirePermission(PERMISSION.ATENDIMENTO_ENCERRAR),
+  asyncHandler(async (req, res) => {
+    const existing = await service.getConversationOrThrow(req.params.id);
+    service.assertAgentCanAccessConversation(existing, req.auth!);
+    service.assertCanReplyToConversation(existing, req.auth!.userId);
+    const conversation = await closeForNoReturn(existing.id, req.auth!.userId);
+    await writeAudit({
+      userId: req.auth!.userId,
+      action: "CONVERSATION_CLOSED",
+      entity: "Conversation",
+      entityId: conversation.id,
+      ipAddress: req.ip ?? null,
+      metadata: { reason: "NO_RETURN" },
+    });
+    res.json(toConversationListItemDTO(conversation, true));
+  })
+);
+
+// "Aguardar cliente" / "Manter aberta": pauses (or resumes) the automatic close for falta de retorno.
+conversationsRouter.post(
+  "/:id/no-return-hold",
+  requireAttendanceAccess,
+  asyncHandler(async (req, res) => {
+    const { hold } = z.object({ hold: z.boolean() }).strict().parse(req.body ?? {});
+    const existing = await service.getConversationOrThrow(req.params.id);
+    service.assertAgentCanAccessConversation(existing, req.auth!);
+    service.assertCanReplyToConversation(existing, req.auth!.userId);
+    const conversation = await setNoReturnHold(existing.id, hold);
     res.json(toConversationListItemDTO(conversation, true));
   })
 );

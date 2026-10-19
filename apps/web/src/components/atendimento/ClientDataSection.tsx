@@ -73,7 +73,7 @@ function ContractCard({ contract, conversationId, canSendBoleto }: { contract: C
             {contract.parcels.map((parcel, index) => {
               const noBoleto = NO_BOLETO_METHODS.some((re) => re.test(parcel.paymentMethod ?? ""));
               return (
-                <li key={parcel.id} className="flex items-center gap-1.5">
+                <li key={parcel.id} className="flex flex-wrap items-center gap-x-1.5">
                   {canSendBoleto && (
                     <input
                       type="checkbox"
@@ -90,6 +90,19 @@ function ContractCard({ contract, conversationId, canSendBoleto }: { contract: C
                     {parcel.overdue ? `${parcel.daysLate} dias de atraso` : "a vencer"}
                     {noBoleto && ` · ${parcel.paymentMethod}`}
                   </span>
+                  {(parcel.fine || parcel.interest || parcel.updatedValue) && (
+                    <span className={clsx("basis-full tabular-nums text-muted", canSendBoleto && "ps-5")}>
+                      {parcel.fine && `multa ${parcel.fine}`}
+                      {parcel.fine && parcel.interest && " · "}
+                      {parcel.interest && `juros ${parcel.interest}`}
+                      {parcel.updatedValue && (
+                        <>
+                          {(parcel.fine || parcel.interest) && " · "}
+                          atualizado <strong className="font-semibold text-text">{parcel.updatedValue}</strong>
+                        </>
+                      )}
+                    </span>
+                  )}
                 </li>
               );
             })}

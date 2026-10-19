@@ -21,7 +21,7 @@ vi.mock("../../components/dashboard/PresenceByHourChart", () => ({ PresenceByHou
 vi.mock("../../components/dashboard/ArrivalsByHourChart", () => ({ ArrivalsByHourChart: () => null }));
 
 const DASHBOARD = {
-  conversations: { received: 10, unique: 8, inProgress: 2, closed: 7, waiting: 1 },
+  conversations: { received: 10, unique: 8, inProgress: 2, closed: 7, closedNoReturn: 1, waiting: 1 },
   messages: { received: 40, sent: 50, total: 90 },
   timings: { avgAcceptMs: 60000, avgFirstResponseMs: 120000, avgHandlingMs: 600000, avgClosingMs: 700000 },
   perAgent: [],

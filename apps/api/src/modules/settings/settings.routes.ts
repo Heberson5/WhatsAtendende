@@ -395,6 +395,41 @@ settingsRouter.patch(
   })
 );
 
+// Encerramento por falta de retorno (Respostas › Encerramento): who edits the closing messages edits this rule too.
+const noReturnSettingsSchema = z
+  .object({
+    enabled: z.boolean(),
+    reminderMinutes: z.number().int().min(1).max(240),
+    closeMinutes: z.number().int().min(1).max(240),
+    reminderText: z.string().trim().min(1).max(1000),
+    closeText: z.string().trim().min(1).max(1000),
+  })
+  .strict();
+
+settingsRouter.get(
+  "/no-return",
+  asyncHandler(async (_req, res) => {
+    res.json(await service.getNoReturnSettings());
+  })
+);
+
+settingsRouter.put(
+  "/no-return",
+  requirePermission(PERMISSION.RESPOSTAS_ENCERRAMENTO_EDITAR),
+  asyncHandler(async (req, res) => {
+    const input = noReturnSettingsSchema.parse(req.body ?? {});
+    await service.updateBusinessSettings({
+      noReturnEnabled: input.enabled,
+      noReturnReminderMinutes: input.reminderMinutes,
+      noReturnCloseMinutes: input.closeMinutes,
+      noReturnReminderText: input.reminderText,
+      noReturnCloseText: input.closeText,
+    });
+    await writeAudit({ userId: req.auth!.userId, action: "SETTINGS_NO_RETURN_UPDATED", entity: "SystemSetting", entityId: "business", ipAddress: req.ip ?? null, metadata: input });
+    res.json(await service.getNoReturnSettings());
+  })
+);
+
 // Its own route/permission pair (not folded into the generic /business PATCH
 // above) so the new "Fila" tab's own CONFIGURACOES_FILA_EDITAR permission
 // governs just this one field — same SystemSetting "business" bag

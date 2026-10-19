@@ -9,7 +9,6 @@ import { api, getApiErrorMessage } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
 import { ContactDrawer } from "./ContactDrawer";
 import { ImportContactsModal } from "./ImportContactsModal";
-import { TagsManagerDrawer } from "./TagsManagerDrawer";
 import { TagChip, formatContactPhone } from "./contactFormat";
 import { ColumnViewMenu } from "../../components/common/ColumnViewMenu";
 import { useColumnView } from "../../hooks/useColumnView";
@@ -104,7 +103,7 @@ function SortHeader({ column, sort, onSort }: { column: SortColumn; sort: { fiel
 export default function ContatosPage() {
   const permissions = useAuthStore((s) => s.permissions);
   const canImportExport = permissions?.[PERMISSION.CONTATOS_IMPORTAR_EXPORTAR];
-  const canManageTags = permissions?.[PERMISSION.CONTATOS_ETIQUETAS_GERENCIAR];
+  const canManageTags = permissions?.[PERMISSION.ETIQUETAS_VISUALIZAR];
   const canAttend = permissions?.[PERMISSION.ATENDIMENTO_ACESSAR];
   const isAgent = useAuthStore((s) => s.user?.role === "AGENT");
   const navigate = useNavigate();
@@ -119,7 +118,6 @@ export default function ContatosPage() {
   const [page, setPage] = useState(1);
   const [openContactId, setOpenContactId] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
-  const [tagsOpen, setTagsOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
@@ -190,7 +188,7 @@ export default function ContatosPage() {
           {canManageTags && (
             <button
               type="button"
-              onClick={() => setTagsOpen(true)}
+              onClick={() => navigate("/etiquetas")}
               className="focus-ring flex items-center gap-1.5 rounded-card border border-border bg-surface px-3 py-2 text-sm font-medium hover:bg-surface-alt"
             >
               <Tags className="h-4 w-4" /> Etiquetas
@@ -364,7 +362,6 @@ export default function ContatosPage() {
 
       {openContactId && <ContactDrawer contactId={openContactId} tags={tags ?? []} onClose={() => setOpenContactId(null)} />}
       {importOpen && <ImportContactsModal connections={connections ?? []} onClose={() => setImportOpen(false)} />}
-      {tagsOpen && <TagsManagerDrawer onClose={() => setTagsOpen(false)} />}
     </div>
   );
 }

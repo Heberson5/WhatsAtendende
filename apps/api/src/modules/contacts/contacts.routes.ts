@@ -104,17 +104,17 @@ contactsRouter.post(
 
 contactsRouter.get(
   "/tags",
-  requirePermission(PERMISSION.CONTATOS_ETIQUETAS_GERENCIAR),
+  requirePermission(PERMISSION.ETIQUETAS_VISUALIZAR),
   asyncHandler(async (_req, res) => {
     res.json(await service.listManagedTags());
   })
 );
 
-const tagSchema = z.object({ name: z.string().trim().min(1).max(40), color: z.string().regex(HEX_COLOR) });
+const tagSchema = z.object({ name: z.string().trim().min(1).max(40), color: z.string().regex(HEX_COLOR), skipSurvey: z.boolean().default(false) });
 
 contactsRouter.post(
   "/tags",
-  requirePermission(PERMISSION.CONTATOS_ETIQUETAS_GERENCIAR),
+  requirePermission(PERMISSION.ETIQUETAS_ADICIONAR),
   asyncHandler(async (req, res) => {
     const input = tagSchema.parse(req.body);
     const tag = await service.createTag(input);
@@ -125,7 +125,7 @@ contactsRouter.post(
 
 contactsRouter.patch(
   "/tags/:tagId",
-  requirePermission(PERMISSION.CONTATOS_ETIQUETAS_GERENCIAR),
+  requirePermission(PERMISSION.ETIQUETAS_EDITAR),
   asyncHandler(async (req, res) => {
     const input = tagSchema.partial().parse(req.body);
     const tag = await service.updateTag(req.params.tagId, input);
@@ -136,7 +136,7 @@ contactsRouter.patch(
 
 contactsRouter.delete(
   "/tags/:tagId",
-  requirePermission(PERMISSION.CONTATOS_ETIQUETAS_GERENCIAR),
+  requirePermission(PERMISSION.ETIQUETAS_EXCLUIR),
   asyncHandler(async (req, res) => {
     await service.deleteTag(req.params.tagId);
     await writeAudit({ userId: req.auth!.userId, action: "TAG_DELETED", entity: "Tag", entityId: req.params.tagId, ipAddress: req.ip ?? null });

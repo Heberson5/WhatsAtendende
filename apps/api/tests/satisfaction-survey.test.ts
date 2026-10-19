@@ -167,6 +167,22 @@ describe("Pesquisa de satisfação (NPS)", () => {
     expect(parseSurveyScore("o pedido 1 chegou quebrado, quero trocar")).toBeNull();
   });
 
+  it("contato com etiqueta \"Não enviar pesquisa\" não recebe pesquisa e sai do NPS, inclusive das respostas antigas", async () => {
+    await configure([connectionId]);
+    const { contact } = await closeAndAnswer("5511900000001", "9");
+    expect((await getSatisfactionSummary(PERIOD())).answered).toBe(1);
+
+    const tag = await prisma.tag.create({ data: { name: "Funcionário", color: "#000000", skipSurvey: true } });
+    await prisma.contactTag.create({ data: { contactId: contact.id, tagId: tag.id } });
+    expect(await getSatisfactionSummary(PERIOD())).toEqual({ sent: 0, answered: 0, questions: [] });
+    expect((await getSatisfactionByAgent(PERIOD())).size).toBe(0);
+
+    const again = await prisma.conversation.create({
+      data: { contactId: contact.id, whatsappConnectionId: connectionId, status: "IN_PROGRESS", assignedAgentId: agentId, enteredQueueAt: new Date(), acceptedAt: new Date() },
+    });
+    expect(await willSendSurveyOnClose(again.id)).toBe(false);
+  });
+
   it("entende notas escritas de outro jeito, sem adivinhar quando há dúvida", () => {
     // Respostas reais de clientes.
     expect(parseSurveyScore("Precisei primeira vez posso da 10")).toBe(10);
