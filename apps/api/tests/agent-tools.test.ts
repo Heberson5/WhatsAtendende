@@ -143,16 +143,33 @@ describe("Atendimento: fixar, lembrar de retornar, agendar envio, Meu dia e digi
   });
 
   it("Meu dia conta os encerrados de hoje e mostra a meta configurada", async () => {
-    await request(app).patch("/api/settings/queue").set(as(adminToken)).send({ dailyConversationGoal: 12 }).expect(200);
+    const goal = await request(app).post("/api/goals").set(as(adminToken)).send({ type: "CLOSED_PER_DAY", target: 12 }).expect(201);
     const { conversation } = await acceptedConversation();
     const before = (await request(app).get("/api/agent-tools/my-day").set(as(agentToken))).body;
     await prisma.conversation.update({ where: { id: conversation.id }, data: { status: "CLOSED", closedAt: new Date() } });
     const after = (await request(app).get("/api/agent-tools/my-day").set(as(agentToken))).body;
-    expect(after.goal).toBe(12);
+    expect(after.goals).toEqual([{ type: "CLOSED_PER_DAY", target: 12, current: before.closedToday + 1, achieved: false }]);
     expect(after.closedToday).toBe(before.closedToday + 1);
 
-    await request(app).patch("/api/settings/queue").set(as(adminToken)).send({ dailyConversationGoal: null }).expect(200);
-    expect((await request(app).get("/api/agent-tools/my-day").set(as(agentToken))).body.goal).toBeNull();
+    await request(app).put(`/api/goals/${goal.body.id}`).set(as(adminToken)).send({ type: "CLOSED_PER_DAY", target: 12, active: false }).expect(200);
+    expect((await request(app).get("/api/agent-tools/my-day").set(as(agentToken))).body.goals).toEqual([]);
+    await request(app).delete(`/api/goals/${goal.body.id}`).set(as(adminToken)).expect(204);
+  });
+
+  it("a meta mais específica vale: atendente > conexão > todos", async () => {
+    const created = [
+      await request(app).post("/api/goals").set(as(adminToken)).send({ type: "CLOSED_PER_DAY", target: 10 }),
+      await request(app).post("/api/goals").set(as(adminToken)).send({ type: "CLOSED_PER_DAY", target: 20, scope: "CONNECTIONS", connectionIds: [connectionId] }),
+      await request(app).post("/api/goals").set(as(adminToken)).send({ type: "NPS", target: 70 }),
+    ];
+    const goalsOf = async (token: string) => (await request(app).get("/api/agent-tools/my-day").set(as(token))).body.goals as { type: string; target: number }[];
+    expect((await goalsOf(agentToken)).find((g) => g.type === "CLOSED_PER_DAY")?.target).toBe(20);
+    const forAgent = await request(app).post("/api/goals").set(as(adminToken)).send({ type: "CLOSED_PER_DAY", target: 30, scope: "AGENTS", agentIds: [agentId] });
+    expect((await goalsOf(agentToken)).find((g) => g.type === "CLOSED_PER_DAY")?.target).toBe(30);
+    expect((await goalsOf(agentToken)).find((g) => g.type === "NPS")?.target).toBe(70);
+    const agentOnlyToConnection = await request(app).post("/api/goals").set(as(adminToken)).send({ type: "AVG_FIRST_RESPONSE", target: 3, scope: "AGENTS", agentIds: [] });
+    expect(agentOnlyToConnection.status).toBe(400);
+    for (const g of [...created, forAgent]) await request(app).delete(`/api/goals/${g.body.id}`).set(as(adminToken)).expect(204);
   });
 
   it("repassa \"digitando…\" do cliente para a conversa aberta", async () => {

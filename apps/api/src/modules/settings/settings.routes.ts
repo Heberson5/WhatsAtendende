@@ -403,7 +403,6 @@ settingsRouter.patch(
 const queueSettingsSchema = z
   .object({
     queueReminderIntervalMinutes: z.number().int().min(1).max(60).optional(),
-    dailyConversationGoal: z.number().int().min(1).max(500).nullable().optional(),
     noReplyWarningMinutes: z.number().int().min(1).max(240).optional(),
     noReplyDangerMinutes: z.number().int().min(1).max(240).optional(),
     queueWarningMinutes: z.number().int().min(1).max(240).optional(),

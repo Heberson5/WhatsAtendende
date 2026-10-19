@@ -223,8 +223,6 @@ const DEFAULT_BUSINESS_SETTINGS = {
   noReplyDangerMinutes: 15,
   queueWarningMinutes: 5,
   queueDangerMinutes: 10,
-  // Conversations each attendant aims to close per day — the bar under "Meu dia" in Atendimento. null = no goal.
-  dailyConversationGoal: null as number | null,
 };
 
 export async function updateBusinessSettings(patch: Record<string, unknown>) {

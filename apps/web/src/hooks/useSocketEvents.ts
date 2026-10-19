@@ -89,6 +89,7 @@ export function useSocketEvents(activeConversationId: string | null) {
     // sync) — refresh so the unread badge here matches what's already read
     // on the phone, without waiting for the 20s poll.
     const onConversationRead = () => queryClient.invalidateQueries({ queryKey: ["mine"] });
+    const onGoalsChanged = () => queryClient.invalidateQueries({ queryKey: ["my-day"] });
     const onOversightUpdated = () => queryClient.invalidateQueries({ queryKey: ["oversight"] });
     const onNotes = (payload: { conversationId: string }) => queryClient.invalidateQueries({ queryKey: ["notes", payload.conversationId] });
     // Gestão › Intervir started/ended: the agent's chat locks or unlocks, the manager's panel follows.
@@ -161,6 +162,7 @@ export function useSocketEvents(activeConversationId: string | null) {
     socket.on("message:inbound-notification", onInboundNotification);
     socket.on("message:status", onMessageStatus);
     socket.on("conversation:read", onConversationRead);
+    socket.on("goals:changed", onGoalsChanged);
     socket.on("oversight:updated", onOversightUpdated);
     socket.on("conversation:intervention", onIntervention);
     socket.on("conversation:notes", onNotes);
@@ -187,6 +189,7 @@ export function useSocketEvents(activeConversationId: string | null) {
       socket.off("message:inbound-notification", onInboundNotification);
       socket.off("message:status", onMessageStatus);
       socket.off("conversation:read", onConversationRead);
+      socket.off("goals:changed", onGoalsChanged);
       socket.off("oversight:updated", onOversightUpdated);
       socket.off("conversation:intervention", onIntervention);
       socket.off("conversation:notes", onNotes);

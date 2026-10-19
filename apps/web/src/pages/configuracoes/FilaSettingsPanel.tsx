@@ -3,13 +3,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { PERMISSION } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
+import { GoalsPanel } from "./GoalsPanel";
 import { UnsavedChangesBar } from "../../components/common/UnsavedChangesBar";
 import { useAuthStore } from "../../store/auth-store";
 import { DEFAULT_ALERT_THRESHOLDS, type AlertThresholds } from "../../hooks/useAlertThresholds";
 
 interface BusinessSettings extends Partial<AlertThresholds> {
   queueReminderIntervalMinutes?: number;
-  dailyConversationGoal?: number | null;
 }
 
 const MAX_ALERT_MINUTES = 240;
@@ -22,7 +22,6 @@ const ALERT_FIELDS: { key: keyof AlertThresholds; label: string }[] = [
 
 const MIN_MINUTES = 1;
 const MAX_MINUTES = 60; // matches the backend's zod schema
-const MAX_GOAL = 500;
 
 export function FilaSettingsPanel() {
   const queryClient = useQueryClient();
@@ -36,29 +35,23 @@ export function FilaSettingsPanel() {
   });
 
   const [minutes, setMinutes] = useState(1);
-  // Empty = no goal: "Meu dia" in Atendimento shows no bar.
-  const [goal, setGoal] = useState("");
-  const savedGoal = data?.dailyConversationGoal ? String(data.dailyConversationGoal) : "";
   const savedAlerts: AlertThresholds = { ...DEFAULT_ALERT_THRESHOLDS, ...data };
   const [alerts, setAlerts] = useState<AlertThresholds>(DEFAULT_ALERT_THRESHOLDS);
   useEffect(() => {
     if (data?.queueReminderIntervalMinutes) setMinutes(data.queueReminderIntervalMinutes);
-    setGoal(data?.dailyConversationGoal ? String(data.dailyConversationGoal) : "");
     setAlerts({ ...DEFAULT_ALERT_THRESHOLDS, ...data });
   }, [data]);
-  const goalValid = goal === "" || (Number.isInteger(Number(goal)) && Number(goal) >= 1 && Number(goal) <= MAX_GOAL);
   const alertsValid =
     Object.values(alerts).every((v) => Number.isInteger(v) && v >= 1 && v <= MAX_ALERT_MINUTES) &&
     alerts.noReplyDangerMinutes > alerts.noReplyWarningMinutes &&
     alerts.queueDangerMinutes > alerts.queueWarningMinutes;
   const alertsDirty = ALERT_FIELDS.some(({ key }) => alerts[key] !== savedAlerts[key]);
-  const canSave = minutes >= MIN_MINUTES && minutes <= MAX_MINUTES && goalValid && alertsValid;
+  const canSave = minutes >= MIN_MINUTES && minutes <= MAX_MINUTES && alertsValid;
 
   const saveMutation = useMutation({
-    mutationFn: () => api.patch("/settings/queue", { queueReminderIntervalMinutes: minutes, dailyConversationGoal: goal === "" ? null : Number(goal), ...alerts }),
+    mutationFn: () => api.patch("/settings/queue", { queueReminderIntervalMinutes: minutes, ...alerts }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["business-settings"] });
-      queryClient.invalidateQueries({ queryKey: ["my-day"] });
       toast.success("Configurações da fila salvas.");
     },
     onError: (err) => toast.error(getApiErrorMessage(err)),
@@ -113,28 +106,6 @@ export function FilaSettingsPanel() {
         {!alertsValid && <p className="mt-2 text-xs text-danger">O vermelho precisa vir depois do amarelo (entre 1 e {MAX_ALERT_MINUTES} minutos).</p>}
       </div>
 
-      <div className="border-t border-border pt-5">
-        <h2 className="text-base font-semibold">Meta diária</h2>
-        <p className="mt-1 text-sm text-muted">
-          Quantos atendimentos cada atendente deve encerrar por dia. Aparece como uma barra de progresso no &quot;Meu dia&quot;, em Atendimento. Deixe em branco
-          para não mostrar meta.
-        </p>
-        <label className="mt-3 block max-w-xs">
-          <span className="mb-1 block text-sm font-medium">Atendimentos encerrados por dia</span>
-          <input
-            type="number"
-            min={1}
-            max={MAX_GOAL}
-            step={1}
-            value={goal}
-            placeholder="Sem meta"
-            disabled={!canEditar}
-            onChange={(e) => setGoal(e.target.value)}
-            className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm disabled:opacity-60"
-          />
-        </label>
-      </div>
-
       {canEditar && (
         <button
           onClick={() => saveMutation.mutate()}
@@ -144,15 +115,16 @@ export function FilaSettingsPanel() {
           Salvar configuração
         </button>
       )}
+
+      <GoalsPanel />
       {canEditar && data && (
         <UnsavedChangesBar
-          dirty={(data.queueReminderIntervalMinutes !== undefined && minutes !== data.queueReminderIntervalMinutes) || goal !== savedGoal || alertsDirty}
+          dirty={(data.queueReminderIntervalMinutes !== undefined && minutes !== data.queueReminderIntervalMinutes) || alertsDirty}
           saving={saveMutation.isPending}
           canSave={canSave}
           onSave={() => saveMutation.mutate()}
           onDiscard={() => {
             setMinutes(data.queueReminderIntervalMinutes ?? 1);
-            setGoal(savedGoal);
             setAlerts(savedAlerts);
           }}
         />

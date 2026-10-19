@@ -2115,6 +2115,35 @@ export interface MyDayDTO {
   avgFirstResponseMs: number | null;
   /** This attendant's NPS (0 to 100) this month; null without answers. */
   npsThisMonth: number | null;
-  /** Configurações › Fila › meta diária; null = no goal. */
-  goal: number | null;
+  /** Progress on each active goal that applies to this attendant (see GoalDTO). */
+  goals: MyDayGoalDTO[];
+}
+
+export type GoalType = "CLOSED_PER_DAY" | "AVG_FIRST_RESPONSE" | "NPS";
+export type GoalScope = "ALL" | "CONNECTIONS" | "AGENTS";
+
+export const GOAL_TYPE_LABEL: Record<GoalType, string> = {
+  CLOSED_PER_DAY: "Encerradas por dia",
+  AVG_FIRST_RESPONSE: "Tempo médio de 1ª resposta (min)",
+  NPS: "NPS do mês",
+};
+
+/** Metas (Configurações › Fila). When several active goals of a type match someone, the most specific wins: AGENTS > CONNECTIONS > ALL. */
+export interface GoalDTO {
+  id: string;
+  type: GoalType;
+  /** Count (CLOSED_PER_DAY), minutes (AVG_FIRST_RESPONSE, lower is better) or NPS (-100..100). */
+  target: number;
+  active: boolean;
+  scope: GoalScope;
+  connectionIds: string[];
+  agentIds: string[];
+}
+
+export interface MyDayGoalDTO {
+  type: GoalType;
+  target: number;
+  /** Same unit as target; null when there is nothing to measure yet (no reply / no survey answer). */
+  current: number | null;
+  achieved: boolean;
 }

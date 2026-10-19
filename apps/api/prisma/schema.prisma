@@ -1486,3 +1486,30 @@ model ScheduledMessage {
   @@index([sentAt, canceledAt, failedAt, sendAt])
   @@index([userId])
 }
+
+// Metas (Configurações › Fila): what "Meu dia" measures each attendant against.
+enum GoalType {
+  CLOSED_PER_DAY      // conversations closed today (target = count)
+  AVG_FIRST_RESPONSE  // today's average 1st response (target = minutes, lower is better)
+  NPS                 // this month's NPS (target = -100..100)
+}
+
+// Who a goal applies to. When several active goals of the same type match a
+// person, the most specific wins: AGENTS > CONNECTIONS > ALL.
+enum GoalScope {
+  ALL
+  CONNECTIONS
+  AGENTS
+}
+
+model Goal {
+  id            String    @id @default(uuid())
+  type          GoalType
+  target        Int
+  active        Boolean   @default(true)
+  scope         GoalScope @default(ALL)
+  connectionIds String[]  @default([])
+  agentIds      String[]  @default([])
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
