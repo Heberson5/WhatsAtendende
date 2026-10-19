@@ -911,6 +911,8 @@ async function persistConnectionStatus(connectionId: string, status: WhatsAppSta
 export interface ConnectionSummaryDTO {
   /** Respostas › Horário de expediente this connection follows; null = open 24 hours. */
   workScheduleId: string | null;
+  /** Minutes a customer of a phone conversation may wait before it comes to the queue; null = never. */
+  deviceReplyTimeoutMinutes: number | null;
   id: string;
   name: string;
   color: string;
@@ -970,6 +972,7 @@ function toConnectionSummary(row: {
   _count: { agents: number; conversations: number };
   groupsEnabled: boolean;
   workScheduleId: string | null;
+  deviceReplyTimeoutMinutes: number | null;
   createdByUser: { id: string; displayName: string } | null;
   phoneNumberId: string | null;
   wabaId: string | null;
@@ -997,6 +1000,7 @@ function toConnectionSummary(row: {
     agentCount: row._count.agents,
     groupsEnabled: row.groupsEnabled,
     workScheduleId: row.workScheduleId,
+    deviceReplyTimeoutMinutes: row.deviceReplyTimeoutMinutes,
     groupsCount: row._count.conversations,
     createdByUserId: row.createdByUser?.id ?? null,
     createdByUserName: row.createdByUser?.displayName ?? null,
@@ -1076,7 +1080,7 @@ export async function createConnection(
 
 export async function updateConnection(
   connectionId: string,
-  patch: { name?: string; color?: string; workScheduleId?: string | null; official?: Partial<OfficialCredentialsInput> }
+  patch: { name?: string; color?: string; workScheduleId?: string | null; deviceReplyTimeoutMinutes?: number | null; official?: Partial<OfficialCredentialsInput> }
 ): Promise<ConnectionSummaryDTO> {
   if (patch.name) {
     const clash = await prisma.whatsAppConnection.findUnique({ where: { name: patch.name } });
@@ -1089,6 +1093,7 @@ export async function updateConnection(
       name: patch.name,
       color: patch.color,
       workScheduleId: patch.workScheduleId,
+      deviceReplyTimeoutMinutes: patch.deviceReplyTimeoutMinutes,
       ...(patch.official
         ? {
             phoneNumberId: patch.official.phoneNumberId,

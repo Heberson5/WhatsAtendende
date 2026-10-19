@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { AlarmClock, ArrowLeft, ArrowRightLeft, CalendarClock, CheckCircle2, ChevronDown, ChevronUp, FileText, Lock, PanelRight, Paperclip, Phone, Pin, PinOff, Search, StickyNote, X as CloseIcon } from "lucide-react";
+import { AlarmClock, ArrowLeft, ArrowRightLeft, CalendarClock, CheckCircle2, ChevronDown, ChevronUp, FileText, Lock, PanelRight, Paperclip, Phone, Pin, PinOff, Search, Smartphone, StickyNote, X as CloseIcon } from "lucide-react";
 import { format } from "date-fns";
 import clsx from "clsx";
 import { PERMISSION, type ConversationListItemDTO, type ConversationNoteDTO, type MessageDTO, type PaginatedResult, type QuickReplyDTO, type TemplateContextDTO } from "@whatsatendende/types";
@@ -836,6 +836,16 @@ export function ChatPanel({
       {connectionDisconnected && (
         <div className="mx-4 mb-2 rounded-card bg-danger-soft px-3 py-2 text-xs font-medium text-danger">
           Esta conexão de WhatsApp está desconectada — não é possível enviar mensagens até que ela seja reconectada.
+        </div>
+      )}
+
+      {conversation.startedOnDevice && conversation.status !== "HANDLED_EXTERNALLY" && (
+        <div className="mx-4 mb-2 flex items-start gap-2 rounded-card border border-border bg-surface-alt px-3 py-2 text-xs text-muted">
+          <Smartphone className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>
+            <strong className="text-[var(--color-text)]">Conversa iniciada pelo celular</strong> — o cliente já estava sendo atendido, por isso a mensagem
+            de aceite não foi enviada. Continue de onde a conversa parou.
+          </span>
         </div>
       )}
 

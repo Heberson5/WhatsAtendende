@@ -1,7 +1,7 @@
 import clsx from "clsx";
 import { format, formatDistanceToNow, isToday, isYesterday } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { AlarmClock, Facebook, Instagram, PencilLine, Pin, type LucideIcon } from "lucide-react";
+import { AlarmClock, Facebook, Instagram, PencilLine, Pin, Smartphone, type LucideIcon } from "lucide-react";
 import type { Channel, ConversationListItemDTO, ConversationReminderDTO } from "@whatsatendende/types";
 import { contactDisplayName } from "../../lib/contact-display";
 import { formatPhone } from "../../lib/format-phone";
@@ -181,6 +181,11 @@ export function ConversationCard({
             >
               <AlarmClock className="h-3 w-3" />
               {reminder.firedAt ? "Retornar agora" : `Retornar ${shortReminderTime(reminder.remindAt)}`}
+            </span>
+          )}
+          {conversation.startedOnDevice && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-surface-alt px-2 py-0.5 text-[10.5px] font-semibold text-muted" title="Começou no celular da conexão">
+              <Smartphone className="h-3 w-3" /> Iniciada pelo celular
             </span>
           )}
           {hasDraft && (

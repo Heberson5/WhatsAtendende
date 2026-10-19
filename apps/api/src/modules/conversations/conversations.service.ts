@@ -754,7 +754,7 @@ export async function findOrOpenConversationForDeviceSentMessage(connectionId: s
       if (active.status === "IN_FLOW") await endFlowSession(active.id);
       const conversation = await prisma.conversation.update({
         where: { id: active.id },
-        data: { status: "HANDLED_EXTERNALLY", assignedAgentReadAt: new Date() },
+        data: { status: "HANDLED_EXTERNALLY", assignedAgentReadAt: new Date(), startedOnDevice: true },
       });
       await prisma.conversationEvent.create({
         data: { conversationId: conversation.id, type: "HANDLED_EXTERNALLY", payload: { reason: "replied from device" } },
@@ -773,6 +773,7 @@ export async function findOrOpenConversationForDeviceSentMessage(connectionId: s
       contactId,
       whatsappConnectionId: connectionId,
       status: "HANDLED_EXTERNALLY",
+      startedOnDevice: true,
       enteredQueueAt: new Date(),
       lastMessageAt: new Date(),
       assignedAgentReadAt: new Date(),
@@ -1021,7 +1022,7 @@ export async function getUnreadInboundProviderMessageIds(conversationId: string)
 export async function markConversationReadFromDevice(conversationId: string): Promise<{ leftQueue: boolean }> {
   const leftQueue = await prisma.conversation.updateMany({
     where: { id: conversationId, status: { in: ["NEW", "WAITING"] } },
-    data: { status: "HANDLED_EXTERNALLY", assignedAgentReadAt: new Date() },
+    data: { status: "HANDLED_EXTERNALLY", assignedAgentReadAt: new Date(), startedOnDevice: true },
   });
   if (leftQueue.count > 0) {
     await prisma.conversationEvent.create({
@@ -1769,4 +1770,50 @@ export async function revertExpiredTransfers(): Promise<void> {
       realtimeEvents.transferReverted(conversation.id, lastTransfer.fromAgentId, expiredAgentId);
     }
   }
+}
+
+/**
+ * A conversation living on the linked phone (HANDLED_EXTERNALLY) whose customer wrote and got no
+ * answer — from the phone or from here — within the connection's deviceReplyTimeoutMinutes goes to
+ * the queue, so a customer is never left waiting because nobody picked the phone up. Run every
+ * minute by server.ts. Returns the conversations it sent to the queue.
+ */
+export async function requeueUnansweredDeviceConversations(now = new Date()) {
+  const candidates = await prisma.conversation.findMany({
+    where: {
+      status: "HANDLED_EXTERNALLY",
+      awaitingReplySince: { not: null },
+      whatsappConnection: { deviceReplyTimeoutMinutes: { not: null } },
+    },
+    select: {
+      id: true,
+      awaitingReplySince: true,
+      whatsappConnectionId: true,
+      whatsappConnection: { select: { deviceReplyTimeoutMinutes: true } },
+      contact: { select: { name: true, phone: true } },
+    },
+  });
+  const requeued: { id: string; whatsappConnectionId: string; contactName: string; minutes: number }[] = [];
+  for (const c of candidates) {
+    const minutes = c.whatsappConnection!.deviceReplyTimeoutMinutes!;
+    if (c.awaitingReplySince!.getTime() > now.getTime() - minutes * 60_000) continue;
+    // Claimed atomically: an answer from the phone in the meantime clears awaitingReplySince and wins.
+    const moved = await prisma.conversation.updateMany({
+      where: { id: c.id, status: "HANDLED_EXTERNALLY", awaitingReplySince: c.awaitingReplySince },
+      data: { status: "WAITING", enteredQueueAt: now, startedOnDevice: true },
+    });
+    if (moved.count === 0) continue;
+    await prisma.conversationEvent.create({
+      data: { conversationId: c.id, type: "RETURNED_TO_QUEUE", payload: { reason: "device conversation unanswered", minutes } },
+    });
+    await prisma.conversationNote.create({
+      data: {
+        conversationId: c.id,
+        authorId: null,
+        body: `Conversa iniciada pelo celular: o cliente ficou ${minutes} min sem resposta e ela veio para a fila.`,
+      },
+    });
+    requeued.push({ id: c.id, whatsappConnectionId: c.whatsappConnectionId!, contactName: c.contact.name ?? c.contact.phone ?? "Cliente", minutes });
+  }
+  return requeued;
 }

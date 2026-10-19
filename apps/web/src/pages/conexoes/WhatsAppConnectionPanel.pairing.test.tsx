@@ -20,6 +20,7 @@ const base = {
   groupsEnabled: false,
   groupsCount: 0,
   workScheduleId: null,
+  deviceReplyTimeoutMinutes: 5,
   qrCodeDataUrl: null,
   connectedNumber: null,
   linkedNumber: null,

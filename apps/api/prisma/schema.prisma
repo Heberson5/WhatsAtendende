@@ -287,6 +287,9 @@ model WhatsAppConnection {
   // Respostas › Horário de expediente this connection follows — null = open 24 hours, never sends the out-of-hours notice.
   workSchedule       WorkSchedule?            @relation(fields: [workScheduleId], references: [id], onDelete: Restrict)
   workScheduleId     String?
+  // A conversation started (or picked up) on the linked phone whose customer answers and gets no
+  // reply in this many minutes goes to the queue, so nobody is left waiting. Null = never.
+  deviceReplyTimeoutMinutes Int?            @default(5)
   // --- OFFICIAL_API only (all null for a QRCODE connection) ---
   // Meta Cloud API identifiers for this WABA's phone number — see
   // developers.facebook.com/docs/whatsapp/cloud-api/get-started.
@@ -759,6 +762,9 @@ model Conversation {
   // the first INBOUND message after an agent reply, cleared on the next
   // OUTBOUND one. Drives Atendimento's "sem resposta há X min" warning.
   awaitingReplySince   DateTime?
+  // Started or answered on the linked phone: the customer already has someone talking to them, so
+  // accepting it later sends no "Aceite" message (it would look like a second person taking over).
+  startedOnDevice      Boolean   @default(false)
 
   // optimistic-lock version, used together with a conditional UPDATE to
   // guarantee only one agent can accept a conversation (see conversations

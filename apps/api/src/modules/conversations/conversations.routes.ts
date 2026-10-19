@@ -320,7 +320,19 @@ conversationsRouter.post(
     const conversation = await service.acceptConversation(req.params.id, req.auth!.userId);
     await writeAudit({ userId: req.auth!.userId, action: "CONVERSATION_ACCEPTED", entity: "Conversation", entityId: conversation.id, ipAddress: req.ip ?? null });
     realtimeEvents.conversationAccepted(conversation.id, connectionIdOf(conversation), req.auth!.userId);
-    await sendAutoMessage("ACCEPT", conversation, { id: req.auth!.userId, name: req.auth!.displayName });
+    if (conversation.startedOnDevice) {
+      // The customer was already being talked to on the phone — an "Aceite" message would look like
+      // a second person taking over, so none goes out.
+      await prisma.conversationNote.create({
+        data: {
+          conversationId: conversation.id,
+          authorId: null,
+          body: `Aceita por ${req.auth!.displayName} — a conversa veio do celular, então a mensagem de aceite não foi enviada.`,
+        },
+      });
+    } else {
+      await sendAutoMessage("ACCEPT", conversation, { id: req.auth!.userId, name: req.auth!.displayName });
+    }
     res.json(toConversationListItemDTO(conversation, true));
   })
 );
