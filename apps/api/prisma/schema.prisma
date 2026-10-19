@@ -660,6 +660,10 @@ model Contact {
   externalUserId         String?
   name                   String?
   photoUrl               String?
+  // "Observação fixa": shown at the top of every conversation of this contact.
+  pinnedNote             String?
+  pinnedNoteUpdatedAt    DateTime?
+  pinnedNoteUpdatedBy    String? // display name at the time, kept even if the user is later renamed/deleted
   // WhatsApp's raw chat id (e.g. "<n>@lid" or "<n>@s.whatsapp.net") as first
   // learned for this contact — WhatsApp's @lid privacy migration means the
   // SAME chat can report this id in either form across different events

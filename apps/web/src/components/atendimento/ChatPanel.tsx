@@ -16,6 +16,7 @@ import { MessageBubble } from "./MessageBubble";
 import { Composer, type ComposerHandle } from "./Composer";
 import { TransferModal } from "./TransferModal";
 import { ForwardModal } from "./ForwardModal";
+import { PinnedContactNote } from "./PinnedContactNote";
 import { SendTemplateModal } from "./SendTemplateModal";
 import { TransferNoteCard } from "./TransferNoteCard";
 import { TimelineByDay, type TimelineEntry } from "./TimelineByDay";
@@ -819,6 +820,8 @@ export function ChatPanel({
           </button>
         </div>
       )}
+
+      <PinnedContactNote conversationId={conversation.id} />
 
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-4 py-4">
         {cursor && (

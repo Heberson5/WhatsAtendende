@@ -41,6 +41,34 @@ clientPanelRouter.get(
   })
 );
 
+clientPanelRouter.get(
+  "/:id/previous/:previousId",
+  asyncHandler(async (req, res) => {
+    const conversation = await conversationForRead(req);
+    res.json(await service.getPreviousConversation(conversation.contactId, req.params.previousId));
+  })
+);
+
+const pinnedNoteSchema = z.object({ text: z.string().trim().max(1000).nullable() });
+clientPanelRouter.put(
+  "/:id/contact-pinned-note",
+  requirePermission(PERMISSION.CONTATOS_OBSERVACAO_EDITAR),
+  asyncHandler(async (req, res) => {
+    const conversation = await conversationForRead(req);
+    const { text } = pinnedNoteSchema.parse(req.body);
+    await service.setPinnedNote(conversation.contactId, text || null, req.auth!.displayName);
+    await writeAudit({
+      userId: req.auth!.userId,
+      action: "CONTACT_PINNED_NOTE_UPDATED",
+      entity: "Contact",
+      entityId: conversation.contactId,
+      ipAddress: req.ip ?? null,
+      metadata: { text: text || null },
+    });
+    res.json(await service.getContactPanel(conversation.id, conversation.contactId, conversation.contact.firstConversationAt));
+  })
+);
+
 const addTagSchema = z.union([z.object({ tagId: z.string().uuid() }), z.object({ name: z.string().trim().min(1).max(40) })]);
 clientPanelRouter.post(
   "/:id/contact-tags",
