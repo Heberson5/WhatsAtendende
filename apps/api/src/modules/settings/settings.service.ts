@@ -217,6 +217,12 @@ const DEFAULT_BUSINESS_SETTINGS = {
   // fila... parametrizado quanto tempo deverá ser notificado". Checked by
   // the queue-reminder timer in server.ts.
   queueReminderIntervalMinutes: 1,
+  // Time alerts (Configurações › Fila): a card turns yellow, then red, after
+  // this many minutes without a reply (Meus) or waiting to be accepted (Fila).
+  noReplyWarningMinutes: 5,
+  noReplyDangerMinutes: 15,
+  queueWarningMinutes: 5,
+  queueDangerMinutes: 10,
   // Conversations each attendant aims to close per day — the bar under "Meu dia" in Atendimento. null = no goal.
   dailyConversationGoal: null as number | null,
 };

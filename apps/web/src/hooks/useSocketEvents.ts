@@ -7,6 +7,7 @@ import { showReminderToast } from "../components/atendimento/ReminderToast";
 import { getSocket } from "../lib/socket";
 import { useTypingStore } from "../store/typing-store";
 import { notifyDesktop } from "./useDesktopNotifications";
+import { playUserAlertSound } from "../lib/alert-sounds";
 import { useAuthStore } from "../store/auth-store";
 import type { NotificationsResponse } from "../components/layout/NotificationBell";
 import { useActiveGroupStore } from "../store/active-group-store";
@@ -34,6 +35,7 @@ export function useSocketEvents(activeConversationId: string | null) {
     const onNewQueueConversation = (payload: { conversationId: string; contactName: string }) => {
       queryClient.invalidateQueries({ queryKey: ["queue"] });
       toast.info(`Nova conversa na fila: ${payload.contactName}`);
+      playUserAlertSound("newQueue");
       notifyDesktop("Nova conversa na fila", payload.contactName, `wa-queue-${payload.conversationId}`);
     };
     // Periodic nudge while this agent's connection still has a conversation
@@ -76,6 +78,7 @@ export function useSocketEvents(activeConversationId: string | null) {
     // aren't already looking at that conversation (it's visible live there).
     const onInboundNotification = (payload: { conversationId: string; contactName: string; preview: string }) => {
       if (payload.conversationId === activeConversationId) return;
+      playUserAlertSound("newMessage");
       toast.message(payload.contactName, { description: payload.preview });
       notifyDesktop(payload.contactName, payload.preview, `wa-conversation-${payload.conversationId}`);
     };

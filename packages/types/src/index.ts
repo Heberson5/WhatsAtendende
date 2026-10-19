@@ -148,6 +148,10 @@ export interface UserDTO {
   // Newest Notas de versão release this user has already seen — null until
   // the first time they open the page or dismiss the "O que há de novo" popup.
   releaseNotesSeenVersion: string | null;
+  /** Meu perfil › Sons: play a sound on a new message / a new conversation in the queue; volume 0-100. */
+  soundNewMessage: boolean;
+  soundNewQueue: boolean;
+  soundVolume: number;
 }
 
 // HH:mm, 24h, e.g. "08:00" / "18:30".

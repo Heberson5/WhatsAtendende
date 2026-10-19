@@ -404,8 +404,18 @@ const queueSettingsSchema = z
   .object({
     queueReminderIntervalMinutes: z.number().int().min(1).max(60).optional(),
     dailyConversationGoal: z.number().int().min(1).max(500).nullable().optional(),
+    noReplyWarningMinutes: z.number().int().min(1).max(240).optional(),
+    noReplyDangerMinutes: z.number().int().min(1).max(240).optional(),
+    queueWarningMinutes: z.number().int().min(1).max(240).optional(),
+    queueDangerMinutes: z.number().int().min(1).max(240).optional(),
   })
-  .strict();
+  .strict()
+  .refine((s) => !s.noReplyWarningMinutes || !s.noReplyDangerMinutes || s.noReplyDangerMinutes > s.noReplyWarningMinutes, {
+    message: "O alerta vermelho de sem resposta precisa vir depois do amarelo",
+  })
+  .refine((s) => !s.queueWarningMinutes || !s.queueDangerMinutes || s.queueDangerMinutes > s.queueWarningMinutes, {
+    message: "O alerta vermelho da fila precisa vir depois do amarelo",
+  });
 
 settingsRouter.patch(
   "/queue",

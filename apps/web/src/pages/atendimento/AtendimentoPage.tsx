@@ -6,7 +6,8 @@ import { toast } from "sonner";
 import { MessagesSquare, Plus, Radio, Search } from "lucide-react";
 import { PERMISSION, type ConversationListItemDTO, type GroupListItemDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
-import { ConversationCard, minutesWaiting, NO_REPLY_WARNING_MINUTES } from "../../components/atendimento/ConversationCard";
+import { ConversationCard, minutesWaiting } from "../../components/atendimento/ConversationCard";
+import { useAlertThresholds } from "../../hooks/useAlertThresholds";
 import { ClientPanel } from "../../components/atendimento/ClientPanel";
 import { contactDisplayName } from "../../lib/contact-display";
 import { useNow } from "../../hooks/useNow";
@@ -53,6 +54,7 @@ export default function AtendimentoPage() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const extras = useAgentExtras().data;
   const now = useNow();
+  const { noReplyWarningMinutes } = useAlertThresholds();
   function toggleClientPanel() {
     setClientPanelCollapsed((c) => {
       try {
@@ -227,13 +229,13 @@ export default function AtendimentoPage() {
   };
   const mine = mineQuery.data ?? [];
   const unreadCount = mine.filter((c) => c.unreadCount > 0).length;
-  const noReplyCount = mine.filter((c) => minutesWaiting(c, now) >= NO_REPLY_WARNING_MINUTES).length;
+  const noReplyCount = mine.filter((c) => minutesWaiting(c, now) >= noReplyWarningMinutes).length;
   const pinnedIds = new Set(extras?.pinnedConversationIds ?? []);
   const reminderByConversation = new Map((extras?.reminders ?? []).map((r) => [r.conversationId, r]));
   const filteredMine = mine.filter(
     (c) =>
       matchesSearch(c) &&
-      (listFilter === "all" || (listFilter === "unread" ? c.unreadCount > 0 : minutesWaiting(c, now) >= NO_REPLY_WARNING_MINUTES))
+      (listFilter === "all" || (listFilter === "unread" ? c.unreadCount > 0 : minutesWaiting(c, now) >= noReplyWarningMinutes))
   );
   const pinnedMine = filteredMine.filter((c) => pinnedIds.has(c.id));
   const otherMine = filteredMine.filter((c) => !pinnedIds.has(c.id));

@@ -75,6 +75,18 @@ profileRouter.patch(
   })
 );
 
+const soundsSchema = z
+  .object({ soundNewMessage: z.boolean().optional(), soundNewQueue: z.boolean().optional(), soundVolume: z.number().int().min(0).max(100).optional() })
+  .strict();
+
+profileRouter.patch(
+  "/sounds",
+  asyncHandler(async (req, res) => {
+    const user = await service.updateOwnSounds(req.auth!.userId, soundsSchema.parse(req.body));
+    res.json(toUserDTO(user));
+  })
+);
+
 const pauseSchema = z.object({ pauseReasonId: z.string().uuid() });
 
 profileRouter.post(
