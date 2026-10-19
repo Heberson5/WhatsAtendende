@@ -7,6 +7,8 @@ import { ChevronsLeft, ChevronsRight, Clock, Plus, Tag as TagIcon, User, X } fro
 import { toast } from "sonner";
 import type { ContactPanelDTO, ConversationListItemDTO, TagDTO } from "@whatsatendende/types";
 import { PreviousConversationDrawer } from "./PreviousConversationDrawer";
+import { ClientDataSection } from "./ClientDataSection";
+import { useClientData } from "../../hooks/useClientData";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { contactDisplayName } from "../../lib/contact-display";
 import { formatPhone } from "../../lib/format-phone";
@@ -83,6 +85,7 @@ export function ClientPanel({
   const [addingTag, setAddingTag] = useState(false);
   const [tagInput, setTagInput] = useState("");
   const [openPrevious, setOpenPrevious] = useState<string | null>(null);
+  const { data: clientData } = useClientData(conversation.id);
 
   const { data: panel } = useQuery({
     queryKey,
@@ -172,6 +175,12 @@ export function ClientPanel({
           <p className="mt-2 max-w-full truncate text-[15px] font-semibold">{name}</p>
           {conversation.contact.phone && <p className="text-xs tabular-nums text-muted">{formatPhone(conversation.contact.phone)}</p>}
         </div>
+
+        {clientData && clientData.status !== "NO_SOURCE" && (
+          <Section title="Dados do cliente">
+            <ClientDataSection conversationId={conversation.id} readOnly={readOnly} />
+          </Section>
+        )}
 
         <Section title="Conversa atual">
           <Row

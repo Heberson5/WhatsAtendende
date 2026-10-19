@@ -3,6 +3,7 @@ import { createApp } from "./app";
 import { createSocketServer } from "./realtime/socket-server";
 import { initWhatsAppConnections, shutdownAllConnections } from "./modules/whatsapp/whatsapp.service";
 import { requeueUnansweredDeviceConversations, revertExpiredTransfers } from "./modules/conversations/conversations.service";
+import { syncDueDataSources } from "./modules/data-sources/data-sources.service";
 import { realtimeEvents } from "./realtime/realtime";
 import { processDueClosingMessages } from "./modules/satisfaction/satisfaction.service";
 import { runHolidaySyncIfDue } from "./modules/holidays/holidays.service";
@@ -82,6 +83,12 @@ async function main() {
   queueReminderTimer.unref();
 
   // Conversations started on the linked phone whose customer is left without an answer come to the queue.
+  // Fontes de dados: refreshes the active spreadsheet/database when its interval is due.
+  const dataSourceTimer = setInterval(() => {
+    syncDueDataSources().catch((err) => logger.error({ err }, "data source sync timer failed"));
+  }, 60_000);
+  dataSourceTimer.unref();
+
   const deviceRequeueTimer = setInterval(() => {
     requeueUnansweredDeviceConversations()
       .then((requeued) => {
@@ -139,6 +146,7 @@ async function main() {
     clearInterval(holidaySyncTimer);
     clearInterval(queueReminderTimer);
     clearInterval(deviceRequeueTimer);
+    clearInterval(dataSourceTimer);
     clearInterval(idleSessionTimer);
     clearInterval(contactsSyncTimer);
     clearInterval(closingMessageTimer);

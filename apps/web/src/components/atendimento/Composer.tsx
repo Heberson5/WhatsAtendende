@@ -2,6 +2,8 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "re
 import clsx from "clsx";
 import { CalendarClock, Mic, Paperclip, Pause, Play, Plus, Send, Trash2, X, MapPin, Bold, Italic, Strikethrough, Code, Wand2, FileText, Image as ImageIcon, Video } from "lucide-react";
 import type { MessageDTO, ReplyMediaDTO } from "@whatsatendende/types";
+import { toast } from "sonner";
+import { DataTagPreview, useDataTagAssist } from "./DataTagAssist";
 import { api } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
 import { draftKey, useDraftStore } from "../../store/draft-store";
@@ -108,6 +110,10 @@ export interface QuickReplyOption {
   text: string;
   /** An image, video or PDF registered with the reply — staged in the preview with the text as its caption. */
   media?: ReplyMediaDTO | null;
+  /** The text with {{dados.*}} already filled for this client. */
+  filledText?: string;
+  /** Uses {{dados.*}} but no data source is usable — shown to managers only, can't be used. */
+  dataUnavailable?: boolean;
 }
 
 /** One file staged for sending, alongside the caption typed for it specifically — see the pendingFiles filmstrip below. */
@@ -180,6 +186,8 @@ export const Composer = forwardRef<
   const [writingSuggestions, setWritingSuggestions] = useState<WritingSuggestion[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [caret, setCaret] = useState(0);
+  const dataTags = useDataTagAssist(conversationId, text, caret);
   const emojiPanelRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -265,11 +273,16 @@ export const Composer = forwardRef<
   }
 
   function selectQuickReply(reply: QuickReplyOption) {
-    if (reply.media) {
-      void stageQuickReplyMedia(reply, reply.media);
+    if (reply.dataUnavailable) {
+      toast.error("Indisponível: nenhuma fonte de dados ativa");
       return;
     }
-    setText(reply.text);
+    const replyText = reply.filledText ?? reply.text;
+    if (reply.media) {
+      void stageQuickReplyMedia({ ...reply, text: replyText }, reply.media);
+      return;
+    }
+    setText(replyText);
     requestAnimationFrame(() => {
       const el = textareaRef.current;
       if (!el) return;
@@ -358,10 +371,13 @@ export const Composer = forwardRef<
 
   async function handleSend() {
     if (!text.trim() || sending) return;
+    const ready = dataTags.finalize(text.trim());
+    if (ready === null) return;
     setSending(true);
     try {
-      await onSendText(text.trim(), replyTo?.id);
+      await onSendText(ready, replyTo?.id);
       setText("");
+      dataTags.reset();
       onCancelReply();
       // Otherwise focus lands nowhere after a send and the agent has to
       // click back into the field before typing the next message.
@@ -731,7 +747,22 @@ export const Composer = forwardRef<
     setSelectionBubble({ top: top - 44, left });
   }
 
+  function chooseDataTag(column: string) {
+    const next = dataTags.insertTag(text, column);
+    setText(next.text);
+    setCaret(next.caret);
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(next.caret, next.caret);
+    });
+  }
+
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (dataTags.suggestions.length > 0 && (e.key === "Enter" || e.key === "Tab") && !e.shiftKey) {
+      e.preventDefault();
+      chooseDataTag(dataTags.suggestions[0]);
+      return;
+    }
     if (quickReplyMenuOpen) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -1073,6 +1104,17 @@ export const Composer = forwardRef<
             </div>
           </div>
         )}
+        {dataTags.suggestions.length > 0 && (
+          <div className="shadow-elevated absolute bottom-full left-3 z-20 mb-1 w-64 overflow-hidden rounded-card border border-border bg-surface" onMouseDown={(e) => e.preventDefault()}>
+            <p className="border-b border-border px-3 py-1.5 text-[11px] font-semibold text-muted">Dados do cliente</p>
+            {dataTags.suggestions.map((column) => (
+              <button key={column} type="button" onClick={() => chooseDataTag(column)} className="block w-full px-3 py-1.5 text-left text-sm hover:bg-surface-alt">
+                <code className="text-xs">{`{{dados.${column}}}`}</code>
+              </button>
+            ))}
+          </div>
+        )}
+        <DataTagPreview render={dataTags.render} freeFields={dataTags.freeFields} freeValues={dataTags.freeValues} onFreeValue={dataTags.setFreeValue} />
         {quickReplyMenuOpen && (
           <div
             className="shadow-elevated absolute bottom-full left-3 right-3 z-20 mb-1 max-h-64 overflow-y-auto rounded-card border border-border bg-surface"
@@ -1096,7 +1138,8 @@ export const Composer = forwardRef<
                   <span className="font-medium">{qr.name}</span>
                   <code className="rounded bg-surface px-1 text-xs text-muted">/{qr.shortcut}</code>
                 </span>
-                <span className="line-clamp-1 w-full text-xs text-muted">{qr.text}</span>
+                {qr.dataUnavailable && <span className="text-[11px] font-semibold text-danger">Indisponível: nenhuma fonte de dados ativa</span>}
+                <span className="line-clamp-1 w-full text-xs text-muted">{qr.filledText ?? qr.text}</span>
               </button>
             ))}
           </div>
@@ -1190,8 +1233,10 @@ export const Composer = forwardRef<
           value={text}
           onChange={(e) => {
             setText(e.target.value);
+            setCaret(e.target.selectionStart);
             updateSelectionBubble();
           }}
+          onKeyUp={(e) => setCaret(e.currentTarget.selectionStart)}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
           onSelect={updateSelectionBubble}

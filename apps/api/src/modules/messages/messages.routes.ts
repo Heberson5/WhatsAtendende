@@ -24,6 +24,7 @@ import * as templatesService from "../message-templates/message-templates.servic
 import { toMessageTemplateDTO } from "../message-templates/message-templates.mapper";
 import { realtimeEvents } from "../../realtime/realtime";
 import * as groupsService from "../groups/groups.service";
+import * as dataSources from "../data-sources/data-sources.service";
 import { assertCanReplyToConversation, assertAgentCanReadContactHistory, assertAgentCanReadConversation, getConversationOrThrow } from "../conversations/conversations.service";
 
 export const messagesRouter = Router();
@@ -183,7 +184,10 @@ messagesRouter.post(
   requireAttendanceAccess,
   asyncHandler(async (req, res) => {
     const conversation = await loadConversationForAgent(req.params.conversationId, req.auth!.userId);
-    const { body, replyToMessageId } = sendTextSchema.parse(req.body);
+    const parsed = sendTextSchema.parse(req.body);
+    const { replyToMessageId } = parsed;
+    // Safety lock: a {{dados.coluna}} without a value for this client never goes out.
+    const body = await dataSources.fillDataTagsOrThrow(conversation, parsed.body, req.auth!.role);
 
     const message = await service.createOutboundMessage({
       conversationId: conversation.id,
@@ -304,11 +308,12 @@ messagesRouter.post(
     if (!req.file) throw Errors.badRequest("Nenhum arquivo enviado");
 
     const type = mimeToMessageType(req.file.mimetype);
+    const caption = req.body?.caption ? await dataSources.fillDataTagsOrThrow(conversation, req.body.caption as string, req.auth!.role) : undefined;
     const message = await service.createOutboundMessage({
       conversationId: conversation.id,
       agentId: req.auth!.userId,
       type,
-      body: (req.body?.caption as string) || null,
+      body: caption || null,
     });
 
     const storageKey = `${randomUUID()}${path.extname(req.file.originalname)}`;
@@ -329,7 +334,7 @@ messagesRouter.post(
       req.file.originalname,
       req.file.mimetype,
       req.auth!.displayName,
-      (req.body?.caption as string) || undefined
+      caption || undefined
     );
     await writeAudit({
       userId: req.auth!.userId,
@@ -341,7 +346,7 @@ messagesRouter.post(
         conversationId: conversation.id,
         contactName: conversation.contact.name,
         contactPhone: conversation.contact.phone,
-        text: (req.body?.caption as string) || `Arquivo: ${req.file.originalname}`,
+        text: caption || `Arquivo: ${req.file.originalname}`,
       },
     });
     realtimeEvents.newMessage(conversation.id, req.auth!.userId);

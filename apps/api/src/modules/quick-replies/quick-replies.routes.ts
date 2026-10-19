@@ -8,6 +8,7 @@ import { writeAudit } from "../../lib/audit";
 import { getConversationOrThrow, assertAgentCanAccessConversation } from "../conversations/conversations.service";
 import { connectionScopeSchema } from "../../lib/connection-scope";
 import { toQuickReplyDTO } from "./quick-replies.mapper";
+import * as dataSources from "../data-sources/data-sources.service";
 import * as service from "./quick-replies.service";
 import { NO_REPLY_MEDIA, deleteReplyMediaFile as deleteReplyMediaFileQuietly, replyMediaLimits, replyMediaUpload, sendReplyMedia, storeReplyMedia } from "../../lib/reply-media";
 
@@ -31,8 +32,17 @@ quickRepliesRouter.get(
     // equivalent yet, so an agent on one of those just sees an empty list
     // instead of the route crashing on a null connection id.
     if (!conversation.whatsappConnectionId) return res.json([]);
-    const rows = await service.listQuickRepliesForConnection(conversation.whatsappConnectionId);
-    res.json(rows.map(toQuickReplyDTO));
+    const rows = (await service.listQuickRepliesForConnection(conversation.whatsappConnectionId)).map(toQuickReplyDTO);
+    // Replies with {{dados.*}} only make sense with a usable data source: agents don't see them without one,
+    // managers/admins do, marked unavailable. With one, the picker shows the text already filled.
+    const { available } = await dataSources.availableTags();
+    const visible = [];
+    for (const reply of rows) {
+      if (!dataSources.hasDataTags(reply.text)) visible.push(reply);
+      else if (available) visible.push({ ...reply, filledText: (await dataSources.renderDataTags(conversation, reply.text, req.auth!.role)).text });
+      else if (req.auth!.role !== "AGENT") visible.push({ ...reply, dataUnavailable: true });
+    }
+    res.json(visible);
   })
 );
 

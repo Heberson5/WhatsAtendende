@@ -12,6 +12,7 @@ import {
   getConversationOrThrow,
 } from "../conversations/conversations.service";
 import * as service from "./client-panel.service";
+import * as dataSources from "../data-sources/data-sources.service";
 
 // Mounted next to conversationsRouter (/api/conversations/:id/...): the
 // client panel beside the chat (tags, earlier conversations) and internal notes.
@@ -66,6 +67,64 @@ clientPanelRouter.put(
       metadata: { text: text || null },
     });
     res.json(await service.getContactPanel(conversation.id, conversation.contactId, conversation.contact.firstConversationAt));
+  })
+);
+
+// Dados do cliente (Fontes de dados): what the active spreadsheet/database knows about this conversation's phone.
+clientPanelRouter.get(
+  "/:id/client-data",
+  asyncHandler(async (req, res) => {
+    const conversation = await conversationForRead(req);
+    res.json(await dataSources.getClientData(conversation, req.auth!.role));
+  })
+);
+
+clientPanelRouter.put(
+  "/:id/client-data/client",
+  asyncHandler(async (req, res) => {
+    const conversation = await conversationForWrite(req);
+    const { clientKey } = z.object({ clientKey: z.string().min(1).max(200) }).parse(req.body);
+    await dataSources.selectClient(conversation, clientKey);
+    await writeAudit({ userId: req.auth!.userId, action: "CLIENT_DATA_CLIENT_SELECTED", entity: "Conversation", entityId: conversation.id, ipAddress: req.ip ?? null, metadata: { clientKey } });
+    res.json(await dataSources.getClientData({ ...conversation, dataClientKey: clientKey }, req.auth!.role));
+  })
+);
+
+clientPanelRouter.post(
+  "/:id/client-data/reveal",
+  requirePermission(PERMISSION.CLIENTE_DADOS_SENSIVEIS_VER),
+  asyncHandler(async (req, res) => {
+    const conversation = await conversationForRead(req);
+    const { column } = z.object({ column: z.string().min(1).max(120) }).parse(req.body);
+    const value = await dataSources.revealColumn(conversation, column);
+    await writeAudit({
+      userId: req.auth!.userId,
+      action: "CLIENT_SENSITIVE_DATA_REVEALED",
+      entity: "Conversation",
+      entityId: conversation.id,
+      ipAddress: req.ip ?? null,
+      metadata: { column, contactPhone: conversation.contact.phone },
+    });
+    res.json({ column, value });
+  })
+);
+
+clientPanelRouter.post(
+  "/:id/client-data/suspension-ack",
+  asyncHandler(async (req, res) => {
+    const conversation = await conversationForRead(req);
+    await dataSources.acknowledgeSuspension(conversation.id);
+    await writeAudit({ userId: req.auth!.userId, action: "CLIENT_SUSPENSION_WARNING_SEEN", entity: "Conversation", entityId: conversation.id, ipAddress: req.ip ?? null });
+    res.status(204).end();
+  })
+);
+
+clientPanelRouter.post(
+  "/:id/client-data/render",
+  asyncHandler(async (req, res) => {
+    const conversation = await conversationForRead(req);
+    const { text } = z.object({ text: z.string().max(4096) }).parse(req.body);
+    res.json(await dataSources.renderDataTags(conversation, text, req.auth!.role));
   })
 );
 
