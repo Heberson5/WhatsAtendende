@@ -77,6 +77,10 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
   // arrive (no makeInMemoryStore dependency needed for just this). Backs
   // listContacts() — the phone's address book, used by "start a new conversation".
   private contacts = new Map<string, ContactInfo>();
+  // Every @lid <-> phone pairing WhatsApp has revealed so far (chat updates, address book, the
+  // customer's own messages). A message sent from the linked phone on an @lid chat often arrives
+  // with no phone attached at all — this is what still files it under the right customer.
+  private lidToPhone = new Map<string, string>();
   /** Group names and participants, read from WhatsApp at most every GROUP_INFO_TTL_MS per group. */
   private groupInfoCache = new Map<string, { info: GroupInfo; at: number }>();
   private static readonly GROUP_INFO_TTL_MS = 10 * 60_000;
@@ -684,6 +688,7 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
           // that couldn't resolve a phone number at all to begin with
           // (see ChatIdentityResolvedEvent).
           if (chatId.endsWith("@lid") && update.pnJid) {
+            this.rememberLid(chatId, update.pnJid.split("@")[0]);
             this.emitter.emit("chatIdentityResolved", {
               chatId,
               phone: update.pnJid.split("@")[0],
@@ -1080,6 +1085,7 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
       // (contactAction.lidJid) — this is what lets a customer who only ever
       // appeared as an opaque @lid finally get their real number.
       if (hasRealNumber && c.lid && c.lid !== c.id) {
+        this.rememberLid(c.lid, phone);
         this.emitter.emit("chatIdentityResolved", { chatId: c.lid, phone, name: savedName } satisfies ChatIdentityResolvedEvent);
       }
       // The phone's address-book sync (contacts.upsert/contacts.update) is a
@@ -1102,11 +1108,31 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
       // from ever creating a Contact row for someone who never actually
       // messaged this connection, just because they're in the address book.
       const identityResolved = c.id.endsWith("@lid") && c.jid && phone !== c.id.split("@")[0];
+      if (identityResolved) this.rememberLid(c.id, phone);
       if (identityResolved || savedName) {
         this.emitter.emit("chatIdentityResolved", { chatId: c.id, phone, name: savedName } satisfies ChatIdentityResolvedEvent);
       }
     }
     if (this.addressBookSyncing) this.persistContactsCache();
+  }
+
+  private rememberLid(lid: string, phone: string) {
+    if (lid.endsWith("@lid") && phone && phone !== lid.split("@")[0]) this.lidToPhone.set(lid, phone);
+  }
+
+  /**
+   * The customer's phone for a message. On a message sent from the linked phone (fromMe) the
+   * sender is this account itself, so its senderPn is our own number, never the customer's —
+   * there the remembered @lid pairing is the only reliable source.
+   */
+  private phoneForMessage(chatId: string, message: WAMessage): string {
+    const ownPhone = (this.socket?.user?.id ?? "").split("@")[0].split(":")[0];
+    const alt = message.key.senderPn ?? message.key.participantPn ?? null;
+    const altIsOwn = Boolean(message.key.fromMe && alt && alt.split("@")[0].split(":")[0] === ownPhone);
+    const usableAlt = altIsOwn ? null : alt;
+    if (chatId.endsWith("@lid") && usableAlt && !message.key.fromMe) this.rememberLid(chatId, usableAlt.split("@")[0].split(":")[0]);
+    const known = this.lidToPhone.get(chatId);
+    return phoneFromJid(chatId, usableAlt ?? (known ? `${known}@s.whatsapp.net` : null));
   }
 
   private async handleIncomingMessage(message: WAMessage): Promise<void> {
@@ -1128,7 +1154,7 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
     const base = {
       providerMessageId: message.key.id ?? "",
       chatId,
-      phone: phoneFromJid(chatId, message.key.senderPn ?? message.key.participantPn),
+      phone: this.phoneForMessage(chatId, message),
       // pushName on a fromMe message is this account's own name, not the
       // customer's — never let it overwrite the contact's stored name.
       contactName: message.key.fromMe || group ? null : (message.pushName ?? null),

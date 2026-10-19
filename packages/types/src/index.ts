@@ -875,6 +875,8 @@ export interface ConversationListItemDTO {
   // When the customer's oldest still-unanswered message arrived (null when
   // the last word was the agent's) — drives "sem resposta há X min".
   awaitingReplySince: string | null;
+  /** Started or answered on the linked phone — accepting it sends no "Aceite" message. */
+  startedOnDevice: boolean;
   unreadCount: number;
   isNew: boolean;
   pendingTransferDeadline: string | null;

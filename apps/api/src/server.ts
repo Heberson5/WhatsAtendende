@@ -2,7 +2,8 @@ import http from "node:http";
 import { createApp } from "./app";
 import { createSocketServer } from "./realtime/socket-server";
 import { initWhatsAppConnections, shutdownAllConnections } from "./modules/whatsapp/whatsapp.service";
-import { revertExpiredTransfers } from "./modules/conversations/conversations.service";
+import { requeueUnansweredDeviceConversations, revertExpiredTransfers } from "./modules/conversations/conversations.service";
+import { realtimeEvents } from "./realtime/realtime";
 import { processDueClosingMessages } from "./modules/satisfaction/satisfaction.service";
 import { runHolidaySyncIfDue } from "./modules/holidays/holidays.service";
 import { sendQueueRemindersIfDue } from "./lib/queue-reminder";
@@ -80,6 +81,16 @@ async function main() {
   }, QUEUE_REMINDER_CHECK_INTERVAL_MS);
   queueReminderTimer.unref();
 
+  // Conversations started on the linked phone whose customer is left without an answer come to the queue.
+  const deviceRequeueTimer = setInterval(() => {
+    requeueUnansweredDeviceConversations()
+      .then((requeued) => {
+        for (const c of requeued) realtimeEvents.newQueueConversation(c.whatsappConnectionId, c.id, c.contactName);
+      })
+      .catch((err) => logger.error({ err }, "failed to send unanswered phone conversations to the queue"));
+  }, QUEUE_REMINDER_CHECK_INTERVAL_MS);
+  deviceRequeueTimer.unref();
+
   const idleSessionTimer = setInterval(() => {
     endIdleSessions().catch((err) => logger.error({ err }, "failed to end idle sessions"));
   }, IDLE_SESSION_SWEEP_INTERVAL_MS);
@@ -127,6 +138,7 @@ async function main() {
     clearInterval(transferSweepTimer);
     clearInterval(holidaySyncTimer);
     clearInterval(queueReminderTimer);
+    clearInterval(deviceRequeueTimer);
     clearInterval(idleSessionTimer);
     clearInterval(contactsSyncTimer);
     clearInterval(closingMessageTimer);

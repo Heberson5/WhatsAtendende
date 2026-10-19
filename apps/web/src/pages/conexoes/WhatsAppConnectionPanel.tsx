@@ -9,6 +9,8 @@ import { api, getApiErrorMessage } from "../../lib/api";
 import { getSocket } from "../../lib/socket";
 import { WorkScheduleSelect } from "./WorkScheduleSelect";
 
+const DEVICE_TIMEOUT_OPTIONS = [2, 5, 10, 15, 30, 60];
+
 interface ConnectionSummary {
   id: string;
   name: string;
@@ -17,6 +19,7 @@ interface ConnectionSummary {
   groupsEnabled: boolean;
   groupsCount: number;
   workScheduleId: string | null;
+  deviceReplyTimeoutMinutes: number | null;
   state: "DISCONNECTED" | "CONNECTING" | "QR_PENDING" | "CODE_PENDING" | "CONNECTED";
   qrCodeDataUrl: string | null;
   pairingCode: string | null;
@@ -158,6 +161,13 @@ export function WhatsAppConnectionPanel() {
       queryClient.invalidateQueries({ queryKey: ["whatsapp-connections"] });
       queryClient.invalidateQueries({ queryKey: ["work-schedules"] });
     },
+    onError: (err) => toast.error(getApiErrorMessage(err)),
+  });
+
+  const deviceTimeoutMutation = useMutation({
+    mutationFn: ({ id, minutes }: { id: string; minutes: number | null }) =>
+      api.patch(`/whatsapp/connections/${id}`, { deviceReplyTimeoutMinutes: minutes }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["whatsapp-connections"] }),
     onError: (err) => toast.error(getApiErrorMessage(err)),
   });
 
@@ -359,6 +369,25 @@ export function WhatsAppConnectionPanel() {
                 onChange={(workScheduleId) => workScheduleMutation.mutate({ id: connection.id, workScheduleId })}
               />
             </div>
+
+            {connection.connectionMode === "QRCODE" && (
+              <label className="mb-3 block">
+                <span className="mb-1 block text-xs font-medium text-muted">Conversa iniciada pelo celular: se o cliente ficar sem resposta, vai para a fila após</span>
+                <select
+                  value={connection.deviceReplyTimeoutMinutes ?? ""}
+                  disabled={!canEditar}
+                  onChange={(e) => deviceTimeoutMutation.mutate({ id: connection.id, minutes: e.target.value ? Number(e.target.value) : null })}
+                  className="focus-ring w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm"
+                >
+                  {DEVICE_TIMEOUT_OPTIONS.map((m) => (
+                    <option key={m} value={m}>
+                      {m} minutos
+                    </option>
+                  ))}
+                  <option value="">Nunca (fica só no celular)</option>
+                </select>
+              </label>
+            )}
 
             {connection.state === "CONNECTED" ? (
               <div className="space-y-3">
