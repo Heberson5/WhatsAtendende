@@ -16,6 +16,7 @@ function message(reactions: MessageReactionDTO[]): MessageDTO {
     deliveredAt: null,
     readAt: null,
     replyToMessageId: null,
+    forwarded: false,
     replyToStory: null,
     linkPreview: null,
     attachments: [],

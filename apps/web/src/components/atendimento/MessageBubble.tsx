@@ -1,7 +1,7 @@
 import clsx from "clsx";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Calendar, Check, CheckCheck, Clock, ExternalLink, FileText, ListChecks, MapPin, MessageCircle, ReplyIcon, Smile, Trash2, User } from "lucide-react";
+import { Calendar, Check, CheckCheck, Clock, ExternalLink, FileText, Forward, ListChecks, MapPin, MessageCircle, ReplyIcon, Smile, Trash2, User } from "lucide-react";
 import type { MessageDTO, MessageAttachmentDTO } from "@whatsatendende/types";
 import { useState } from "react";
 import { firstUrl, renderWhatsAppFormatting } from "../../lib/whatsappFormatting";
@@ -199,11 +199,14 @@ function Attachment({
   return <DocumentAttachment att={att} />;
 }
 
+const FORWARDABLE_TYPES = ["TEXT", "IMAGE", "VIDEO", "DOCUMENT", "AUDIO"];
+
 export function MessageBubble({
   message,
   onReply,
   onReact,
   onDelete,
+  onForward,
   onStartConversation,
   repliedMessage,
   onJumpToMessage,
@@ -216,6 +219,8 @@ export function MessageBubble({
   /** Omitted where reactions aren't offered (WhatsApp groups). */
   onReact?: (message: MessageDTO, emoji: string) => void;
   onDelete?: (message: MessageDTO) => void;
+  /** "Encaminhar" — omitted where forwarding isn't offered (groups, read-only views). */
+  onForward?: (message: MessageDTO) => void;
   /** Starts a new conversation with a phone number found inside a received vCard attachment. Omitted in read-only views (Gestão). */
   onStartConversation?: (phone: string, name: string) => void;
   repliedMessage?: MessageDTO;
@@ -255,6 +260,12 @@ export function MessageBubble({
           {/* Blank line separating the agent's name from the message itself (never part of the text sent to WhatsApp). */}
           <div className="h-3" aria-hidden="true" />
         </>
+      )}
+
+      {message.forwarded && (
+        <p className="mb-0.5 flex items-center gap-1 text-[11px] italic opacity-75">
+          <Forward className="h-3 w-3" /> Encaminhada
+        </p>
       )}
 
       {repliedMessage && (
@@ -350,6 +361,11 @@ export function MessageBubble({
       <button onClick={() => onReply(message)} className="focus-ring rounded-full p-1.5 text-muted hover:bg-surface-alt hover:text-[var(--color-text)]" aria-label="Responder">
         <ReplyIcon className="h-3.5 w-3.5" />
       </button>
+      {onForward && FORWARDABLE_TYPES.includes(message.type) && (
+        <button onClick={() => onForward(message)} className="focus-ring rounded-full p-1.5 text-muted hover:bg-surface-alt hover:text-[var(--color-text)]" aria-label="Encaminhar" title="Encaminhar">
+          <Forward className="h-3.5 w-3.5" />
+        </button>
+      )}
       {canDelete && onDelete && (
         <button
           onClick={() => setConfirmDelete(true)}

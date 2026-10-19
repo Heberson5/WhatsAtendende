@@ -888,6 +888,8 @@ model Message {
   replyToMessage    Message?         @relation("MessageReplies", fields: [replyToMessageId], references: [id])
   replyToMessageId  String?
   replies           Message[]        @relation("MessageReplies")
+  // "Encaminhar": the message this one is a copy of (any conversation the agent could read).
+  forwardedFromMessageId String?
 
   // A reply to a WhatsApp Status/Story ("respondendo a um story") instead of
   // to another message in this conversation — the story itself is never
