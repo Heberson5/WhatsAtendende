@@ -443,7 +443,8 @@ export async function getClientData(conversation: ConversationForData, role: Rol
   if (!selectedKey) return { ...empty, status: "OK", dataUpdatedAt, clients };
 
   const rows = byClient.get(selectedKey)!;
-  const fields = source.columns.map((column) => {
+  // The beneficiaries column is already shown, readable, inside each contract.
+  const fields = source.columns.filter((column) => column !== map.beneficiaries).map((column) => {
     const value = distinct(rows.map((r) => r.data[column])).join(", ");
     const sensitive = source.sensitiveColumns.includes(column);
     return { column, value: sensitive && value ? maskValue(value) : value, sensitive };

@@ -1102,6 +1102,8 @@ export const PERMISSION = {
   FONTES_DADOS_EDITAR: "fontes_dados.editar",
   FONTES_DADOS_EXCLUIR: "fontes_dados.excluir",
   CLIENTE_DADOS_SENSIVEIS_VER: "cliente.dados_sensiveis_ver",
+  CHAT_INTERNO_USAR: "chat_interno.usar",
+  CHAT_INTERNO_ACOMPANHAR: "chat_interno.acompanhar",
   CONTATOS_ACESSAR: "contatos.acessar",
   CONTATOS_EDITAR: "contatos.editar",
   CONTATOS_IMPORTAR_EXPORTAR: "contatos.importar_exportar",
@@ -1529,6 +1531,23 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     group: "Fontes de dados",
     label: "Ver dados sensíveis do cliente",
     description: "Revelar as colunas marcadas como sensíveis (ex.: CPF) em Dados do cliente e enviá-las por tag. Cada revelação fica registrada na auditoria.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.CHAT_INTERNO_USAR,
+    group: "Chat interno",
+    label: "Chat interno — usar",
+    description: "Conversar com a equipe pelo balão ao lado do sino: #Geral, conversas diretas e grupos.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: true, MANAGER: true },
+  },
+  {
+    key: PERMISSION.CHAT_INTERNO_ACOMPANHAR,
+    group: "Chat interno",
+    label: "Chat interno — acompanhar conversas da equipe",
+    description:
+      "Ler todas as conversas do chat interno em Gestão › Chat interno, sem aviso para quem conversa. Cada leitura fica registrada na auditoria (só o administrador vê). Use conforme a política interna e a LGPD.",
     editableRoles: ["AGENT", "MANAGER"],
     defaultAllowed: { AGENT: false, MANAGER: true },
   },
@@ -2375,4 +2394,57 @@ export interface BoletoPreviewDTO {
 export interface BoletoAvailabilityDTO {
   parcelId: string;
   blockedReason: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Chat interno: the team talking among themselves. Messages are kept forever.
+// ---------------------------------------------------------------------------
+
+export type ChatRoomKind = "GENERAL" | "DIRECT" | "GROUP";
+
+export interface ChatMemberDTO {
+  userId: string;
+  name: string;
+  photoUrl: string | null;
+  presence: AgentPresence;
+  isOwner: boolean;
+  isAdmin: boolean;
+}
+
+export interface ChatRoomDTO {
+  id: string;
+  kind: ChatRoomKind;
+  /** "#Geral", the group's name, or the other person's name in a direct conversation. */
+  name: string;
+  /** Direct conversation: the other person (for photo and online status). */
+  peer: ChatMemberDTO | null;
+  members: ChatMemberDTO[];
+  lastMessage: { body: string; authorName: string | null; createdAt: string } | null;
+  unreadCount: number;
+  /** What the logged-in person can do here. */
+  canManageMembers: boolean;
+  canManageAdmins: boolean;
+  canLeave: boolean;
+}
+
+export interface ChatMessageDTO {
+  id: string;
+  roomId: string;
+  /** Null for the system's lines ("Ana saiu do grupo"). */
+  authorId: string | null;
+  authorName: string | null;
+  body: string | null;
+  attachment: { name: string; mimeType: string; size: number; url: string } | null;
+  /** A customer conversation mentioned in the message. */
+  conversation: { id: string; contactName: string } | null;
+  createdAt: string;
+  /** Own messages: every other current member has read it (✓✓). */
+  readByAll: boolean;
+}
+
+export interface ChatUserDTO {
+  id: string;
+  name: string;
+  photoUrl: string | null;
+  presence: AgentPresence;
 }

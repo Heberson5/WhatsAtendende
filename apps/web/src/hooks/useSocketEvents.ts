@@ -8,6 +8,7 @@ import { getSocket } from "../lib/socket";
 import { useTypingStore } from "../store/typing-store";
 import { notifyDesktop } from "./useDesktopNotifications";
 import { playUserAlertSound } from "../lib/alert-sounds";
+import { useInternalChatStore } from "../store/internal-chat-store";
 import { useAuthStore } from "../store/auth-store";
 import type { NotificationsResponse } from "../components/layout/NotificationBell";
 import { useActiveGroupStore } from "../store/active-group-store";
@@ -89,6 +90,17 @@ export function useSocketEvents(activeConversationId: string | null) {
     // sync) — refresh so the unread badge here matches what's already read
     // on the phone, without waiting for the 20s poll.
     const onConversationRead = () => queryClient.invalidateQueries({ queryKey: ["mine"] });
+    // Chat interno: sound and Windows notification unless that very room is on screen.
+    const onInternalChatMessage = (payload: { roomId: string; authorName?: string; preview?: string; roomName?: string | null }) => {
+      queryClient.invalidateQueries({ queryKey: ["internal-chat"] });
+      const chat = useInternalChatStore.getState();
+      if (!payload.authorName || (chat.open && chat.activeRoomId === payload.roomId)) return;
+      playUserAlertSound("newMessage");
+      notifyDesktop(payload.roomName ?? "Chat interno", `${payload.authorName}: ${payload.preview ?? ""}`, `wa-internal-chat-${payload.roomId}`);
+    };
+    const onInternalChatRead = (payload: { roomId: string }) => queryClient.invalidateQueries({ queryKey: ["internal-chat", "messages", payload.roomId] });
+    const onInternalChatTyping = (payload: { roomId: string; name: string }) => useInternalChatStore.getState().setTyping(payload.roomId, payload.name);
+    const onInternalChatRooms = () => queryClient.invalidateQueries({ queryKey: ["internal-chat"] });
     const onGoalsChanged = () => queryClient.invalidateQueries({ queryKey: ["my-day"] });
     // A data source started or stopped working: tags, quick replies with tags and Dados do cliente follow at once.
     const onDataSourceStatus = () => {
@@ -167,6 +179,10 @@ export function useSocketEvents(activeConversationId: string | null) {
     socket.on("message:status", onMessageStatus);
     socket.on("conversation:read", onConversationRead);
     socket.on("goals:changed", onGoalsChanged);
+    socket.on("internal-chat:message", onInternalChatMessage);
+    socket.on("internal-chat:read", onInternalChatRead);
+    socket.on("internal-chat:typing", onInternalChatTyping);
+    socket.on("internal-chat:rooms", onInternalChatRooms);
     socket.on("data-source:status", onDataSourceStatus);
     socket.on("oversight:updated", onOversightUpdated);
     socket.on("conversation:intervention", onIntervention);
@@ -195,6 +211,10 @@ export function useSocketEvents(activeConversationId: string | null) {
       socket.off("message:status", onMessageStatus);
       socket.off("conversation:read", onConversationRead);
       socket.off("goals:changed", onGoalsChanged);
+      socket.off("internal-chat:message", onInternalChatMessage);
+      socket.off("internal-chat:read", onInternalChatRead);
+      socket.off("internal-chat:typing", onInternalChatTyping);
+      socket.off("internal-chat:rooms", onInternalChatRooms);
       socket.off("data-source:status", onDataSourceStatus);
       socket.off("oversight:updated", onOversightUpdated);
       socket.off("conversation:intervention", onIntervention);

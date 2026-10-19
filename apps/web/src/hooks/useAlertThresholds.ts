@@ -18,5 +18,10 @@ export function useAlertThresholds(): AlertThresholds {
     queryFn: async () => (await api.get<Partial<AlertThresholds>>("/settings/business")).data,
     staleTime: 5 * 60_000,
   });
-  return { ...DEFAULT_ALERT_THRESHOLDS, ...data };
+  return {
+    noReplyWarningMinutes: data?.noReplyWarningMinutes ?? DEFAULT_ALERT_THRESHOLDS.noReplyWarningMinutes,
+    noReplyDangerMinutes: data?.noReplyDangerMinutes ?? DEFAULT_ALERT_THRESHOLDS.noReplyDangerMinutes,
+    queueWarningMinutes: data?.queueWarningMinutes ?? DEFAULT_ALERT_THRESHOLDS.queueWarningMinutes,
+    queueDangerMinutes: data?.queueDangerMinutes ?? DEFAULT_ALERT_THRESHOLDS.queueDangerMinutes,
+  };
 }

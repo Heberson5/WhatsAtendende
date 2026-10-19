@@ -86,6 +86,10 @@ export const realtimeEvents = {
     getIO()?.to(ROOMS.oversight()).emit("oversight:updated");
   },
   /** The attendant's pins, reminders or scheduled messages changed (from another tab, or a message went out). */
+  /** Chat interno: something changed for these people ("internal-chat:message" | "internal-chat:read" | "internal-chat:typing" | "internal-chat:rooms"). */
+  internalChat: (userIds: string[], event: string, payload: unknown) => {
+    for (const userId of userIds) getIO()?.to(ROOMS.user(userId)).emit(event, payload);
+  },
   /** A data source became usable or stopped being usable — tags, quick replies and Dados do cliente refetch. */
   dataSourceStatusChanged: () => {
     getIO()?.emit("data-source:status");

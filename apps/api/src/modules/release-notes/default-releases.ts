@@ -11,6 +11,81 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.15.0",
+    date: "19 out 2026",
+    name: "Dados do cliente, boleto, chat interno e metas",
+    summary:
+      "Planilha ou banco ligado ao atendimento (dados do cliente, tags e alerta de contrato suspenso), envio de boleto, chat interno da equipe, metas configuráveis, alertas de tempo, sons por usuário, encaminhar mensagens e conversas do celular que voltam para a fila.",
+    notes: [
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "Conversas do celular sem resposta vêm para a fila",
+        text: "Uma conversa começada no celular da conexão em que o cliente fica sem resposta pelo tempo escolhido na conexão (5 minutos por padrão, ou nunca) entra na fila. Ao aceitar, a mensagem de aceite não é enviada; aparece um aviso e uma nota. Também acabaram as conversas duplicadas quando o atendente manda foto pelo celular.",
+        where: "Conexões › WhatsApp e Atendimento",
+      },
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "Encaminhar mensagens",
+        text: "Texto, foto, vídeo, PDF ou áudio podem ser encaminhados para uma ou mais conversas suas. Vão como uma mensagem sua, com o selo \"Encaminhada\". A busca dentro da conversa ignora acentos e alcança também as mensagens antigas.",
+        where: "Atendimento › passe o mouse na mensagem",
+      },
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "Alertas de tempo e sons",
+        text: "O cartão fica amarelo e depois vermelho quando o cliente espera demais por resposta ou para ser aceito. Os tempos ficam em Configurações › Fila. Cada pessoa escolhe os sons de nova mensagem e de nova conversa na fila, e o volume, em Meu perfil.",
+        where: "Atendimento, Configurações › Fila e Meu perfil",
+      },
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "Conversas anteriores e observação fixa",
+        text: "No painel do cliente, cada conversa anterior abre ao lado, só para leitura, com as notas e a nota da pesquisa. A observação fixa do contato aparece no topo de todas as conversas dele; quem edita depende da permissão.",
+        where: "Atendimento › painel do cliente",
+      },
+      {
+        type: "novo",
+        area: "configuracoes",
+        title: "Metas",
+        text: "Metas de encerradas por dia, tempo médio de 1ª resposta e NPS, cada uma com liga/desliga e para todos, para conexões ou para atendentes (a mais específica vale). O Meu dia mostra o progresso.",
+        where: "Configurações › Fila",
+        requires: [PERMISSION.CONFIGURACOES_FILA_VISUALIZAR],
+      },
+      {
+        type: "novo",
+        area: "configuracoes",
+        title: "Fontes de dados",
+        text: "Ligue a planilha por link do OneDrive (\"Qualquer pessoa\") ou do Google, uma planilha privada com a conta Microsoft, um arquivo enviado ou um banco de dados. Só funciona com a fonte ativa, sem erro e atualizada; se der problema, a gestão recebe o alerta.",
+        where: "Configurações › Fontes de dados",
+        requires: [PERMISSION.FONTES_DADOS_VER],
+      },
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "Dados do cliente e tags",
+        text: "Contratos, parcelas, beneficiários com o titular, parentesco, idade e agregado, com botões de copiar. Contrato com parcelas vencidas acima do limite do sistema aparece suspenso, com aviso obrigatório. As tags {{dados.coluna}} mostram o texto como vai sair e travam o envio se faltar o dado do cliente.",
+        where: "Atendimento › painel do cliente e caixa de mensagem",
+      },
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "Envio de boleto",
+        text: "Marque as parcelas do contrato, sempre a partir da mais antiga, confira a prévia e envie: vai a mensagem, o PDF de cada parcela e a linha digitável. Boleto vencido só avisa. Cada banco só é liberado depois de conferir 3 boletos reais.",
+        where: "Atendimento › painel do cliente › Dados do cliente",
+      },
+      {
+        type: "novo",
+        area: "geral",
+        title: "Chat interno",
+        text: "O balão ao lado do sino abre o chat da equipe: #Geral, conversas diretas e grupos, com quem está online, \"digitando…\", ✓✓ de lido, anexos, emojis e citação de conversa de cliente.",
+        where: "Topo da tela, ao lado do sino",
+        requires: [PERMISSION.CHAT_INTERNO_USAR],
+      },
+    ],
+  },
+  {
     version: "2.14.3",
     date: "18 out 2026",
     name: "Seu nome ao lado da foto e fundo da tela de entrada mais visível",

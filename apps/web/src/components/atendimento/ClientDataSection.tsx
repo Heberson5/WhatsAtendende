@@ -218,9 +218,11 @@ export function ClientDataSection({ conversationId, readOnly }: { conversationId
           const value = revealed[field.column] ?? field.value;
           return (
             <div key={field.column} className="flex items-start justify-between gap-2 text-xs">
-              <span className="shrink-0 text-muted">{field.column}</span>
-              <span className="flex min-w-0 items-center gap-1 text-right">
-                <span className="break-words">{value}</span>
+              <span className="max-w-[45%] shrink-0 truncate text-muted" title={field.column}>
+                {field.column}
+              </span>
+              <span className="flex min-w-0 flex-1 items-start justify-end gap-1 text-right">
+                <span className="min-w-0 break-words">{value}</span>
                 {field.sensitive && !revealed[field.column] ? (
                   canReveal && (
                     <button

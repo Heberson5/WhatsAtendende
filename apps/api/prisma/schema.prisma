@@ -1566,3 +1566,57 @@ model DataSourceRow {
 
   @@index([dataSourceId, phoneKey])
 }
+
+// Chat interno: between the people of the team (not customers).
+enum ChatRoomKind {
+  GENERAL // #Geral — everyone, can't be left
+  DIRECT  // two people
+  GROUP   // channel/group created by anyone
+}
+
+model ChatRoom {
+  id        String        @id @default(uuid())
+  kind      ChatRoomKind
+  name      String?
+  // GROUP only: who manages it. When the owner leaves it passes to the oldest admin, else the oldest member.
+  ownerId   String?
+  createdAt DateTime      @default(now())
+  members   ChatMember[]
+  messages  ChatMessage[]
+}
+
+model ChatMember {
+  id          String    @id @default(uuid())
+  room        ChatRoom  @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId      String
+  userId      String
+  isAdmin     Boolean   @default(false)
+  joinedAt    DateTime  @default(now())
+  // Added without "pode ver o histórico": sees only messages from this moment on.
+  historyFrom DateTime?
+  // Left the group: it disappears for them.
+  leftAt      DateTime?
+  lastReadAt  DateTime?
+
+  @@unique([roomId, userId])
+  @@index([userId])
+}
+
+// Kept forever.
+model ChatMessage {
+  id                 String   @id @default(uuid())
+  room               ChatRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId             String
+  // Null for the system's own lines ("X saiu do grupo").
+  authorId           String?
+  body               String?
+  // A customer conversation mentioned in the message.
+  conversationId     String?
+  attachmentKey      String?
+  attachmentName     String?
+  attachmentMimeType String?
+  attachmentSize     Int?
+  createdAt          DateTime @default(now())
+
+  @@index([roomId, createdAt])
+}

@@ -31,6 +31,7 @@ import { agentToolsRouter } from "./modules/agent-tools/agent-tools.routes";
 import { goalsRouter } from "./modules/goals/goals.routes";
 import { dataSourcesRouter } from "./modules/data-sources/data-sources.routes";
 import { boletosRouter } from "./modules/boletos/boletos.routes";
+import { internalChatRouter } from "./modules/internal-chat/internal-chat.routes";
 import { contactsRouter } from "./modules/contacts/contacts.routes";
 import { linkPreviewRouter } from "./modules/link-preview/link-preview.routes";
 import { notificationsRouter } from "./modules/notifications/notifications.routes";
@@ -157,6 +158,7 @@ export function createApp() {
   app.use("/api/goals", goalsRouter);
   app.use("/api/data-sources", dataSourcesRouter);
   app.use("/api/boletos", boletosRouter);
+  app.use("/api/internal-chat", internalChatRouter);
   app.use("/api/notifications", notificationsRouter);
   app.use("/api/holidays", holidaysRouter);
   app.use("/api/groups", groupsRouter);
