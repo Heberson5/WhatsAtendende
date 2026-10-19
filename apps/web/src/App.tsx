@@ -13,6 +13,7 @@ import DashboardPage from "./pages/dashboard/DashboardPage";
 import RelatoriosPage from "./pages/relatorios/RelatoriosPage";
 import UsuariosPage from "./pages/usuarios/UsuariosPage";
 import RespostasPage from "./pages/respostas/RespostasPage";
+import EtiquetasPage from "./pages/etiquetas/EtiquetasPage";
 import ContatosPage from "./pages/contatos/ContatosPage";
 import ConexoesPage from "./pages/conexoes/ConexoesPage";
 import FluxoPage from "./pages/fluxo/FluxoPage";
@@ -92,6 +93,9 @@ export default function App() {
             <Route path="/respostas" element={<RespostasPage />} />
           </Route>
           <Route path="/respostas-rapidas" element={<Navigate to="/respostas" replace />} />
+          <Route element={<PermissionRoute permission={PERMISSION.ETIQUETAS_VISUALIZAR} />}>
+            <Route path="/etiquetas" element={<EtiquetasPage />} />
+          </Route>
           <Route element={<PermissionRoute permission={PERMISSION.CONEXOES_GERENCIAR} />}>
             <Route path="/conexoes" element={<ConexoesPage />} />
           </Route>

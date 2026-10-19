@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { AlarmClock, ArrowLeft, ArrowRightLeft, CalendarClock, CheckCircle2, ChevronDown, ChevronUp, FileText, Lock, PanelRight, Paperclip, Phone, Pin, PinOff, Search, Smartphone, StickyNote, X as CloseIcon } from "lucide-react";
+import { AlarmClock, ArrowLeft, ArrowRightLeft, CalendarClock, CheckCircle2, ChevronDown, ChevronUp, FileText, Lock, MessageSquareOff, PanelRight, Paperclip, Phone, Pin, PinOff, Search, Smartphone, StickyNote, X as CloseIcon } from "lucide-react";
 import { format } from "date-fns";
 import clsx from "clsx";
 import { PERMISSION, type ConversationListItemDTO, type ConversationNoteDTO, type MessageDTO, type PaginatedResult, type QuickReplyDTO, type TemplateContextDTO } from "@whatsatendende/types";
@@ -25,6 +25,7 @@ import { ContactPhoto } from "../common/ContactPhoto";
 import { useAgentExtras } from "../../hooks/useAgentExtras";
 import { useTypingStore } from "../../store/typing-store";
 import { WhenPicker } from "./WhenPicker";
+import { NoReturnStatus, useNoReturnHold, useNoReturnSettings } from "./NoReturn";
 
 /** Lowercase without accents, so "aviso" also finds "Avíso" and "nao" finds "não". */
 function foldForSearch(value: string) {
@@ -448,6 +449,19 @@ export function ChatPanel({
     onError: (err) => toast.error(getApiErrorMessage(err)),
   });
 
+  const closeNoReturnMutation = useMutation({
+    mutationFn: () => api.post(`/conversations/${conversation.id}/close-no-return`),
+    onSuccess: () => {
+      toast.success("Encerrado por falta de retorno. O cliente recebeu a mensagem, sem pesquisa.");
+      queryClient.invalidateQueries({ queryKey: ["my-day"] });
+      onClosed();
+    },
+    onError: (err) => toast.error(getApiErrorMessage(err)),
+  });
+
+  const noReturnSettings = useNoReturnSettings();
+  const holdMutation = useNoReturnHold(conversation.id);
+
   const displayName = contactDisplayName(conversation.contact, conversation.channel);
 
   // Atendimento's own helpers (not in Gestão's intervention panel): pin, "lembrar de retornar", "agendar envio".
@@ -755,6 +769,9 @@ export function ChatPanel({
             >
               <ArrowRightLeft className="h-3.5 w-3.5" /> <span className={actionLabelClass}>Transferir</span>
             </button>
+          )}
+          {canClose && noReturnSettings?.enabled && (
+            <NoReturnStatus conversation={conversation} onHold={(hold) => holdMutation.mutate(hold)} pending={holdMutation.isPending} labelClassName={actionLabelClass} />
           )}
           {canClose && (
             <button
@@ -1074,6 +1091,15 @@ export function ChatPanel({
                 {closeMutation.isPending ? "Encerrando..." : "Encerrar"}
               </button>
             </div>
+            <button
+              onClick={() => closeNoReturnMutation.mutate()}
+              disabled={closeNoReturnMutation.isPending}
+              className="focus-ring mt-2 flex w-full items-center justify-center gap-1.5 rounded-card border border-border py-2 text-sm font-medium hover:bg-surface-alt disabled:opacity-60"
+            >
+              <MessageSquareOff className="h-4 w-4" />
+              {closeNoReturnMutation.isPending ? "Encerrando..." : "Encerrar por falta de retorno"}
+            </button>
+            <p className="mt-1 text-center text-[11px] text-muted">Envia a mensagem de falta de retorno, sem pesquisa de satisfação.</p>
           </div>
         </div>
       )}

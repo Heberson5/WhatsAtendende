@@ -11,6 +11,7 @@ import { saveReplyMediaOrWarn, type ReplyMediaChange } from "./ReplyMediaField";
 import { MediaBadge } from "./RespostasRapidasTab";
 import { ColumnViewMenu } from "../../components/common/ColumnViewMenu";
 import { useColumnView } from "../../hooks/useColumnView";
+import { NoReturnSettingsCard } from "./NoReturnSettingsCard";
 
 /** Cadastro de mensagens de encerramento automático — ver PROMPT: "Encerramento, o cadastro deverá ser similar com a resposta rápida, mas com alguns diferenciais." */
 export function EncerramentoTab() {
@@ -70,7 +71,8 @@ export function EncerramentoTab() {
   }
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
+    <div className="flex h-full flex-col overflow-y-auto">
+      <NoReturnSettingsCard canEdit={Boolean(canEditar)} />
       <div className="mb-4 flex items-center justify-between">
         <p className="text-sm text-muted">
           Mensagem enviada automaticamente ao cliente quando um dos usuários selecionados clica em Encerrar. Um usuário só pode estar em um encerramento por vez.
@@ -85,7 +87,7 @@ export function EncerramentoTab() {
         )}
       </div>
 
-      <div className="shadow-soft flex-1 overflow-auto rounded-card border border-border bg-surface">
+      <div className="shadow-soft min-h-[16rem] flex-1 overflow-auto rounded-card border border-border bg-surface">
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-surface-alt text-left text-xs uppercase tracking-wide text-muted">
             <tr>

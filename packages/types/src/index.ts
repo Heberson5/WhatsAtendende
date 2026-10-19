@@ -883,6 +883,10 @@ export interface ConversationListItemDTO {
   // When the customer's oldest still-unanswered message arrived (null when
   // the last word was the agent's) — drives "sem resposta há X min".
   awaitingReplySince: string | null;
+  /** Falta de retorno: the reminder already went out and the conversation closes by itself at this time ("⏳ encerra em N min"). */
+  noReturnCloseAt: string | null;
+  /** "Aguardar cliente": the agent paused the automatic close until the customer answers. */
+  noReturnHold: boolean;
   /** Started or answered on the linked phone — accepting it sends no "Aceite" message. */
   startedOnDevice: boolean;
   unreadCount: number;
@@ -1109,7 +1113,10 @@ export const PERMISSION = {
   CONTATOS_ACESSAR: "contatos.acessar",
   CONTATOS_EDITAR: "contatos.editar",
   CONTATOS_IMPORTAR_EXPORTAR: "contatos.importar_exportar",
-  CONTATOS_ETIQUETAS_GERENCIAR: "contatos.etiquetas_gerenciar",
+  ETIQUETAS_VISUALIZAR: "etiquetas.visualizar",
+  ETIQUETAS_ADICIONAR: "etiquetas.adicionar",
+  ETIQUETAS_EDITAR: "etiquetas.editar",
+  ETIQUETAS_EXCLUIR: "etiquetas.excluir",
   CONTATOS_OBSERVACAO_EDITAR: "contatos.observacao_editar",
   RESPOSTAS_RAPIDAS_GERENCIAR: "respostas_rapidas.gerenciar",
   // Each layered ON TOP of RESPOSTAS_RAPIDAS_GERENCIAR (need both) — see
@@ -1481,10 +1488,34 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     defaultAllowed: { AGENT: false, MANAGER: true },
   },
   {
-    key: PERMISSION.CONTATOS_ETIQUETAS_GERENCIAR,
-    group: "Contatos",
-    label: "Contatos — gerenciar etiquetas",
-    description: "Renomear, mudar a cor e excluir etiquetas (a exclusão tira a etiqueta de todos os contatos).",
+    key: PERMISSION.ETIQUETAS_VISUALIZAR,
+    group: "Etiquetas",
+    label: "Etiquetas — ver",
+    description: "Abrir Automação › Etiquetas. No atendimento, todos só escolhem etiquetas desta lista.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.ETIQUETAS_ADICIONAR,
+    group: "Etiquetas",
+    label: "Etiquetas — adicionar",
+    description: "Cadastrar etiquetas novas (o único lugar onde se cria etiqueta).",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.ETIQUETAS_EDITAR,
+    group: "Etiquetas",
+    label: "Etiquetas — editar",
+    description: "Renomear, mudar a cor e ligar ou desligar \"Não enviar pesquisa\".",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.ETIQUETAS_EXCLUIR,
+    group: "Etiquetas",
+    label: "Etiquetas — excluir",
+    description: "Excluir etiquetas (a exclusão tira a etiqueta de todos os contatos).",
     editableRoles: ["AGENT", "MANAGER"],
     defaultAllowed: { AGENT: false, MANAGER: true },
   },
@@ -1965,6 +1996,8 @@ export interface TagDTO {
   id: string;
   name: string;
   color: string;
+  /** Contacts with this tag (e.g. staff) never get the satisfaction survey and are left out of the NPS. */
+  skipSurvey: boolean;
 }
 
 /** Card shown under a link in a message — see GET /link-preview. */
@@ -1977,6 +2010,18 @@ export interface LinkPreviewDTO {
 }
 
 /** Etiqueta na tela de gestão de etiquetas — com quantos contatos a usam. */
+/** Encerramento por falta de retorno (Respostas › Encerramento). Times count only within the connection's work schedule. */
+export interface NoReturnSettingsDTO {
+  /** The automatic mode; "Encerrar por falta de retorno" in the Encerrar menu works either way. */
+  enabled: boolean;
+  /** After the agent's last message, how long the customer stays silent before the reminder goes out. */
+  reminderMinutes: number;
+  /** After the reminder, how long until the conversation is closed. */
+  closeMinutes: number;
+  reminderText: string;
+  closeText: string;
+}
+
 export interface ManagedTagDTO extends TagDTO {
   contactCount: number;
 }
@@ -2245,6 +2290,9 @@ export const DATA_SOURCE_ROLES = {
   parcelDue: { label: "Vencimento da parcela", column: "vencimento_parcela" },
   daysLate: { label: "Dias em atraso", column: "dias_em_atraso" },
   parcelValue: { label: "Saldo da parcela", column: "saldo" },
+  fine: { label: "Multa", column: "multa" },
+  interest: { label: "Juros", column: "juros" },
+  updatedValue: { label: "Valor atualizado", column: "valor_atualizado" },
   paymentMethod: { label: "Forma de pagamento", column: "forma_pagamento" },
   boletoDue: { label: "Vencimento do boleto", column: "vencimento_boleto" },
   boletoValue: { label: "Valor do boleto", column: "valor_boleto" },
@@ -2301,6 +2349,10 @@ export interface ClientParcelDTO {
   due: string | null;
   daysLate: number;
   value: string | null;
+  /** Multa, juros e saldo + encargos até hoje, como o ERP calcula — o boleto continua com o valor registrado. */
+  fine: string | null;
+  interest: string | null;
+  updatedValue: string | null;
   paymentMethod: string | null;
   overdue: boolean;
 }

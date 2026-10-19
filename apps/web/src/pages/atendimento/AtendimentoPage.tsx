@@ -25,6 +25,7 @@ import { MyDayStrip } from "../../components/atendimento/MyDayStrip";
 import { ShortcutsHelp } from "../../components/atendimento/ShortcutsHelp";
 import { useAgentExtras } from "../../hooks/useAgentExtras";
 import { useDraftStore } from "../../store/draft-store";
+import { useNoReturnWarnings } from "../../components/atendimento/NoReturn";
 
 const CLIENT_PANEL_KEY = "client-panel-collapsed";
 // Below this width the chat needs the room, so the panel starts collapsed.
@@ -116,6 +117,7 @@ export default function AtendimentoPage() {
     queryFn: async () => (await api.get<ConversationListItemDTO[]>("/conversations/mine")).data,
     refetchInterval: 20_000,
   });
+  useNoReturnWarnings(mineQuery.data);
 
   // Deep link from the notification bell (?open=<conversationId>) — both
   // notification types (new message, transfer received) only ever point at

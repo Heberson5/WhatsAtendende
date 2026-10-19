@@ -20,6 +20,7 @@ import {
   Workflow,
   Sparkles,
   Contact,
+  Tag,
 } from "lucide-react";
 import { PERMISSION, type ConversationListItemDTO, type GroupsSummaryDTO, type Permission } from "@whatsatendende/types";
 import { api } from "../../lib/api";
@@ -54,6 +55,7 @@ export const MENU_ITEMS: MenuItem[] = [
   { to: "/relatorios", label: "Relatórios", icon: FileBarChart, permission: PERMISSION.RELATORIOS_ACESSAR, group: "Análise" },
   { to: "/respostas", label: "Respostas", icon: Slash, permission: PERMISSION.RESPOSTAS_RAPIDAS_GERENCIAR, group: "Automação" },
   { to: "/fluxo", label: "Fluxo", icon: Workflow, permission: PERMISSION.FLUXO_VISUALIZAR, group: "Automação" },
+  { to: "/etiquetas", label: "Etiquetas", icon: Tag, permission: PERMISSION.ETIQUETAS_VISUALIZAR, group: "Automação" },
   { to: "/usuarios", label: "Usuários", icon: Users, permission: PERMISSION.USUARIOS_VISUALIZAR, group: "Administração" },
   { to: "/conexoes", label: "Conexões", icon: Plug, permission: PERMISSION.CONEXOES_GERENCIAR, group: "Administração" },
   { to: "/configuracoes", label: "Configurações", icon: Settings, permission: PERMISSION.CONFIGURACOES_GERENCIAR, group: "Administração" },

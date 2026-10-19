@@ -30,6 +30,7 @@ export interface TeamData {
 export interface AgentConversationStats {
   agentId: string;
   conversations: number;
+  closedNoReturn: number;
   avgHandlingMs: number | null;
 }
 
@@ -155,6 +156,12 @@ export function AgentsTable({ team, stats }: { team: TeamData | undefined; stats
                     return (
                       <th key="conversations" className="px-2 py-2">Conversas</th>
                     );
+                  case "noReturn":
+                    return (
+                      <th key="noReturn" className="px-2 py-2 text-right" title="Encerradas por falta de retorno do cliente — já contam em Conversas">
+                        Sem retorno
+                      </th>
+                    );
                   case "avgTime":
                     return (
                       <th key="avgTime" className="px-2 py-2 text-right">Tempo médio</th>
@@ -213,6 +220,10 @@ export function AgentsTable({ team, stats }: { team: TeamData | undefined; stats
                               <span className="tabular-nums">{s?.conversations ?? 0}</span>
                             </span>
                           </td>
+                        );
+                      case "noReturn":
+                        return (
+                          <td key="noReturn" className="px-2 py-2 text-right tabular-nums">{s?.closedNoReturn ?? 0}</td>
                         );
                       case "avgTime":
                         return (

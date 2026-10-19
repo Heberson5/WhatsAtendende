@@ -1,0 +1,157 @@
+import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
+import request from "supertest";
+import { prisma } from "../src/lib/prisma";
+import { resetDatabase, createTestConnection, createTestUser, TEST_PASSWORD } from "./helpers";
+
+const sent: { phone: string; text: string }[] = [];
+vi.mock("../src/modules/whatsapp/whatsapp.service", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/modules/whatsapp/whatsapp.service")>();
+  return {
+    ...actual,
+    sendOutboundText: vi.fn(async (_connectionId: string, _messageId: string, phone: string, text: string) => {
+      sent.push({ phone, text });
+    }),
+  };
+});
+
+// Loaded after the mock so every module binds to the mocked whatsapp.service.
+import { createApp } from "../src/app";
+import { updateBusinessSettings } from "../src/modules/settings/settings.service";
+import { closeForNoReturn, processNoReturnConversations, resetNoReturnClock } from "../src/modules/conversations/no-return.service";
+import { createInboundMessage } from "../src/modules/messages/messages.service";
+import { findOrOpenConversationForInboundMessage } from "../src/modules/conversations/conversations.service";
+import { createSurvey, willSendSurveyOnClose } from "../src/modules/satisfaction/satisfaction.service";
+
+const app = createApp();
+const MINUTE = 60_000;
+
+describe("Encerramento por falta de retorno", () => {
+  let connectionId: string;
+  let agentId: string;
+  let token: string;
+
+  beforeEach(async () => {
+    await resetDatabase();
+    sent.length = 0;
+    resetNoReturnClock();
+    connectionId = (await createTestConnection("Suporte")).id;
+    agentId = (await createTestUser({ email: "ana@test.dev", role: "AGENT", displayName: "Ana", presence: "ONLINE", whatsappConnectionId: connectionId })).id;
+    token = (await request(app).post("/api/auth/login").send({ email: "ana@test.dev", password: TEST_PASSWORD })).body.accessToken;
+  });
+
+  afterAll(async () => {
+    await prisma.$disconnect();
+  });
+
+  /** A conversation with Ana whose last word was hers, `minutesAgo` minutes ago. */
+  async function waitingOnCustomer(phone: string, minutesAgo: number) {
+    const contact = await prisma.contact.create({ data: { phone, name: "Joana", whatsappConnectionId: connectionId } });
+    return prisma.conversation.create({
+      data: {
+        contactId: contact.id,
+        whatsappConnectionId: connectionId,
+        status: "IN_PROGRESS",
+        assignedAgentId: agentId,
+        acceptedAt: new Date(),
+        lastMessageAt: new Date(Date.now() - minutesAgo * MINUTE),
+        lastMessageDirection: "OUTBOUND",
+      },
+    });
+  }
+
+  const enable = () => updateBusinessSettings({ noReturnEnabled: true, noReturnReminderMinutes: 10, noReturnCloseMinutes: 15 });
+
+  it("manual: envia a mensagem de falta de retorno, sem pesquisa, e registra o motivo", async () => {
+    await createSurvey({
+      name: "Pesquisa",
+      active: true,
+      connectionScope: { allConnections: true, connectionIds: [] },
+      question: "De 0 a 10?",
+      thanks: "Obrigado!",
+      answerWindowHours: 24,
+      closingWaitMinutes: 30,
+    });
+    const conversation = await waitingOnCustomer("5511900000001", 2);
+    expect(await willSendSurveyOnClose(conversation.id)).toBe(true);
+
+    const res = await request(app).post(`/api/conversations/${conversation.id}/close-no-return`).set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(sent.map((m) => m.text)).toEqual([
+      "Joana, como não tivemos retorno, estamos encerrando este atendimento por enquanto. Quando quiser continuar, é só mandar uma mensagem aqui que retomamos de onde paramos. Até logo! 👋",
+    ]);
+    const closed = await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } });
+    expect(closed).toMatchObject({ status: "CLOSED", closeReason: "NO_RETURN", closedByUserId: agentId });
+    expect(await prisma.conversationNote.count({ where: { conversationId: conversation.id } })).toBe(1);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(await prisma.satisfactionSurvey.count()).toBe(0);
+  });
+
+  it("automático: lembrete depois de X minutos, encerra Y minutos depois; desligado não faz nada", async () => {
+    const conversation = await waitingOnCustomer("5511900000002", 11);
+    await processNoReturnConversations();
+    expect(sent).toHaveLength(0); // off by default
+
+    await enable();
+    await processNoReturnConversations();
+    expect(sent.map((m) => m.text)).toEqual(["Oi, Joana! Ainda está por aí? 😊 Fico aguardando seu retorno para continuarmos o atendimento."]);
+    const reminded = await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } });
+    expect(reminded.noReturnCloseAt!.getTime()).toBeGreaterThan(Date.now() + 14 * MINUTE);
+    expect(reminded.status).toBe("IN_PROGRESS");
+
+    await processNoReturnConversations(new Date(Date.now() + 16 * MINUTE));
+    expect(await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).toMatchObject({ status: "CLOSED", closeReason: "NO_RETURN" });
+    expect(sent).toHaveLength(2);
+  });
+
+  it("o cliente respondeu, há lembrete pendente ou o atendente marcou Aguardar cliente: não encerra", async () => {
+    await enable();
+    const answered = await waitingOnCustomer("5511900000003", 11);
+    await processNoReturnConversations();
+    await createInboundMessage({ conversationId: answered.id, type: "TEXT", body: "oi", providerMessageId: "wamid-1" });
+    expect(await prisma.conversation.findUniqueOrThrow({ where: { id: answered.id } })).toMatchObject({ noReturnCloseAt: null, lastMessageDirection: "INBOUND" });
+
+    const withReminder = await waitingOnCustomer("5511900000004", 30);
+    await prisma.conversationReminder.create({ data: { userId: agentId, conversationId: withReminder.id, remindAt: new Date(Date.now() + 60 * MINUTE) } });
+    const held = await waitingOnCustomer("5511900000005", 30);
+    const hold = await request(app).post(`/api/conversations/${held.id}/no-return-hold`).set("Authorization", `Bearer ${token}`).send({ hold: true });
+    expect(hold.body).toMatchObject({ noReturnHold: true });
+
+    sent.length = 0;
+    await processNoReturnConversations(new Date(Date.now() + 60 * MINUTE));
+    expect(sent).toHaveLength(0);
+    expect(await prisma.conversation.count({ where: { status: "CLOSED" } })).toBe(0);
+  });
+
+  it("fora do expediente o tempo para", async () => {
+    await enable();
+    const schedule = await prisma.workSchedule.create({ data: { name: "Fechado", state: "MT", city: "Cuiabá", days: {}, closedMessage: "Fechado." } });
+    await prisma.whatsAppConnection.update({ where: { id: connectionId }, data: { workScheduleId: schedule.id } });
+    const conversation = await waitingOnCustomer("5511900000006", 5);
+
+    const start = Date.now();
+    await processNoReturnConversations(new Date(start));
+    const before = (await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).noReturnReminderAt!.getTime();
+    await processNoReturnConversations(new Date(start + 30 * MINUTE));
+    const after = (await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).noReturnReminderAt!.getTime();
+    expect(after - before).toBe(30 * MINUTE);
+    expect(sent).toHaveLength(0);
+  });
+
+  it("o cliente volta depois do encerramento: vai para o mesmo atendente, se online, com a nota", async () => {
+    const conversation = await waitingOnCustomer("5511900000007", 2);
+    await closeForNoReturn(conversation.id, null);
+
+    const opened = await findOrOpenConversationForInboundMessage(connectionId, conversation.contactId, "voltei");
+    expect(opened).toMatchObject({ isNewConversation: true, autoAssignedAgentId: agentId });
+    expect(opened.conversation).toMatchObject({ status: "IN_PROGRESS", assignedAgentId: agentId });
+    const notes = await prisma.conversationNote.findMany({ where: { conversationId: opened.conversation.id } });
+    expect(notes.map((n) => n.body)).toEqual(["Cliente voltou após encerramento por falta de retorno"]);
+
+    // Offline: the regular queue, still with the note.
+    await prisma.conversation.update({ where: { id: opened.conversation.id }, data: { status: "CLOSED", closeReason: "NO_RETURN" } });
+    await prisma.user.update({ where: { id: agentId }, data: { presence: "OFFLINE" } });
+    const queued = await findOrOpenConversationForInboundMessage(connectionId, conversation.contactId, "oi de novo");
+    expect(queued.autoAssignedAgentId).toBeNull();
+    expect(queued.conversation.status).toBe("NEW");
+  });
+});

@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import type { NoReturnSettingsDTO } from "@whatsatendende/types";
 import { prisma } from "../../lib/prisma";
 import { encryptSecret, decryptSecret } from "../../lib/crypto";
 import { realtimeEvents } from "../../realtime/realtime";
@@ -223,7 +224,26 @@ const DEFAULT_BUSINESS_SETTINGS = {
   noReplyDangerMinutes: 15,
   queueWarningMinutes: 5,
   queueDangerMinutes: 10,
+  // Encerramento por falta de retorno (Respostas › Encerramento): off until a manager turns it on. The minutes only
+  // count while the connection's work schedule is open.
+  noReturnEnabled: false,
+  noReturnReminderMinutes: 10,
+  noReturnCloseMinutes: 15,
+  noReturnReminderText: "Oi, {{cliente}}! Ainda está por aí? 😊 Fico aguardando seu retorno para continuarmos o atendimento.",
+  noReturnCloseText:
+    "{{cliente}}, como não tivemos retorno, estamos encerrando este atendimento por enquanto. Quando quiser continuar, é só mandar uma mensagem aqui que retomamos de onde paramos. Até logo! 👋",
 };
+
+export async function getNoReturnSettings(): Promise<NoReturnSettingsDTO> {
+  const s = await getBusinessSettings();
+  return {
+    enabled: s.noReturnEnabled as boolean,
+    reminderMinutes: s.noReturnReminderMinutes as number,
+    closeMinutes: s.noReturnCloseMinutes as number,
+    reminderText: s.noReturnReminderText as string,
+    closeText: s.noReturnCloseText as string,
+  };
+}
 
 export async function updateBusinessSettings(patch: Record<string, unknown>) {
   const current = await getBusinessSettings();

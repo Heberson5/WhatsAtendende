@@ -30,12 +30,20 @@ describe("Contatos e etiquetas", () => {
 
   it("importa CSV (cria, atualiza e aponta linhas com erro), busca e exporta", async () => {
     await prisma.contact.create({ data: { phone: "5511900000001", name: null, whatsappConnectionId: connectionId } });
-    const csv = ["Nome;Telefone;Etiquetas", "Ana Souza;(11) 90000-0001;VIP, Atacado", "Bruno;11 90000-0002;vip", "Sem número;abc;"].join("\n");
+    await prisma.tag.createMany({ data: [{ name: "VIP", color: "#0097B4" }, { name: "Atacado", color: "#059669" }] });
+    const csv = ["Nome;Telefone;Etiquetas", "Ana Souza;(11) 90000-0001;VIP, Atacado", "Bruno;11 90000-0002;vip, Inexistente", "Sem número;abc;"].join("\n");
 
     const imported = await request(app).post("/api/contacts/import").set("Authorization", `Bearer ${token}`).send({ whatsappConnectionId: connectionId, csv });
     expect(imported.status).toBe(200);
-    expect(imported.body).toEqual({ created: 1, updated: 1, errors: [{ line: 4, reason: 'Telefone inválido: "abc"' }] });
-    expect(await prisma.tag.count()).toBe(2); // "VIP" and "vip" are one tag
+    expect(imported.body).toEqual({
+      created: 1,
+      updated: 1,
+      errors: [
+        { line: 3, reason: 'Etiqueta "Inexistente" não está cadastrada em Automação › Etiquetas' },
+        { line: 4, reason: 'Telefone inválido: "abc"' },
+      ],
+    });
+    expect(await prisma.tag.count()).toBe(2); // import never creates tags; "vip" matches "VIP"
 
     const search = await request(app).get("/api/contacts").query({ search: "ana" }).set("Authorization", `Bearer ${token}`);
     expect(search.body.total).toBe(1);
@@ -64,7 +72,7 @@ describe("Contatos e etiquetas", () => {
 
     await request(app).patch(`/api/contacts/tags/${tag.body.id}`).set("Authorization", `Bearer ${token}`).send({ name: "Recorrente", color: "#059669" });
     const tags = await request(app).get("/api/contacts/tags").set("Authorization", `Bearer ${token}`);
-    expect(tags.body).toEqual([{ id: tag.body.id, name: "Recorrente", color: "#059669", contactCount: 1 }]);
+    expect(tags.body).toEqual([{ id: tag.body.id, name: "Recorrente", color: "#059669", skipSurvey: false, contactCount: 1 }]);
 
     expect((await request(app).delete(`/api/contacts/tags/${tag.body.id}`).set("Authorization", `Bearer ${token}`)).status).toBe(204);
     expect(await prisma.contactTag.count()).toBe(0);

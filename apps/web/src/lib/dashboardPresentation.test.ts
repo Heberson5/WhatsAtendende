@@ -12,7 +12,7 @@ function agent(name: string, conversations: number, i: number) {
 
 function snapshot(overrides: Partial<DashboardSnapshot> = {}): DashboardSnapshot {
   return {
-    conversations: { received: 1284, unique: 1031, inProgress: 23, closed: 1240, waiting: 4 },
+    conversations: { received: 1284, unique: 1031, inProgress: 23, closed: 1240, closedNoReturn: 0, waiting: 4 },
     messages: { received: 6725, sent: 7306, total: 14031 },
     timings: { avgAcceptMs: 4 * 60000, avgFirstResponseMs: 3 * 60000, avgHandlingMs: 43 * 60000, avgClosingMs: 49 * 60000 },
     perAgent: [agent("Ana Souza", 312, 1), agent("Bruno Lima", 268, 2), agent("Carla Mendes", 231, 3)],
@@ -270,7 +270,7 @@ describe("apresentação do Dashboard", () => {
 
   it("período sem movimento: sem jornada, sem equipe, sem presença e sem palavras — só o que tem número", async () => {
     const empty = snapshot({
-      conversations: { received: 0, unique: 0, inProgress: 0, closed: 0, waiting: 0 },
+      conversations: { received: 0, unique: 0, inProgress: 0, closed: 0, closedNoReturn: 0, waiting: 0 },
       messages: { received: 0, sent: 0, total: 0 },
       timings: { avgAcceptMs: null, avgFirstResponseMs: null, avgHandlingMs: null, avgClosingMs: null },
       perAgent: [],
@@ -359,7 +359,7 @@ describe("o período em resumo", () => {
 
   it("menos conversas e resposta mais lenta também são ditas como são", () => {
     const data = snapshot({
-      conversations: { received: 900, unique: 1, inProgress: 0, closed: 0, waiting: 0 },
+      conversations: { received: 900, unique: 1, inProgress: 0, closed: 0, closedNoReturn: 0, waiting: 0 },
       timings: { avgAcceptMs: null, avgFirstResponseMs: 5 * 60000, avgHandlingMs: null, avgClosingMs: null },
     });
     const [volume, speed] = buildHighlights({ data, satisfaction: null });

@@ -775,6 +775,14 @@ model Conversation {
   startedOnDevice      Boolean   @default(false)
   // Dados do cliente: which client of the data source this conversation is about (a phone can belong to several),
   // and when the agent acknowledged the "contrato suspenso" warning (shown once per conversation).
+  // Encerramento por falta de retorno: why it was closed ("NO_RETURN" — counted apart in the reports), when the
+  // reminder is due after the agent's last message, when the automatic close is due after the reminder went out
+  // (both pushed forward while the connection is outside its work schedule), and "Aguardar cliente" (the agent
+  // paused the automatic close).
+  closeReason          String?
+  noReturnReminderAt   DateTime?
+  noReturnCloseAt      DateTime?
+  noReturnHold         Boolean   @default(false)
   dataClientKey        String?
   dataSuspensionAckAt  DateTime?
 
@@ -1284,9 +1292,11 @@ model ConversationNote {
 
 /// Label an agent puts on a customer (e.g. "Cliente recorrente"), shared by the whole team.
 model Tag {
-  id        String       @id @default(uuid())
-  name      String       @unique
-  color     String       @default("#0097B4")
+  id         String       @id @default(uuid())
+  name       String       @unique
+  color      String       @default("#0097B4")
+  // "Não enviar pesquisa": contacts with it (e.g. staff) get only the closing message and stay out of the NPS.
+  skipSurvey Boolean      @default(false)
   createdAt DateTime     @default(now())
   contacts  ContactTag[]
 }

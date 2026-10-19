@@ -12,7 +12,7 @@ import { assertAgentCanAccessConversation, assertCanReplyToConversation, getConv
 import { createOutboundMessage } from "../messages/messages.service";
 import * as whatsappService from "../whatsapp/whatsapp.service";
 import * as metaService from "../meta/meta.service";
-import { calculateNps } from "../satisfaction/satisfaction.service";
+import { calculateNps, npsExcludedContactIds } from "../satisfaction/satisfaction.service";
 
 const OPEN_STATUSES = ["IN_PROGRESS", "TRANSFERRED"] as const;
 
@@ -178,7 +178,7 @@ export async function getMyDay(userId: string, tzOffsetMinutes: number): Promise
     }),
     prisma.satisfactionSurvey.groupBy({
       by: ["score"],
-      where: { agentId: userId, score: { not: null }, questionId: { not: null }, sentAt: { gte: month.from, lte: month.to } },
+      where: { agentId: userId, score: { not: null }, questionId: { not: null }, sentAt: { gte: month.from, lte: month.to }, contactId: { notIn: await npsExcludedContactIds() } },
       _count: { _all: true },
     }),
     goalsForUser(userId, user.whatsappConnectionId),

@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { NO_RETURN_CLOSE_REASON } from "../conversations/conversations.service";
 import ExcelJS from "exceljs";
 import PDFDocument from "pdfkit";
 import { imageSize } from "image-size";
@@ -99,6 +100,7 @@ export async function getAttendanceReport({ from, to, agentId, connectionIds, tz
       "Até aceite": formatDuration(acceptMs),
       "Até 1ª resposta": formatDuration(firstResponse),
       Encerramento: formatDateTime(c.closedAt, tzOffsetMinutes),
+      "Motivo do encerramento": c.closeReason === NO_RETURN_CLOSE_REASON ? "Sem retorno do cliente" : "-",
       "Duração total": formatDuration(totalMs),
       "Mensagens recebidas": received,
       "Mensagens enviadas": sent,
@@ -140,6 +142,7 @@ export async function getPerAgentReport({ from, to, connectionIds }: ReportParam
       return {
         Atendente: agent.displayName,
         Conversas: conversations.length,
+        "Sem retorno do cliente": conversations.filter((c) => c.status === "CLOSED" && c.closeReason === NO_RETURN_CLOSE_REASON).length,
         "Mensagens enviadas": messagesSent,
         "Tempo médio até aceite": avg(acceptDiffs),
         "Tempo médio até 1ª resposta": avg(firstResponseDiffs(conversations)),

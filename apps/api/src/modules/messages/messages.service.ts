@@ -89,6 +89,8 @@ export async function createOutboundMessage(input: CreateOutboundMessageInput) {
 
   const updates: Record<string, unknown> = { lastMessageAt: new Date(), lastMessageDirection: "OUTBOUND", awaitingReplySince: null };
   if (!conversation.firstResponseAt && !input.automatic) updates.firstResponseAt = new Date();
+  // A message the agent writes restarts the "falta de retorno" countdown from it.
+  if (!input.automatic) Object.assign(updates, { noReturnReminderAt: null, noReturnCloseAt: null });
   await prisma.conversation.update({ where: { id: input.conversationId }, data: updates });
 
   return message;
@@ -221,7 +223,7 @@ export async function createOutboundMessageFromDevice(input: CreateOutboundMessa
 
   await prisma.conversation.update({
     where: { id: input.conversationId },
-    data: { lastMessageAt: input.timestamp, lastMessageDirection: "OUTBOUND", awaitingReplySince: null },
+    data: { lastMessageAt: input.timestamp, lastMessageDirection: "OUTBOUND", awaitingReplySince: null, noReturnReminderAt: null, noReturnCloseAt: null },
   });
 
   return message;
@@ -304,7 +306,8 @@ export async function createInboundMessage(input: CreateInboundMessageInput) {
   const now = new Date();
   await prisma.conversation.update({
     where: { id: input.conversationId },
-    data: { lastMessageAt: now, lastMessageDirection: "INBOUND" },
+    // The customer answered: no "falta de retorno" countdown, and "Aguardar cliente" has done its job.
+    data: { lastMessageAt: now, lastMessageDirection: "INBOUND", noReturnReminderAt: null, noReturnCloseAt: null, noReturnHold: false },
   });
   // Only the first unanswered message starts the "sem resposta" clock.
   await prisma.conversation.updateMany({

@@ -137,6 +137,7 @@ export const COLUMN_SCREENS = {
       { key: "agent", label: "Atendente", fixed: true },
       { key: "now", label: "Agora" },
       { key: "conversations", label: "Conversas" },
+      { key: "noReturn", label: "Sem retorno" },
       { key: "avgTime", label: "Tempo médio" },
       { key: "online", label: "Online" },
       { key: "paused", label: "Em pausa" },

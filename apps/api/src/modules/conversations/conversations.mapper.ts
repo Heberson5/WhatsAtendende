@@ -66,6 +66,8 @@ export function toConversationListItemDTO(
     lastMessagePreview: revealPreview ? (conversation._lastMessageBody ?? null) : null,
     startedOnDevice: conversation.startedOnDevice,
     awaitingReplySince: revealPreview && conversation.awaitingReplySince ? conversation.awaitingReplySince.toISOString() : null,
+    noReturnCloseAt: conversation.noReturnCloseAt?.toISOString() ?? null,
+    noReturnHold: conversation.noReturnHold,
     unreadCount: conversation._unreadCount ?? 0,
     isNew: conversation.status === "NEW",
     pendingTransferDeadline: revealPreview && conversation.pendingTransferDeadline ? conversation.pendingTransferDeadline.toISOString() : null,

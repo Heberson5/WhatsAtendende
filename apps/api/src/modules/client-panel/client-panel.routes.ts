@@ -128,14 +128,14 @@ clientPanelRouter.post(
   })
 );
 
-const addTagSchema = z.union([z.object({ tagId: z.string().uuid() }), z.object({ name: z.string().trim().min(1).max(40) })]);
+// Only tags from Automação › Etiquetas — nobody creates a tag while attending.
+const addTagSchema = z.object({ tagId: z.string().uuid() });
 clientPanelRouter.post(
   "/:id/contact-tags",
   requireAttendanceAccess,
   asyncHandler(async (req, res) => {
     const conversation = await conversationForWrite(req);
-    const input = addTagSchema.parse(req.body);
-    const tagId = "tagId" in input ? input.tagId : (await service.findOrCreateTag(input.name)).id;
+    const { tagId } = addTagSchema.parse(req.body);
     await service.addContactTag(conversation.contactId, tagId, req.auth!.userId);
     await writeAudit({ userId: req.auth!.userId, action: "CONTACT_TAG_ADDED", entity: "Contact", entityId: conversation.contactId, ipAddress: req.ip ?? null, metadata: { tagId } });
     res.status(201).json(await service.getContactPanel(conversation.id, conversation.contactId, conversation.contact.firstConversationAt));

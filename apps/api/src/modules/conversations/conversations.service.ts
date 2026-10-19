@@ -11,6 +11,8 @@ import { createNotification } from "../notifications/notifications.service";
 import { toNotificationDTO } from "../notifications/notifications.mapper";
 import type { AgentPresence, Channel, Contact, ConversationStatus, Role } from "@prisma/client";
 
+/** Conversation.closeReason of "Encerrar por falta de retorno" (manual or automatic) — counted apart in the reports. */
+export const NO_RETURN_CLOSE_REASON = "NO_RETURN";
 const TRANSFER_OFFLINE_GRACE_MS = 2 * 60 * 60 * 1000; // 2h — see PROMPT: transfer to an offline agent auto-reverts if they don't log in in time.
 
 const conversationInclude = {
@@ -669,7 +671,18 @@ export async function findOrOpenConversationForInboundMessage(
     return { conversation, isNewConversation: false, autoAssignedAgentId: mentionedAgent.id as string | null, flowId: null as string | null, closedMessage: null as string | null };
   }
 
-  const mentionedAgent = await findOnlineMention();
+  // Encerrada por falta de retorno e o cliente voltou: a conversa nova vai direto para o mesmo atendente, se ele está
+  // online (senão, fila normal) — com a nota que conta o que aconteceu.
+  const lastConversation = await prisma.conversation.findFirst({
+    where: { contactId },
+    orderBy: { createdAt: "desc" },
+    select: { closeReason: true, assignedAgent: { select: { id: true, displayName: true, presence: true, status: true } } },
+  });
+  const returnedAfterNoReturn = lastConversation?.closeReason === NO_RETURN_CLOSE_REASON;
+  const lastAgent = lastConversation?.assignedAgent;
+  const mention = await findOnlineMention();
+  const mentionedAgent =
+    mention ?? (returnedAfterNoReturn && lastAgent?.presence === "ONLINE" && lastAgent.status === "ACTIVE" ? { id: lastAgent.id, displayName: lastAgent.displayName } : null);
   const now = new Date();
 
   // An active Fluxo on this connection talks to the customer first (see
@@ -707,16 +720,24 @@ export async function findOrOpenConversationForInboundMessage(
   if (mentionedAgent) {
     await prisma.$transaction([
       prisma.conversationAssignment.create({
-        data: { conversationId: conversation.id, toAgentId: mentionedAgent.id, reason: "MENTION" },
+        data: { conversationId: conversation.id, toAgentId: mentionedAgent.id, reason: mention ? "MENTION" : "REOPEN" },
       }),
       prisma.conversationEvent.create({
-        data: { conversationId: conversation.id, type: "CREATED", payload: { autoAssignedByMention: mentionedAgent.displayName } },
+        data: {
+          conversationId: conversation.id,
+          type: "CREATED",
+          payload: mention ? { autoAssignedByMention: mentionedAgent.displayName } : { returnedAfterNoReturn: mentionedAgent.displayName },
+        },
       }),
     ]);
   } else {
     await prisma.conversationEvent.create({
       data: { conversationId: conversation.id, type: "CREATED" },
     });
+  }
+
+  if (returnedAfterNoReturn) {
+    await prisma.conversationNote.create({ data: { conversationId: conversation.id, body: "Cliente voltou após encerramento por falta de retorno" } });
   }
 
   return { conversation, isNewConversation: true, autoAssignedAgentId: mentionedAgent?.id ?? null, flowId, closedMessage };
@@ -1697,7 +1718,7 @@ export async function undoLastConversationAction(conversationId: string, userId:
         : conversation.assignedAgentId
           ? "IN_PROGRESS"
           : "NEW";
-    await prisma.conversation.update({ where: { id: conversationId }, data: { status: restoredStatus, closedAt: null, closedByUserId: null } });
+    await prisma.conversation.update({ where: { id: conversationId }, data: { status: restoredStatus, closedAt: null, closedByUserId: null, closeReason: null } });
   } else {
     if (!payload.previousAgentId) throw Errors.conflict("A conversa não tinha atendente para quem voltar");
     if (conversation.status !== "WAITING" || conversation.assignedAgentId) throw Errors.conflict("A conversa já foi aceita por outra pessoa");

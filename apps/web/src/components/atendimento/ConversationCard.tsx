@@ -11,6 +11,7 @@ import { useAuthStore } from "../../store/auth-store";
 import { draftKey, useDraftStore } from "../../store/draft-store";
 import { useTypingStore } from "../../store/typing-store";
 import { useAlertThresholds } from "../../hooks/useAlertThresholds";
+import { NoReturnBadge } from "./NoReturn";
 
 
 function shortTime(iso: string) {
@@ -175,6 +176,7 @@ export function ConversationCard({
             )}
             <span className="truncate">{conversation.whatsappConnectionName}</span>
           </span>
+          {!onAccept && !transferredOutView && <NoReturnBadge conversation={conversation} />}
           {conversation.transfer && (
             <span className="inline-flex items-center rounded-full bg-info-soft px-2 py-0.5 text-[10.5px] font-semibold text-info">
               {transferredOutView ? `para ${conversation.transfer.toAgentName}` : `de ${conversation.transfer.fromAgentName}`}
