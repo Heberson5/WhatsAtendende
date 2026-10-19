@@ -7,7 +7,7 @@ import { syncDueDataSources } from "./modules/data-sources/data-sources.service"
 import { realtimeEvents } from "./realtime/realtime";
 import { processDueClosingMessages } from "./modules/satisfaction/satisfaction.service";
 import { runHolidaySyncIfDue } from "./modules/holidays/holidays.service";
-import { sendQueueRemindersIfDue } from "./lib/queue-reminder";
+import { sendNoReplyRemindersIfDue, sendQueueRemindersIfDue } from "./lib/queue-reminder";
 import { endIdleSessions } from "./modules/auth/auth.service";
 import { syncDefaultReleaseNotes } from "./modules/release-notes/release-notes.service";
 import { syncDefaultFlows } from "./modules/flows/default-flows";
@@ -79,6 +79,7 @@ async function main() {
 
   const queueReminderTimer = setInterval(() => {
     sendQueueRemindersIfDue().catch((err) => logger.error({ err }, "failed to check/send queue reminders"));
+    sendNoReplyRemindersIfDue().catch((err) => logger.error({ err }, "failed to check/send no-reply reminders"));
   }, QUEUE_REMINDER_CHECK_INTERVAL_MS);
   queueReminderTimer.unref();
 

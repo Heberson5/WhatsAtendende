@@ -64,7 +64,7 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
   };
   private autoMessageTimer: NodeJS.Timeout | null = null;
   /** Test helper: every sendText/sendFile call, exactly as this "reached WhatsApp" — lets tests assert on things like whatsapp.service.ts's sender-name prefix without a real WhatsApp account. */
-  readonly sentTexts: { chatId: string; text: string; replyToProviderMessageId?: string; replyToText?: string | null; replyToParticipantJid?: string | null }[] = [];
+  readonly sentTexts: { chatId: string; text: string; replyToProviderMessageId?: string; replyToText?: string | null; replyToParticipantJid?: string | null; mentions?: string[] }[] = [];
   readonly sentFiles: { chatId: string; caption?: string }[] = [];
   readonly sentAudios: { chatId: string; mimeType: string; sizeBytes: number }[] = [];
   /** Test helper: every markRead call, exactly as this "reached WhatsApp". */
@@ -138,6 +138,7 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
       replyToProviderMessageId: options?.replyToProviderMessageId,
       replyToText: options?.replyToText,
       ...(options?.replyToParticipantJid ? { replyToParticipantJid: options.replyToParticipantJid } : {}),
+      ...(options?.mentions?.length ? { mentions: options.mentions } : {}),
     });
     const result = { providerMessageId: randomUUID(), timestamp: new Date() };
     this.simulateDeliveryLifecycle(chatId, result.providerMessageId);

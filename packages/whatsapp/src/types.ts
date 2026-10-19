@@ -182,6 +182,8 @@ export interface SendTextOptions {
   replyToText?: string | null;
   /** Replying to a group message: who wrote it — WhatsApp needs the author to find the quoted message in a group. */
   replyToParticipantJid?: string | null;
+  /** Group participants marked with "@" (their jids). The text carries "@<number>" for each one shown; a jid with no "@" in the text (marcar todos) is notified without being listed. */
+  mentions?: string[];
 }
 
 export interface ContactInfo {

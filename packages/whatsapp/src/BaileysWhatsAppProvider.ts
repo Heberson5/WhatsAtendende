@@ -816,7 +816,7 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
     // Socket/messages-send.js), the same rich card WhatsApp Web itself
     // builds before a link leaves the composer. A fetch failure/timeout is
     // swallowed internally there; the text still sends, just without a card.
-    const sent = await socket.sendMessage(chatId, { text }, { quoted: quoted as any });
+    const sent = await socket.sendMessage(chatId, { text, ...(options?.mentions?.length ? { mentions: options.mentions } : {}) }, { quoted: quoted as any });
     this.cacheSentMessage(sent);
     const sentExt = sent?.message?.extendedTextMessage;
     return {

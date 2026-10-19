@@ -304,6 +304,26 @@ describe("WhatsApp groups in Atendimento", () => {
     await prisma.contact.delete({ where: { id: empty.id } });
   });
 
+  it("\"@\" marks one person (WhatsApp gets their number) or everyone (\"@todos\" notifies all participants)", async () => {
+    const [group] = (await request(app).get("/api/groups").set("Authorization", `Bearer ${lucas}`)).body;
+    const participants = (await request(app).get(`/api/groups/${group.id}/participants`).set("Authorization", `Bearer ${lucas}`)).body;
+    const carlos = participants.find((p: { name: string }) => p.name === "Carlos Lima");
+    expect(carlos.jid).toBe("5565988887777@s.whatsapp.net");
+
+    const one = await request(app)
+      .post(`/api/groups/${group.id}/text`)
+      .set("Authorization", `Bearer ${lucas}`)
+      .send({ body: "@Carlos Lima pode confirmar?", mentions: [{ jid: carlos.jid, label: "Carlos Lima" }] });
+    expect(one.body.body).toBe("@Carlos Lima pode confirmar?");
+    expect(provider.sentTexts.at(-1)).toMatchObject({ text: "*Lucas Andrade:*\n\n@5565988887777 pode confirmar?", mentions: [carlos.jid] });
+
+    await request(app).post(`/api/groups/${group.id}/text`).set("Authorization", `Bearer ${lucas}`).send({ body: "@todos reunião às 15h", mentionAll: true }).expect(201);
+    expect(provider.sentTexts.at(-1)).toMatchObject({
+      text: "*Lucas Andrade:*\n\n@todos reunião às 15h",
+      mentions: ["5565999990000@s.whatsapp.net", "5565988887777@s.whatsapp.net"],
+    });
+  });
+
   it("turning groups off stops new messages and hides the tab; customer conversations are untouched", async () => {
     await createWaitingConversation("5565977776666", connectionId);
     await request(app).patch(`/api/whatsapp/connections/${connectionId}/groups`).set("Authorization", `Bearer ${admin}`).send({ enabled: false });

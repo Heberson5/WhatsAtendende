@@ -58,7 +58,7 @@ groupsRouter.get(
     const group = await service.getGroupForUser(req.params.id, req.auth!);
     const info = await whatsappService.getGroupInfo(group.whatsappConnectionId!, group.contact.providerChatId!);
     const participants = (info?.participants ?? [])
-      .map((p) => ({ name: p.name ?? (p.phone ? `+${p.phone}` : "Participante"), phone: p.phone, isAdmin: p.isAdmin }))
+      .map((p) => ({ jid: p.jid, name: p.name ?? (p.phone ? `+${p.phone}` : "Participante"), phone: p.phone, isAdmin: p.isAdmin }))
       .sort((a, b) => Number(b.isAdmin) - Number(a.isAdmin) || a.name.localeCompare(b.name, "pt-BR"));
     res.json(participants);
   })
@@ -134,13 +134,25 @@ async function createOutbound(groupId: string, userId: string, type: MessageType
   return service.createGroupOutboundMessage({ groupId, userId, type, body, replyToMessageId });
 }
 
-const sendTextSchema = z.object({ body: z.string().min(1).max(4096), replyToMessageId: z.string().uuid().optional() });
+// "@": the text keeps "@Nome" (what the team reads here); WhatsApp gets "@<número>" plus the jids, so it shows the
+// person's name and notifies them. "@todos" notifies every participant without listing them.
+const sendTextSchema = z.object({
+  body: z.string().min(1).max(4096),
+  replyToMessageId: z.string().uuid().optional(),
+  mentions: z.array(z.object({ jid: z.string().min(3).max(120), label: z.string().min(1).max(120) })).max(300).default([]),
+  mentionAll: z.boolean().default(false),
+});
 groupsRouter.post(
   "/:id/text",
   requireReplyPermission,
   asyncHandler(async (req, res) => {
     const { group, chatId, senderName } = await loadGroupForReply(req);
-    const { body, replyToMessageId } = sendTextSchema.parse(req.body);
+    const { body, replyToMessageId, mentions, mentionAll } = sendTextSchema.parse(req.body);
+    let whatsappText = body;
+    for (const m of mentions) whatsappText = whatsappText.split(`@${m.label}`).join(`@${m.jid.split("@")[0]}`);
+    const mentionJids = mentionAll
+      ? ((await whatsappService.getGroupInfo(group.whatsappConnectionId!, chatId))?.participants ?? []).map((p) => p.jid)
+      : mentions.map((m) => m.jid);
     const original = replyToMessageId ? await prisma.message.findFirst({ where: { id: replyToMessageId, conversationId: group.id } }) : null;
     const message = await createOutbound(group.id, req.auth!.userId, "TEXT", body, original?.id);
     // The same send as a reply to a customer: "*Nome de exibição:*", a blank line, the text.
@@ -148,11 +160,12 @@ groupsRouter.post(
       group.whatsappConnectionId!,
       message.id,
       chatId,
-      body,
+      whatsappText,
       senderName,
       original?.providerMessageId ?? undefined,
       original?.body,
-      original?.direction === "INBOUND" ? original.senderParticipantJid : null
+      original?.direction === "INBOUND" ? original.senderParticipantJid : null,
+      mentionJids
     );
     await sent(req, group.id, group.contact.name ?? "Grupo", message.id, senderName, body);
     res.status(201).json(dto);

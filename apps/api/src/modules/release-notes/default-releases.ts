@@ -11,6 +11,42 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.15.1",
+    date: "19 out 2026",
+    name: "Aviso de cliente esperando, @ nos grupos e boleto do Banco do Brasil",
+    summary: "O atendente é avisado de cada cliente esperando resposta, nos grupos dá para marcar alguém ou todos com @, e o boleto passou a aceitar o nosso número como o Banco do Brasil imprime.",
+    notes: [
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "Aviso de cliente aguardando resposta",
+        text: "Para cada conversa sua em que o cliente espera além do alerta amarelo, chega um aviso com o nome do cliente (som, aviso na tela e notificação do Windows), repetido no mesmo intervalo do lembrete da fila. O botão Abrir leva direto à conversa.",
+        where: "Atendimento",
+      },
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "Marcar com @ nos grupos",
+        text: "Ao digitar @ na caixa de mensagem de um grupo aparecem os participantes e \"Todos do grupo\". A pessoa marcada é avisada no WhatsApp como quando alguém marca pelo celular.",
+        where: "Atendimento › Grupos",
+      },
+      {
+        type: "melhoria",
+        area: "atendimento",
+        title: "Fechar o grupo clicando nele de novo",
+        text: "Clicar outra vez no cartão do grupo aberto fecha a conversa do grupo.",
+        where: "Atendimento › Grupos",
+      },
+      {
+        type: "correcao",
+        area: "atendimento",
+        title: "Boleto do Banco do Brasil",
+        text: "O nosso número no formato impresso pelo banco (convênio + número com o dígito depois do traço) passou a ser aceito. Os boletos são só do Banco do Brasil.",
+        where: "Atendimento › painel do cliente",
+      },
+    ],
+  },
+  {
     version: "2.15.0",
     date: "19 out 2026",
     name: "Dados do cliente, boleto, chat interno e metas",

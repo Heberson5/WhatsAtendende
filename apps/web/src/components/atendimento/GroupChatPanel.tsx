@@ -1,15 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ArrowLeft, Bell, BellOff, Eye, History, Loader2, PanelRight, Users } from "lucide-react";
 import clsx from "clsx";
-import { PERMISSION, type GroupListItemDTO, type MessageDTO, type PaginatedResult } from "@whatsatendende/types";
+import { PERMISSION, type GroupListItemDTO, type GroupParticipantDTO, type MessageDTO, type PaginatedResult } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
 import { getSocket } from "../../lib/socket";
 import { initials, seenByLabel, upToDateReaders } from "../../lib/groups";
 import { MessageBubble } from "./MessageBubble";
-import { Composer } from "./Composer";
+import { Composer, type ComposerMentions } from "./Composer";
 import { TimelineByDay, type TimelineEntry } from "./TimelineByDay";
 
 /** An open WhatsApp group: its messages, the team's reading, and the reply box (with "Responder em grupos"). */
@@ -109,7 +109,19 @@ export function GroupChatPanel({
     },
     onError: (err: unknown) => toast.error(getApiErrorMessage(err)),
   };
-  const sendText = useMutation({ mutationFn: (input: { body: string; replyToMessageId?: string }) => api.post(`/groups/${group.id}/text`, input), ...afterSend });
+  const sendText = useMutation({
+    mutationFn: (input: { body: string; replyToMessageId?: string } & Partial<ComposerMentions>) => api.post(`/groups/${group.id}/text`, input),
+    ...afterSend,
+  });
+  // Same list (and cache) as the group's info panel — what "@" offers.
+  const loadMentionCandidates = useCallback(
+    () =>
+      queryClient.fetchQuery({
+        queryKey: ["group-participants", group.id],
+        queryFn: async () => (await api.get<GroupParticipantDTO[]>(`/groups/${group.id}/participants`)).data,
+      }),
+    [queryClient, group.id]
+  );
   const sendFile = useMutation({
     mutationFn: ({ file, caption }: { file: File; caption?: string }) => {
       const form = new FormData();
@@ -285,8 +297,9 @@ export function GroupChatPanel({
             disabled={sendText.isPending || disconnected}
             replyTo={replyTo}
             onCancelReply={() => setReplyTo(null)}
-            onSendText={async (body, replyToMessageId) => {
-              await sendText.mutateAsync({ body, replyToMessageId });
+            loadMentionCandidates={loadMentionCandidates}
+            onSendText={async (body, replyToMessageId, mentions) => {
+              await sendText.mutateAsync({ body, replyToMessageId, ...mentions });
               setReplyTo(null);
             }}
             onSendFile={async (file, caption) => {
