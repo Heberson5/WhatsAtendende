@@ -61,3 +61,38 @@ export async function sendQueueRemindersIfDue(): Promise<void> {
     create: { key: REMINDER_CADENCE_KEY, value: { at: new Date().toISOString() } },
   });
 }
+
+const NO_REPLY_CADENCE_KEY = "noReplyReminderLastSentAt";
+
+/**
+ * Each attendant is reminded of every own conversation whose customer has
+ * waited longer than the "sem resposta" alert (Configurações › Fila), one
+ * notice per conversation naming the customer, repeated on the same "a cada
+ * X minutos" interval as the queue reminder.
+ */
+export async function sendNoReplyRemindersIfDue(now = new Date()): Promise<void> {
+  const { queueReminderIntervalMinutes, noReplyWarningMinutes } = await getBusinessSettings();
+  const intervalMs = (Number(queueReminderIntervalMinutes) || 1) * 60_000;
+  const marker = await prisma.systemSetting.findUnique({ where: { key: NO_REPLY_CADENCE_KEY } });
+  const lastSentAt = marker ? new Date((marker.value as { at: string }).at) : null;
+  if (lastSentAt && now.getTime() < lastSentAt.getTime() + intervalMs) return;
+
+  const waitingSince = new Date(now.getTime() - (Number(noReplyWarningMinutes) || 5) * 60_000);
+  const conversations = await prisma.conversation.findMany({
+    where: { status: { in: ["IN_PROGRESS", "TRANSFERRED"] }, assignedAgentId: { not: null }, awaitingReplySince: { lte: waitingSince } },
+    select: { id: true, assignedAgentId: true, interventionById: true, awaitingReplySince: true, contact: { select: { name: true, phone: true } } },
+  });
+  if (conversations.length === 0) return;
+  for (const c of conversations) {
+    realtimeEvents.noReplyReminder(c.interventionById ?? c.assignedAgentId!, {
+      conversationId: c.id,
+      contactName: c.contact.name ?? c.contact.phone ?? "Cliente",
+      minutes: Math.floor((now.getTime() - c.awaitingReplySince!.getTime()) / 60_000),
+    });
+  }
+  await prisma.systemSetting.upsert({
+    where: { key: NO_REPLY_CADENCE_KEY },
+    update: { value: { at: now.toISOString() } },
+    create: { key: NO_REPLY_CADENCE_KEY, value: { at: now.toISOString() } },
+  });
+}

@@ -53,6 +53,16 @@ export function useSocketEvents(activeConversationId: string | null) {
       toast.info(message);
       notifyDesktop("Conversas aguardando na fila", message, `wa-queue-reminder-${payload.connectionId}`);
     };
+    // One per conversation whose customer is still waiting, every "X minutos" (Configurações › Fila).
+    const onNoReplyReminder = (payload: { conversationId: string; contactName: string; minutes: number }) => {
+      const message = `${payload.contactName} aguardando resposta há ${payload.minutes} min`;
+      playUserAlertSound("newMessage");
+      toast.warning(message, {
+        id: `wa-no-reply-${payload.conversationId}`,
+        action: { label: "Abrir", onClick: () => navigate(`/atendimento?open=${payload.conversationId}`) },
+      });
+      notifyDesktop("Cliente aguardando resposta", message, `wa-no-reply-${payload.conversationId}`);
+    };
     const onAssigned = () => {
       queryClient.invalidateQueries({ queryKey: ["mine"] });
       queryClient.invalidateQueries({ queryKey: ["queue"] });
@@ -171,6 +181,7 @@ export function useSocketEvents(activeConversationId: string | null) {
     socket.on("queue:updated", onQueueUpdated);
     socket.on("queue:new-conversation", onNewQueueConversation);
     socket.on("queue:reminder", onQueueReminder);
+    socket.on("conversation:no-reply-reminder", onNoReplyReminder);
     socket.on("conversation:assigned", onAssigned);
     socket.on("conversation:removed", onRemoved);
     socket.on("conversation:transferred-in", onTransferredIn);
@@ -203,6 +214,7 @@ export function useSocketEvents(activeConversationId: string | null) {
       socket.off("queue:updated", onQueueUpdated);
       socket.off("queue:new-conversation", onNewQueueConversation);
       socket.off("queue:reminder", onQueueReminder);
+      socket.off("conversation:no-reply-reminder", onNoReplyReminder);
       socket.off("conversation:assigned", onAssigned);
       socket.off("conversation:removed", onRemoved);
       socket.off("conversation:transferred-in", onTransferredIn);

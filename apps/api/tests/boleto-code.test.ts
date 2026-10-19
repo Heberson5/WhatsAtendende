@@ -30,3 +30,9 @@ describe("código de barras e linha digitável", () => {
     expect(() => freeFieldBB("12345", "1", "17")).toThrow();
   });
 });
+
+describe("nosso número como o boleto imprime", () => {
+  it("aceita convênio + nosso número com o dígito depois do traço", () => {
+    expect(freeFieldBB("1234567", "12345670000000123-4", "17")).toBe(freeFieldBB("1234567", "0000000123", "17"));
+  });
+});

@@ -953,6 +953,8 @@ export interface GroupListItemDTO {
 }
 
 export interface GroupParticipantDTO {
+  /** WhatsApp id — what an "@" mention points to. */
+  jid: string;
   name: string;
   phone: string | null;
   isAdmin: boolean;
@@ -2253,7 +2255,6 @@ export const DATA_SOURCE_ROLES = {
   agreement: { label: "Convênio", column: "convenio" },
   wallet: { label: "Carteira", column: "carteira" },
   walletVariation: { label: "Variação da carteira", column: "variacao_carteira" },
-  sicrediPost: { label: "Posto (Sicredi)", column: "posto_sicredi" },
   payeeName: { label: "Beneficiário (empresa)", column: "beneficiario_nome" },
   payeeDocument: { label: "CNPJ do beneficiário", column: "beneficiario_cnpj" },
   payerAddress: { label: "Endereço do cliente", column: "endereco" },

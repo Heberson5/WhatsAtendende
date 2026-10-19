@@ -8,12 +8,12 @@ import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
 import { env } from "../../config/env";
 import { buildContracts, clientRows, parseBrDate, usableSource, type ColumnMap, type ConversationForData, type Row } from "../data-sources/data-sources.service";
-import { barcodeFromLinha, buildBarcode, freeFieldBB, freeFieldSicredi, linhaFromBarcode } from "./boleto-code";
+import { barcodeFromLinha, buildBarcode, freeFieldBB, linhaFromBarcode } from "./boleto-code";
 import { renderBoletoPdf } from "./boleto-pdf";
 
+// Only Banco do Brasil boletos are sent.
 export const BANKS: Record<string, { name: string; label: string }> = {
   "001": { name: "Banco do Brasil", label: "001-9" },
-  "748": { name: "Sicredi", label: "748-X" },
 };
 
 // Payment methods (forma_pagamento) that never get a boleto.
@@ -79,10 +79,7 @@ export function buildBoletoFromRow(data: Row, map: ColumnMap): BuiltBoleto {
   if (!cents) throw new Error("Parcela sem valor");
   const ourNumber = col("ourNumber") ?? "";
   if (!digits(ourNumber)) throw new Error("Parcela sem nosso número");
-  const free =
-    bank === "001"
-      ? freeFieldBB(col("agreement") ?? "", ourNumber, col("wallet") ?? "")
-      : freeFieldSicredi(ourNumber, col("agency") ?? "", col("sicrediPost") ?? "", col("agreement") ?? "");
+  const free = freeFieldBB(col("agreement") ?? "", ourNumber, col("wallet") ?? "");
   const barcode = buildBarcode(bank, due, cents, free);
   const linha = linhaFromBarcode(barcode);
   if (barcodeFromLinha(linha) !== barcode) throw new Error("A linha digitável não passou na conferência dos dígitos");

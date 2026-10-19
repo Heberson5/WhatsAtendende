@@ -63,7 +63,8 @@ export function FilaSettingsPanel() {
         <h2 className="text-base font-semibold">Lembrete de fila</h2>
         <p className="mt-1 text-sm text-muted">
           Enquanto houver conversas aguardando para serem aceitas, os atendentes online da conexão são notificados
-          repetidamente neste intervalo. Atendentes pausados ou offline não recebem o lembrete.
+          repetidamente neste intervalo. Atendentes pausados ou offline não recebem o lembrete. No mesmo intervalo, cada atendente também é avisado de
+          cada conversa sua em que o cliente está esperando resposta além do alerta amarelo, com o nome do cliente.
         </p>
       </div>
 

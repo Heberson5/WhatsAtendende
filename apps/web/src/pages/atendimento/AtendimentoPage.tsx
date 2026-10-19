@@ -490,7 +490,7 @@ export default function AtendimentoPage() {
 
           {tab === "groups" &&
             (visibleGroups.length ? (
-              visibleGroups.map((g) => <GroupCard key={g.id} group={g} selected={g.id === selectedGroupId} onSelect={() => setSelectedGroupId(g.id)} />)
+              visibleGroups.map((g) => <GroupCard key={g.id} group={g} selected={g.id === selectedGroupId} onSelect={() => setSelectedGroupId(g.id === selectedGroupId ? null : g.id)} />)
             ) : (
               <EmptyState message={groups.length ? "Nenhum grupo com esse nome." : "Nenhum grupo nas conexões que você atende."} />
             ))}

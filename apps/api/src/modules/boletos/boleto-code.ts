@@ -82,27 +82,9 @@ export function freeFieldBB(agreement: string, ourNumber: string, wallet: string
   const conv = digits(agreement);
   let nn = digits(ourNumber);
   if (conv.length !== 7) throw new Error("Convênio do Banco do Brasil precisa ter 7 dígitos");
-  if (nn.length === 17 && nn.startsWith(conv)) nn = nn.slice(7);
+  // As printed on the boleto: convênio + nosso número (17), sometimes followed by "-DV" (18).
+  if ((nn.length === 17 || nn.length === 18) && nn.startsWith(conv)) nn = nn.slice(7, 17);
   if (nn.length > 10) throw new Error("Nosso número do Banco do Brasil com tamanho inesperado");
   const cart = digits(wallet).padStart(2, "0");
   return `000000${conv}${nn.padStart(10, "0")}${cart.slice(-2)}`;
-}
-
-/**
- * Sicredi: tipo 1 + carteira 1 + nosso número (9) + cooperativa (4) + posto
- * (2) + beneficiário (5) + "1" (com valor) + "0" + DV mod 11. Only enabled
- * after it matches real boletos (see boleto validation).
- */
-export function freeFieldSicredi(ourNumber: string, cooperative: string, post: string, payeeCode: string): string {
-  const nn = digits(ourNumber).slice(-9).padStart(9, "0");
-  const coop = digits(cooperative).slice(0, 4).padStart(4, "0");
-  const base = `11${nn}${coop}${digits(post).padStart(2, "0").slice(-2)}${digits(payeeCode).slice(-5).padStart(5, "0")}10`;
-  let sum = 0;
-  let weight = 2;
-  for (let i = base.length - 1; i >= 0; i--) {
-    sum += Number(base[i]) * weight;
-    weight = weight === 9 ? 2 : weight + 1;
-  }
-  const rest = sum % 11;
-  return `${base}${rest <= 1 ? 0 : 11 - rest}`;
 }

@@ -88,7 +88,7 @@ describe("Envio de boleto", () => {
     }
     const status = await request(app).get("/api/boletos/validation").set("Authorization", `Bearer ${adminToken}`);
     expect(status.body.find((b: { code: string }) => b.code === "001")).toMatchObject({ matched: 3, enabled: true });
-    expect(status.body.find((b: { code: string }) => b.code === "748")).toMatchObject({ enabled: false });
+    expect(status.body.map((b: { code: string }) => b.code)).toEqual(["001"]);
   });
 
   it("não deixa pular parcela mais antiga do contrato", async () => {

@@ -1361,7 +1361,8 @@ export async function sendOutboundText(
   senderDisplayName: string | null,
   replyToProviderMessageId?: string,
   replyToText?: string | null,
-  replyToParticipantJid?: string | null
+  replyToParticipantJid?: string | null,
+  mentions?: string[]
 ) {
   return sendWithTimeoutGuard(messageId, "text", async () =>
     sendToContact(connectionId, contactPhone, (chatId) =>
@@ -1369,6 +1370,7 @@ export async function sendOutboundText(
         replyToProviderMessageId,
         replyToText,
         ...(replyToParticipantJid ? { replyToParticipantJid } : {}),
+        ...(mentions?.length ? { mentions } : {}),
       })
     )
   );

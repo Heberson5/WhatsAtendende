@@ -250,6 +250,10 @@ export const realtimeEvents = {
    * agent, not shared by everyone watching that connection. See PROMPT:
    * "notificações a cada um minuto quando tem conversas na fila".
    */
+  /** A customer of this attendant is waiting for a reply (see sendNoReplyRemindersIfDue). */
+  noReplyReminder: (userId: string, payload: { conversationId: string; contactName: string; minutes: number }) => {
+    getIO()?.to(ROOMS.user(userId)).emit("conversation:no-reply-reminder", payload);
+  },
   queueReminder: (userId: string, connectionId: string, connectionName: string, waitingCount: number) => {
     getIO()?.to(ROOMS.user(userId)).emit("queue:reminder", { connectionId, connectionName, waitingCount });
   },

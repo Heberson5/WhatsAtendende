@@ -122,6 +122,22 @@ interface PendingAttachment {
   caption: string;
 }
 
+export interface MentionCandidate {
+  jid: string;
+  name: string;
+  phone: string | null;
+}
+
+/** Group "@": who was marked in the text being sent, and whether "@todos" was used. */
+export interface ComposerMentions {
+  mentions: { jid: string; label: string }[];
+  mentionAll: boolean;
+}
+
+const ALL_LABEL = "todos";
+const TYPING_MENTION = /@([^\s@]*)$/;
+const fold = (v: string) => v.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
 export interface ComposerHandle {
   /** Stages one or more files for sending, exactly like picking them via the paperclip button — used by ChatPanel's drag-and-drop-from-folder handler so a drop anywhere over the conversation feeds the same preview/caption flow. */
   addFiles: (files: File[]) => void;
@@ -134,7 +150,9 @@ export interface ComposerHandle {
 export const Composer = forwardRef<
   ComposerHandle,
   {
-    onSendText: (text: string, replyToMessageId?: string) => Promise<void>;
+    onSendText: (text: string, replyToMessageId?: string, mentions?: ComposerMentions) => Promise<void>;
+    /** WhatsApp groups: who can be marked with "@" (plus "@todos"), asked for the first time "@" is typed. */
+    loadMentionCandidates?: () => Promise<MentionCandidate[]>;
     onSendFile: (file: File, caption?: string) => Promise<void>;
     /** A recorded voice note (mic button) — sent as WhatsApp's native PTT bubble, distinct from an attached audio file via onSendFile. */
     onSendAudio: (file: File) => Promise<void>;
@@ -150,7 +168,7 @@ export const Composer = forwardRef<
     onScheduleText?: (text: string, sendAt: Date) => Promise<void>;
   }
 >(function Composer(
-  { onSendText, onSendFile, onSendAudio, onSendLocation, quickReplies = [], replyTo, onCancelReply, disabled, conversationId, onScheduleText },
+  { onSendText, onSendFile, onSendAudio, onSendLocation, quickReplies = [], replyTo, onCancelReply, disabled, conversationId, onScheduleText, loadMentionCandidates },
   ref
 ) {
   const userId = useAuthStore((s) => s.user?.id);
@@ -188,6 +206,42 @@ export const Composer = forwardRef<
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [caret, setCaret] = useState(0);
   const dataTags = useDataTagAssist(conversationId, text, caret);
+  const [pickedMentions, setPickedMentions] = useState<{ jid: string; label: string }[]>([]);
+  const [mentionCandidates, setMentionCandidates] = useState<MentionCandidate[] | null>(null);
+  const typingMention = loadMentionCandidates ? TYPING_MENTION.exec(text.slice(0, caret)) : null;
+  const isTypingMention = Boolean(typingMention);
+  useEffect(() => {
+    if (!isTypingMention || mentionCandidates || !loadMentionCandidates) return;
+    loadMentionCandidates()
+      .then(setMentionCandidates)
+      .catch(() => setMentionCandidates([]));
+  }, [isTypingMention, mentionCandidates, loadMentionCandidates]);
+  const mentionQuery = typingMention ? fold(typingMention[1]) : null;
+  const mentionOptions =
+    mentionQuery === null
+      ? []
+      : [
+          ...(ALL_LABEL.startsWith(mentionQuery) ? [{ jid: "", name: ALL_LABEL, phone: null }] : []),
+          ...(mentionCandidates ?? []).filter((p) => fold(p.name).includes(mentionQuery) || (p.phone ?? "").includes(mentionQuery)),
+        ].slice(0, 8);
+
+  function chooseMention(option: { jid: string; name: string }) {
+    const before = text.slice(0, caret).replace(TYPING_MENTION, `@${option.name} `);
+    const next = before + text.slice(caret);
+    setText(next);
+    setCaret(before.length);
+    if (option.jid) setPickedMentions((prev) => [...prev.filter((m) => m.jid !== option.jid), { jid: option.jid, label: option.name }]);
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(before.length, before.length);
+    });
+  }
+
+  /** The mentions still present in the text being sent. */
+  function currentMentions(value: string): ComposerMentions | undefined {
+    if (!loadMentionCandidates) return undefined;
+    return { mentions: pickedMentions.filter((m) => value.includes(`@${m.label}`)), mentionAll: value.includes(`@${ALL_LABEL}`) };
+  }
   const emojiPanelRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -375,8 +429,9 @@ export const Composer = forwardRef<
     if (ready === null) return;
     setSending(true);
     try {
-      await onSendText(ready, replyTo?.id);
+      await onSendText(ready, replyTo?.id, currentMentions(ready));
       setText("");
+      setPickedMentions([]);
       dataTags.reset();
       onCancelReply();
       // Otherwise focus lands nowhere after a send and the agent has to
@@ -758,6 +813,11 @@ export const Composer = forwardRef<
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (mentionOptions.length > 0 && (e.key === "Enter" || e.key === "Tab") && !e.shiftKey) {
+      e.preventDefault();
+      chooseMention(mentionOptions[0]);
+      return;
+    }
     if (dataTags.suggestions.length > 0 && (e.key === "Enter" || e.key === "Tab") && !e.shiftKey) {
       e.preventDefault();
       chooseDataTag(dataTags.suggestions[0]);
@@ -1102,6 +1162,17 @@ export const Composer = forwardRef<
                 </div>
               ))}
             </div>
+          </div>
+        )}
+        {mentionOptions.length > 0 && (
+          <div className="shadow-elevated absolute bottom-full left-3 z-20 mb-1 w-72 overflow-hidden rounded-card border border-border bg-surface" onMouseDown={(e) => e.preventDefault()}>
+            <p className="border-b border-border px-3 py-1.5 text-[11px] font-semibold text-muted">Marcar no grupo</p>
+            {mentionOptions.map((option) => (
+              <button key={option.jid || ALL_LABEL} type="button" onClick={() => chooseMention(option)} className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-sm hover:bg-surface-alt">
+                <span className="truncate">{option.jid ? option.name : "Todos do grupo"}</span>
+                <span className="shrink-0 text-xs text-muted">{option.jid ? (option.phone ? `+${option.phone}` : "") : `@${ALL_LABEL}`}</span>
+              </button>
+            ))}
           </div>
         )}
         {dataTags.suggestions.length > 0 && (
