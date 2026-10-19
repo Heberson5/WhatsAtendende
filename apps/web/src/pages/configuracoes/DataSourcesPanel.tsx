@@ -7,6 +7,7 @@ import { Database, FileSpreadsheet, Link2, LogIn, Pencil, Plus, RefreshCw, Trash
 import { DATA_SOURCE_ROLES, PERMISSION, type DataSourceDTO, type DataSourceKind, type DataSourceRole, type DataSourceStatus } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
+import { BoletoValidationSection } from "./BoletoValidationSection";
 
 const KIND_LABEL: Record<DataSourceKind, string> = {
   LINK: "Planilha por link (OneDrive ou Google)",
@@ -439,6 +440,8 @@ export function DataSourcesPanel() {
           </div>
         </div>
       )}
+
+      <BoletoValidationSection />
     </div>
   );
 }

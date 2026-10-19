@@ -29,8 +29,8 @@ const INSERT_CHUNK = 5_000;
 const HOUR_MS = 3_600_000;
 
 type Secrets = { clientSecret?: string; refreshToken?: string; password?: string };
-type ColumnMap = Partial<Record<DataSourceRole, string>>;
-type Row = Record<string, string>;
+export type ColumnMap = Partial<Record<DataSourceRole, string>>;
+export type Row = Record<string, string>;
 
 export function readSecrets(source: Pick<DataSource, "secrets">): Secrets {
   return source.secrets ? (JSON.parse(decryptSecret(source.secrets)) as Secrets) : {};
@@ -294,7 +294,7 @@ export async function syncDueDataSources(now = new Date()) {
 
 // --- Client data ---------------------------------------------------------------
 
-async function usableSource() {
+export async function usableSource() {
   const source = await prisma.dataSource.findFirst({ where: { active: true } });
   return source && sourceStatus(source) === "OK" ? source : null;
 }
@@ -314,7 +314,7 @@ function partialCpf(value: string | undefined): string | null {
   return null;
 }
 
-function parseBrDate(value: string | undefined): Date | null {
+export function parseBrDate(value: string | undefined): Date | null {
   const m = value?.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
   return m ? new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1])) : null;
 }
@@ -400,7 +400,7 @@ async function canViewSources(role: Role) {
   return role === "ADMIN" || isPermissionAllowed(role, PERMISSION.FONTES_DADOS_VER);
 }
 
-interface ConversationForData {
+export interface ConversationForData {
   id: string;
   dataClientKey: string | null;
   dataSuspensionAckAt: Date | null;
@@ -408,7 +408,7 @@ interface ConversationForData {
 }
 
 /** The rows of this conversation's phone grouped by client, and the client the conversation is about. */
-async function clientRows(source: DataSource, conversation: ConversationForData) {
+export async function clientRows(source: DataSource, conversation: ConversationForData) {
   const map = source.columnMap as ColumnMap;
   const key = phoneKey(conversation.contact.phone);
   const rows = key ? await prisma.dataSourceRow.findMany({ where: { dataSourceId: source.id, phoneKey: key }, orderBy: { line: "asc" } }) : [];
