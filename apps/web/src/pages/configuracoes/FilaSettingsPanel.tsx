@@ -35,11 +35,11 @@ export function FilaSettingsPanel() {
   });
 
   const [minutes, setMinutes] = useState(1);
-  const savedAlerts: AlertThresholds = { ...DEFAULT_ALERT_THRESHOLDS, ...data };
+  const savedAlerts = Object.fromEntries(ALERT_FIELDS.map(({ key }) => [key, data?.[key] ?? DEFAULT_ALERT_THRESHOLDS[key]])) as unknown as AlertThresholds;
   const [alerts, setAlerts] = useState<AlertThresholds>(DEFAULT_ALERT_THRESHOLDS);
   useEffect(() => {
     if (data?.queueReminderIntervalMinutes) setMinutes(data.queueReminderIntervalMinutes);
-    setAlerts({ ...DEFAULT_ALERT_THRESHOLDS, ...data });
+    setAlerts(Object.fromEntries(ALERT_FIELDS.map(({ key }) => [key, data?.[key] ?? DEFAULT_ALERT_THRESHOLDS[key]])) as unknown as AlertThresholds);
   }, [data]);
   const alertsValid =
     Object.values(alerts).every((v) => Number.isInteger(v) && v >= 1 && v <= MAX_ALERT_MINUTES) &&

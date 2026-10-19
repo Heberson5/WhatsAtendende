@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import clsx from "clsx";
 import {
+  MessageCircle,
   MessagesSquare,
   Eye,
   LayoutDashboard,
@@ -47,6 +48,7 @@ export interface MenuItem {
 export const MENU_ITEMS: MenuItem[] = [
   { to: "/atendimento", label: "Atendimento", icon: MessagesSquare, permission: PERMISSION.ATENDIMENTO_ACESSAR, group: "Operação" },
   { to: "/gestao", label: "Gestão", icon: Eye, permission: PERMISSION.GESTAO_ACESSAR, group: "Operação" },
+  { to: "/acompanhar-chat", label: "Chat interno", icon: MessageCircle, permission: PERMISSION.CHAT_INTERNO_ACOMPANHAR, group: "Operação" },
   { to: "/contatos", label: "Contatos", icon: Contact, permission: PERMISSION.CONTATOS_ACESSAR, group: "Operação" },
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, permission: PERMISSION.DASHBOARD_ACESSAR, group: "Análise" },
   { to: "/relatorios", label: "Relatórios", icon: FileBarChart, permission: PERMISSION.RELATORIOS_ACESSAR, group: "Análise" },

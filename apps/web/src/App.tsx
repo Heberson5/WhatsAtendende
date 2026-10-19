@@ -8,6 +8,7 @@ import LoginPage from "./pages/login/LoginPage";
 import ResetPasswordPage from "./pages/login/ResetPasswordPage";
 import AtendimentoPage from "./pages/atendimento/AtendimentoPage";
 import GestaoPage from "./pages/gestao/GestaoPage";
+import AcompanharChatPage from "./pages/chat-interno/AcompanharChatPage";
 import DashboardPage from "./pages/dashboard/DashboardPage";
 import RelatoriosPage from "./pages/relatorios/RelatoriosPage";
 import UsuariosPage from "./pages/usuarios/UsuariosPage";
@@ -70,6 +71,9 @@ export default function App() {
 
           <Route element={<PermissionRoute permission={PERMISSION.GESTAO_ACESSAR} />}>
             <Route path="/gestao" element={<GestaoPage />} />
+          </Route>
+          <Route element={<PermissionRoute permission={PERMISSION.CHAT_INTERNO_ACOMPANHAR} />}>
+            <Route path="/acompanhar-chat" element={<AcompanharChatPage />} />
           </Route>
           <Route element={<PermissionRoute permission={PERMISSION.CONTATOS_ACESSAR} />}>
             <Route path="/contatos" element={<ContatosPage />} />

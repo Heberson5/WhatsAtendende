@@ -11,6 +11,7 @@ import { useTheme } from "../../hooks/useTheme";
 import { usePauseActions } from "../../hooks/usePauseActions";
 import { disconnectSocket } from "../../lib/socket";
 import { InstallAppButton } from "./InstallAppButton";
+import { InternalChatButton } from "../internal-chat/InternalChatButton";
 import { NotificationBell } from "./NotificationBell";
 
 const PRESENCE_LABEL: Record<string, string> = { ONLINE: "Online", AWAY: "Ausente", OFFLINE: "Offline" };
@@ -145,6 +146,7 @@ export function Topbar({ title, onMenuClick }: { title: string; onMenuClick?: ()
             </div>
           )}
         </div>
+        <InternalChatButton />
         <NotificationBell />
         <InstallAppButton />
         <div className="hidden items-center gap-0.5 rounded-full border border-border p-1 sm:flex">

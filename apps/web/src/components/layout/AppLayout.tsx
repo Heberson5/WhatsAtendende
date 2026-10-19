@@ -20,6 +20,7 @@ import { useLandingPageSettings } from "../../hooks/useLandingPageSettings";
 export const TITLES: Record<string, string> = {
   "/atendimento": "Atendimento",
   "/gestao": "Gestão",
+  "/acompanhar-chat": "Chat interno (gestão)",
   "/contatos": "Contatos",
   "/dashboard": "Dashboard",
   "/relatorios": "Relatórios",
