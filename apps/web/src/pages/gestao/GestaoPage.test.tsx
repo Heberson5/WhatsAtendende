@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -11,6 +11,13 @@ vi.mock("../../lib/api", () => ({
   api: { get: vi.fn(), post: vi.fn() },
   getApiErrorMessage: () => "erro",
   withAuthToken: (url: string) => url,
+}));
+
+// The read-only conversation (Visualizar) loads its own messages; here it only has to show it opened.
+vi.mock("../../components/gestao/ReadOnlyConversationDrawer", () => ({
+  ReadOnlyConversationDrawer: ({ conversation }: { conversation: ConversationListItemDTO }) => (
+    <div role="dialog" aria-label={`Conversa com ${conversation.contact.name}`} />
+  ),
 }));
 
 const hoursAgo = (hours: number) => new Date(Date.now() - hours * 3_600_000).toISOString();
@@ -185,5 +192,29 @@ describe("Gestão: filtro de atendentes", () => {
 
     fireEvent.change(filter, { target: { value: "g1" } });
     await waitFor(() => expect(oversightCalls().at(-1)?.agentId).toBe("g1"));
+  });
+});
+
+describe("Gestão no celular", () => {
+  const originalMatchMedia = window.matchMedia;
+  beforeEach(() => {
+    vi.mocked(api.get).mockReset();
+    window.matchMedia = ((query: string) => ({ ...originalMatchMedia(query), matches: query === "(max-width: 767px)" })) as typeof window.matchMedia;
+  });
+  afterEach(() => {
+    window.matchMedia = originalMatchMedia;
+  });
+
+  it("mostra cada conversa como cartão, sem tabela, e tocar no cartão abre a conversa", async () => {
+    renderPage("/gestao", [row("1", "Bruna Lima", hoursAgo(1))]);
+    const name = await screen.findByText("Bruna Lima");
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    const card = name.closest("[role=button]") as HTMLElement;
+    expect(within(card).getByText("Atendente")).toBeInTheDocument();
+    expect(within(card).getByText("Ana")).toBeInTheDocument();
+    expect(within(card).getByRole("button", { name: /Visualizar/ })).toBeInTheDocument();
+
+    fireEvent.click(card);
+    expect(await screen.findByRole("dialog", { name: "Conversa com Bruna Lima" })).toBeInTheDocument();
   });
 });
