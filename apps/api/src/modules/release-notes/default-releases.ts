@@ -30,6 +30,13 @@ export const DEFAULT_RELEASES: ReleaseContent[] = [
         text: "No celular, a faixa de abas de Relatórios passou a rolar para o lado, dando acesso a todas as abas.",
         where: "Relatórios",
       },
+      {
+        type: "correcao",
+        area: "respostas",
+        title: "Respostas e Etiquetas no celular",
+        text: "As abas de Respostas não quebram mais o nome em várias linhas, o texto de cada aba não fica espremido ao lado do botão e o campo de Motivo de Pausa não empurra o botão Adicionar para fora da tela. Em Etiquetas, o campo de nova etiqueta ficou mais largo.",
+        where: "Respostas · Automação › Etiquetas",
+      },
     ],
   },
   {

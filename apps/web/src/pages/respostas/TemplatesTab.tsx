@@ -59,7 +59,7 @@ export function TemplatesTab() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <div className="mb-4 flex items-center justify-between gap-3">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted">
           Mensagens pré-aprovadas pela Meta para iniciar conversa fora da janela de 24h (Marketing e Utilidade) ou
           enviar código de verificação (Autenticação). Cada template pertence a uma conexão WhatsApp Oficial.

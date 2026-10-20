@@ -73,7 +73,7 @@ export function EncerramentoTab() {
   return (
     <div className="flex h-full flex-col overflow-y-auto">
       <NoReturnSettingsCard canEdit={Boolean(canEditar)} />
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted">
           Mensagem enviada automaticamente ao cliente quando um dos usuários selecionados clica em Encerrar. Um usuário só pode estar em um encerramento por vez.
         </p>

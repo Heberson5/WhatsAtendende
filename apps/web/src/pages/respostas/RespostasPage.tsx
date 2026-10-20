@@ -54,11 +54,11 @@ export default function RespostasPage() {
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`flex flex-1 shrink-0 items-center justify-center gap-1.5 py-3 text-sm font-medium sm:flex-none sm:px-6 ${
+            className={`flex flex-1 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap px-4 py-3 text-sm font-medium sm:flex-none sm:px-6 ${
               tab === t.key ? "border-b-2 border-primary text-primary" : "text-muted"
             }`}
           >
-            <t.icon className="h-4 w-4" /> {t.label}
+            <t.icon className="h-4 w-4 shrink-0" /> {t.label}
           </button>
         ))}
       </div>
