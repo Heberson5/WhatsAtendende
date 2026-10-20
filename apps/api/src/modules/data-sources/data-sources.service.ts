@@ -23,10 +23,15 @@ import { env } from "../../config/env";
 import { realtimeEvents } from "../../realtime/realtime";
 import { createNotification } from "../notifications/notifications.service";
 import { toNotificationDTO } from "../notifications/notifications.mapper";
-import { fetchFromDatabase, fetchFromLink, fetchFromMicrosoft, microsoftToken, type DatabaseConfig, type FetchedTable, type MicrosoftApp } from "./data-source-fetch";
+import { fetchFromDatabase, fetchFromLink, fetchFromMicrosoft, microsoftToken, parseSpreadsheet, type DatabaseConfig, type FetchedTable, type MicrosoftApp } from "./data-source-fetch";
 
 const INSERT_CHUNK = 5_000;
 const HOUR_MS = 3_600_000;
+/** How long a button click waits for the read before answering "processando" (nginx gives up on a request after 60 s). */
+const ANSWER_WITHIN_MS = 25_000;
+
+/** Sources being read right now — a 500k-row sheet takes minutes. One process serves the API, so memory is enough. */
+const syncing = new Map<string, Promise<DataSourceDTO>>();
 
 type Secrets = { clientSecret?: string; refreshToken?: string; password?: string };
 export type ColumnMap = Partial<Record<DataSourceRole, string>>;
@@ -76,6 +81,7 @@ export function toDataSourceDTO(source: DataSource): DataSourceDTO {
     dataUpdatedAt: source.dataUpdatedAt?.toISOString() ?? null,
     lastSyncAt: source.lastSyncAt?.toISOString() ?? null,
     lastSyncError: source.lastSyncError,
+    syncing: syncing.has(source.id),
   };
 }
 
@@ -202,8 +208,14 @@ function completeColumnMap(current: ColumnMap, columns: string[]): ColumnMap {
 
 async function storeTable(source: DataSource, table: FetchedTable) {
   const columnMap = completeColumnMap(source.columnMap as ColumnMap, table.columns);
+  // A sheet exported straight from the ERP names it its own way ("telefone", "celular", "fone_whatsapp"...).
+  if (!columnMap.phone || !table.columns.includes(columnMap.phone)) columnMap.phone = table.columns.find((c) => /whats|celular|telefone|fone/.test(c));
   const phoneColumn = columnMap.phone;
-  if (!phoneColumn || !table.columns.includes(phoneColumn)) throw new Error("Não achei a coluna do telefone. Escolha qual coluna é o telefone.");
+  if (!phoneColumn) {
+    // Keep the columns so Editar can offer them for "Telefone (WhatsApp)".
+    await prisma.dataSource.update({ where: { id: source.id }, data: { columns: table.columns } });
+    throw new Error("Não achei a coluna do telefone. Clique em Editar, escolha qual coluna é o telefone e envie o arquivo de novo.");
+  }
   const rows = table.rows.flatMap((data, line) => {
     const key = phoneKey(data[phoneColumn]);
     return key ? [{ dataSourceId: source.id, phoneKey: key, line, data }] : [];
@@ -225,7 +237,7 @@ async function storeTable(source: DataSource, table: FetchedTable) {
         },
       });
     },
-    { timeout: 120_000 }
+    { timeout: 300_000 }
   );
   if (source.overrideContactName && columnMap.clientName) await overrideContactNames(source.id, columnMap);
 }
@@ -267,21 +279,41 @@ async function alertDataSourceViewers(source: DataSource, error: string) {
   }
 }
 
-/** Fetches the source again (or stores the uploaded file) and records the outcome. Never throws: the error is saved on the source. */
-export async function syncDataSource(id: string, uploaded?: FetchedTable): Promise<DataSourceDTO> {
+/**
+ * Reads the source again (or the uploaded file) and records the outcome. Never throws: the error is saved on the
+ * source. A read already running for the source is joined, not repeated.
+ */
+export function syncDataSource(id: string, uploaded?: Buffer): Promise<DataSourceDTO> {
+  const running = syncing.get(id);
+  if (running) return running;
+  const job = readAndStore(id, uploaded)
+    .finally(() => syncing.delete(id))
+    .then(async () => {
+      realtimeEvents.dataSourceStatusChanged();
+      return toDataSourceDTO(await getDataSourceOrThrow(id));
+    });
+  syncing.set(id, job);
+  return job;
+}
+
+async function readAndStore(id: string, uploaded?: Buffer) {
   const source = await getDataSourceOrThrow(id);
-  const statusBefore = sourceStatus(source);
   try {
-    await storeTable(source, uploaded ?? (await fetchTable(source)));
+    await storeTable(source, uploaded ? await parseSpreadsheet(uploaded, new Date()) : await fetchTable(source));
   } catch (err) {
     const message = (err as Error).message || "Erro desconhecido ao ler a fonte de dados";
     logger.warn({ err, dataSourceId: id }, "data source sync failed");
     await prisma.dataSource.update({ where: { id }, data: { lastSyncAt: new Date(), lastSyncError: message } });
     if (source.active && source.lastSyncError !== message) await alertDataSourceViewers(source, message);
   }
-  const after = await getDataSourceOrThrow(id);
-  if (sourceStatus(after) !== statusBefore) realtimeEvents.dataSourceStatusChanged();
-  return toDataSourceDTO(after);
+}
+
+/** A click on Enviar arquivo / Atualizar agora / Ativa: the result if the read ends quickly, else the source marked "syncing". */
+export async function startSync(id: string, uploaded?: Buffer): Promise<DataSourceDTO> {
+  if (syncing.has(id)) throw Errors.conflict("Esta fonte ainda está sendo lida. Aguarde terminar.");
+  const job = syncDataSource(id, uploaded);
+  const answerAnyway = new Promise<null>((resolve) => setTimeout(() => resolve(null), ANSWER_WITHIN_MS).unref());
+  return (await Promise.race([job, answerAnyway])) ?? toDataSourceDTO(await getDataSourceOrThrow(id));
 }
 
 /** Server timer: refreshes the active source when its interval is due (an uploaded file is only refreshed by a new upload). */

@@ -2332,6 +2332,8 @@ export interface DataSourceDTO {
   dataUpdatedAt: string | null;
   lastSyncAt: string | null;
   lastSyncError: string | null;
+  /** Being read right now (a big sheet takes minutes); the panel shows "Processando..." until it ends. */
+  syncing: boolean;
 }
 
 export interface ClientBeneficiaryDTO {

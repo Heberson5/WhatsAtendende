@@ -11,6 +11,28 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.16.4",
+    date: "20 out 2026",
+    name: "Planilhas grandes em Fontes de dados",
+    summary: "Envie a planilha em XLSX do jeito que está, com até 500 mil linhas: planilhas grandes são processadas em segundo plano.",
+    notes: [
+      {
+        type: "melhoria",
+        area: "configuracoes",
+        title: "Planilha XLSX grande, sem converter",
+        text: "Fontes de dados aceita a planilha em XLSX ou CSV com até 500 mil linhas e 100 MB, sem precisar converter. Planilhas grandes são processadas em segundo plano: o cartão mostra Processando... e um aviso aparece quando terminar. Datas aparecem como 10/11/2026, a coluna do telefone é reconhecida pelo nome (telefone, celular, fone ou WhatsApp) e CSV salvo pelo SQL Server ou pelo Excel em qualquer codificação é lido com os acentos certos.",
+        where: "Configurações › Fontes de dados",
+      },
+      {
+        type: "melhoria",
+        area: "configuracoes",
+        title: "Links do Google Drive e aviso do OneDrive",
+        text: "O link de uma planilha .xlsx ou .csv guardada no Google Drive passou a funcionar, além do link do Google Planilhas. Quando a Microsoft recusa o link do OneDrive, a mensagem agora explica o motivo e indica as alternativas.",
+        where: "Configurações › Fontes de dados",
+      },
+    ],
+  },
+  {
     version: "2.16.3",
     date: "20 out 2026",
     name: "Contatos do celular salvos e importação sem duplicar",
