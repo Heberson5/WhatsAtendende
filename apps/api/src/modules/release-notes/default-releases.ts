@@ -11,6 +11,21 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.16.2",
+    date: "20 out 2026",
+    name: "Conectar com número de telefone",
+    summary: "O código de conexão pelo número fica na tela por 60 segundos e é aceito pelo WhatsApp do celular; ao vencer, outro aparece no lugar.",
+    notes: [
+      {
+        type: "correcao",
+        area: "conexoes",
+        title: "Código de conexão pelo número",
+        text: "O código sumia em poucos segundos e o celular dizia que não foi possível conectar, porque era pedido antes de o WhatsApp terminar de abrir a conexão. Agora ele é pedido no momento certo, fica na tela por 60 segundos e, ao vencer, um novo aparece direto no lugar. Depois de 5 minutos sem vincular, os códigos param e o botão Gerar novo código começa outra tentativa.",
+        where: "Conexões › WhatsApp",
+      },
+    ],
+  },
+  {
     version: "2.16.1",
     date: "20 out 2026",
     name: "Painel do cliente no celular",
