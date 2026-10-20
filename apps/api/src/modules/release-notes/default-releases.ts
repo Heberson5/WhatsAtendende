@@ -37,6 +37,13 @@ export const DEFAULT_RELEASES: ReleaseContent[] = [
         text: "As abas de Respostas não quebram mais o nome em várias linhas, o texto de cada aba não fica espremido ao lado do botão e o campo de Motivo de Pausa não empurra o botão Adicionar para fora da tela. Em Etiquetas, o campo de nova etiqueta ficou mais largo.",
         where: "Respostas · Automação › Etiquetas",
       },
+      {
+        type: "melhoria",
+        area: "gestao",
+        title: "Gestão no celular em cartões",
+        text: "No celular, a tela inteira rola e cada conversa aparece num cartão com nome, telefone, status, atendente, conexão, espera e última atividade, com as ações à vista. Tocar no cartão abre a conversa. Ao marcar conversas, a barra de Transferir e Devolver para a fila fica fixa no rodapé. No computador, nada muda.",
+        where: "Gestão",
+      },
     ],
   },
   {

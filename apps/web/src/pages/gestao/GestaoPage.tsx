@@ -23,6 +23,7 @@ import { toastWithUndo } from "../../lib/undoToast";
 import { ColumnViewMenu } from "../../components/common/ColumnViewMenu";
 import { useColumnView } from "../../hooks/useColumnView";
 import { ContactPhoto } from "../../components/common/ContactPhoto";
+import { useIsPhone } from "../../hooks/useIsPhone";
 
 // Same "still active" scope the backend enforces (see
 // assignConversationFromGestao/returnConversationToQueue) — CLOSED/ABANDONED
@@ -69,6 +70,7 @@ export default function GestaoPage() {
   const [bulkTransferring, setBulkTransferring] = useState(false);
   const now = useNow();
   const columnView = useColumnView("gestao");
+  const isPhone = useIsPhone();
   const [search, setSearch] = useState("");
   // Searching inside the messages is heavier — wait for a pause in the typing.
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -242,6 +244,78 @@ export default function GestaoPage() {
     return null;
   }
 
+  function waitClass(wait: ReturnType<typeof waitInfo>) {
+    if (!wait) return "text-muted";
+    if (wait.minutes >= WAIT_DANGER_MINUTES) return "font-semibold text-danger";
+    if (wait.minutes >= WAIT_WARNING_MINUTES) return "font-semibold text-warning";
+    return "text-muted";
+  }
+
+  function clientAvatar(c: ConversationListItemDTO, size: string) {
+    return c.contact.photoUrl ? (
+      <ContactPhoto photoUrl={c.contact.photoUrl} name={contactDisplayName(c.contact)} phone={c.contact.phone}>
+        <img src={c.contact.photoUrl} alt="" className={`${size} shrink-0 rounded-full object-cover`} />
+      </ContactPhoto>
+    ) : (
+      <div className={`flex ${size} shrink-0 items-center justify-center rounded-full bg-surface-alt text-xs font-semibold text-muted`}>
+        {contactDisplayName(c.contact).slice(0, 2).toUpperCase()}
+      </div>
+    );
+  }
+
+  function statusBadge(c: ConversationListItemDTO) {
+    return <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_COLOR[c.status]}`}>{STATUS_LABEL[c.status]}</span>;
+  }
+
+  // The agent/connection/waiting/lastActivity values — the table puts them in cells, the phone card under labels.
+  function detailContent(key: string, c: ConversationListItemDTO, wait: ReturnType<typeof waitInfo>) {
+    switch (key) {
+      case "agent":
+        return (
+          <>
+            {c.assignedAgentName ?? <span className="text-muted">—</span>}
+            {c.intervention && (
+              <span className="mt-0.5 flex items-center gap-1 whitespace-nowrap text-[11px] font-medium text-amber-600 dark:text-amber-400">
+                <Hand className="h-3 w-3" /> Intervenção · {c.intervention.name}
+              </span>
+            )}
+          </>
+        );
+      case "connection":
+        return (
+          <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs text-muted">
+            <span className="h-2 w-2 rounded-sm" style={{ backgroundColor: c.whatsappConnectionColor }} />
+            {c.whatsappConnectionName}
+          </span>
+        );
+      case "waiting":
+        return (
+          <span
+            className={clsx("text-xs tabular-nums", waitClass(wait))}
+            title={`Entrou na fila ${formatDistanceToNow(new Date(c.enteredQueueAt), { locale: ptBR, addSuffix: true })}${c.acceptedAt ? ` · aceita ${formatDistanceToNow(new Date(c.acceptedAt), { locale: ptBR, addSuffix: true })}` : ""}`}
+          >
+            {wait?.label ?? "—"}
+          </span>
+        );
+      case "lastActivity":
+        return (
+          <>
+            {c.searchMatch ? (
+              <div className="truncate font-medium text-[var(--color-text)]" title={c.searchMatch}>
+                <Search className="me-1 inline h-3 w-3 text-primary" aria-label="Encontrado na conversa" />
+                {c.searchMatch}
+              </div>
+            ) : (
+              <div className="truncate">{c.lastMessagePreview ?? "—"}</div>
+            )}
+            <div className="text-[11px] opacity-75">{formatActivity(c.lastMessageAt, now)}</div>
+          </>
+        );
+      default:
+        return null;
+    }
+  }
+
   // One cell per column of COLUMN_SCREENS.gestao — the ⋮ menu picks which show and in what order.
   function renderCell(key: string, c: ConversationListItemDTO, wait: ReturnType<typeof waitInfo>) {
     switch (key) {
@@ -249,15 +323,7 @@ export default function GestaoPage() {
         return (
           <td key="client" className="px-3 py-3">
             <div className="flex items-center gap-2.5">
-              {c.contact.photoUrl ? (
-                <ContactPhoto photoUrl={c.contact.photoUrl} name={contactDisplayName(c.contact)} phone={c.contact.phone}>
-                  <img src={c.contact.photoUrl} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover" />
-                </ContactPhoto>
-              ) : (
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-alt text-xs font-semibold text-muted">
-                  {contactDisplayName(c.contact).slice(0, 2).toUpperCase()}
-                </div>
-              )}
+              {clientAvatar(c, "h-8 w-8")}
               <div className="min-w-0">
                 <div className="truncate font-medium">{contactDisplayName(c.contact)}</div>
                 {c.contact.phone && <div className="text-xs text-muted">{c.contact.phone}</div>}
@@ -268,64 +334,105 @@ export default function GestaoPage() {
       case "status":
         return (
           <td key="status" className="px-3 py-3">
-            <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_COLOR[c.status]}`}>{STATUS_LABEL[c.status]}</span>
-          </td>
-        );
-      case "agent":
-        return (
-          <td key="agent" className="px-3 py-3">
-            {c.assignedAgentName ?? <span className="text-muted">—</span>}
-            {c.intervention && (
-              <span className="mt-0.5 flex items-center gap-1 whitespace-nowrap text-[11px] font-medium text-amber-600 dark:text-amber-400">
-                <Hand className="h-3 w-3" /> Intervenção · {c.intervention.name}
-              </span>
-            )}
-          </td>
-        );
-      case "connection":
-        return (
-          <td key="connection" className="px-3 py-3">
-            <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs text-muted">
-              <span className="h-2 w-2 rounded-sm" style={{ backgroundColor: c.whatsappConnectionColor }} />
-              {c.whatsappConnectionName}
-            </span>
+            {statusBadge(c)}
           </td>
         );
       case "waiting":
         return (
-          <td key="waiting"
-            className={clsx(
-              "whitespace-nowrap px-3 py-3 text-xs tabular-nums",
-              !wait
-                ? "text-muted"
-                : wait.minutes >= WAIT_DANGER_MINUTES
-                  ? "font-semibold text-danger"
-                  : wait.minutes >= WAIT_WARNING_MINUTES
-                    ? "font-semibold text-warning"
-                    : "text-muted"
-            )}
-            title={`Entrou na fila ${formatDistanceToNow(new Date(c.enteredQueueAt), { locale: ptBR, addSuffix: true })}${c.acceptedAt ? ` · aceita ${formatDistanceToNow(new Date(c.acceptedAt), { locale: ptBR, addSuffix: true })}` : ""}`}
-          >
-            {wait?.label ?? "—"}
+          <td key="waiting" className="whitespace-nowrap px-3 py-3">
+            {detailContent(key, c, wait)}
           </td>
         );
       case "lastActivity":
         return (
           <td key="lastActivity" className="max-w-[220px] px-3 py-3 text-xs text-muted">
-            {c.searchMatch ? (
-              <div className="truncate font-medium text-[var(--color-text)]" title={c.searchMatch}>
-                <Search className="me-1 inline h-3 w-3 text-primary" aria-label="Encontrado na conversa" />
-                {c.searchMatch}
-              </div>
-            ) : (
-              <div className="truncate">{c.lastMessagePreview ?? "—"}</div>
-            )}
-            <div className="text-[11px] opacity-75">{formatActivity(c.lastMessageAt, now)}</div>
+            {detailContent(key, c, wait)}
           </td>
         );
       default:
-        return null;
+        return (
+          <td key={key} className="px-3 py-3">
+            {detailContent(key, c, wait)}
+          </td>
+        );
     }
+  }
+
+  // Per-row actions, only those this conversation and the user's permissions allow. The phone card shows them with
+  // their names; the table row as icons.
+  function rowActions(c: ConversationListItemDTO, card: boolean) {
+    const iconClass = card
+      ? "focus-ring inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1.5 text-xs text-muted hover:bg-surface-alt hover:text-primary"
+      : "focus-ring rounded-lg p-1.5 text-muted hover:bg-surface-alt hover:text-primary";
+    const labelClass = card ? "" : "sr-only";
+    return (
+      <div className={card ? "flex flex-wrap items-center justify-end gap-1.5" : "flex items-center justify-end gap-0.5 whitespace-nowrap"}>
+        {canManage && ROUTABLE_STATUSES.has(c.status) && (
+          <button
+            onClick={() => setTransferring([c])}
+            className={iconClass}
+            title="Transferir para outro atendente"
+          >
+            <ArrowRightLeft className="h-4 w-4" />
+            <span className={labelClass}>Transferir</span>
+          </button>
+        )}
+        {canManage && ROUTABLE_STATUSES.has(c.status) && !ALREADY_QUEUED_STATUSES.has(c.status) && (
+          <button
+            onClick={() => returnToQueueMutation.mutate(c.id)}
+            disabled={returnToQueueMutation.isPending}
+            className={clsx(iconClass, "disabled:opacity-50")}
+            title="Enviar de volta para a fila, sem atendente"
+          >
+            <Inbox className="h-4 w-4" />
+            <span className={labelClass}>Enviar para a fila</span>
+          </button>
+        )}
+        {canManage && ROUTABLE_STATUSES.has(c.status) && (
+          <button
+            onClick={() => setClosing(c)}
+            className={iconClass}
+            title="Encerrar este atendimento"
+          >
+            <CheckCircle2 className="h-4 w-4" />
+            <span className={labelClass}>Encerrar</span>
+          </button>
+        )}
+        {isAdmin && (
+          <button
+            onClick={() => setMerging(c)}
+            className={iconClass}
+            title="Mesclar esta conversa duplicada com outra"
+          >
+            <GitMerge className="h-4 w-4" />
+            <span className={labelClass}>Mesclar</span>
+          </button>
+        )}
+        {canIntervene && INTERVENABLE_STATUSES.has(c.status) && c.assignedAgentId && c.assignedAgentId !== myId && (
+          <button
+            onClick={() => (c.intervention?.userId === myId ? setInterveningSnapshot(c) : interveneMutation.mutate(c.id))}
+            disabled={Boolean(c.intervention && c.intervention.userId !== myId) || interveneMutation.isPending}
+            className={clsx(
+              "focus-ring inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50", card ? "border border-amber-400/50 py-1.5" : "ml-1",
+              c.intervention?.userId === myId ? "bg-amber-500 text-white hover:bg-amber-600" : "text-amber-600 hover:bg-amber-500/10 dark:text-amber-400"
+            )}
+            title={
+              c.intervention && c.intervention.userId !== myId
+                ? `${c.intervention.name} já está intervindo nesta conversa`
+                : "Assumir as respostas desta conversa — o atendente passa a só acompanhar e deixar notas"
+            }
+          >
+            <Hand className="h-3.5 w-3.5" /> {c.intervention?.userId === myId ? "Abrir intervenção" : "Intervir"}
+          </button>
+        )}
+        <button
+    onClick={() => setSelected(c)}
+    className={clsx("focus-ring inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-primary hover:bg-primary/10", card ? "border border-primary/30 py-1.5" : "ml-1")}
+  >
+          <Eye className="h-3.5 w-3.5" /> Visualizar
+        </button>
+      </div>
+    );
   }
 
   const bulkReturnMutation = useMutation({
@@ -344,15 +451,16 @@ export default function GestaoPage() {
   });
 
   return (
-    <div className="flex h-full flex-col overflow-hidden p-3 sm:p-6">
-      <div className="mb-3 flex flex-wrap items-center gap-2">
+    // On a phone the whole page scrolls and each conversation is a card; from md up, the table in its own scroll box.
+    <div className="flex h-full flex-col overflow-y-auto p-3 sm:p-6 md:overflow-hidden">
+      <div className="mb-3 grid grid-cols-2 gap-2 md:flex md:flex-wrap md:items-center">
         <PeriodFilter value={period} onChange={setPeriod} allowAll />
 
         <select
           value={agentId}
           onChange={(e) => setAgentId(e.target.value)}
           aria-label="Filtrar por atendente"
-          className="focus-ring rounded-card border border-border bg-surface px-3 py-2 text-sm"
+          className="focus-ring min-w-0 rounded-card border border-border bg-surface px-3 py-2 text-sm"
         >
           <option value="all">Todos os atendentes</option>
           {ATTENDANT_GROUPS.map(({ role, label }) => {
@@ -369,7 +477,7 @@ export default function GestaoPage() {
           })}
         </select>
 
-        <label className="flex min-w-[200px] flex-1 items-center gap-2 rounded-card border border-border bg-surface px-3 py-2 text-sm focus-within:border-primary/50">
+        <label className="col-span-2 flex min-w-[200px] flex-1 items-center gap-2 rounded-card border border-border bg-surface px-3 py-2 text-sm focus-within:border-primary/50">
           <Search className="h-4 w-4 shrink-0 text-muted" />
           <input
             value={search}
@@ -379,10 +487,12 @@ export default function GestaoPage() {
           />
         </label>
 
-        <ConnectionFilter value={connectionIds} onChange={setConnectionIds} />
+        <div className="col-span-2 md:col-auto">
+          <ConnectionFilter value={connectionIds} onChange={setConnectionIds} />
+        </div>
       </div>
 
-      <div className="mb-3 flex flex-wrap gap-1.5" role="group" aria-label="Filtrar por status">
+      <div className="-mx-3 mb-3 flex shrink-0 gap-1.5 overflow-x-auto px-3 md:mx-0 md:flex-wrap md:px-0" role="group" aria-label="Filtrar por status">
         {[{ key: "all", label: "Todas", statuses: [] as ConversationStatus[] }, ...STATUS_CHIPS].map((chip) => {
           const value = chip.key === "all" ? "all" : chip.statuses.join(",");
           const count = chip.key === "all" ? (conversations?.length ?? 0) : countFor(chip.statuses);
@@ -396,7 +506,7 @@ export default function GestaoPage() {
               }}
               aria-pressed={active}
               className={clsx(
-                "focus-ring rounded-full border px-3 py-1 text-xs font-medium",
+                "focus-ring shrink-0 whitespace-nowrap rounded-full border px-3 py-1 text-xs font-medium",
                 active ? "border-primary bg-primary/10 text-primary" : "border-border bg-surface text-muted hover:text-[var(--color-text)]",
                 chip.key === "queue" && count > 0 && !active && "border-warning/40 text-warning"
               )}
@@ -408,7 +518,8 @@ export default function GestaoPage() {
       </div>
 
       {selectedRows.length > 0 && (
-        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-card bg-[var(--color-text)] px-3 py-2 text-sm text-surface">
+        // Phone: pinned to the bottom of the screen (order-last) so it stays at hand while scrolling the cards.
+        <div className="sticky bottom-0 z-10 order-last mt-3 flex flex-wrap items-center gap-2 rounded-card bg-[var(--color-text)] px-3 py-2 text-sm text-surface shadow-elevated md:static md:order-none md:mb-3 md:mt-0 md:shadow-none">
           <span className="font-medium">
             {selectedRows.length} {selectedRows.length === 1 ? "selecionada" : "selecionadas"}
           </span>
@@ -432,6 +543,63 @@ export default function GestaoPage() {
         </div>
       )}
 
+      {isPhone ? (
+      <div className="space-y-2.5">
+        {isLoading && <p className="py-8 text-center text-sm text-muted">Carregando...</p>}
+        {!isLoading && visible.length === 0 && <p className="py-8 text-center text-sm text-muted">Nenhuma conversa encontrada para os filtros selecionados.</p>}
+        {visible.map((c) => {
+          const wait = waitInfo(c);
+          const isSelected = selectedIds.has(c.id);
+          const details = columnView.visibleKeys.filter((key) => key !== "client" && key !== "status");
+          return (
+            <div
+              key={c.id}
+              role="button"
+              tabIndex={0}
+              onClick={() => setSelected(c)}
+              onKeyDown={(e) => e.key === "Enter" && e.target === e.currentTarget && setSelected(c)}
+              className={clsx(
+                "focus-ring shadow-soft cursor-pointer rounded-card border bg-surface p-3",
+                isSelected ? "border-primary bg-primary/[0.05]" : "border-border"
+              )}
+            >
+              <div className="flex items-start gap-2.5">
+                {canManage && ROUTABLE_STATUSES.has(c.status) && (
+                  <input
+                    type="checkbox"
+                    aria-label={`Selecionar ${contactDisplayName(c.contact)}`}
+                    checked={isSelected}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={() => toggleRow(c.id)}
+                    className="mt-2.5 h-4 w-4 shrink-0 accent-[var(--color-primary)]"
+                  />
+                )}
+                <div onClick={(e) => e.stopPropagation()}>{clientAvatar(c, "h-9 w-9")}</div>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-semibold">{contactDisplayName(c.contact)}</div>
+                  {c.contact.phone && <div className="truncate text-xs text-muted">{c.contact.phone}</div>}
+                </div>
+                {columnView.visibleKeys.includes("status") && <div className="shrink-0">{statusBadge(c)}</div>}
+              </div>
+              {details.length > 0 && (
+                <dl className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                  {details.map((key) => (
+                    <div key={key} className={clsx("min-w-0", key === "lastActivity" && "col-span-2")}>
+                      <dt className="text-muted">{COLUMN_SCREENS.gestao.columns.find((col) => col.key === key)?.label}</dt>
+                      <dd className="min-w-0 text-[var(--color-text)]">{detailContent(key, c, wait)}</dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
+              <div className="mt-2.5 border-t border-border pt-2.5" onClick={(e) => e.stopPropagation()}>
+                {rowActions(c, true)}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      ) : (
       <div className="shadow-soft flex-1 overflow-auto rounded-card border border-border bg-surface">
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-surface-alt text-left text-xs uppercase tracking-wide text-muted">
@@ -492,69 +660,7 @@ export default function GestaoPage() {
                 </td>
                 {columnView.visibleKeys.map((key) => renderCell(key, c, wait))}
                 <td className="px-4 py-3 text-right">
-                  <div className="flex items-center justify-end gap-0.5 whitespace-nowrap">
-                    {canManage && ROUTABLE_STATUSES.has(c.status) && (
-                      <button
-                        onClick={() => setTransferring([c])}
-                        className="focus-ring rounded-lg p-1.5 text-muted hover:bg-surface-alt hover:text-primary"
-                        title="Transferir para outro atendente"
-                      >
-                        <ArrowRightLeft className="h-4 w-4" />
-                        <span className="sr-only">Transferir</span>
-                      </button>
-                    )}
-                    {canManage && ROUTABLE_STATUSES.has(c.status) && !ALREADY_QUEUED_STATUSES.has(c.status) && (
-                      <button
-                        onClick={() => returnToQueueMutation.mutate(c.id)}
-                        disabled={returnToQueueMutation.isPending}
-                        className="focus-ring rounded-lg p-1.5 text-muted hover:bg-surface-alt hover:text-primary disabled:opacity-50"
-                        title="Enviar de volta para a fila, sem atendente"
-                      >
-                        <Inbox className="h-4 w-4" />
-                        <span className="sr-only">Enviar para a fila</span>
-                      </button>
-                    )}
-                    {canManage && ROUTABLE_STATUSES.has(c.status) && (
-                      <button
-                        onClick={() => setClosing(c)}
-                        className="focus-ring rounded-lg p-1.5 text-muted hover:bg-surface-alt hover:text-primary"
-                        title="Encerrar este atendimento"
-                      >
-                        <CheckCircle2 className="h-4 w-4" />
-                        <span className="sr-only">Encerrar</span>
-                      </button>
-                    )}
-                    {isAdmin && (
-                      <button
-                        onClick={() => setMerging(c)}
-                        className="focus-ring rounded-lg p-1.5 text-muted hover:bg-surface-alt hover:text-primary"
-                        title="Mesclar esta conversa duplicada com outra"
-                      >
-                        <GitMerge className="h-4 w-4" />
-                        <span className="sr-only">Mesclar</span>
-                      </button>
-                    )}
-                    {canIntervene && INTERVENABLE_STATUSES.has(c.status) && c.assignedAgentId && c.assignedAgentId !== myId && (
-                      <button
-                        onClick={() => (c.intervention?.userId === myId ? setInterveningSnapshot(c) : interveneMutation.mutate(c.id))}
-                        disabled={Boolean(c.intervention && c.intervention.userId !== myId) || interveneMutation.isPending}
-                        className={clsx(
-                          "focus-ring ml-1 inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50",
-                          c.intervention?.userId === myId ? "bg-amber-500 text-white hover:bg-amber-600" : "text-amber-600 hover:bg-amber-500/10 dark:text-amber-400"
-                        )}
-                        title={
-                          c.intervention && c.intervention.userId !== myId
-                            ? `${c.intervention.name} já está intervindo nesta conversa`
-                            : "Assumir as respostas desta conversa — o atendente passa a só acompanhar e deixar notas"
-                        }
-                      >
-                        <Hand className="h-3.5 w-3.5" /> {c.intervention?.userId === myId ? "Abrir intervenção" : "Intervir"}
-                      </button>
-                    )}
-                    <button onClick={() => setSelected(c)} className="focus-ring ml-1 inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-primary hover:bg-primary/10">
-                      <Eye className="h-3.5 w-3.5" /> Visualizar
-                    </button>
-                  </div>
+                  {rowActions(c, false)}
                 </td>
               </tr>
               );
@@ -562,6 +668,7 @@ export default function GestaoPage() {
           </tbody>
         </table>
       </div>
+      )}
 
       <p className="mt-2 text-xs text-muted">
         Mostrando {visible.length} de {conversations?.length ?? 0} {conversations?.length === 1 ? "conversa" : "conversas"}
