@@ -1,9 +1,9 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import request from "supertest";
 import { createApp } from "../src/app";
 import { prisma } from "../src/lib/prisma";
 import { phoneKey } from "../src/lib/phone-key";
-import { downloadCandidates, assertReadOnlyQuery } from "../src/modules/data-sources/data-source-fetch";
+import { downloadCandidates, assertReadOnlyQuery, fetchFromLink } from "../src/modules/data-sources/data-source-fetch";
 import { parseBeneficiaries, syncDueDataSources } from "../src/modules/data-sources/data-sources.service";
 import { resetDatabase, createTestUser, createWaitingConversation, TEST_PASSWORD } from "./helpers";
 
@@ -66,6 +66,15 @@ describe("Fontes de dados", () => {
     expect(downloadCandidates("https://docs.google.com/spreadsheets/d/abc123/edit#gid=7")).toEqual(["https://docs.google.com/spreadsheets/d/abc123/export?format=csv&gid=7"]);
     expect(downloadCandidates("https://1drv.ms/x/s!AbC")[0]).toMatch(/^https:\/\/api\.onedrive\.com\/v1\.0\/shares\/u!/);
     expect(downloadCandidates("https://empresa.sharepoint.com/:x:/g/abc")).toEqual(["https://empresa.sharepoint.com/:x:/g/abc?download=1"]);
+  });
+
+  it("link do OneDrive recusado pela Microsoft: explica e indica a conta Microsoft", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("", { status: 403 })));
+    try {
+      await expect(fetchFromLink("https://1drv.ms/x/c/4a75/IQBb?e=abc")).rejects.toThrow(/Planilha privada \(conta Microsoft\)/);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("só aceita consulta de leitura no banco", () => {

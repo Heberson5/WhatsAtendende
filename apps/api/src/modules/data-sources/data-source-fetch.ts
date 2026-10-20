@@ -88,12 +88,20 @@ export function downloadCandidates(link: string): string[] {
   return [withDownload.toString()];
 }
 
+/** Microsoft no longer lets anyone download from a new-style OneDrive share link (1drv.ms/x/c/…) without signing in. */
+const ONEDRIVE_DENIED =
+  'A Microsoft não permite mais baixar automaticamente planilhas pelo link de compartilhamento do OneDrive, mesmo com "Qualquer pessoa com o link". Use "Planilha privada (conta Microsoft)", um link do Google Planilhas ou "Enviar arquivo".';
+
 export async function fetchFromLink(link: string): Promise<FetchedTable> {
+  const isOneDrive = /1drv\.ms|onedrive\.live\.com/.test(new URL(link).hostname);
   let lastError: Error = new Error("Não foi possível baixar a planilha do link");
   for (const candidate of downloadCandidates(link)) {
     try {
       const res = await fetch(candidate, { redirect: "follow", signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
-      if (!res.ok) throw new Error(`O link respondeu ${res.status}. Confira se o compartilhamento está como "Qualquer pessoa com o link".`);
+      if (!res.ok) {
+        if (isOneDrive && (res.status === 401 || res.status === 403)) throw new Error(ONEDRIVE_DENIED);
+        throw new Error(`O link respondeu ${res.status}. Confira se o compartilhamento está como "Qualquer pessoa com o link".`);
+      }
       const modified = res.headers.get("last-modified");
       return await parseSpreadsheet(Buffer.from(await res.arrayBuffer()), modified ? new Date(modified) : null);
     } catch (err) {
