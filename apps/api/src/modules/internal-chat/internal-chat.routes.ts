@@ -6,7 +6,7 @@ import multer from "multer";
 import { z } from "zod";
 import { PERMISSION } from "@whatsatendende/types";
 import { asyncHandler } from "../../lib/async-handler";
-import { requireAuth } from "../../middleware/auth";
+import { requireAuth, requireAuthFromHeaderOrQuery } from "../../middleware/auth";
 import { isPermissionAllowed, requirePermission } from "../../lib/permissions";
 import { writeAudit } from "../../lib/audit";
 import { Errors } from "../../lib/http-error";
@@ -14,6 +14,20 @@ import { env } from "../../config/env";
 import * as service from "./internal-chat.service";
 
 export const internalChatRouter = Router();
+
+// Before the router-wide requireAuth: a document preview opens the file by URL, with the token in it.
+internalChatRouter.get(
+  "/attachments/:messageId",
+  requireAuthFromHeaderOrQuery,
+  asyncHandler(async (req, res) => {
+    const oversight = req.auth!.role === "ADMIN" || (await isPermissionAllowed(req.auth!.role, PERMISSION.CHAT_INTERNO_ACOMPANHAR));
+    const message = await service.attachmentFor(req.params.messageId, req.auth!.userId, oversight);
+    res.setHeader("Content-Type", message.attachmentMimeType!);
+    res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(message.attachmentName!)}"`);
+    res.sendFile(path.resolve(env.UPLOAD_DIR, message.attachmentKey!));
+  })
+);
+
 internalChatRouter.use(requireAuth);
 
 const MAX_FILE_MB = 25;
@@ -43,16 +57,6 @@ internalChatRouter.get(
   })
 );
 
-internalChatRouter.get(
-  "/attachments/:messageId",
-  asyncHandler(async (req, res) => {
-    const oversight = req.auth!.role === "ADMIN" || (await isPermissionAllowed(req.auth!.role, PERMISSION.CHAT_INTERNO_ACOMPANHAR));
-    const message = await service.attachmentFor(req.params.messageId, req.auth!.userId, oversight);
-    res.setHeader("Content-Type", message.attachmentMimeType!);
-    res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(message.attachmentName!)}"`);
-    res.sendFile(path.resolve(env.UPLOAD_DIR, message.attachmentKey!));
-  })
-);
 
 // --- Using the chat ---
 

@@ -11,6 +11,35 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.16.3",
+    date: "20 out 2026",
+    name: "Contatos do celular salvos e importação sem duplicar",
+    summary: "Carregar contatos agora salva a agenda do celular em Contatos, a importação traz uma planilha modelo e nunca duplica, e o Chat Interno ganhou o mesmo campo de texto da conversa com o cliente.",
+    notes: [
+      {
+        type: "novo",
+        area: "contatos",
+        title: "Contatos do celular salvos em Contatos",
+        text: "Ao clicar em Carregar contatos agora, os contatos da agenda do celular ficam salvos em Contatos, sem precisar carregar de novo. Quem já está na plataforma (pelo número, com ou sem o 9) não é duplicado e mantém o nome salvo na plataforma — o nome do celular só é usado para contatos novos.",
+        where: "Conexões › WhatsApp",
+      },
+      {
+        type: "melhoria",
+        area: "contatos",
+        title: "Importação sem duplicar e planilha modelo",
+        text: "A importação reconhece o contato já salvo pelo número (com ou sem o 9) e não cria outro: o nome salvo na plataforma é mantido. O botão Baixar planilha modelo traz o arquivo no formato certo (Nome; Telefone; Etiquetas). Os números aparecem formatados, como (65) 99999-0000.",
+        where: "Contatos › Importar",
+      },
+      {
+        type: "melhoria",
+        area: "geral",
+        title: "Chat Interno igual à conversa com o cliente",
+        text: "O campo de texto do Chat Interno cresce até 10 linhas enquanto você digita, os links nas mensagens são clicáveis e os documentos (como PDF) abrem a prévia ao clicar.",
+        where: "Chat Interno",
+      },
+    ],
+  },
+  {
     version: "2.16.2",
     date: "20 out 2026",
     name: "Conectar com número de telefone",

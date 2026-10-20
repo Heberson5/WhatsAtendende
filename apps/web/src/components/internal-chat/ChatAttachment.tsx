@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { FileText } from "lucide-react";
 import type { ChatMessageDTO } from "@whatsatendende/types";
 import { api } from "../../lib/api";
+import { DocumentAttachment } from "../atendimento/DocumentPreview";
 
 /** Attachments need the login token, so they're fetched as a blob instead of a plain link. */
 export function ChatAttachment({ attachment }: { attachment: NonNullable<ChatMessageDTO["attachment"]> }) {
@@ -40,10 +40,11 @@ export function ChatAttachment({ attachment }: { attachment: NonNullable<ChatMes
       </button>
     );
   }
+  // Same card as a customer conversation's document: PDFs, Word and .txt get a preview and open in the viewer;
+  // anything else (an image still loading included) is a download card.
   return (
-    <button type="button" onClick={download} className="focus-ring flex items-center gap-1.5 rounded-lg border border-border bg-surface px-2 py-1.5 text-left text-xs hover:bg-surface-alt">
-      <FileText className="h-4 w-4 shrink-0" />
-      <span className="truncate">{attachment.name}</span>
-    </button>
+    <DocumentAttachment
+      att={{ id: attachment.url, fileName: attachment.name, mimeType: attachment.mimeType, sizeBytes: attachment.size, url: `/api${attachment.url}`, kind: "DOCUMENT" }}
+    />
   );
 }

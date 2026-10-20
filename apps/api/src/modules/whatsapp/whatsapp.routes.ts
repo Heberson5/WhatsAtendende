@@ -287,9 +287,9 @@ whatsappRouter.post(
       entity: "WhatsAppConnection",
       entityId: req.params.id,
       ipAddress: req.ip ?? null,
-      metadata: { count: result.count },
+      metadata: { count: result.count, created: result.created },
     });
-    res.json({ count: result.count, syncedAt: result.syncedAt.toISOString() });
+    res.json({ count: result.count, created: result.created, syncedAt: result.syncedAt.toISOString() });
   })
 );
 

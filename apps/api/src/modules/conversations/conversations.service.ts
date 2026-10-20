@@ -71,10 +71,9 @@ async function getUnreadCounts(conversationIds: string[]): Promise<Map<string, n
  * known and stored as its phone, before providerChatId existed at all;
  * (4) a genuinely new contact.
  *
- * `opts.preferIncomingName` lets an authoritative name source (the phone's
- * own saved address-book entry — see PROMPT: "sincronizar com os contatos
- * já salvo no celular") override a name already on file, instead of the
- * default "never clobber a known name with a fresh pushName" rule.
+ * `opts.preferIncomingName` lets a name someone picked on purpose (Nova
+ * conversa) override a name already on file, instead of the default "never
+ * clobber a known name" rule.
  * `opts.createIfMissing` (default true) set to false turns this into a
  * passive enrichment lookup that never creates a Contact — used by the
  * device-address-book sync, where a match against a phone nobody has ever

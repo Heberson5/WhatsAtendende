@@ -10,11 +10,14 @@ import { api, getApiErrorMessage } from "../../lib/api";
 import { contactDisplayName } from "../../lib/contact-display";
 import { useAuthStore } from "../../store/auth-store";
 import { useInternalChatStore } from "../../store/internal-chat-store";
+import { renderWhatsAppFormatting } from "../../lib/whatsappFormatting";
 import { ChatAttachment } from "./ChatAttachment";
 import { GroupSettings } from "./GroupSettings";
 
 const EMOJIS = ["😀", "😂", "😊", "😍", "👍", "👏", "🙏", "🎉", "✅", "❤️", "😅", "🤔", "😢", "🔥", "👀", "☕"];
 const TYPING_THROTTLE_MS = 3_000;
+// Same as the customer conversation's Composer: the box grows with the text up to this many lines, then scrolls.
+const MAX_TEXTAREA_LINES = 10;
 
 /** One message, or a system line ("Ana saiu do grupo"), with ✓✓ on the sender's own messages once everyone read it. */
 function MessageRow({ message, mine, onOpenConversation }: { message: ChatMessageDTO; mine: boolean; onOpenConversation: (id: string) => void }) {
@@ -24,7 +27,7 @@ function MessageRow({ message, mine, onOpenConversation }: { message: ChatMessag
       <div className={clsx("max-w-[80%] space-y-1 rounded-card px-3 py-1.5 text-sm", mine ? "bg-primary text-primary-fg" : "bg-surface-alt")}>
         {!mine && <p className="text-[11px] font-semibold opacity-80">{message.authorName}</p>}
         {message.attachment && <ChatAttachment attachment={message.attachment} />}
-        {message.body && <p className="whitespace-pre-wrap break-words">{message.body}</p>}
+        {message.body && <p className="whitespace-pre-wrap break-words">{renderWhatsAppFormatting(message.body)}</p>}
         {message.conversation && (
           <button
             type="button"
@@ -57,6 +60,7 @@ export function ChatRoomView({ room, onBack }: { room: ChatRoomDTO; onBack: () =
   const [, setTick] = useState(0);
   const lastTypingSent = useRef(0);
   const fileRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const { data: messages } = useQuery({
@@ -108,6 +112,15 @@ export function ChatRoomView({ room, onBack }: { room: ChatRoomDTO; onBack: () =
     },
     onError: (err) => toast.error(getApiErrorMessage(err)),
   });
+
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    const maxHeight = parseFloat(getComputedStyle(el).lineHeight || "20") * MAX_TEXTAREA_LINES;
+    el.style.height = `${Math.min(el.scrollHeight, maxHeight)}px`;
+    el.style.overflowY = el.scrollHeight > maxHeight ? "auto" : "hidden";
+  }, [text]);
 
   function onType(value: string) {
     setText(value);
@@ -217,6 +230,7 @@ export function ChatRoomView({ room, onBack }: { room: ChatRoomDTO; onBack: () =
           }}
         />
         <textarea
+          ref={textareaRef}
           value={text}
           onChange={(e) => onType(e.target.value)}
           onKeyDown={(e) => {
@@ -227,7 +241,7 @@ export function ChatRoomView({ room, onBack }: { room: ChatRoomDTO; onBack: () =
           }}
           rows={1}
           placeholder="Mensagem para a equipe"
-          className="focus-ring max-h-28 min-h-[2.25rem] flex-1 resize-none rounded-card border border-border bg-transparent px-3 py-2 text-sm"
+          className="focus-ring min-h-[2.25rem] flex-1 resize-none rounded-card border border-border bg-transparent px-3 py-2 text-sm"
         />
         <button
           type="button"

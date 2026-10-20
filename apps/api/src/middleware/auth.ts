@@ -40,6 +40,35 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
   }
 }
 
+// An <img>/<video>/<audio> tag (or a document viewer fetching the file) can't
+// attach an Authorization header, so the attachment download routes alone
+// (customer conversations and the internal chat) also accept the access token
+// as a query param — each registered before its router-wide requireAuth so it
+// isn't forced through the header-only path. The token stays short-lived (same
+// TTL as everywhere else), so this only exposes a brief window even if a
+// URL leaks via referrer/history — an acceptable trade-off for an internal
+// tool versus fetching every message image as an authenticated blob.
+export async function requireAuthFromHeaderOrQuery(req: Request, _res: Response, next: NextFunction) {
+  const header = req.headers.authorization;
+  const queryToken = typeof req.query.token === "string" ? req.query.token : undefined;
+  const token = header?.startsWith("Bearer ") ? header.slice("Bearer ".length) : queryToken;
+  if (!token) return next(Errors.unauthorized());
+  try {
+    const payload = verifyAccessToken(token);
+    // See lib/session.ts / middleware/auth.ts's requireAuth — same
+    // single-active-session enforcement, applied here too since this route
+    // is the one place that accepts the access token outside the
+    // Authorization header (see the comment above).
+    if (!(await isSessionActive(payload.sid))) {
+      return next(Errors.unauthorized("Sessao encerrada — login realizado em outro dispositivo"));
+    }
+    req.auth = { userId: payload.sub, role: payload.role, displayName: payload.displayName };
+    next();
+  } catch {
+    next(Errors.unauthorized("Token invalido ou expirado"));
+  }
+}
+
 /** Restricts a route to one or more roles. Always used server-side — never rely on the frontend to hide a route. */
 export function requireRole(...roles: Role[]) {
   return (req: Request, _res: Response, next: NextFunction) => {
