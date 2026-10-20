@@ -20,7 +20,7 @@ export const DEFAULT_RELEASES: ReleaseContent[] = [
         type: "correcao",
         area: "atendimento",
         title: "Informações do cliente no celular",
-        text: "O botão do painel no topo da conversa agora aparece também no celular e abre as informações do cliente ou do grupo em tela cheia; o botão » volta para a conversa. O topo da conversa também ficou mais legível em tela pequena.",
+        text: "O botão do painel no topo da conversa agora aparece também no celular e abre as informações do cliente ou do grupo em tela cheia; o botão » volta para a conversa. No celular, os botões do topo da conversa (e do grupo) ficam numa segunda linha, alinhados à direita, deixando a primeira linha inteira para o nome e o telefone.",
         where: "Atendimento",
       },
     ],

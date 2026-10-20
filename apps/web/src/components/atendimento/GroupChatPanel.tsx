@@ -201,8 +201,9 @@ export function GroupChatPanel({
 
   return (
     <div className="relative flex h-full flex-col">
-      <div className="flex items-center justify-between gap-2 border-b border-border bg-surface px-2 py-3 sm:px-4">
-        <div className="flex min-w-0 items-center gap-3">
+      {/* On a phone the actions go to a second row, right-aligned, so the group name gets the whole first row. */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-surface px-2 py-3 sm:flex-nowrap sm:px-4">
+        <div className="flex min-w-0 basis-full items-center gap-3 sm:basis-auto">
           {onBack && (
             <button onClick={onBack} className="focus-ring shrink-0 rounded-full p-1.5 text-muted hover:bg-surface-alt md:hidden" aria-label="Voltar para a lista de grupos">
               <ArrowLeft className="h-4 w-4" />
@@ -218,7 +219,7 @@ export function GroupChatPanel({
             </p>
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="ms-auto flex shrink-0 items-center gap-2">
           <button
             onClick={onToggleInfoPanel}
             className="focus-ring flex items-center gap-1.5 rounded-card border border-border px-2 py-1 text-xs text-muted hover:bg-surface-alt"
