@@ -30,6 +30,8 @@ import { useNoReturnWarnings } from "../../components/atendimento/NoReturn";
 const CLIENT_PANEL_KEY = "client-panel-collapsed";
 // Below this width the chat needs the room, so the panel starts collapsed.
 const CLIENT_PANEL_AUTO_COLLAPSE_PX = 1280;
+// Below Tailwind's md breakpoint there is no third column: the client/group panel opens full screen instead.
+const SIDE_PANEL_MEDIA = "(min-width: 768px)";
 
 function readClientPanelCollapsed() {
   try {
@@ -52,10 +54,17 @@ export default function AtendimentoPage() {
   const [listSearch, setListSearch] = useState("");
   const [listFilter, setListFilter] = useState<ListFilter>("all");
   const [clientPanelCollapsed, setClientPanelCollapsed] = useState(readClientPanelCollapsed);
+  const [mobileInfoOpen, setMobileInfoOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const extras = useAgentExtras().data;
   const now = useNow();
   const { noReplyWarningMinutes } = useAlertThresholds();
+  // Another conversation or group opened: back to the chat, not the previous one's panel.
+  useEffect(() => setMobileInfoOpen(false), [selectedId, selectedGroupId, tab]);
+  function toggleInfoPanel() {
+    if (window.matchMedia(SIDE_PANEL_MEDIA).matches) toggleClientPanel();
+    else setMobileInfoOpen((open) => !open);
+  }
   function toggleClientPanel() {
     setClientPanelCollapsed((c) => {
       try {
@@ -525,7 +534,7 @@ export default function AtendimentoPage() {
               group={selectedGroup}
               onBack={() => setSelectedGroupId(null)}
               infoPanelOpen={!clientPanelCollapsed}
-              onToggleInfoPanel={toggleClientPanel}
+              onToggleInfoPanel={toggleInfoPanel}
             />
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-muted">
@@ -544,7 +553,7 @@ export default function AtendimentoPage() {
               setTab("mine");
             }}
             clientPanelOpen={!clientPanelCollapsed}
-            onToggleClientPanel={toggleClientPanel}
+            onToggleClientPanel={toggleInfoPanel}
           />
         ) : watchingConversation ? (
           <ReadOnlyConversationDrawer key={watchingConversation.id} variant="inline" conversation={watchingConversation} onClose={() => setWatchingConversation(null)} />
@@ -571,6 +580,22 @@ export default function AtendimentoPage() {
             onToggle={toggleClientPanel}
             readOnly={!selectedConversation}
           />
+        </div>
+      )}
+
+      {mobileInfoOpen && (selectedGroup || panelConversation) && (
+        <div className="fixed inset-0 z-40 bg-surface md:hidden">
+          {selectedGroup ? (
+            <GroupInfoPanel group={selectedGroup} onClose={() => setMobileInfoOpen(false)} />
+          ) : (
+            <ClientPanel
+              key={panelConversation!.id}
+              conversation={panelConversation!}
+              collapsed={false}
+              onToggle={() => setMobileInfoOpen(false)}
+              readOnly={!selectedConversation}
+            />
+          )}
         </div>
       )}
 

@@ -11,6 +11,21 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.16.1",
+    date: "20 out 2026",
+    name: "Painel do cliente no celular",
+    summary: "No celular, as informações do cliente (e do grupo) abrem em tela cheia pelo botão no topo da conversa.",
+    notes: [
+      {
+        type: "correcao",
+        area: "atendimento",
+        title: "Informações do cliente no celular",
+        text: "O botão do painel no topo da conversa agora aparece também no celular e abre as informações do cliente ou do grupo em tela cheia; o botão » volta para a conversa. O topo da conversa também ficou mais legível em tela pequena.",
+        where: "Atendimento",
+      },
+    ],
+  },
+  {
     version: "2.16.0",
     date: "20 out 2026",
     name: "Encerramento por falta de retorno, menu Etiquetas e valor atualizado das parcelas",

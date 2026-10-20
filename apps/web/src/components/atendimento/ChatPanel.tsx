@@ -648,7 +648,7 @@ export function ChatPanel({
         </div>
       )}
       <div className="flex items-center justify-between gap-2 border-b border-border bg-surface px-2 py-3 sm:px-4">
-        <div className="flex min-w-0 items-center gap-3">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           {onBack && (
             <button
               onClick={onBack}
@@ -658,25 +658,28 @@ export function ChatPanel({
               <ArrowLeft className="h-4 w-4" />
             </button>
           )}
-          <ContactPhoto photoUrl={conversation.contact.photoUrl} name={displayName} phone={conversation.contact.phone}>
-            <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full bg-surface-alt text-sm font-semibold text-muted">
-              {conversation.contact.photoUrl ? (
-                <img src={conversation.contact.photoUrl} alt="" className="h-full w-full object-cover" />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center">{displayName.slice(0, 2).toUpperCase()}</div>
-              )}
-            </div>
-          </ContactPhoto>
+          {/* On a phone the name needs the room — the photo is in the client panel. */}
+          <div className="hidden shrink-0 sm:block">
+            <ContactPhoto photoUrl={conversation.contact.photoUrl} name={displayName} phone={conversation.contact.phone}>
+              <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full bg-surface-alt text-sm font-semibold text-muted">
+                {conversation.contact.photoUrl ? (
+                  <img src={conversation.contact.photoUrl} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center">{displayName.slice(0, 2).toUpperCase()}</div>
+                )}
+              </div>
+            </ContactPhoto>
+          </div>
           <div className="min-w-0">
-            <p className="flex items-center gap-1.5 truncate text-sm font-semibold">
-              {displayName}
+            <p className="flex items-center gap-1.5 text-sm font-semibold">
+              <span className="truncate">{displayName}</span>
               {pinned && <Pin className="h-3 w-3 shrink-0 text-primary" aria-label="Fixada" />}
             </p>
             {customerTyping ? (
               <p className="text-xs font-medium italic text-primary">digitando…</p>
             ) : conversation.contact.phone && (
-              <p className="flex items-center gap-1 whitespace-nowrap text-xs text-muted">
-                <Phone className="h-3 w-3" /> {formatPhone(conversation.contact.phone)}
+              <p className="flex items-center gap-1 text-xs text-muted">
+                <Phone className="h-3 w-3 shrink-0" /> <span className="truncate">{formatPhone(conversation.contact.phone)}</span>
               </p>
             )}
           </div>
@@ -686,7 +689,7 @@ export function ChatPanel({
             </span>
           )}
         </div>
-        <div className="relative flex shrink-0 gap-2">
+        <div className="relative flex shrink-0 gap-1.5 sm:gap-2">
           <button
             onClick={() => setSearchOpen(true)}
             className="focus-ring flex items-center gap-1.5 rounded-card border border-border p-1.5 text-muted hover:bg-surface-alt sm:px-2"
@@ -786,7 +789,7 @@ export function ChatPanel({
             <button
               onClick={onToggleClientPanel}
               className={clsx(
-                "focus-ring hidden items-center rounded-card border p-1.5 md:flex",
+                "focus-ring flex items-center rounded-card border p-1.5",
                 clientPanelOpen ? "border-primary/30 bg-primary/10 text-primary" : "border-border text-muted hover:bg-surface-alt"
               )}
               aria-pressed={clientPanelOpen}

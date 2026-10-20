@@ -250,7 +250,7 @@ export function GroupChatPanel({
             <button
               onClick={onToggleInfoPanel}
               className={clsx(
-                "focus-ring hidden items-center rounded-card border p-1.5 md:flex",
+                "focus-ring flex items-center rounded-card border p-1.5",
                 infoPanelOpen ? "border-primary/30 bg-primary/10 text-primary" : "border-border text-muted hover:bg-surface-alt"
               )}
               aria-pressed={infoPanelOpen}
