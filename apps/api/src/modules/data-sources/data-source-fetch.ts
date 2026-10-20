@@ -1,3 +1,4 @@
+import { Readable } from "node:stream";
 import ExcelJS from "exceljs";
 import { parse as parseCsvSync } from "csv-parse/sync";
 import type { DataSourceDialect } from "@whatsatendende/types";
@@ -9,7 +10,7 @@ export interface FetchedTable {
   modifiedAt: Date | null;
 }
 
-const MAX_ROWS = 200_000;
+const MAX_ROWS = 500_000;
 const FETCH_TIMEOUT_MS = 60_000;
 
 /** Column names as tags use them: lowercase, no accents, words joined by "_". */
@@ -54,17 +55,23 @@ function parseCsv(buffer: Buffer, modifiedAt: Date | null): FetchedTable {
   return toTable(records[0], records.slice(1), modifiedAt);
 }
 
+/** Read row by row (streaming): a 250k-row sheet loaded whole takes minutes and gigabytes. Only the first sheet. */
 async function parseXlsx(buffer: Buffer, modifiedAt: Date | null): Promise<FetchedTable> {
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
-  const sheet = workbook.worksheets[0];
-  if (!sheet) throw new Error("A planilha está vazia");
+  const reader = new ExcelJS.stream.xlsx.WorkbookReader(Readable.from(buffer), { sharedStrings: "cache", styles: "cache", hyperlinks: "ignore", worksheets: "emit" });
   const records: string[][] = [];
-  sheet.eachRow({ includeEmpty: false }, (row) => {
-    const cells: string[] = [];
-    for (let i = 1; i <= sheet.columnCount; i++) cells.push(row.getCell(i).text ?? "");
-    records.push(cells);
-  });
+  for await (const sheet of reader) {
+    for await (const row of sheet) {
+      const width = records[0]?.length ?? row.cellCount;
+      const cells: string[] = [];
+      for (let i = 1; i <= width; i++) {
+        const cell = row.getCell(i);
+        cells.push(cell.value instanceof Date ? stringify(cell.value) : (cell.text ?? ""));
+      }
+      records.push(cells);
+      if (records.length > MAX_ROWS + 1) throw new Error(`A planilha tem mais de ${MAX_ROWS} linhas`);
+    }
+    break;
+  }
   if (records.length === 0) throw new Error("A planilha está vazia");
   return toTable(records[0], records.slice(1), modifiedAt);
 }

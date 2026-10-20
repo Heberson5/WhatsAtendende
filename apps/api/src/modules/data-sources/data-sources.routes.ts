@@ -9,12 +9,12 @@ import { requirePermission } from "../../lib/permissions";
 import { writeAudit } from "../../lib/audit";
 import { Errors } from "../../lib/http-error";
 import { prisma } from "../../lib/prisma";
-import { microsoftAuthorizeUrl, microsoftToken, parseSpreadsheet } from "./data-source-fetch";
+import { microsoftAuthorizeUrl, microsoftToken } from "./data-source-fetch";
 import * as service from "./data-sources.service";
 
 export const dataSourcesRouter = Router();
 
-const MAX_UPLOAD_MB = 20;
+const MAX_UPLOAD_MB = 100;
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_UPLOAD_MB * 1024 * 1024 } });
 
 // Microsoft sign-in in progress: state -> source, valid for 10 minutes (single API process).
@@ -134,7 +134,7 @@ dataSourcesRouter.post(
   asyncHandler(async (req, res) => {
     const { active } = z.object({ active: z.boolean() }).parse(req.body);
     let source = await service.setDataSourceActive(req.params.id, active);
-    if (active && source.kind !== "UPLOAD") source = await service.syncDataSource(source.id);
+    if (active && source.kind !== "UPLOAD") source = await service.startSync(source.id);
     await writeAudit({ userId: req.auth!.userId, action: active ? "DATA_SOURCE_ACTIVATED" : "DATA_SOURCE_DEACTIVATED", entity: "DataSource", entityId: source.id, ipAddress: req.ip ?? null });
     res.json(source);
   })
@@ -144,7 +144,7 @@ dataSourcesRouter.post(
   "/:id/sync",
   requireEdit,
   asyncHandler(async (req, res) => {
-    res.json(await service.syncDataSource(req.params.id));
+    res.json(await service.startSync(req.params.id));
   })
 );
 
@@ -156,13 +156,9 @@ dataSourcesRouter.post(
     const source = await service.getDataSourceOrThrow(req.params.id);
     if (source.kind !== "UPLOAD") throw Errors.badRequest("Esta fonte não recebe arquivo");
     if (!req.file) throw Errors.badRequest("Nenhum arquivo enviado");
-    const table = await parseSpreadsheet(req.file.buffer, new Date()).catch((err: Error) => {
-      throw Errors.badRequest(err.message);
-    });
     await prisma.dataSource.update({ where: { id: source.id }, data: { config: { ...(source.config as object), fileName: req.file.originalname } } });
-    const result = await service.syncDataSource(source.id, table);
-    await writeAudit({ userId: req.auth!.userId, action: "DATA_SOURCE_FILE_UPLOADED", entity: "DataSource", entityId: source.id, ipAddress: req.ip ?? null, metadata: { fileName: req.file.originalname, rows: result.rowCount } });
-    res.json(result);
+    await writeAudit({ userId: req.auth!.userId, action: "DATA_SOURCE_FILE_UPLOADED", entity: "DataSource", entityId: source.id, ipAddress: req.ip ?? null, metadata: { fileName: req.file.originalname } });
+    res.json(await service.startSync(source.id, req.file.buffer));
   })
 );
 

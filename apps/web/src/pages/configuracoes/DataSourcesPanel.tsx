@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -64,6 +64,8 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   );
 }
 
+const SYNC_POLL_MS = 5_000;
+
 const inputClass = "focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm";
 
 /** Configurações › Fontes de dados: the spreadsheet or database behind "Dados do cliente", the {{dados.*}} tags and the boleto. */
@@ -73,15 +75,36 @@ export function DataSourcesPanel() {
   const canAdd = Boolean(permissions?.[PERMISSION.FONTES_DADOS_ADICIONAR]);
   const canEdit = Boolean(permissions?.[PERMISSION.FONTES_DADOS_EDITAR]);
   const canDelete = Boolean(permissions?.[PERMISSION.FONTES_DADOS_EXCLUIR]);
-  const { data: sources } = useQuery({ queryKey: ["data-sources"], queryFn: async () => (await api.get<DataSourceDTO[]>("/data-sources")).data });
+  const { data: sources } = useQuery({
+    queryKey: ["data-sources"],
+    queryFn: async () => (await api.get<DataSourceDTO[]>("/data-sources")).data,
+    // A big sheet is read in the background: check until it ends (the socket also refreshes it right when it does).
+    refetchInterval: (query) => (query.state.data?.some((s) => s.syncing) ? SYNC_POLL_MS : false),
+  });
   const [draft, setDraft] = useState<Draft | null>(null);
   const [uploadFor, setUploadFor] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["data-sources"] });
   const onError = (err: unknown) => toast.error(getApiErrorMessage(err));
-  const reportSync = (source: DataSourceDTO) =>
-    source.lastSyncError ? toast.error(`Erro ao ler: ${source.lastSyncError}`) : toast.success(`${source.rowCount} linhas carregadas.`);
+  // Sources read in the background: when one ends, tell how it went.
+  const syncingIds = useRef(new Set<string>());
+  const reportSync = (source: DataSourceDTO) => {
+    if (source.syncing) {
+      syncingIds.current.add(source.id);
+      toast.info("Planilha grande: está sendo processada em segundo plano. Pode continuar usando o sistema, avisamos quando terminar.");
+    } else if (source.lastSyncError) toast.error(`Erro ao ler: ${source.lastSyncError}`);
+    else toast.success(`${source.rowCount.toLocaleString("pt-BR")} linhas carregadas.`);
+  };
+
+  useEffect(() => {
+    for (const source of sources ?? []) {
+      if (syncingIds.current.has(source.id) && !source.syncing) reportSync(source);
+      else if (source.syncing) syncingIds.current.add(source.id);
+    }
+    for (const source of sources ?? []) if (!source.syncing) syncingIds.current.delete(source.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sources]);
 
   const saveMutation = useMutation({
     mutationFn: async (d: Draft) => {
@@ -204,9 +227,14 @@ export function DataSourcesPanel() {
                   <p className="flex flex-wrap items-center gap-2 text-sm font-semibold">
                     {source.name}
                     <span className={clsx("rounded-full px-2 py-0.5 text-[11px] font-semibold", status.className)}>{status.label}</span>
+                    {source.syncing && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
+                        <RefreshCw className="h-3 w-3 animate-spin" /> Processando...
+                      </span>
+                    )}
                   </p>
                   <p className="text-xs text-muted">
-                    {KIND_LABEL[source.kind]} · {source.rowCount} linhas
+                    {KIND_LABEL[source.kind]} · {source.rowCount.toLocaleString("pt-BR")} linhas
                     {source.dataUpdatedAt && ` · dados de ${format(new Date(source.dataUpdatedAt), "dd/MM HH:mm")}`}
                     {source.lastSyncAt && ` · lida às ${format(new Date(source.lastSyncAt), "dd/MM HH:mm")}`}
                   </p>
@@ -231,7 +259,7 @@ export function DataSourcesPanel() {
                       setUploadFor(source.id);
                       fileRef.current?.click();
                     }}
-                    disabled={uploadMutation.isPending}
+                    disabled={uploadMutation.isPending || source.syncing}
                     className="focus-ring inline-flex items-center gap-1 rounded-card border border-border px-2.5 py-1 text-xs hover:bg-surface-alt disabled:opacity-60"
                   >
                     <Upload className="h-3.5 w-3.5" /> {uploadMutation.isPending ? "Enviando..." : "Enviar arquivo"}
@@ -245,10 +273,10 @@ export function DataSourcesPanel() {
                 {canEdit && source.kind !== "UPLOAD" && (
                   <button
                     onClick={() => syncMutation.mutate(source.id)}
-                    disabled={syncMutation.isPending}
+                    disabled={syncMutation.isPending || source.syncing}
                     className="focus-ring inline-flex items-center gap-1 rounded-card border border-border px-2.5 py-1 text-xs hover:bg-surface-alt disabled:opacity-60"
                   >
-                    <RefreshCw className={clsx("h-3.5 w-3.5", syncMutation.isPending && "animate-spin")} /> Atualizar agora
+                    <RefreshCw className={clsx("h-3.5 w-3.5", (syncMutation.isPending || source.syncing) && "animate-spin")} /> Atualizar agora
                   </button>
                 )}
                 {canEdit && (
@@ -327,7 +355,12 @@ export function DataSourcesPanel() {
             </>
           )}
 
-          {draft.kind === "UPLOAD" && <p className="text-xs text-muted">Depois de salvar, use &quot;Enviar arquivo&quot; para mandar o CSV ou XLSX. Para atualizar, envie de novo.</p>}
+          {draft.kind === "UPLOAD" && (
+            <p className="text-xs text-muted">
+              Depois de salvar, use &quot;Enviar arquivo&quot; para mandar a planilha do jeito que está, em XLSX ou CSV (até 500 mil linhas e 100 MB). Planilhas grandes são
+              processadas em segundo plano. Para atualizar, envie de novo.
+            </p>
+          )}
 
           {draft.kind === "DATABASE" && (
             <>

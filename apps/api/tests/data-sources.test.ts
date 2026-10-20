@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import request from "supertest";
+import ExcelJS from "exceljs";
 import { createApp } from "../src/app";
 import { prisma } from "../src/lib/prisma";
 import { phoneKey } from "../src/lib/phone-key";
@@ -83,6 +84,28 @@ describe("Fontes de dados", () => {
     for (const buffer of [Buffer.from(csv, "utf8"), Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(csv, "utf16le")]), Buffer.from(csv, "latin1")]) {
       expect((await parseSpreadsheet(buffer, null)).rows).toEqual([{ nome: "José", cidade: "Cuiabá, MT" }]);
     }
+  });
+
+  it("lê o XLSX direto (só a primeira aba), com as datas como 10/11/2026", async () => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("Clientes");
+    sheet.addRow(["Nome", "Telefone", "Vencimento", "Valor"]);
+    sheet.addRow(["José", "(65) 99999-0000", new Date(Date.UTC(2026, 10, 10)), 1234.56]);
+    workbook.addWorksheet("Outra").addRow(["ignorada"]);
+    const table = await parseSpreadsheet(Buffer.from(await workbook.xlsx.writeBuffer()), null);
+    expect(table.rows).toEqual([{ nome: "José", telefone: "(65) 99999-0000", vencimento: "10/11/2026", valor: "1234.56" }]);
+  });
+
+  it("acha sozinho a coluna do telefone com outro nome; sem nenhuma, guarda as colunas para escolher", async () => {
+    const created = await request(app).post("/api/data-sources").set("Authorization", `Bearer ${adminToken}`).send({ name: "ERP", kind: "UPLOAD" });
+    const upload = (csv: string) =>
+      request(app).post(`/api/data-sources/${created.body.id}/upload`).set("Authorization", `Bearer ${adminToken}`).attach("file", Buffer.from(csv), { filename: "erp.csv", contentType: "text/csv" });
+    expect((await upload("Contrato;Celular\nC1;(65) 99999-0001\n")).body).toMatchObject({ rowCount: 1, lastSyncError: null, columnMap: { phone: "celular" } });
+
+    await prisma.dataSource.update({ where: { id: created.body.id }, data: { columnMap: {} } });
+    const missing = (await upload("Contrato;Contato\nC1;(65) 99999-0001\n")).body;
+    expect(missing.lastSyncError).toContain("Editar");
+    expect(missing.columns).toEqual(["contrato", "contato"]);
   });
 
   it("só aceita consulta de leitura no banco", () => {
