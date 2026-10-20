@@ -66,6 +66,7 @@ describe("Fontes de dados", () => {
     expect(downloadCandidates("https://docs.google.com/spreadsheets/d/abc123/edit#gid=7")).toEqual(["https://docs.google.com/spreadsheets/d/abc123/export?format=csv&gid=7"]);
     expect(downloadCandidates("https://1drv.ms/x/s!AbC")[0]).toMatch(/^https:\/\/api\.onedrive\.com\/v1\.0\/shares\/u!/);
     expect(downloadCandidates("https://empresa.sharepoint.com/:x:/g/abc")).toEqual(["https://empresa.sharepoint.com/:x:/g/abc?download=1"]);
+    expect(downloadCandidates("https://drive.google.com/file/d/1AbC-xyz/view?usp=sharing")).toEqual(["https://drive.google.com/uc?export=download&id=1AbC-xyz"]);
   });
 
   it("link do OneDrive recusado pela Microsoft: explica e indica a conta Microsoft", async () => {

@@ -72,7 +72,7 @@ function encodeShareUrl(url: string): string {
   return `u!${Buffer.from(url).toString("base64").replace(/=+$/, "").replace(/\//g, "_").replace(/\+/g, "-")}`;
 }
 
-/** The direct-download addresses to try for a shared link (OneDrive personal/business or Google Sheets). */
+/** The direct-download addresses to try for a shared link (OneDrive personal/business, Google Sheets or a file on Google Drive). */
 export function downloadCandidates(link: string): string[] {
   const url = new URL(link);
   const google = url.pathname.match(/\/spreadsheets\/d\/([^/]+)/);
@@ -80,6 +80,9 @@ export function downloadCandidates(link: string): string[] {
     const gid = url.hash.match(/gid=(\d+)/)?.[1] ?? url.searchParams.get("gid");
     return [`https://docs.google.com/spreadsheets/d/${google[1]}/export?format=csv${gid ? `&gid=${gid}` : ""}`];
   }
+  // An .xlsx/.csv file uploaded to Google Drive (not converted to Google Planilhas).
+  const driveFile = url.hostname === "drive.google.com" ? (url.pathname.match(/\/file\/d\/([^/]+)/)?.[1] ?? url.searchParams.get("id")) : null;
+  if (driveFile) return [`https://drive.google.com/uc?export=download&id=${driveFile}`];
   const withDownload = new URL(link);
   withDownload.searchParams.set("download", "1");
   if (/1drv\.ms|onedrive\.live\.com/.test(url.hostname)) {
