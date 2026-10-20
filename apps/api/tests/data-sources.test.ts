@@ -3,7 +3,7 @@ import request from "supertest";
 import { createApp } from "../src/app";
 import { prisma } from "../src/lib/prisma";
 import { phoneKey } from "../src/lib/phone-key";
-import { downloadCandidates, assertReadOnlyQuery, fetchFromLink } from "../src/modules/data-sources/data-source-fetch";
+import { downloadCandidates, assertReadOnlyQuery, fetchFromLink, parseSpreadsheet } from "../src/modules/data-sources/data-source-fetch";
 import { parseBeneficiaries, syncDueDataSources } from "../src/modules/data-sources/data-sources.service";
 import { resetDatabase, createTestUser, createWaitingConversation, TEST_PASSWORD } from "./helpers";
 
@@ -75,6 +75,13 @@ describe("Fontes de dados", () => {
       await expect(fetchFromLink("https://1drv.ms/x/c/4a75/IQBb?e=abc")).rejects.toThrow(/Planilha privada \(conta Microsoft\)/);
     } finally {
       vi.unstubAllGlobals();
+    }
+  });
+
+  it("lê o CSV salvo pelo SSMS ou Excel em UTF-8, Unicode ou ANSI", async () => {
+    const csv = "Nome,Cidade\r\nJosé,\"Cuiabá, MT\"\r\n";
+    for (const buffer of [Buffer.from(csv, "utf8"), Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(csv, "utf16le")]), Buffer.from(csv, "latin1")]) {
+      expect((await parseSpreadsheet(buffer, null)).rows).toEqual([{ nome: "José", cidade: "Cuiabá, MT" }]);
     }
   });
 

@@ -34,8 +34,18 @@ function toTable(header: string[], body: string[][], modifiedAt: Date | null): F
   return { columns, rows, modifiedAt };
 }
 
+/** UTF-8, UTF-16 (SSMS "Salvar Resultados Como" may save Unicode) or Windows-1252 (Excel/SSMS in ANSI). */
+function decodeCsv(buffer: Buffer): string {
+  if (buffer[0] === 0xff && buffer[1] === 0xfe) return buffer.subarray(2).toString("utf16le");
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(buffer).replace(/^\uFEFF/, "");
+  } catch {
+    return new TextDecoder("windows-1252").decode(buffer);
+  }
+}
+
 function parseCsv(buffer: Buffer, modifiedAt: Date | null): FetchedTable {
-  const text = buffer.toString("utf8").replace(/^\uFEFF/, "");
+  const text = decodeCsv(buffer);
   const firstLine = text.slice(0, text.indexOf("\n") >>> 0);
   // Excel in Portuguese saves with ";", SQL Server Management Studio with ",".
   const delimiter = (firstLine.match(/;/g)?.length ?? 0) > (firstLine.match(/,/g)?.length ?? 0) ? ";" : ",";
