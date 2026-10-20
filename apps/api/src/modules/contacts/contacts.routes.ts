@@ -94,7 +94,7 @@ contactsRouter.post(
       entity: "Contact",
       entityId: null,
       ipAddress: req.ip ?? null,
-      metadata: { whatsappConnectionId: input.whatsappConnectionId, created: result.created, updated: result.updated, errors: result.errors.length },
+      metadata: { whatsappConnectionId: input.whatsappConnectionId, created: result.created, existing: result.existing, errors: result.errors.length },
     });
     res.json(result);
   })

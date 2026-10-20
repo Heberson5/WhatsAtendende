@@ -19,8 +19,8 @@ import { env } from "../../config/env";
 import { prisma } from "../../lib/prisma";
 import { logger } from "../../lib/logger";
 import { Errors } from "../../lib/http-error";
-import type { Role } from "@prisma/client";
-import type { ManagerConnectionAccessDTO } from "@whatsatendende/types";
+import type { Prisma, Role } from "@prisma/client";
+import { brazilianPhoneVariants, type ManagerConnectionAccessDTO } from "@whatsatendende/types";
 import { realtimeEvents } from "../../realtime/realtime";
 import { writeAudit } from "../../lib/audit";
 import * as conversationsService from "../conversations/conversations.service";
@@ -836,13 +836,12 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
   // phone in a brand-new 1:1 chat, whose remoteJid comes back as the opaque
   // @lid id with no senderPn/participantPn attached (those are only ever
   // populated for group chats); (2) the contact's name, from the phone's
-  // own saved address-book entry, taking priority over whatever pushName
-  // the customer set for themselves — see PROMPT: "sincronizar com os
-  // contatos já salvo no celular". See ChatIdentityResolvedEvent.
+  // own saved address-book entry — only for a contact still without one: a
+  // name already on the platform stays (see syncDeviceContacts). See
+  // ChatIdentityResolvedEvent.
   provider.onChatIdentityResolved(async (event) => {
     try {
       await conversationsService.findOrCreateContact(connectionId, event.phone, event.name ?? null, event.chatId, {
-        preferIncomingName: true,
         createIfMissing: false,
       });
     } catch (err) {
@@ -1243,8 +1242,8 @@ export async function listContacts(connectionId: string): Promise<DeviceContact[
     const opaque = Boolean(c.providerChatId?.endsWith("@lid") && c.phone === c.providerChatId.split("@")[0]);
     if (c.phone && !opaque) byPhone.set(c.phone, { phone: c.phone, name: c.name, photoUrl: c.photoUrl });
   }
-  // The name saved on the phone wins over whatever the customer calls themselves.
-  for (const c of addressBook) byPhone.set(c.phone, { phone: c.phone, name: c.name ?? byPhone.get(c.phone)?.name ?? null, photoUrl: c.photoUrl ?? byPhone.get(c.phone)?.photoUrl ?? null });
+  // The name already on the platform wins; the one saved on the phone only names who has none there.
+  for (const c of addressBook) byPhone.set(c.phone, { phone: c.phone, name: byPhone.get(c.phone)?.name ?? c.name, photoUrl: c.photoUrl ?? byPhone.get(c.phone)?.photoUrl ?? null });
   return Array.from(byPhone.values()).sort((a, b) => (a.name ?? a.phone).localeCompare(b.name ?? b.phone, "pt-BR"));
 }
 
@@ -1265,14 +1264,35 @@ export async function syncDueDeviceContacts(slotStart: Date): Promise<void> {
   }
 }
 
-/** Loads the phone's whole address book into this connection's contact list — also run weekly, see lib/contacts-sync.ts. */
-export async function syncDeviceContacts(connectionId: string): Promise<{ count: number; syncedAt: Date }> {
+/**
+ * Loads the phone's whole address book into this connection's contact list — also run weekly, see
+ * lib/contacts-sync.ts — and saves the ones the platform doesn't have yet in Contatos, so they're at hand without
+ * loading again. A number already saved (in either form of a Brazilian mobile, with or without the 9) is left as
+ * it is: the platform's name wins over the one saved on the phone.
+ */
+export async function syncDeviceContacts(connectionId: string): Promise<{ count: number; created: number; syncedAt: Date }> {
   const provider = getProvider(connectionId);
   if (provider.getStatus().state !== "CONNECTED") throw Errors.badRequest("A conexão precisa estar conectada para carregar os contatos");
   const { count } = await provider.syncContacts();
+  const created = await saveAddressBookToContacts(connectionId, await provider.listContacts());
   const syncedAt = new Date();
   await prisma.whatsAppConnection.update({ where: { id: connectionId }, data: { contactsSyncedAt: syncedAt } });
-  return { count, syncedAt };
+  return { count, created, syncedAt };
+}
+
+async function saveAddressBookToContacts(connectionId: string, addressBook: DeviceContact[]): Promise<number> {
+  const saved = await prisma.contact.findMany({ where: { whatsappConnectionId: connectionId, phone: { not: null } }, select: { phone: true } });
+  const known = new Set(saved.flatMap((c) => brazilianPhoneVariants(c.phone!)));
+  const toCreate: Prisma.ContactCreateManyInput[] = [];
+  for (const c of addressBook) {
+    const variants = brazilianPhoneVariants(c.phone);
+    if (variants.some((v) => known.has(v))) continue;
+    variants.forEach((v) => known.add(v));
+    toCreate.push({ channel: "WHATSAPP", whatsappConnectionId: connectionId, phone: c.phone, name: c.name, photoUrl: c.photoUrl });
+  }
+  if (toCreate.length === 0) return 0;
+  const { count } = await prisma.contact.createMany({ data: toCreate, skipDuplicates: true });
+  return count;
 }
 
 /**

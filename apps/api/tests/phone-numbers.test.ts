@@ -290,16 +290,16 @@ describe("número digitado à mão: DDI padrão e 9 a mais", () => {
       it("completa o DDI e tira o 9 a mais onde o WhatsApp costuma não ter, sem mexer em SP/RJ/ES", async () => {
         const csv = ["Nome;Telefone", "Ana;65 99928-6623", "Bia;11 98765-4321", "Carla;(31) 3222-1234", "Dora;123"].join("\n");
         const result = await importContactsCsv(csv, connectionId, adminId);
-        expect(result).toMatchObject({ created: 3, updated: 0 });
+        expect(result).toMatchObject({ created: 3, existing: 0 });
         expect(result.errors).toEqual([expect.objectContaining({ line: 5 })]);
         const phones = (await prisma.contact.findMany({ select: { phone: true } })).map((c) => c.phone).sort();
         expect(phones).toEqual(["5511987654321", "553132221234", "556599286623"]);
       });
 
-      it("atualiza o contato salvo na outra forma do número em vez de duplicar", async () => {
+      it("não duplica o contato salvo na outra forma do número", async () => {
         const saved = await prisma.contact.create({ data: { phone: "5565999286623", whatsappConnectionId: connectionId } });
         const result = await importContactsCsv("Nome;Telefone\nJoana;65 99928-6623", connectionId, adminId);
-        expect(result).toMatchObject({ created: 0, updated: 1 });
+        expect(result).toMatchObject({ created: 0, existing: 1 });
         expect(await prisma.contact.count()).toBe(1);
         expect((await prisma.contact.findUniqueOrThrow({ where: { id: saved.id } })).name).toBe("Joana");
       });

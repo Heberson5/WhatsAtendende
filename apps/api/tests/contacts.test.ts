@@ -28,22 +28,28 @@ describe("Contatos e etiquetas", () => {
     await prisma.$disconnect();
   });
 
-  it("importa CSV (cria, atualiza e aponta linhas com erro), busca e exporta", async () => {
+  it("importa CSV sem duplicar (quem já existe mantém o nome), aponta linhas com erro, busca e exporta", async () => {
     await prisma.contact.create({ data: { phone: "5511900000001", name: null, whatsappConnectionId: connectionId } });
+    // Already saved without the 9 (as WhatsApp keeps it) and with a name: the planilha neither duplicates nor renames it.
+    await prisma.contact.create({ data: { phone: "556599990000", name: "Carlos (cliente)", whatsappConnectionId: connectionId } });
     await prisma.tag.createMany({ data: [{ name: "VIP", color: "#0097B4" }, { name: "Atacado", color: "#059669" }] });
-    const csv = ["Nome;Telefone;Etiquetas", "Ana Souza;(11) 90000-0001;VIP, Atacado", "Bruno;11 90000-0002;vip, Inexistente", "Sem número;abc;"].join("\n");
+    const csv = ["Nome;Telefone;Etiquetas", "Ana Souza;(11) 90000-0001;VIP, Atacado", "Bruno;11 90000-0002;vip, Inexistente", "Sem número;abc;", "Carlos;(65) 99999-0000;VIP"].join("\n");
 
     const imported = await request(app).post("/api/contacts/import").set("Authorization", `Bearer ${token}`).send({ whatsappConnectionId: connectionId, csv });
     expect(imported.status).toBe(200);
     expect(imported.body).toEqual({
       created: 1,
-      updated: 1,
+      existing: 2,
       errors: [
         { line: 3, reason: 'Etiqueta "Inexistente" não está cadastrada em Automação › Etiquetas' },
         { line: 4, reason: 'Telefone inválido: "abc"' },
       ],
     });
     expect(await prisma.tag.count()).toBe(2); // import never creates tags; "vip" matches "VIP"
+    const carlos = await prisma.contact.findMany({ where: { phone: { in: ["556599990000", "5565999990000"] } }, include: { tags: true } });
+    expect(carlos).toHaveLength(1);
+    expect(carlos[0]).toMatchObject({ name: "Carlos (cliente)" });
+    expect(carlos[0].tags).toHaveLength(1);
 
     const search = await request(app).get("/api/contacts").query({ search: "ana" }).set("Authorization", `Bearer ${token}`);
     expect(search.body.total).toBe(1);
@@ -52,7 +58,7 @@ describe("Contatos e etiquetas", () => {
 
     const vip = await prisma.tag.findFirstOrThrow({ where: { name: "VIP" } });
     const byTag = await request(app).get("/api/contacts").query({ tagId: vip.id }).set("Authorization", `Bearer ${token}`);
-    expect(byTag.body.total).toBe(2);
+    expect(byTag.body.total).toBe(3);
 
     const exported = await request(app).get("/api/contacts/export").set("Authorization", `Bearer ${token}`);
     expect(exported.status).toBe(200);

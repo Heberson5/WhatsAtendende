@@ -239,9 +239,9 @@ const normalizeHeader = (h: string) => h.normalize("NFD").replace(/[\u0300-\u036
 
 /**
  * Columns (any order, header row required): Nome, Telefone, Etiquetas
- * (several separated by ","). An existing phone on the connection is
- * updated (name, added tags); a new one is created. Lines with problems
- * are skipped and reported back.
+ * (several separated by ","). A phone already on the connection — in either form of a Brazilian mobile — is not
+ * duplicated and keeps its name (the planilha only names one that has none), getting just the tags; a new one is
+ * created. Lines with problems are skipped and reported back.
  */
 export async function importContactsCsv(csv: string, whatsappConnectionId: string, userId: string): Promise<ContactImportResultDTO> {
   const lines = csv.replace(/^\uFEFF/, "").split(/\r?\n/).filter((l) => l.trim() !== "");
@@ -253,7 +253,7 @@ export async function importContactsCsv(csv: string, whatsappConnectionId: strin
   const col = { name: header.indexOf("nome"), phone: header.indexOf("telefone"), tags: header.indexOf("etiquetas") };
   if (col.phone === -1) throw Errors.badRequest('A planilha precisa de uma coluna "Telefone"');
 
-  const result: ContactImportResultDTO = { created: 0, updated: 0, errors: [] };
+  const result: ContactImportResultDTO = { created: 0, existing: 0, errors: [] };
   // Only tags already in Automação › Etiquetas — an unknown name is reported, never created.
   const tagsByName = new Map((await prisma.tag.findMany()).map((t) => [t.name.toLowerCase(), t]));
   const phoneSettings = await getPhoneSettings();
@@ -271,9 +271,11 @@ export async function importContactsCsv(csv: string, whatsappConnectionId: strin
     const saved = await prisma.contact.findMany({ where: { whatsappConnectionId, phone: { in: brazilianPhoneVariants(phone) } } });
     const existing = saved.find((c) => c.phone === phone) ?? saved[0] ?? null;
     const contact = existing
-      ? await prisma.contact.update({ where: { id: existing.id }, data: name ? { name } : {} })
+      ? existing.name || !name
+        ? existing
+        : await prisma.contact.update({ where: { id: existing.id }, data: { name } })
       : await prisma.contact.create({ data: { channel: "WHATSAPP", phone, whatsappConnectionId, name: name || null } });
-    if (existing) result.updated++;
+    if (existing) result.existing++;
     else result.created++;
 
     for (const tagName of tagNames) {

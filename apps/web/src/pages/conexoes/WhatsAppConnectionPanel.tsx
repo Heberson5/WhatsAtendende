@@ -181,11 +181,16 @@ export function WhatsAppConnectionPanel() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["whatsapp-connections"] }),
   });
   const syncContactsMutation = useMutation({
-    mutationFn: async (id: string) => (await api.post<{ count: number }>(`/whatsapp/connections/${id}/sync-contacts`)).data,
-    onSuccess: ({ count }) => {
-      toast.success(`${count} ${count === 1 ? "contato carregado" : "contatos carregados"} do celular.`);
+    mutationFn: async (id: string) => (await api.post<{ count: number; created: number }>(`/whatsapp/connections/${id}/sync-contacts`)).data,
+    onSuccess: ({ count, created }) => {
+      toast.success(
+        `${count} ${count === 1 ? "contato carregado" : "contatos carregados"} do celular — ${
+          created === 0 ? "nenhum novo; os que já estavam em Contatos ficaram como estão" : `${created} ${created === 1 ? "novo salvo" : "novos salvos"} em Contatos`
+        }.`
+      );
       queryClient.invalidateQueries({ queryKey: ["whatsapp-connections"] });
       queryClient.invalidateQueries({ queryKey: ["whatsapp-contacts"] });
+      queryClient.invalidateQueries({ queryKey: ["contacts"] });
     },
     onError: (err) => toast.error(getApiErrorMessage(err)),
   });

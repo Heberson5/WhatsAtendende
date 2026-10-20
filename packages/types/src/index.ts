@@ -2061,7 +2061,8 @@ export interface ContactDetailDTO extends ContactListItemDTO {
 
 export interface ContactImportResultDTO {
   created: number;
-  updated: number;
+  /** Already on the platform (same number, with or without the 9): not duplicated, name kept — only the tags are added. */
+  existing: number;
   errors: { line: number; reason: string }[];
 }
 
