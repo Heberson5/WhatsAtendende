@@ -298,7 +298,7 @@ export function DataSourcesPanel() {
           </Field>
 
           {draft.kind === "LINK" && (
-            <Field label="Link da planilha" hint='OneDrive: Compartilhar › "Qualquer pessoa com o link" › Copiar link. Google Planilhas: Compartilhar › "Qualquer pessoa com o link".'>
+            <Field label="Link da planilha" hint='Google Planilhas: Compartilhar › "Qualquer pessoa com o link". Links novos do OneDrive pessoal (1drv.ms/…/c/…) a Microsoft não deixa baixar sem entrar na conta: use "Planilha privada (conta Microsoft)".'>
               <input value={String(draft.config.url ?? "")} onChange={(e) => setConfig("url", e.target.value)} placeholder="https://1drv.ms/x/..." className={inputClass} />
             </Field>
           )}
