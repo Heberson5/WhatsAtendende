@@ -142,12 +142,13 @@ export default function RelatoriosPage() {
   return (
     <div className="flex h-full flex-col overflow-hidden p-3 sm:p-6">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="shadow-soft flex gap-1 rounded-card border border-border bg-surface p-1">
+        {/* On a phone the tabs don't fit: the bar scrolls sideways instead of cutting the last ones off. */}
+        <div className="shadow-soft flex max-w-full gap-1 overflow-x-auto rounded-card border border-border bg-surface p-1">
           {TABS.map((t) => (
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
-              className={`rounded-card px-3 py-1.5 text-sm font-medium ${tab === t.key ? "bg-primary text-primary-fg" : "text-muted hover:bg-surface-alt"}`}
+              className={`shrink-0 whitespace-nowrap rounded-card px-3 py-1.5 text-sm font-medium ${tab === t.key ? "bg-primary text-primary-fg" : "text-muted hover:bg-surface-alt"}`}
             >
               {t.label}
             </button>

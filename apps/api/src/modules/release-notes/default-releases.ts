@@ -23,6 +23,13 @@ export const DEFAULT_RELEASES: ReleaseContent[] = [
         text: "O botão do painel no topo da conversa agora aparece também no celular e abre as informações do cliente ou do grupo em tela cheia; o botão » volta para a conversa. No celular, os botões do topo da conversa (e do grupo) ficam numa segunda linha, alinhados à direita, deixando a primeira linha inteira para o nome e o telefone.",
         where: "Atendimento",
       },
+      {
+        type: "correcao",
+        area: "dashboard",
+        title: "Abas de Relatórios no celular",
+        text: "No celular, a faixa de abas de Relatórios passou a rolar para o lado, dando acesso a todas as abas.",
+        where: "Relatórios",
+      },
     ],
   },
   {
