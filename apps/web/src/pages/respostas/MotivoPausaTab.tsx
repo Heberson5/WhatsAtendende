@@ -74,7 +74,7 @@ export function MotivoPausaTab() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <div className="mb-4 flex items-center justify-between gap-3">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted">
           Motivos disponíveis para o atendente escolher ao pausar o atendimento. Desativar um motivo não apaga o histórico de
           pausas já registradas com ele.
@@ -89,7 +89,7 @@ export function MotivoPausaTab() {
             onKeyDown={(e) => e.key === "Enter" && handleCreate()}
             placeholder="Ex: Almoço, Banheiro, Reunião..."
             maxLength={60}
-            className="focus-ring flex-1 rounded-card border border-border bg-transparent px-3 py-2 text-sm"
+            className="focus-ring min-w-0 flex-1 rounded-card border border-border bg-transparent px-3 py-2 text-sm"
           />
           <button
             onClick={handleCreate}

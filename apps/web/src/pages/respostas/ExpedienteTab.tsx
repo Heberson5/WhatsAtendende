@@ -72,7 +72,7 @@ export function ExpedienteTab() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <div className="mb-4 flex items-center justify-between gap-3">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted">
           Cadastre os dias e horários de atendimento. Cada conexão escolhe, em Conexões, o horário que segue: fora dele, o cliente recebe a mensagem de fora do
           expediente. Conexão sem horário atende 24 horas.

@@ -71,7 +71,7 @@ export function RespostasRapidasTab() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted">
           Textos prontos que o atendente insere na conversa digitando "/" seguido do atalho. Cada resposta aparece só nas conversas das conexões escolhidas (ou em todas).
         </p>
