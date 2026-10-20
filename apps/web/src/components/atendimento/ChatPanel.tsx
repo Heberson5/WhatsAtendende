@@ -647,8 +647,9 @@ export function ChatPanel({
           </div>
         </div>
       )}
-      <div className="flex items-center justify-between gap-2 border-b border-border bg-surface px-2 py-3 sm:px-4">
-        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+      {/* On a phone the actions go to a second row, right-aligned, so the name and phone get the whole first row. */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-surface px-2 py-3 sm:flex-nowrap sm:px-4">
+        <div className="flex min-w-0 basis-full items-center gap-2 sm:basis-auto sm:gap-3">
           {onBack && (
             <button
               onClick={onBack}
@@ -658,18 +659,15 @@ export function ChatPanel({
               <ArrowLeft className="h-4 w-4" />
             </button>
           )}
-          {/* On a phone the name needs the room — the photo is in the client panel. */}
-          <div className="hidden shrink-0 sm:block">
-            <ContactPhoto photoUrl={conversation.contact.photoUrl} name={displayName} phone={conversation.contact.phone}>
-              <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full bg-surface-alt text-sm font-semibold text-muted">
-                {conversation.contact.photoUrl ? (
-                  <img src={conversation.contact.photoUrl} alt="" className="h-full w-full object-cover" />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center">{displayName.slice(0, 2).toUpperCase()}</div>
-                )}
-              </div>
-            </ContactPhoto>
-          </div>
+          <ContactPhoto photoUrl={conversation.contact.photoUrl} name={displayName} phone={conversation.contact.phone}>
+            <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full bg-surface-alt text-sm font-semibold text-muted">
+              {conversation.contact.photoUrl ? (
+                <img src={conversation.contact.photoUrl} alt="" className="h-full w-full object-cover" />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center">{displayName.slice(0, 2).toUpperCase()}</div>
+              )}
+            </div>
+          </ContactPhoto>
           <div className="min-w-0">
             <p className="flex items-center gap-1.5 text-sm font-semibold">
               <span className="truncate">{displayName}</span>
@@ -689,7 +687,7 @@ export function ChatPanel({
             </span>
           )}
         </div>
-        <div className="relative flex shrink-0 gap-1.5 sm:gap-2">
+        <div className="relative ms-auto flex shrink-0 gap-1.5 sm:gap-2">
           <button
             onClick={() => setSearchOpen(true)}
             className="focus-ring flex items-center gap-1.5 rounded-card border border-border p-1.5 text-muted hover:bg-surface-alt sm:px-2"
