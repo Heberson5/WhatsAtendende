@@ -11,6 +11,8 @@ export interface FetchedTable {
 }
 
 const MAX_ROWS = 500_000;
+// Excel stores numbers with 15 significant digits: from 16 digits on, the value in the file is already rounded.
+const EXCEL_SAFE_NUMBER = 1e15;
 const FETCH_TIMEOUT_MS = 60_000;
 
 /** Column names as tags use them: lowercase, no accents, words joined by "_". */
@@ -71,6 +73,13 @@ async function parseXlsx(buffer: Buffer, modifiedAt: Date | null): Promise<Fetch
       const cells: string[] = [];
       for (let i = 1; i <= width; i++) {
         const cell = row.getCell(i);
+        // Excel keeps only 15 digits of a number: a longer code (a 17-digit nosso número) pasted into a General
+        // cell is already rounded in the file. Taken as is it would build a boleto with the wrong number.
+        if (records.length > 0 && typeof cell.value === "number" && Math.abs(cell.value) >= EXCEL_SAFE_NUMBER) {
+          throw new Error(
+            `A coluna "${records[0][i - 1]}" tem números com mais de 15 dígitos gravados como número, e o Excel arredonda os últimos dígitos. No Excel, formate as colunas como Texto antes de colar os dados e envie a planilha de novo.`
+          );
+        }
         cells.push(cell.value instanceof Date ? stringify(cell.value) : (cell.text ?? ""));
       }
       records.push(cells);

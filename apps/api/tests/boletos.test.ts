@@ -91,6 +91,17 @@ describe("Envio de boleto", () => {
     expect(status.body.map((b: { code: string }) => b.code)).toEqual(["001"]);
   });
 
+  it("validação acha o nosso número escrito de outro jeito: só a sequência, sem zeros à esquerda, com espaços", async () => {
+    const row = await prisma.dataSourceRow.findUniqueOrThrow({ where: { id: parcelIds["D-2"] } });
+    const linha = buildBoletoFromRow(row.data as Row, map).linha;
+    for (const typed of ["0000000102", "102", "1234567 0000000102"]) {
+      await request(app).post("/api/boletos/validation").set("Authorization", `Bearer ${adminToken}`).send({ ourNumber: typed, linha }).expect(200);
+    }
+    const missing = await request(app).post("/api/boletos/validation").set("Authorization", `Bearer ${adminToken}`).send({ ourNumber: "999", linha });
+    expect(missing.status).toBe(400);
+    expect(JSON.stringify(missing.body)).toMatch(/Nenhuma parcela/);
+  });
+
   it("não deixa pular parcela mais antiga do contrato", async () => {
     const res = await preview([parcelIds["D-2"]]);
     expect(res.body.message).toBe("Envie primeiro a parcela de 10/01/2026 — não é possível pular parcelas mais antigas");

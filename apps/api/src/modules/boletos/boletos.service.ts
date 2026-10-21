@@ -86,6 +86,29 @@ export function buildBoletoFromRow(data: Row, map: ColumnMap): BuiltBoleto {
   return { bank, due, cents, ourNumber, barcode, linha };
 }
 
+const withoutLeadingZeros = (value: string) => value.replace(/^0+/, "");
+
+/**
+ * The parcel with this nosso número, written either way: with or without leading zeros (Excel drops them), and as
+ * printed on a Banco do Brasil boleto (convênio + sequence, 17 digits, maybe "-DV") or as the sequence alone.
+ */
+async function findRowByOurNumber(sourceId: string, column: string, ourNumber: string) {
+  const typed = digits(ourNumber);
+  const keys = [...new Set([withoutLeadingZeros(typed), ...(typed.length >= 17 ? [withoutLeadingZeros(typed.slice(7, 17))] : [])])].filter(Boolean);
+  if (keys.length === 0) return null;
+  const found = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT id FROM "DataSourceRow"
+    WHERE "dataSourceId" = ${sourceId}
+      AND (
+        ltrim(regexp_replace(data->>${column}, '\D', '', 'g'), '0') = ANY(${keys})
+        OR (length(regexp_replace(data->>${column}, '\D', '', 'g')) IN (17, 18)
+            AND ltrim(substr(regexp_replace(data->>${column}, '\D', '', 'g'), 8, 10), '0') = ANY(${keys}))
+      )
+    ORDER BY line
+    LIMIT 1`;
+  return found[0] ? prisma.dataSourceRow.findUnique({ where: { id: found[0].id } }) : null;
+}
+
 /**
  * Admin check before a bank is enabled: the nosso número and the linha of a
  * REAL boleto. The system builds it from the source row with that nosso
@@ -101,11 +124,7 @@ export async function submitValidationSample(ourNumber: string, realLinha: strin
   const bank = realBarcode.slice(0, 3);
   if (!BANKS[bank]) throw Errors.badRequest("Banco sem envio de boleto");
   const wanted = digits(ourNumber);
-  const rows = await prisma.dataSourceRow.findMany({
-    where: { dataSourceId: source.id, data: { path: [map.ourNumber], equals: ourNumber.trim() } },
-    take: 1,
-  });
-  const row = rows[0] ?? (await prisma.dataSourceRow.findMany({ where: { dataSourceId: source.id } })).find((r) => digits((r.data as Row)[map.ourNumber!]) === wanted);
+  const row = await findRowByOurNumber(source.id, map.ourNumber, ourNumber);
   if (!row) throw Errors.badRequest("Nenhuma parcela da fonte de dados tem esse nosso número");
 
   const state = await readValidation();
