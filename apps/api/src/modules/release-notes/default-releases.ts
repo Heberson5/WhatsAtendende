@@ -11,6 +11,28 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.16.5",
+    date: "21 out 2026",
+    name: "Conexão mantida ao atualizar o sistema",
+    summary: "A conexão do WhatsApp feita pelo QR Code continua conectada depois de atualizar ou reiniciar o sistema.",
+    notes: [
+      {
+        type: "correcao",
+        area: "conexoes",
+        title: "WhatsApp não cai mais ao atualizar o sistema",
+        text: "Depois da versão 2.16.2, a conexão feita pelo QR Code era desfeita sempre que o sistema reiniciava (por exemplo, ao atualizar) e pedia um QR Code novo. Agora ela continua conectada. Uma conexão que cai por instabilidade da internet também volta a tentar reconectar sem desistir.",
+        where: "Conexões › WhatsApp",
+      },
+      {
+        type: "correcao",
+        area: "conexoes",
+        title: "Alerta de conexão no menu",
+        text: "O alerta vermelho em Conexões passou a aparecer também quando a conexão está esperando a leitura de um QR Code ou a digitação do código no celular, e não só quando está desconectada.",
+        where: "Menu lateral › Conexões",
+      },
+    ],
+  },
+  {
     version: "2.16.4",
     date: "20 out 2026",
     name: "Planilhas grandes em Fontes de dados",

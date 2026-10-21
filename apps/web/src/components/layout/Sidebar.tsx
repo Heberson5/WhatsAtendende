@@ -22,7 +22,7 @@ import {
   Contact,
   Tag,
 } from "lucide-react";
-import { PERMISSION, type ConversationListItemDTO, type GroupsSummaryDTO, type Permission } from "@whatsatendende/types";
+import { PERMISSION, type ConversationListItemDTO, type GroupsSummaryDTO, type Permission, type WhatsAppConnectionStatus } from "@whatsatendende/types";
 import { api } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
 import { useBranding } from "../../hooks/useBranding";
@@ -32,6 +32,7 @@ import { useReleaseNotes } from "../../hooks/useReleaseNotes";
 
 export type MenuGroup = "Operação" | "Análise" | "Automação" | "Administração";
 const GROUP_ORDER: MenuGroup[] = ["Operação", "Análise", "Automação", "Administração"];
+const UNLINKED_STATES: WhatsAppConnectionStatus[] = ["DISCONNECTED", "QR_PENDING", "CODE_PENDING"];
 
 export interface MenuItem {
   to: string;
@@ -116,7 +117,7 @@ export function useMenuBadges(): Record<string, MenuBadge | undefined> {
   const { data: connections } = useQuery({
     queryKey: ["whatsapp-connections"],
     queryFn: async () =>
-      (await api.get<{ id: string; state: string; connectionMode: "QRCODE" | "OFFICIAL_API" }[]>("/whatsapp/connections")).data,
+      (await api.get<{ id: string; state: WhatsAppConnectionStatus; connectionMode: "QRCODE" | "OFFICIAL_API" }[]>("/whatsapp/connections")).data,
     enabled: canSeeConnections,
     refetchInterval: 60_000,
   });
@@ -139,7 +140,8 @@ export function useMenuBadges(): Record<string, MenuBadge | undefined> {
   ]
     .filter(Boolean)
     .join(" · ");
-  const droppedCount = connections?.filter((c) => c.connectionMode === "QRCODE" && c.state === "DISCONNECTED").length ?? 0;
+  // Not linked: dropped, or asking for a new QR Code / code (a session WhatsApp logged out lands here too).
+  const droppedCount = connections?.filter((c) => c.connectionMode === "QRCODE" && UNLINKED_STATES.includes(c.state)).length ?? 0;
   return {
     "/atendimento": attendCount ? { count: attendCount, tone: "queue", label: attendLabel } : undefined,
     "/conexoes": droppedCount
