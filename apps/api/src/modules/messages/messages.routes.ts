@@ -535,7 +535,10 @@ messagesRouter.post(
     await service.addAttachment(document.id, { fileName: prepared.fileName, mimeType: "application/pdf", sizeBytes: prepared.pdf.length, storageKey: prepared.storageKey, kind: "DOCUMENT" });
     await whatsappService.sendOutboundFile(connectionId, document.id, phone, prepared.pdf, prepared.fileName, "application/pdf", req.auth!.displayName);
     for (const item of prepared.items) {
-      await sendText(`Linha digitável (vencimento ${item.due}, ${item.value}):\n${item.linha}`);
+      // Only the digits, without the agent's name: the client copies it straight into the bank's app.
+      const linhaDigits = item.linha.replace(/\D/g, "");
+      const linhaMessage = await service.createOutboundMessage({ conversationId: conversation.id, agentId: req.auth!.userId, type: "TEXT", body: linhaDigits });
+      await whatsappService.sendOutboundText(connectionId, linhaMessage.id, phone, linhaDigits, null);
       await prisma.conversationNote.create({
         data: {
           conversationId: conversation.id,

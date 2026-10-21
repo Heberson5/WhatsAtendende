@@ -1,9 +1,9 @@
 import PDFDocument from "pdfkit";
+import { BANK_LOGOS } from "./bank-logos";
 
 export interface BoletoPdfData {
-  /** "001-9" — the bank code with its own check digit. */
-  bankLabel: string;
-  bankName: string;
+  /** "001" — picks the logo, printed beside it. */
+  bankCode: string;
   linha: string;
   barcode: string;
   due: string;
@@ -22,6 +22,8 @@ export interface BoletoPdfData {
   payerAddress: string | null;
   /** CEP and city, the last line of the sacado. */
   payerLocality: string | null;
+  /** Instruções do boleto, already filled in for this one. */
+  instructions: string[];
 }
 
 // Interleaved 2 of 5: each digit as 5 elements, 1 = wide. Narrow = 0.254 mm (FEBRABAN), the barcode ≈ 103 mm.
@@ -44,8 +46,6 @@ const SIDE_ROW = 17;
 const LINE = "#4a6a9a";
 const LABEL = "#333";
 const HIGHLIGHT = "#fbf3a6";
-const BANK_YELLOW = "#fcea16";
-const BANK_BLUE = "#173c80";
 
 function drawBarcode(doc: PDFKit.PDFDocument, code: string, x: number, y: number, height: number) {
   let cursor = x;
@@ -101,18 +101,17 @@ function cell(doc: PDFKit.PDFDocument, x: number, y: number, w: number, h: numbe
   if (value) text(doc, value, x + 3, y + h - 8.5, w - 6, 6.5, { bold: options.bold, align: options.align });
 }
 
-function bankHeader(doc: PDFKit.PDFDocument, data: BoletoPdfData, x: number, y: number, label: string) {
-  doc.rect(x, y + 3, 72, 10).fill(BANK_YELLOW);
-  text(doc, data.bankName.toUpperCase(), x + 2, y + 5.5, 68, 6.5, { bold: true, color: BANK_BLUE });
+function bankHeader(doc: PDFKit.PDFDocument, data: BoletoPdfData, x: number, y: number) {
+  doc.image(BANK_LOGOS[data.bankCode], x, y + 3.5, { width: 71, height: 8.6 });
   doc.lineWidth(1).strokeColor(LINE).moveTo(x + 75, y + 1).lineTo(x + 75, y + 16).stroke();
-  text(doc, label, x + 78, y + 4, 40, 9, { bold: true, color: "#666" });
+  text(doc, data.bankCode, x + 78, y + 4, 40, 9, { bold: true, color: "#666" });
 }
 
 /** Recibo do sacado: the narrow stub on the left, kept by the client. */
 function drawStub(doc: PDFKit.PDFDocument, data: BoletoPdfData, top: number) {
   const x = STUB_X;
   const w = STUB_WIDTH;
-  bankHeader(doc, data, x, top, data.bankLabel.split("-")[0]);
+  bankHeader(doc, data, x, top);
   doc.lineWidth(1).strokeColor(LINE).moveTo(x, top + 18).lineTo(x + w, top + 18).stroke();
   let y = top + 19;
   const stacked: [string, string, CellOptions?][] = [
@@ -154,7 +153,7 @@ function drawSlip(doc: PDFKit.PDFDocument, data: BoletoPdfData, top: number) {
   const x = SLIP_X;
   const main = SLIP_WIDTH - SIDE_WIDTH;
   const side = x + main;
-  bankHeader(doc, data, x, top, data.bankLabel);
+  bankHeader(doc, data, x, top);
   text(doc, data.linha, x + 150, top + 4, SLIP_WIDTH - 150, 10, { bold: true, align: "right" });
   let y = top + 19;
 
@@ -197,11 +196,7 @@ function drawSlip(doc: PDFKit.PDFDocument, data: BoletoPdfData, top: number) {
 
   const instructionsHeight = SIDE_ROW * 5;
   cell(doc, x, y, main, instructionsHeight, "Instruções de responsabilidade do Cedente", "", { boxed: true });
-  const instructions = [
-    "-> Após o vencimento o banco pode cobrar juros e multa.",
-    `-> Contrato: ${data.contract}${data.document ? ` · Documento: ${data.document}` : ""}`,
-  ];
-  instructions.forEach((line, i) => text(doc, line, x + 8, y + 10 + i * 8.5, main - 16, 6.5));
+  data.instructions.forEach((line, i) => text(doc, line, x + 8, y + 10 + i * 8.5, main - 16, 6.5));
   ["2 (-) Desconto / Abatimento", "3 (-) Outras Deduções", "4 (+) Mora / Multa", "5 (+) Outros Acréscimos", "6 (=) Valor Cobrado"].forEach((label, i) =>
     cell(doc, side, y + i * SIDE_ROW, SIDE_WIDTH, SIDE_ROW, label, "", { boxed: true })
   );

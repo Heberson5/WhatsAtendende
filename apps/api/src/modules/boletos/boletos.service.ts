@@ -3,7 +3,12 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { format } from "date-fns";
-import { BOLETO_SAMPLES_REQUIRED, type BoletoBankValidationDTO, type BoletoPreviewDTO, type BoletoPreviewItemDTO } from "@whatsatendende/types";
+import {
+  BOLETO_SAMPLES_REQUIRED,
+  DEFAULT_BOLETO_INSTRUCTIONS,
+  fillBoletoInstructions,
+  type BoletoInstructionsDTO,
+  type BoletoBankValidationDTO, type BoletoPreviewDTO, type BoletoPreviewItemDTO } from "@whatsatendende/types";
 import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
 import { env } from "../../config/env";
@@ -12,14 +17,26 @@ import { barcodeFromLinha, buildBarcode, freeFieldBB, linhaFromBarcode } from ".
 import { renderBoletosPdf } from "./boleto-pdf";
 
 // Only Banco do Brasil boletos are sent.
-export const BANKS: Record<string, { name: string; label: string }> = {
-  "001": { name: "Banco do Brasil", label: "001-9" },
+export const BANKS: Record<string, { name: string }> = {
+  "001": { name: "Banco do Brasil" },
 };
 
 // Payment methods (forma_pagamento) that never get a boleto.
 const NO_BOLETO_METHODS = [/cart[aã]o recorrente/i, /sem boleto/i];
 
 const VALIDATION_KEY = "boleto-validation";
+const INSTRUCTIONS_KEY = "boleto-instructions";
+
+export async function getInstructions(): Promise<BoletoInstructionsDTO> {
+  const row = await prisma.systemSetting.findUnique({ where: { key: INSTRUCTIONS_KEY } });
+  return (row?.value as BoletoInstructionsDTO | undefined) ?? DEFAULT_BOLETO_INSTRUCTIONS;
+}
+
+export async function setInstructions(instructions: BoletoInstructionsDTO): Promise<BoletoInstructionsDTO> {
+  const value = instructions as unknown as Prisma.InputJsonValue;
+  await prisma.systemSetting.upsert({ where: { key: INSTRUCTIONS_KEY }, update: { value }, create: { key: INSTRUCTIONS_KEY, value } });
+  return instructions;
+}
 type ValidationState = Record<string, { matched: string[]; lastFailure: string | null }>;
 
 async function readValidation(): Promise<ValidationState> {
@@ -251,10 +268,10 @@ export async function prepareBoletos(
   const items = parcels.map((p) => previewItem(p, today));
   const overdue = items.find((item) => item.overdue);
   if (overdue && !confirmOverdue) throw Errors.badRequest(`Boleto vencido em ${overdue.due} — confirme o envio`);
+  const instructions = await getInstructions();
   const pdf = await renderBoletosPdf(
     parcels.map((p, i) => ({
-      bankLabel: BANKS[p.boleto.bank].label,
-      bankName: BANKS[p.boleto.bank].name,
+      bankCode: p.boleto.bank,
       linha: p.boleto.linha,
       barcode: p.boleto.barcode,
       due: items[i].due,
@@ -271,6 +288,7 @@ export async function prepareBoletos(
       payerDocument: col(p.data, "cpf"),
       payerAddress: col(p.data, "payerAddress"),
       payerLocality: [col(p.data, "payerZip"), col(p.data, "payerCity")].filter(Boolean).join("   ") || null,
+      instructions: fillBoletoInstructions(instructions, { cents: p.boleto.cents, contract: p.contract, document: p.document, due: items[i].due }),
     }))
   );
   const storageKey = `${randomUUID()}.pdf`;
