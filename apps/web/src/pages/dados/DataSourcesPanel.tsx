@@ -285,7 +285,7 @@ export function DataSourcesPanel() {
       <input
         ref={fileRef}
         type="file"
-        accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        accept=".csv,.txt,.xlsx,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0];
@@ -450,7 +450,7 @@ export function DataSourcesPanel() {
 
           {draft.kind === "UPLOAD" && (
             <p className="text-xs text-muted">
-              Depois de salvar, use &quot;Enviar arquivo&quot; para mandar a planilha do jeito que está, em XLSX ou CSV (até 500 mil linhas e 100 MB). Planilhas grandes são
+              Depois de salvar, use &quot;Enviar arquivo&quot; para mandar a planilha do jeito que está, em XLSX, CSV ou TXT separado por ponto e vírgula (até 500 mil linhas e 200 MB). CSV é o mais leve. Planilhas grandes são
               processadas em segundo plano. Para atualizar, envie de novo.
             </p>
           )}

@@ -32,14 +32,23 @@ function cellValue(cell: string | undefined): string {
   return value === "NULL" ? "" : value;
 }
 
-function toTable(header: string[], body: string[][], modifiedAt: Date | null): FetchedTable {
+function headerColumns(header: string[]): string[] {
   const columns = header.map(normalizeColumn);
   if (columns.some((c) => !c)) throw new Error("A primeira linha precisa ter o nome de todas as colunas");
   if (new Set(columns).size !== columns.length) throw new Error("Há colunas com o mesmo nome na primeira linha");
+  return columns;
+}
+
+/** One line of the sheet as a row, or null for a blank line. */
+function toRow(columns: string[], cells: string[]): Record<string, string> | null {
+  if (!cells.some((c) => c.trim() !== "")) return null;
+  return Object.fromEntries(columns.map((c, i) => [c, cellValue(cells[i])]));
+}
+
+function toTable(header: string[], body: string[][], modifiedAt: Date | null): FetchedTable {
+  const columns = headerColumns(header);
   if (body.length > MAX_ROWS) throw new Error(`A planilha tem mais de ${MAX_ROWS} linhas`);
-  const rows = body
-    .filter((cells) => cells.some((c) => c.trim() !== ""))
-    .map((cells) => Object.fromEntries(columns.map((c, i) => [c, cellValue(cells[i])])));
+  const rows = body.map((cells) => toRow(columns, cells)).filter((row): row is Record<string, string> => row !== null);
   return { columns, rows, modifiedAt };
 }
 
@@ -58,9 +67,23 @@ function parseCsv(buffer: Buffer, modifiedAt: Date | null): FetchedTable {
   const firstLine = text.slice(0, text.indexOf("\n") >>> 0);
   // Excel in Portuguese saves with ";", SQL Server Management Studio with ",".
   const delimiter = (firstLine.match(/;/g)?.length ?? 0) > (firstLine.match(/,/g)?.length ?? 0) ? ";" : ",";
-  const records: string[][] = parseCsvSync(text, { delimiter, relax_column_count: true, skip_empty_lines: true });
-  if (records.length === 0) throw new Error("A planilha está vazia");
-  return toTable(records[0], records.slice(1), modifiedAt);
+  // Each line becomes its row as it is read: a 200 MB file never sits in memory twice (as lines, then as rows).
+  let columns: string[] | null = null;
+  const rows: Record<string, string>[] = parseCsvSync(text, {
+    delimiter,
+    relax_column_count: true,
+    skip_empty_lines: true,
+    on_record: (cells: string[], { records }: { records: number }) => {
+      if (!columns) {
+        columns = headerColumns(cells);
+        return null;
+      }
+      if (records > MAX_ROWS) throw new Error(`A planilha tem mais de ${MAX_ROWS} linhas`);
+      return toRow(columns, cells);
+    },
+  });
+  if (!columns) throw new Error("A planilha está vazia");
+  return { columns, rows, modifiedAt };
 }
 
 /** Read row by row (streaming): a 250k-row sheet loaded whole takes minutes and gigabytes. Only the first sheet. */

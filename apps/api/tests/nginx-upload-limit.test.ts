@@ -53,6 +53,10 @@ describe("nginx.conf body limit for /api", () => {
     expect(bodyLimitMb(locationBlock(conf, "/api"))).toBeGreaterThanOrEqual(100);
   });
 
+  it("lets through a Fontes de dados file of up to 200 MB", () => {
+    expect(bodyLimitMb(locationBlock(conf, "/api"))).toBeGreaterThanOrEqual(200);
+  });
+
   it("is what the parser would call 1 MB if the directive were missing", () => {
     expect(bodyLimitMb("proxy_pass http://api:4000;")).toBe(1);
     expect(bodyLimitMb("# client_max_body_size 100m;\nproxy_pass http://api:4000;")).toBe(1);
