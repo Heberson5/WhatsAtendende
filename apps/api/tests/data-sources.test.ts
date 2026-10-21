@@ -108,6 +108,11 @@ describe("Fontes de dados", () => {
     expect(missing.columns).toEqual(["contrato", "contato"]);
   });
 
+  it("célula com NULL (cópia do SQL Server) fica vazia", async () => {
+    const table = await parseSpreadsheet(Buffer.from("Nome;Plano;Cidade\nJosé;NULL;Cuiabá\n"), null);
+    expect(table.rows).toEqual([{ nome: "José", plano: "", cidade: "Cuiabá" }]);
+  });
+
   it("só aceita consulta de leitura no banco", () => {
     expect(() => assertReadOnlyQuery("SELECT * FROM clientes")).not.toThrow();
     expect(() => assertReadOnlyQuery("WITH x AS (SELECT 1 a) SELECT * FROM x")).not.toThrow();
