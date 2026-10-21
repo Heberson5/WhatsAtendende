@@ -113,6 +113,14 @@ describe("Fontes de dados", () => {
     expect(table.rows).toEqual([{ nome: "José", plano: "", cidade: "Cuiabá" }]);
   });
 
+  it("XLSX com número de mais de 15 dígitos gravado como número (o Excel arredonda) é recusado, dizendo a coluna", async () => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("Dados");
+    sheet.addRow(["telefone_whatsapp", "nosso_numero"]);
+    sheet.addRow(["5565999990000", 28374960000012300]);
+    await expect(parseSpreadsheet(Buffer.from(await workbook.xlsx.writeBuffer()), null)).rejects.toThrow(/coluna "nosso_numero".*Texto/);
+  });
+
   it("só aceita consulta de leitura no banco", () => {
     expect(() => assertReadOnlyQuery("SELECT * FROM clientes")).not.toThrow();
     expect(() => assertReadOnlyQuery("WITH x AS (SELECT 1 a) SELECT * FROM x")).not.toThrow();

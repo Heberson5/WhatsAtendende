@@ -11,6 +11,28 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.19.1",
+    date: "21 out 2026",
+    name: "Nosso número protegido do arredondamento do Excel",
+    summary: "A validação de boletos acha o nosso número escrito de qualquer jeito, e planilha com número arredondado pelo Excel é recusada.",
+    notes: [
+      {
+        type: "correcao",
+        area: "configuracoes",
+        title: "Validação de boletos acha o nosso número",
+        text: "A validação passou a achar a parcela pelo nosso número com ou sem zeros à esquerda, como impresso no boleto do Banco do Brasil (convênio + sequência) ou só a sequência, e com espaços. A busca também ficou bem mais rápida em planilhas grandes.",
+        where: "Configurações › Fontes de dados › Boletos",
+      },
+      {
+        type: "correcao",
+        area: "configuracoes",
+        title: "Planilha com número arredondado pelo Excel",
+        text: "O Excel guarda só 15 dígitos de um número: um nosso número de 17 dígitos colado numa célula comum perde os últimos dígitos, e o boleto sairia errado. Agora uma planilha XLSX assim é recusada, dizendo qual coluna formatar como Texto antes de colar.",
+        where: "Configurações › Fontes de dados",
+      },
+    ],
+  },
+  {
     version: "2.19.0",
     date: "21 out 2026",
     name: "Contrato no contato",
