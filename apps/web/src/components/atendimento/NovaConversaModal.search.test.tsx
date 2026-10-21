@@ -16,6 +16,7 @@ const contact = (over: Partial<ContactListItemDTO>): ContactListItemDTO => ({
   channel: "WHATSAPP",
   connectionName: "Vendas",
   whatsappConnectionId: "vendas",
+  contractNumber: null,
   tags: [],
   conversationCount: 2,
   firstConversationAt: "2026-10-01T10:00:00.000Z",

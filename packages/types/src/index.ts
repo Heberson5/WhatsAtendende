@@ -2062,6 +2062,8 @@ export interface ContactListItemDTO {
   connectionName: string | null;
   /** WhatsApp connection of the contact — where "Iniciar conversa" starts it. */
   whatsappConnectionId: string | null;
+  /** Contract number(s) — filled from the Fonte de dados, editable in the client panel. */
+  contractNumber: string | null;
   tags: TagDTO[];
   conversationCount: number;
   firstConversationAt: string;
@@ -2069,7 +2071,7 @@ export interface ContactListItemDTO {
 }
 
 /** Columns the Contatos list can be ordered by — text A–Z, numbers and dates in their own order. */
-export const CONTACT_SORT_FIELDS = ["name", "phone", "connection", "conversations", "firstConversationAt", "lastInteractionAt"] as const;
+export const CONTACT_SORT_FIELDS = ["name", "phone", "contract", "connection", "conversations", "firstConversationAt", "lastInteractionAt"] as const;
 export type ContactSortField = (typeof CONTACT_SORT_FIELDS)[number];
 
 export interface ContactDetailDTO extends ContactListItemDTO {
@@ -2121,6 +2123,8 @@ export interface ContactPanelDTO {
   previousConversationCount: number;
   /** "Observação fixa" of the contact — shown at the top of every conversation of theirs. */
   pinnedNote: { text: string; updatedAt: string; updatedByName: string | null } | null;
+  /** The contact's contract number(s) (Contatos › Contrato), editable by the attendant. */
+  contractNumber: string | null;
 }
 
 /** A previous conversation opened read-only from the client panel. */

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format, formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import type { ContactPanelDTO, ConversationListItemDTO, TagDTO } from "@whatsatendende/types";
 import { PreviousConversationDrawer } from "./PreviousConversationDrawer";
 import { ClientDataSection } from "./ClientDataSection";
+import { ContactContractField } from "./ContactContractField";
 import { useClientData } from "../../hooks/useClientData";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { contactDisplayName } from "../../lib/contact-display";
@@ -91,6 +92,11 @@ export function ClientPanel({
   // "Mostrar mais" under Conversas anteriores: the pages loaded after the first few.
   const [morePrevious, setMorePrevious] = useState<ContactPanelDTO["previousConversations"]>([]);
   const { data: clientData } = useClientData(conversation.id);
+  // Reading the client's data fills an empty Contrato from the spreadsheet: show it.
+  const clientKey = clientData?.client?.key;
+  useEffect(() => {
+    if (clientKey) queryClient.invalidateQueries({ queryKey: ["contact-panel", conversation.id] });
+  }, [clientKey, conversation.id, queryClient]);
 
   const { data: panel } = useQuery({
     queryKey,
@@ -187,6 +193,7 @@ export function ClientPanel({
           <Avatar conversation={conversation} size="lg" />
           <p className="mt-2 max-w-full truncate text-[15px] font-semibold">{name}</p>
           {conversation.contact.phone && <p className="text-xs tabular-nums text-muted">{formatPhone(conversation.contact.phone)}</p>}
+          {panel && <ContactContractField conversationId={conversation.id} contractNumber={panel.contractNumber} readOnly={readOnly} />}
         </div>
 
         {clientData && clientData.status !== "NO_SOURCE" && (

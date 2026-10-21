@@ -48,6 +48,11 @@ const CONTACT_COLUMNS: Record<string, { sort?: Omit<SortColumn, "label">; classN
     className: "whitespace-nowrap px-4 py-3 tabular-nums text-muted",
     render: (c) => formatContactPhone(c),
   },
+  contract: {
+    sort: { field: "contract", firstDir: "asc", hint: { asc: "A a Z", desc: "Z a A" } },
+    className: "whitespace-nowrap px-4 py-3 tabular-nums",
+    render: (c) => c.contractNumber ?? <span className="text-muted">-</span>,
+  },
   connection: {
     sort: { field: "connection", firstDir: "asc", hint: { asc: "A a Z", desc: "Z a A" } },
     className: "px-4 py-3 text-muted",
@@ -222,7 +227,7 @@ export default function ContatosPage() {
           <input
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="Buscar nome ou telefone"
+            placeholder="Buscar nome, telefone ou contrato"
             className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-muted"
           />
         </label>

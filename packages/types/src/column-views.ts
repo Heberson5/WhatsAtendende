@@ -34,6 +34,7 @@ export const COLUMN_SCREENS = {
     columns: [
       { key: "name", label: "Nome", fixed: true },
       { key: "phone", label: "Telefone" },
+      { key: "contract", label: "Contrato" },
       { key: "connection", label: "Conexão" },
       { key: "tags", label: "Etiquetas" },
       { key: "conversations", label: "Conversas" },

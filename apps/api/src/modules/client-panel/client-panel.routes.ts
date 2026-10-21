@@ -82,12 +82,34 @@ clientPanelRouter.put(
   })
 );
 
+// Contatos › Contrato: the attendant corrects or fills it in the client panel.
+const contractSchema = z.object({ contractNumber: z.string().trim().max(200).nullable() });
+clientPanelRouter.put(
+  "/:id/contact-contract",
+  asyncHandler(async (req, res) => {
+    const conversation = await conversationForWrite(req);
+    const { contractNumber } = contractSchema.parse(req.body);
+    await service.setContractNumber(conversation.contactId, contractNumber || null);
+    await writeAudit({
+      userId: req.auth!.userId,
+      action: "CONTACT_CONTRACT_UPDATED",
+      entity: "Contact",
+      entityId: conversation.contactId,
+      ipAddress: req.ip ?? null,
+      metadata: { contractNumber: contractNumber || null },
+    });
+    res.json(await service.getContactPanel(conversation.id, conversation.contactId, conversation.contact.firstConversationAt));
+  })
+);
+
 // Dados do cliente (Fontes de dados): what the active spreadsheet/database knows about this conversation's phone.
 clientPanelRouter.get(
   "/:id/client-data",
   asyncHandler(async (req, res) => {
     const conversation = await conversationForRead(req);
-    res.json(await dataSources.getClientData(conversation, req.auth!.role));
+    const data = await dataSources.getClientData(conversation, req.auth!.role);
+    await dataSources.rememberContractNumber(conversation.contact, data);
+    res.json(data);
   })
 );
 
@@ -98,7 +120,9 @@ clientPanelRouter.put(
     const { clientKey } = z.object({ clientKey: z.string().min(1).max(200) }).parse(req.body);
     await dataSources.selectClient(conversation, clientKey);
     await writeAudit({ userId: req.auth!.userId, action: "CLIENT_DATA_CLIENT_SELECTED", entity: "Conversation", entityId: conversation.id, ipAddress: req.ip ?? null, metadata: { clientKey } });
-    res.json(await dataSources.getClientData({ ...conversation, dataClientKey: clientKey }, req.auth!.role));
+    const data = await dataSources.getClientData({ ...conversation, dataClientKey: clientKey }, req.auth!.role);
+    await dataSources.rememberContractNumber(conversation.contact, data);
+    res.json(data);
   })
 );
 

@@ -11,6 +11,28 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.19.0",
+    date: "21 out 2026",
+    name: "Contrato no contato",
+    summary: "Contatos ganhou a coluna Contrato, preenchida pela planilha e editável pelo atendente no painel do cliente.",
+    notes: [
+      {
+        type: "novo",
+        area: "contatos",
+        title: "Coluna Contrato",
+        text: "Cada contato guarda o número do contrato (ou dos contratos, separados por vírgula). Ele vem da Fonte de dados quando a planilha é carregada ou quando o atendente abre a conversa, e só preenche contatos que ainda estão sem contrato: o que o atendente digitou nunca é apagado pela planilha. A coluna aparece em Contatos, pode ser ordenada, entra na exportação, e a busca também encontra pelo contrato.",
+        where: "Contatos",
+      },
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "Editar o contrato no painel do cliente",
+        text: "Abaixo do nome e do telefone do cliente aparece Contrato, com o lápis para o atendente corrigir ou preencher. Fica registrado na auditoria.",
+        where: "Atendimento › painel do cliente",
+      },
+    ],
+  },
+  {
     version: "2.18.1",
     date: "21 out 2026",
     name: "Planilha sem NULL",
