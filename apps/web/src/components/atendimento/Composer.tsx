@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useEffect, useId, useImperativeHandle, useRef, useState } from "react";
 import clsx from "clsx";
 import { CalendarClock, Mic, Paperclip, Pause, Play, Plus, Send, Trash2, X, MapPin, Bold, Italic, Strikethrough, Code, Wand2, FileText, Image as ImageIcon, Video } from "lucide-react";
 import type { MessageDTO, ReplyMediaDTO } from "@whatsatendende/types";
@@ -7,6 +7,7 @@ import { DataTagPreview, useDataTagAssist } from "./DataTagAssist";
 import { api } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
 import { draftKey, useDraftStore } from "../../store/draft-store";
+import { useComposerActivityStore } from "../../store/composer-activity-store";
 import { WhenPicker } from "./WhenPicker";
 
 // How long to wait after the agent stops typing before asking for a writing
@@ -202,6 +203,12 @@ export const Composer = forwardRef<
   const [selectionBubble, setSelectionBubble] = useState<{ top: number; left: number } | null>(null);
   const [quickReplyActiveIndex, setQuickReplyActiveIndex] = useState(0);
   const [writingSuggestions, setWritingSuggestions] = useState<WritingSuggestion[]>([]);
+  // Something not sent yet: the "Nova versão" popup waits until it goes.
+  const composerId = useId();
+  const setComposerBusy = useComposerActivityStore((s) => s.setBusy);
+  const unsent = Boolean(text.trim()) || recordingState !== "idle" || Boolean(previewUrl) || pendingFiles.length > 0 || Boolean(pendingLocation) || sending;
+  useEffect(() => setComposerBusy(composerId, unsent), [composerId, unsent, setComposerBusy]);
+  useEffect(() => () => setComposerBusy(composerId, false), [composerId, setComposerBusy]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [caret, setCaret] = useState(0);
