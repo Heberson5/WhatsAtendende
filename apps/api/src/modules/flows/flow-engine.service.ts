@@ -6,12 +6,15 @@ import {
   FLOW_HOURS_CLOSED,
   FLOW_HOURS_OPEN,
   FLOW_MENU_DEFAULT_PROMPT,
+  FLOW_MENU_NAV_OPTIONS,
   describeWorkScheduleDays,
+  flowMenuNavOptions,
   flowNodeName,
   renderFlowMenuText,
   renderFlowText,
   type FlowBusinessHoursData,
   type FlowImage,
+  type FlowMenuNavigation,
   type FlowMenuOption,
   type FlowStartData,
   type WorkScheduleDaysDTO,
@@ -62,8 +65,8 @@ const OFFICIAL_MENU_DEFAULT_PROMPT = "Escolha uma opção:";
 
 type Graph = { nodes: Map<string, FlowNode>; edges: FlowEdge[] };
 
-/** What the session remembers: the option picked last ({{opcao}}) and every option picked so far. */
-type FlowVars = { opcao?: string; path?: string[] };
+/** What the session remembers: the option picked last ({{opcao}}), every option picked so far and the menus on the way (for Voltar / Menu inicial). */
+type FlowVars = { opcao?: string; path?: string[]; menus?: string[] };
 
 type FlowConversation = {
   id: string;
@@ -73,7 +76,16 @@ type FlowConversation = {
   contactPhone: string;
 };
 
-type MenuData = { prompt?: string; options: FlowMenuOption[]; image?: FlowImage | null; name?: string };
+type MenuData = { prompt?: string; options: FlowMenuOption[]; image?: FlowImage | null; name?: string; navigation?: FlowMenuNavigation };
+
+// What a customer may type for a navigation option besides its number or its label.
+const NAV_WORDS: Record<string, string> = {
+  voltar: FLOW_MENU_NAV_OPTIONS.back.id,
+  menu: FLOW_MENU_NAV_OPTIONS.home.id,
+  inicio: FLOW_MENU_NAV_OPTIONS.home.id,
+  encerrar: FLOW_MENU_NAV_OPTIONS.end.id,
+  sair: FLOW_MENU_NAV_OPTIONS.end.id,
+};
 type TransferData = { assignedAgentIds?: string[]; mode?: "any" | "selected"; name?: string };
 
 /** Why a conversation is in Abandonados — kept on its FLOW_ABANDONED event, turned into a note when someone accepts it. */
@@ -188,11 +200,11 @@ async function sendBotStep(conversation: FlowConversation, text: string, image: 
  * A menu: on the API Oficial, WhatsApp's own buttons (up to 3, with the photo) or a list (up to 10); on QR Code — or
  * with more options — the numbered text. The conversation keeps the numbered text, so the team reads the options.
  */
-async function sendBotMenu(conversation: FlowConversation, data: MenuData, vars: FlowVars, listTitle: string | null): Promise<void> {
+async function sendBotMenu(conversation: FlowConversation, data: MenuData, vars: FlowVars, listTitle: string | null, nav: FlowMenuOption[] = []): Promise<void> {
   const options = data.options ?? [];
   const official = whatsappService.isOfficialConnection(conversation.whatsappConnectionId);
   if (!official || options.length === 0 || options.length > MAX_INTERACTIVE_OPTIONS) {
-    return sendBotStep(conversation, render(renderFlowMenuText(data), conversation, vars), data.image);
+    return sendBotStep(conversation, render(renderFlowMenuText({ ...data, options: [...options, ...nav] }), conversation, vars), data.image);
   }
   const prompt = data.prompt?.trim() || OFFICIAL_MENU_DEFAULT_PROMPT;
   const photo = readImage(data.image);
@@ -309,9 +321,9 @@ async function transfer(conversation: FlowConversation, sessionId: string, flowI
   await prisma.flowSession.update({ where: { id: sessionId }, data: { currentNodeId: node.id, lastActivityAt: new Date() } });
 }
 
-async function closeByFlow(conversation: FlowConversation, sessionId: string): Promise<void> {
+async function closeByFlow(conversation: FlowConversation, sessionId: string, byCustomer = false): Promise<void> {
   await prisma.conversation.update({ where: { id: conversation.id }, data: { status: "CLOSED", closedAt: new Date() } });
-  await prisma.conversationEvent.create({ data: { conversationId: conversation.id, type: "CLOSED", payload: { byFlow: true } } });
+  await prisma.conversationEvent.create({ data: { conversationId: conversation.id, type: "CLOSED", payload: { byFlow: true, ...(byCustomer ? { byCustomer: true } : {}) } } });
   await completeSession(sessionId);
   realtimeEvents.newMessage(conversation.id, null);
 }
@@ -334,10 +346,13 @@ async function advance(conversation: FlowConversation, sessionId: string, flowId
       case "BUSINESS_HOURS":
         nodeId = nextNodeId(graph, node.id, (await isNodeOpen(conversation, data, new Date())) ? FLOW_HOURS_OPEN : FLOW_HOURS_CLOSED);
         break;
-      case "MENU":
-        await sendBotMenu(conversation, data as unknown as MenuData, vars, flowNodeName(node));
-        await prisma.flowSession.update({ where: { id: sessionId }, data: { currentNodeId: node.id, invalidAttempts: 0, lastActivityAt: new Date() } });
+      case "MENU": {
+        const menus = vars.menus ?? [];
+        const here: FlowVars = { ...vars, menus: menus.at(-1) === node.id ? menus : [...menus, node.id] };
+        await sendBotMenu(conversation, data as unknown as MenuData, here, flowNodeName(node), navOptionsFor(conversation, data as unknown as MenuData, here));
+        await prisma.flowSession.update({ where: { id: sessionId }, data: { currentNodeId: node.id, invalidAttempts: 0, lastActivityAt: new Date(), variables: here } });
         return;
+      }
       case "TRANSFER_TO_AGENT":
         await transfer(conversation, sessionId, flowId, node, vars);
         return;
@@ -366,15 +381,38 @@ async function outOfHoursPrompt(conversation: FlowConversation): Promise<MenuDat
   return { prompt, options: HOURS_PROMPT_OPTIONS };
 }
 
+/** Voltar / Menu inicial / Encerrar atendimento after a menu's own options — QR Code only (the API Oficial keeps its buttons). */
+function navOptionsFor(conversation: FlowConversation, menu: MenuData, vars: FlowVars): FlowMenuOption[] {
+  if (whatsappService.isOfficialConnection(conversation.whatsappConnectionId)) return [];
+  return flowMenuNavOptions(menu.navigation, (vars.menus?.length ?? 0) > 1);
+}
+
+/** Voltar: the menu before this one. Menu inicial: the first menu. Encerrar atendimento: closes, with no survey. */
+async function navigate(conversation: FlowConversation, sessionId: string, flowId: string, graph: Graph, optionId: string, vars: FlowVars): Promise<void> {
+  if (optionId === FLOW_MENU_NAV_OPTIONS.end.id) {
+    await sendBotText(conversation, GOODBYE_TEXT);
+    await addSystemNote(conversation.id, "O cliente encerrou o atendimento pelo menu do fluxo.");
+    return closeByFlow(conversation, sessionId, true);
+  }
+  const menus = vars.menus ?? [];
+  const path = vars.path ?? [];
+  // advance() puts the menu it reaches back on the list.
+  const back = optionId === FLOW_MENU_NAV_OPTIONS.back.id;
+  const target = back ? menus.at(-2) : menus[0];
+  const next: FlowVars = back ? { path: path.slice(0, -1), menus: menus.slice(0, -2) } : { path: [], menus: [] };
+  await prisma.flowSession.update({ where: { id: sessionId }, data: { variables: next } });
+  return advance(conversation, sessionId, flowId, graph, target ?? null, next);
+}
+
 /** An answer that matches no option: the menu again, until the third miss hands the customer to the queue. */
-async function retryMenu(conversation: FlowConversation, sessionId: string, invalidAttempts: number, menu: MenuData, vars: FlowVars, listTitle: string | null) {
+async function retryMenu(conversation: FlowConversation, sessionId: string, invalidAttempts: number, menu: MenuData, vars: FlowVars, listTitle: string | null, nav: FlowMenuOption[] = []) {
   const attempts = invalidAttempts + 1;
   if (attempts >= MAX_INVALID_MENU_ANSWERS) {
     await sendBotText(conversation, "Não consegui entender sua resposta. Vou encaminhar você para um atendente.");
     return handToQueue(conversation, sessionId, "INVALID_ANSWERS", vars);
   }
   await prisma.flowSession.update({ where: { id: sessionId }, data: { invalidAttempts: attempts } });
-  await sendBotMenu(conversation, { ...menu, prompt: `Não entendi. ${menu.prompt?.trim() || FLOW_MENU_DEFAULT_PROMPT}` }, vars, listTitle);
+  await sendBotMenu(conversation, { ...menu, prompt: `Não entendi. ${menu.prompt?.trim() || FLOW_MENU_DEFAULT_PROMPT}` }, vars, listTitle, nav);
 }
 
 async function loadFlowConversation(conversationId: string): Promise<FlowConversation | null> {
@@ -435,13 +473,16 @@ async function run(conversationId: string, flowId: string | null, answer: string
   if (!current || current.type !== "MENU") return handToQueue(conversation, session.id, "STALE_SESSION", vars);
 
   const menuData = (current.data ?? {}) as unknown as MenuData;
-  const option = matchMenuOption(menuData.options ?? [], answer, selectedOptionId);
+  const nav = navOptionsFor(conversation, menuData, vars);
+  const navWord = nav.find((o) => o.id === NAV_WORDS[normalize(answer ?? "")]);
+  const option = matchMenuOption([...(menuData.options ?? []), ...nav], answer, selectedOptionId) ?? navWord ?? null;
+  if (option && nav.includes(option)) return navigate(conversation, session.id, session.flowId, graph, option.id, vars);
   if (option) {
-    const next: FlowVars = { opcao: option.label, path: [...(vars.path ?? []), option.label] };
+    const next: FlowVars = { opcao: option.label, path: [...(vars.path ?? []), option.label], menus: vars.menus };
     await prisma.flowSession.update({ where: { id: session.id }, data: { variables: next } });
     return advance(conversation, session.id, session.flowId, graph, nextNodeId(graph, current.id, option.id), next);
   }
-  return retryMenu(conversation, session.id, session.invalidAttempts, menuData, vars, flowNodeName(current));
+  return retryMenu(conversation, session.id, session.invalidAttempts, menuData, vars, flowNodeName(current), nav);
 }
 
 // Two messages from the same customer arriving together must not run the flow twice in parallel.

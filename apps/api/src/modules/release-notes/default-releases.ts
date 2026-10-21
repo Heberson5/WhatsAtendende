@@ -11,6 +11,21 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.17.0",
+    date: "21 out 2026",
+    name: "Voltar, Menu inicial e Encerrar no fluxo",
+    summary: "Nos menus do fluxo pelo QR Code, o cliente pode voltar ao menu anterior, ir ao menu inicial ou encerrar o atendimento.",
+    notes: [
+      {
+        type: "novo",
+        area: "fluxo",
+        title: "Voltar, Menu inicial e Encerrar atendimento",
+        text: "Cada menu do fluxo ganhou três opções de navegação, numeradas depois das opções do menu: Voltar (menu anterior), Menu inicial (primeiro menu do fluxo) e Encerrar atendimento, que encerra a conversa na hora, sem enviar a pesquisa de satisfação, e deixa uma nota avisando que foi o cliente quem encerrou. Vêm ligadas e podem ser desligadas em cada menu. Voltar e Menu inicial não aparecem no primeiro menu. O cliente também pode digitar voltar, menu, início, encerrar ou sair. Valem para a conexão pelo QR Code; na API Oficial os botões continuam como estão.",
+        where: "Fluxo › Menu de opções",
+      },
+    ],
+  },
+  {
     version: "2.16.5",
     date: "21 out 2026",
     name: "Conexão mantida ao atualizar o sistema",

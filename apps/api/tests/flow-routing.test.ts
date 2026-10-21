@@ -222,7 +222,55 @@ describe("Fluxo: transferência pelos usuários do passo, Abandonados, horário 
     await customerWrites(phone, "Oi");
     sent.length = 0;
     await customerWrites(phone, "1");
-    expect(sent[0].text).toBe("Escolha:\n1. Planos Univida\n2. Cemitério Parque");
+    expect(sent[0].text).toBe("Escolha:\n1. Planos Univida\n2. Cemitério Parque\n3. Encerrar atendimento");
+  });
+
+  it("QR Code: Voltar, Menu inicial e Encerrar atendimento nos menus", async () => {
+    await salesFlow([]);
+    const phone = nextPhone();
+    await customerWrites(phone, "Oi");
+    // The first menu has nowhere to go back to.
+    expect(sent.at(-1)!.text).toBe("Escolha:\n1. Planos Univida\n2. Cemitério Parque\n3. Encerrar atendimento");
+    await customerWrites(phone, "2");
+    expect(sent.at(-1)!.text).toBe("Cidade?\n1. Tangará da Serra\n2. Voltar\n3. Menu inicial\n4. Encerrar atendimento");
+
+    await customerWrites(phone, "2"); // Voltar
+    expect(sent.at(-1)!.text).toMatch(/^Escolha:\n1\. Planos Univida/);
+    await customerWrites(phone, "1");
+    await customerWrites(phone, "menu inicial");
+    expect(sent.at(-1)!.text).toMatch(/^Escolha:\n1\. Planos Univida/);
+
+    // The path left for the attendant only has what the customer kept.
+    await customerWrites(phone, "1");
+    const handed = await customerWrites(phone, "1");
+    expect(handed.status).toBe("NEW");
+    expect(await notesOf(handed.id)).toContain("Escolhas no fluxo: Planos Univida › Tangará da Serra");
+  });
+
+  it("QR Code: Encerrar atendimento fecha a conversa sem pesquisa; a opção pode ser desligada no menu", async () => {
+    await activeFlow(
+      [
+        { id: "s", type: "START" },
+        { id: "m", type: "MENU", data: { prompt: "Escolha:", options: [{ id: "a", label: "Vendas" }] } },
+        { id: "n", type: "MENU", data: { prompt: "Plano?", options: [{ id: "b", label: "Ouro" }], navigation: { home: false, end: false } } },
+        { id: "x", type: "TRANSFER_TO_AGENT", data: { mode: "any", assignedAgentIds: [] } },
+      ],
+      [
+        ["s", "m"],
+        ["m", "n", "a"],
+        ["n", "x", "b"],
+      ]
+    );
+    const phone = nextPhone();
+    await customerWrites(phone, "Oi");
+    await customerWrites(phone, "1");
+    expect(sent.at(-1)!.text).toBe("Plano?\n1. Ouro\n2. Voltar");
+    await customerWrites(phone, "voltar");
+    const closed = await customerWrites(phone, "encerrar");
+    expect(sent.at(-1)!.text).toBe("Tudo bem! Ficamos à disposição sempre que precisar. Até logo! 👋");
+    expect(closed.status).toBe("CLOSED");
+    expect(await notesOf(closed.id)).toEqual(["O cliente encerrou o atendimento pelo menu do fluxo."]);
+    expect(await prisma.satisfactionSurvey.count({ where: { conversationId: closed.id } })).toBe(0);
   });
 
   it("on the API Oficial, sends the menu as buttons and takes the tapped one by its id", async () => {
@@ -346,7 +394,7 @@ describe("Fluxos que vêm com o sistema (Univida)", () => {
     };
     await say("Oi");
     expect(sent[0].text).toMatch(/^Olá! 😊\nQue bom ter você aqui na Univida!/);
-    expect(sent[0].text).toMatch(/1\. Por Ligação\n2\. Pelo WhatsApp$/);
+    expect(sent[0].text).toMatch(/1\. Por Ligação\n2\. Pelo WhatsApp\n3\. Encerrar atendimento$/);
     await say("2");
     await say("1");
     await say("Guias");
