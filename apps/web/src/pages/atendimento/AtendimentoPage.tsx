@@ -9,6 +9,7 @@ import { api, getApiErrorMessage } from "../../lib/api";
 import { ConversationCard, minutesWaiting } from "../../components/atendimento/ConversationCard";
 import { useAlertThresholds } from "../../hooks/useAlertThresholds";
 import { ClientPanel } from "../../components/atendimento/ClientPanel";
+import { ResizableSidePanel } from "../../components/atendimento/ResizableSidePanel";
 import { contactDisplayName } from "../../lib/contact-display";
 import { useNow } from "../../hooks/useNow";
 import { ChatPanel } from "../../components/atendimento/ChatPanel";
@@ -340,7 +341,7 @@ export default function AtendimentoPage() {
         panelConversation || selectedGroup
           ? clientPanelCollapsed
             ? "md:grid-cols-[320px_1fr_auto]"
-            : "md:grid-cols-[300px_1fr_260px] xl:grid-cols-[320px_1fr_280px]"
+            : "md:grid-cols-[300px_minmax(0,1fr)_auto] xl:grid-cols-[320px_minmax(0,1fr)_auto]"
           : "md:grid-cols-[320px_1fr]"
       )}
     >
@@ -566,13 +567,13 @@ export default function AtendimentoPage() {
       </div>
 
       {selectedGroup && (
-        <div className="hidden min-w-0 overflow-hidden md:block">
+        <ResizableSidePanel resizable={!clientPanelCollapsed}>
           {clientPanelCollapsed ? null : <GroupInfoPanel group={selectedGroup} onClose={toggleClientPanel} />}
-        </div>
+        </ResizableSidePanel>
       )}
 
       {panelConversation && (
-        <div className="hidden min-w-0 overflow-hidden md:block">
+        <ResizableSidePanel resizable={!clientPanelCollapsed}>
           <ClientPanel
             key={panelConversation.id}
             conversation={panelConversation}
@@ -580,7 +581,7 @@ export default function AtendimentoPage() {
             onToggle={toggleClientPanel}
             readOnly={!selectedConversation}
           />
-        </div>
+        </ResizableSidePanel>
       )}
 
       {mobileInfoOpen && (selectedGroup || panelConversation) && (

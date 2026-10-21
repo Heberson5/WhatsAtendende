@@ -3,8 +3,9 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import clsx from "clsx";
-import { AlertTriangle, Copy, Eye, FileText, Users } from "lucide-react";
-import { PERMISSION, type ClientContractDTO, type ClientDataDTO } from "@whatsatendende/types";
+import { AlertTriangle, ChevronDown, Copy, Eye, FileText, Users } from "lucide-react";
+import { PERMISSION, dataColumnLabel, type ClientContractDTO, type ClientDataDTO, type ClientDataFieldDTO } from "@whatsatendende/types";
+import { formatDataValue } from "../../lib/format-data-value";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
 import { clientDataKey, useClientData } from "../../hooks/useClientData";
@@ -29,11 +30,59 @@ function CopyButton({ value }: { value: string }) {
 
 // Same rule as the API: these never get a boleto.
 const NO_BOLETO_METHODS = [/cart[aã]o recorrente/i, /sem boleto/i];
+const money = (value: string) => formatDataValue("valor", value);
+// The client's own lines shown before "Mostrar todos".
+const CLIENT_FIELDS_SHOWN = 10;
 
-function ContractCard({ contract, conversationId, canSendBoleto }: { contract: ClientContractDTO; conversationId: string; canSendBoleto: boolean }) {
+/** One line of the source: readable label, formatted value, copy — or the eye for a sensitive one not revealed yet. */
+function FieldRow({ field, revealed, canReveal, onReveal }: { field: ClientDataFieldDTO; revealed?: string; canReveal: boolean; onReveal: (column: string) => void }) {
+  const value = formatDataValue(field.column, revealed ?? field.value);
+  const label = dataColumnLabel(field.column);
+  return (
+    <div className="flex items-start justify-between gap-2 text-xs">
+      <span className="max-w-[45%] shrink-0 text-muted" title={field.column}>
+        {label}
+      </span>
+      <span className="flex min-w-0 flex-1 items-start justify-end gap-1 text-right">
+        <span className="min-w-0 break-words font-medium">{value}</span>
+        {field.sensitive && !revealed ? (
+          canReveal && (
+            <button
+              type="button"
+              onClick={() => onReveal(field.column)}
+              className="focus-ring shrink-0 rounded p-0.5 text-muted hover:text-[var(--color-text)]"
+              aria-label={`Mostrar ${label}`}
+              title="Mostrar (fica registrado na auditoria)"
+            >
+              <Eye className="h-3 w-3" />
+            </button>
+          )
+        ) : (
+          <CopyButton value={value} />
+        )}
+      </span>
+    </div>
+  );
+}
+
+function ContractCard({
+  contract,
+  conversationId,
+  canSendBoleto,
+  defaultOpen,
+  renderField,
+}: {
+  contract: ClientContractDTO;
+  conversationId: string;
+  canSendBoleto: boolean;
+  defaultOpen: boolean;
+  renderField: (field: ClientDataFieldDTO) => React.ReactNode;
+}) {
   const holderFirst = [...contract.beneficiaries].sort((a, b) => Number(b.holder) - Number(a.holder));
+  const [open, setOpen] = useState(defaultOpen);
   const [selected, setSelected] = useState<string[]>([]);
   const [sending, setSending] = useState(false);
+  const fields = contract.fields.filter((f) => f.value);
 
   /** Boletos go oldest first: checking a parcel checks every older one, unchecking clears every newer one. */
   function toggle(index: number) {
@@ -54,85 +103,105 @@ function ContractCard({ contract, conversationId, canSendBoleto }: { contract: C
           <AlertTriangle className="h-3.5 w-3.5" /> Suspenso por inadimplência
         </p>
       )}
-      <div className="space-y-2 px-2.5 py-2">
-        <div className="flex items-center justify-between gap-2">
-          <span className="flex min-w-0 items-center gap-1 font-semibold">
-            Contrato {contract.number} <CopyButton value={contract.number} />
+      <div className="flex items-center gap-1 bg-surface-alt px-2.5 py-2">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          className="focus-ring flex min-w-0 flex-1 items-center justify-between gap-2 rounded text-left"
+          title={open ? "Minimizar contrato" : "Mostrar o contrato"}
+        >
+          <span className="truncate font-semibold">Contrato {contract.number}</span>
+          <span className="flex shrink-0 items-center gap-1.5">
+            {contract.suspended ? (
+              <span className="rounded-full bg-danger-soft px-2 py-px text-[11px] font-semibold text-danger">Suspenso</span>
+            ) : (
+              contract.status && (
+                <span className={clsx("rounded-full px-2 py-px text-[11px] font-semibold", /^ativ/i.test(contract.status) ? "bg-success-soft text-success" : "bg-surface text-muted")}>
+                  {contract.status}
+                </span>
+              )
+            )}
+            <ChevronDown className={clsx("h-3.5 w-3.5 text-muted transition-transform", open && "rotate-180")} />
           </span>
-          {contract.status && <span className="shrink-0 text-muted">{contract.status}</span>}
-        </div>
-        {contract.plan && <p className="text-muted">{contract.plan}</p>}
-        {contract.overdueCount > 0 && (
-          <p className="font-medium text-danger">
-            {contract.overdueCount} parcela{contract.overdueCount > 1 ? "s" : ""} vencida{contract.overdueCount > 1 ? "s" : ""}
-            {contract.suspensionThreshold && ` · suspende com ${contract.suspensionThreshold}`}
-          </p>
-        )}
-        {contract.parcels.length > 0 && (
-          <ul className="space-y-1">
-            {contract.parcels.map((parcel, index) => {
-              const noBoleto = NO_BOLETO_METHODS.some((re) => re.test(parcel.paymentMethod ?? ""));
-              return (
-                <li key={parcel.id} className="flex flex-wrap items-center gap-x-1.5">
-                  {canSendBoleto && (
-                    <input
-                      type="checkbox"
-                      checked={selected.includes(parcel.id)}
-                      disabled={noBoleto}
-                      onChange={() => toggle(index)}
-                      title={noBoleto ? `Sem boleto: ${parcel.paymentMethod}` : "Selecionar para enviar o boleto"}
-                      className="h-3.5 w-3.5 accent-[var(--color-primary)] disabled:opacity-40"
-                    />
-                  )}
-                  <span className={clsx("tabular-nums", parcel.overdue && "font-medium text-danger")}>{parcel.due ?? "—"}</span>
-                  <span className="tabular-nums">{parcel.value ?? ""}</span>
-                  <span className="min-w-0 truncate text-muted">
-                    {parcel.overdue ? `${parcel.daysLate} dias de atraso` : "a vencer"}
-                    {noBoleto && ` · ${parcel.paymentMethod}`}
-                  </span>
-                  {(parcel.fine || parcel.interest || parcel.updatedValue) && (
-                    <span className={clsx("basis-full tabular-nums text-muted", canSendBoleto && "ps-5")}>
-                      {parcel.fine && `multa ${parcel.fine}`}
-                      {parcel.fine && parcel.interest && " · "}
-                      {parcel.interest && `juros ${parcel.interest}`}
-                      {parcel.updatedValue && (
-                        <>
-                          {(parcel.fine || parcel.interest) && " · "}
-                          atualizado <strong className="font-semibold text-text">{parcel.updatedValue}</strong>
-                        </>
-                      )}
-                    </span>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-        {canSendBoleto && selected.length > 0 && (
-          <button type="button" onClick={() => setSending(true)} className="focus-ring inline-flex items-center gap-1 rounded-card bg-primary px-2.5 py-1 text-xs font-semibold text-primary-fg">
-            <FileText className="h-3.5 w-3.5" /> Enviar boleto{selected.length > 1 ? `s (${selected.length})` : ""}
-          </button>
-        )}
-        {holderFirst.length > 0 && (
-          <div>
-            <p className="mb-1 flex items-center gap-1 font-medium">
-              <Users className="h-3 w-3" /> {holderFirst.length} beneficiário{holderFirst.length > 1 ? "s" : ""}
-            </p>
-            <ul className="space-y-0.5">
-              {holderFirst.map((b, i) => (
-                <li key={`${b.name}-${i}`} className="flex flex-wrap items-center gap-x-1">
-                  <span className={clsx(b.holder && "font-semibold")}>{b.name}</span>
-                  <span className="text-muted">
-                    · {b.relation ?? "—"}
-                    {b.age !== null && ` · ${b.age} anos`}
-                  </span>
-                  {b.aggregated && <span className="rounded bg-surface-alt px-1 text-[10px] font-semibold">agregado</span>}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+        </button>
+        <CopyButton value={contract.number} />
       </div>
+      {open && (
+        <div className="space-y-2.5 px-2.5 py-2">
+          {contract.plan && <p className="text-muted">{contract.plan}</p>}
+          {fields.length > 0 && <div className="space-y-0.5">{fields.map(renderField)}</div>}
+          {contract.overdueCount > 0 && (
+            <p className="font-medium text-danger">
+              {contract.overdueCount} parcela{contract.overdueCount > 1 ? "s" : ""} vencida{contract.overdueCount > 1 ? "s" : ""}
+            </p>
+          )}
+          {contract.parcels.length > 0 && (
+            <ul className="space-y-1">
+              {contract.parcels.map((parcel, index) => {
+                const noBoleto = NO_BOLETO_METHODS.some((re) => re.test(parcel.paymentMethod ?? ""));
+                return (
+                  <li key={parcel.id} className="flex flex-wrap items-center gap-x-1.5">
+                    {canSendBoleto && (
+                      <input
+                        type="checkbox"
+                        checked={selected.includes(parcel.id)}
+                        disabled={noBoleto}
+                        onChange={() => toggle(index)}
+                        title={noBoleto ? `Sem boleto: ${parcel.paymentMethod}` : "Selecionar para enviar o boleto"}
+                        className="h-3.5 w-3.5 accent-[var(--color-primary)] disabled:opacity-40"
+                      />
+                    )}
+                    <span className={clsx("tabular-nums", parcel.overdue && "font-medium text-danger")}>{parcel.due ?? "—"}</span>
+                    <span className="tabular-nums">{parcel.value ? money(parcel.value) : ""}</span>
+                    <span className="min-w-0 truncate text-muted">
+                      {parcel.overdue ? `${parcel.daysLate} dias de atraso` : "a vencer"}
+                      {noBoleto && ` · ${parcel.paymentMethod}`}
+                    </span>
+                    {(parcel.fine || parcel.interest || parcel.updatedValue) && (
+                      <span className={clsx("basis-full tabular-nums text-muted", canSendBoleto && "ps-5")}>
+                        {parcel.fine && `multa ${money(parcel.fine)}`}
+                        {parcel.fine && parcel.interest && " · "}
+                        {parcel.interest && `juros ${money(parcel.interest)}`}
+                        {parcel.updatedValue && (
+                          <>
+                            {(parcel.fine || parcel.interest) && " · "}
+                            atualizado <strong className="font-semibold text-text">{money(parcel.updatedValue)}</strong>
+                          </>
+                        )}
+                      </span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          {canSendBoleto && selected.length > 0 && (
+            <button type="button" onClick={() => setSending(true)} className="focus-ring inline-flex items-center gap-1 rounded-card bg-primary px-2.5 py-1 text-xs font-semibold text-primary-fg">
+              <FileText className="h-3.5 w-3.5" /> Enviar boleto{selected.length > 1 ? `s (${selected.length})` : ""}
+            </button>
+          )}
+          {holderFirst.length > 0 && (
+            <div>
+              <p className="mb-1 flex items-center gap-1 font-medium">
+                <Users className="h-3 w-3" /> {holderFirst.length} beneficiário{holderFirst.length > 1 ? "s" : ""}
+              </p>
+              <ul className="space-y-0.5">
+                {holderFirst.map((b, i) => (
+                  <li key={`${b.name}-${i}`} className="flex flex-wrap items-center gap-x-1">
+                    <span className={clsx(b.holder && "font-semibold")}>{b.name}</span>
+                    <span className="text-muted">
+                      · {b.relation ?? "—"}
+                      {b.age !== null && ` · ${b.age} anos`}
+                    </span>
+                    {b.aggregated && <span className="rounded bg-surface-alt px-1 text-[10px] font-semibold">agregado</span>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
       {sending && (
         <BoletoSendModal
           conversationId={conversationId}
@@ -206,7 +275,12 @@ export function ClientDataSection({ conversationId, readOnly }: { conversationId
   }
 
   const fields = data.client.fields.filter((f) => f.value);
-  const visibleFields = showAll ? fields : fields.slice(0, 8);
+  const visibleFields = showAll ? fields : fields.slice(0, CLIENT_FIELDS_SHOWN);
+  const renderField = (field: ClientDataFieldDTO) => (
+    <FieldRow key={field.column} field={field} revealed={revealed[field.column]} canReveal={canReveal} onReveal={(column) => revealMutation.mutate(column)} />
+  );
+  // One contract opens by itself; with several, each shows just its number until opened. Either can be minimized.
+  const singleContract = data.client.contracts.length === 1;
   return (
     <div className="space-y-2.5">
       {data.clients.length > 1 && !readOnly && (
@@ -224,38 +298,18 @@ export function ClientDataSection({ conversationId, readOnly }: { conversationId
         </select>
       )}
       {data.client.contracts.map((contract) => (
-        <ContractCard key={contract.number} contract={contract} conversationId={conversationId} canSendBoleto={!readOnly} />
+        <ContractCard
+          key={contract.number}
+          contract={contract}
+          conversationId={conversationId}
+          canSendBoleto={!readOnly}
+          defaultOpen={singleContract}
+          renderField={renderField}
+        />
       ))}
       <div className="space-y-0.5">
-        {visibleFields.map((field) => {
-          const value = revealed[field.column] ?? field.value;
-          return (
-            <div key={field.column} className="flex items-start justify-between gap-2 text-xs">
-              <span className="max-w-[45%] shrink-0 truncate text-muted" title={field.column}>
-                {field.column}
-              </span>
-              <span className="flex min-w-0 flex-1 items-start justify-end gap-1 text-right">
-                <span className="min-w-0 break-words">{value}</span>
-                {field.sensitive && !revealed[field.column] ? (
-                  canReveal && (
-                    <button
-                      type="button"
-                      onClick={() => revealMutation.mutate(field.column)}
-                      className="focus-ring shrink-0 rounded p-0.5 text-muted hover:text-[var(--color-text)]"
-                      aria-label={`Mostrar ${field.column}`}
-                      title="Mostrar (fica registrado na auditoria)"
-                    >
-                      <Eye className="h-3 w-3" />
-                    </button>
-                  )
-                ) : (
-                  <CopyButton value={value} />
-                )}
-              </span>
-            </div>
-          );
-        })}
-        {fields.length > 8 && (
+        {visibleFields.map(renderField)}
+        {fields.length > CLIENT_FIELDS_SHOWN && (
           <button type="button" onClick={() => setShowAll((v) => !v)} className="focus-ring text-[11px] font-medium text-primary hover:underline">
             {showAll ? "Mostrar menos" : `Mostrar todas (${fields.length})`}
           </button>

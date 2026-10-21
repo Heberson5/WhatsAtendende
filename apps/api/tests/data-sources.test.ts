@@ -232,4 +232,26 @@ describe("Fontes de dados", () => {
     expect(await prisma.notification.count({ where: { type: "DATA_SOURCE_ERROR" } })).toBeGreaterThan(0);
     await syncDueDataSources(new Date(Date.now() + 2 * 3_600_000));
   });
+
+  it("painel: rótulos sem colunas de controle, cada contrato com os seus dados e o titular uma vez só", async () => {
+    const holderTwice = "Rita Teste;Titular;01/02/1980;Não | Rita Teste;Titular;01/02/1980;Não | Lia Teste;Filha;01/02/2015;Não";
+    const csv = [
+      "telefone_whatsapp,clientes_neste_telefone,codigo_cliente,nome_cliente,cidade,numero_contrato,plano,situacao_contrato,data_contrato,quantidade_beneficiarios,beneficiarios,parcelas_suspensao",
+      `5565999990099,1,99,Rita Teste,Cuiabá - MT,K-1,Plano Ouro,Ativo,15/04/2014,3,${holderTwice},4`,
+      "5565999990099,1,99,Rita Teste,Cuiabá - MT,K-2,Plano Prata,Ativo,03/02/2021,1,Rita Teste;Titular;01/02/1980;Não,4",
+    ].join("\n");
+    const created = await request(app).post("/api/data-sources").set("Authorization", `Bearer ${adminToken}`).send({ name: "ERP", kind: "UPLOAD" });
+    await request(app).post(`/api/data-sources/${created.body.id}/upload`).set("Authorization", `Bearer ${adminToken}`).attach("file", Buffer.from(csv), { filename: "erp.csv", contentType: "text/csv" });
+    await request(app).post(`/api/data-sources/${created.body.id}/active`).set("Authorization", `Bearer ${adminToken}`).send({ active: true }).expect(200);
+
+    const conversation = await conversationFor("5565999990099");
+    const { client } = (await request(app).get(`/api/conversations/${conversation.id}/client-data`).set("Authorization", `Bearer ${agentToken}`)).body;
+    expect(client.fields.map((f: { column: string }) => f.column)).toEqual(["telefone_whatsapp", "codigo_cliente", "nome_cliente", "cidade"]);
+    expect(client.contracts.map((c: { number: string; fields: { column: string; value: string }[] }) => [c.number, c.fields])).toEqual([
+      ["K-1", [{ column: "data_contrato", value: "15/04/2014", sensitive: false }]],
+      ["K-2", [{ column: "data_contrato", value: "03/02/2021", sensitive: false }]],
+    ]);
+    expect(client.contracts[0].beneficiaries.map((b: { name: string }) => b.name)).toEqual(["Rita Teste", "Lia Teste"]);
+  });
+
 });

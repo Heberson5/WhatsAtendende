@@ -11,6 +11,35 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.18.0",
+    date: "21 out 2026",
+    name: "Dados do cliente mais claros",
+    summary: "O painel do cliente ganhou nomes legíveis, contratos separados que abrem e fecham, o titular uma vez só, largura ajustável e conversas anteriores sob demanda.",
+    notes: [
+      {
+        type: "melhoria",
+        area: "atendimento",
+        title: "Dados do cliente mais claros",
+        text: "Os dados aparecem com nomes legíveis e acentuados (Situação do contrato, Dia do vencimento, Valor em atraso) e valores formatados (R$ 396,40, telefone e CEP). Cada contrato vira um bloco com seus próprios dados, boletos e beneficiários; com mais de um contrato, cada um mostra só o número e a situação até ser aberto, e um contrato único vem aberto e também pode ser minimizado. O titular aparece uma vez só na lista de beneficiários. Saíram do painel as colunas de controle (parcelas para suspender, clientes neste telefone, quantidade de beneficiários) e a linha Cliente desde.",
+        where: "Atendimento › painel do cliente",
+      },
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "Painel do cliente com largura ajustável",
+        text: "Arraste a borda esquerda do painel do cliente (ou do grupo) para deixá-lo mais largo ou mais estreito, entre 280 e 560 px. A largura fica lembrada neste computador; dois cliques na borda voltam ao tamanho padrão.",
+        where: "Atendimento",
+      },
+      {
+        type: "melhoria",
+        area: "atendimento",
+        title: "Conversas anteriores sob demanda",
+        text: "O painel mostra as 3 últimas conversas do cliente; Mostrar mais carrega mais 5 a cada clique. O atendente de cada uma aparece pelo nome completo do cadastro.",
+        where: "Atendimento › painel do cliente",
+      },
+    ],
+  },
+  {
     version: "2.17.1",
     date: "21 out 2026",
     name: "Pesquisa e encerramento lidos no celular",

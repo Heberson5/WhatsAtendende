@@ -14,6 +14,9 @@ import { contactDisplayName } from "../../lib/contact-display";
 import { formatPhone } from "../../lib/format-phone";
 import { ContactPhoto } from "../common/ContactPhoto";
 
+// "Mostrar mais" under Conversas anteriores loads this many at a time.
+const PREVIOUS_PAGE = 5;
+
 const STATUS_LABEL: Record<string, string> = {
   IN_FLOW: "No fluxo",
   NEW: "Nova",
@@ -85,6 +88,8 @@ export function ClientPanel({
   const [addingTag, setAddingTag] = useState(false);
   const [tagInput, setTagInput] = useState("");
   const [openPrevious, setOpenPrevious] = useState<string | null>(null);
+  // "Mostrar mais" under Conversas anteriores: the pages loaded after the first few.
+  const [morePrevious, setMorePrevious] = useState<ContactPanelDTO["previousConversations"]>([]);
   const { data: clientData } = useClientData(conversation.id);
 
   const { data: panel } = useQuery({
@@ -113,7 +118,16 @@ export function ClientPanel({
     onError: (err) => toast.error(getApiErrorMessage(err)),
   });
 
+  const loadMorePrevious = useMutation({
+    mutationFn: async (skip: number) =>
+      (await api.get<ContactPanelDTO["previousConversations"]>(`/conversations/${conversation.id}/previous-conversations`, { params: { skip, take: PREVIOUS_PAGE } })).data,
+    onSuccess: (page) => setMorePrevious((list) => [...list, ...page]),
+    onError: (err) => toast.error(getApiErrorMessage(err)),
+  });
+
   const name = contactDisplayName(conversation.contact, conversation.channel);
+  const previous = [...(panel?.previousConversations ?? []), ...morePrevious];
+  const previousLeft = (panel?.previousConversationCount ?? 0) - previous.length;
 
   if (collapsed) {
     const rail = [
@@ -195,7 +209,6 @@ export function ClientPanel({
           {conversation.acceptedAt && (
             <Row label="Em atendimento" value={formatDistanceToNow(new Date(conversation.acceptedAt), { locale: ptBR })} />
           )}
-          {panel && <Row label="Cliente desde" value={format(new Date(panel.firstConversationAt), "dd/MM/yyyy")} />}
         </Section>
 
         <Section title="Etiquetas">
@@ -274,7 +287,7 @@ export function ClientPanel({
         <Section title={`Conversas anteriores · ${panel?.previousConversationCount ?? 0}`}>
           {panel && panel.previousConversations.length === 0 && <p className="text-xs text-muted">Primeira conversa deste cliente.</p>}
           <div className="space-y-1.5">
-            {panel?.previousConversations.map((c) => (
+            {previous.map((c) => (
               <button
                 type="button"
                 key={c.id}
@@ -290,6 +303,18 @@ export function ClientPanel({
               </button>
             ))}
           </div>
+          {previousLeft > 0 && (
+            <button
+              type="button"
+              onClick={() => loadMorePrevious.mutate(previous.length)}
+              disabled={loadMorePrevious.isPending}
+              className="focus-ring mt-2 text-[11px] font-semibold text-primary hover:underline disabled:opacity-60"
+            >
+              {loadMorePrevious.isPending
+                ? "Carregando..."
+                : `Mostrar mais ${Math.min(PREVIOUS_PAGE, previousLeft)} (${previousLeft} ${previousLeft === 1 ? "restante" : "restantes"})`}
+            </button>
+          )}
         </Section>
         {openPrevious && <PreviousConversationDrawer conversationId={conversation.id} previousId={openPrevious} onClose={() => setOpenPrevious(null)} />}
       </div>
