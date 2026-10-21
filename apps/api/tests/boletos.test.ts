@@ -124,7 +124,7 @@ describe("Envio de boleto", () => {
     expect(unconfirmed.status).toBe(400);
   });
 
-  it("envia mensagem, PDF e linha digitável de cada parcela, com nota e auditoria", async () => {
+  it("envia mensagem, um só PDF com as parcelas e a linha digitável de cada uma, com nota e auditoria", async () => {
     const files = provider.sentFiles.length;
     const texts = provider.sentTexts.length;
     const res = await request(app)
@@ -132,7 +132,7 @@ describe("Envio de boleto", () => {
       .set("Authorization", `Bearer ${agentToken}`)
       .send({ parcelIds: [parcelIds["D-1"], parcelIds["D-2"]], message: "Seguem os boletos", confirmOverdue: true });
     expect(res.status).toBe(201);
-    expect(provider.sentFiles.length - files).toBe(2);
+    expect(provider.sentFiles.length - files).toBe(1);
     expect(provider.sentTexts.length - texts).toBe(3);
     expect(provider.sentTexts.at(-1)!.text).toMatch(/Linha digitável \(vencimento 10\/02\/2026, R\$\s?90,00\):\n00190\.00009/);
     expect(await prisma.conversationNote.count({ where: { conversationId, body: { startsWith: "Boleto enviado por Ana" } } })).toBe(2);

@@ -9,7 +9,7 @@ import { Errors } from "../../lib/http-error";
 import { env } from "../../config/env";
 import { buildContracts, clientRows, parseBrDate, usableSource, type ColumnMap, type ConversationForData, type Row } from "../data-sources/data-sources.service";
 import { barcodeFromLinha, buildBarcode, freeFieldBB, linhaFromBarcode } from "./boleto-code";
-import { renderBoletoPdf } from "./boleto-pdf";
+import { renderBoletosPdf } from "./boleto-pdf";
 
 // Only Banco do Brasil boletos are sent.
 export const BANKS: Record<string, { name: string; label: string }> = {
@@ -226,52 +226,60 @@ export async function previewBoletos(conversation: ConversationForData & { conta
     message:
       items.length === 1
         ? `Olá${firstName ? `, ${firstName}` : ""}! Segue o boleto da parcela com vencimento em ${items[0].due}, no valor de ${items[0].value}. Logo abaixo vai a linha digitável para pagar pelo aplicativo do banco.`
-        : `Olá${firstName ? `, ${firstName}` : ""}! Seguem os boletos de ${items.length} parcelas. Depois de cada arquivo vai a linha digitável para pagar pelo aplicativo do banco.`,
+        : `Olá${firstName ? `, ${firstName}` : ""}! Seguem os boletos de ${items.length} parcelas, todos no mesmo arquivo. Logo abaixo vão as linhas digitáveis para pagar pelo aplicativo do banco.`,
     warnings: items.filter((i) => i.overdue).map((i) => `Boleto vencido em ${i.due} — o banco pode cobrar juros ou recusar`),
   };
 }
 
-export interface PreparedBoleto {
-  item: BoletoPreviewItemDTO;
+export interface PreparedBoletos {
+  items: BoletoPreviewItemDTO[];
   pdf: Buffer;
   fileName: string;
   storageKey: string;
 }
 
-/** Builds the PDFs (saved to uploads) for sending; the caller sends and records them. */
+/** Builds the one PDF with every parcel's boleto (saved to uploads) for sending; the caller sends and records it. */
 export async function prepareBoletos(
   conversation: ConversationForData & { contact: { name: string | null; phone: string | null } },
   parcelIds: string[],
   confirmOverdue: boolean
-): Promise<PreparedBoleto[]> {
+): Promise<PreparedBoletos> {
   const { map, parcels } = await resolveSelection(conversation, parcelIds);
   const today = todayStart();
+  const issued = format(new Date(), "dd/MM/yyyy");
   const col = (data: Row, role: keyof ColumnMap) => (map[role] ? data[map[role]!] : undefined) || null;
-  const prepared: PreparedBoleto[] = [];
-  for (const p of parcels) {
-    const item = previewItem(p, today);
-    if (item.overdue && !confirmOverdue) throw Errors.badRequest(`Boleto vencido em ${item.due} — confirme o envio`);
-    const pdf = await renderBoletoPdf({
+  const items = parcels.map((p) => previewItem(p, today));
+  const overdue = items.find((item) => item.overdue);
+  if (overdue && !confirmOverdue) throw Errors.badRequest(`Boleto vencido em ${overdue.due} — confirme o envio`);
+  const pdf = await renderBoletosPdf(
+    parcels.map((p, i) => ({
       bankLabel: BANKS[p.boleto.bank].label,
       bankName: BANKS[p.boleto.bank].name,
       linha: p.boleto.linha,
       barcode: p.boleto.barcode,
-      due: item.due,
-      value: item.value,
+      due: items[i].due,
+      value: items[i].value,
+      issued,
       ourNumber: p.boleto.ourNumber,
       document: p.document,
       contract: p.contract,
+      wallet: col(p.data, "wallet") ?? "",
       payeeName: col(p.data, "payeeName") ?? "",
       payeeDocument: col(p.data, "payeeDocument"),
-      agencyAccount: [col(p.data, "agency"), col(p.data, "account")].filter(Boolean).join(" / "),
+      agencyAccount: [col(p.data, "agency"), col(p.data, "account")].filter(Boolean).join("/"),
       payerName: col(p.data, "clientName") ?? conversation.contact.name ?? "",
       payerDocument: col(p.data, "cpf"),
-      payerAddress: [col(p.data, "payerAddress"), col(p.data, "payerCity"), col(p.data, "payerZip")].filter(Boolean).join(" — ") || null,
-    });
-    const storageKey = `${randomUUID()}.pdf`;
-    fs.writeFileSync(path.join(env.UPLOAD_DIR, storageKey), pdf);
-    prepared.push({ item, pdf, storageKey, fileName: `boleto-${p.contract}-${item.due.replace(/\//g, "-")}.pdf` });
-  }
-  return prepared;
+      payerAddress: col(p.data, "payerAddress"),
+      payerLocality: [col(p.data, "payerZip"), col(p.data, "payerCity")].filter(Boolean).join("   ") || null,
+    }))
+  );
+  const storageKey = `${randomUUID()}.pdf`;
+  fs.writeFileSync(path.join(env.UPLOAD_DIR, storageKey), pdf);
+  const contracts = [...new Set(items.map((item) => item.contract))];
+  const fileName =
+    items.length === 1
+      ? `boleto-${items[0].contract}-${items[0].due.replace(/\//g, "-")}.pdf`
+      : `boletos-${contracts.length === 1 ? `${contracts[0]}-` : ""}${items.length}-parcelas.pdf`;
+  return { items, pdf, storageKey, fileName };
 }
 

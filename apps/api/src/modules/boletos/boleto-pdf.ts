@@ -8,21 +8,44 @@ export interface BoletoPdfData {
   barcode: string;
   due: string;
   value: string;
+  /** The day the PDF is made — Data do documento / Data de processamento. */
+  issued: string;
   ourNumber: string;
   document: string | null;
   contract: string;
+  wallet: string;
   payeeName: string;
   payeeDocument: string | null;
   agencyAccount: string;
   payerName: string;
   payerDocument: string | null;
   payerAddress: string | null;
+  /** CEP and city, the last line of the sacado. */
+  payerLocality: string | null;
 }
 
-// Interleaved 2 of 5: each digit as 5 elements, 1 = wide.
+// Interleaved 2 of 5: each digit as 5 elements, 1 = wide. Narrow = 0.254 mm (FEBRABAN), the barcode ≈ 103 mm.
 const I25 = ["00110", "10001", "01001", "11000", "00101", "10100", "01100", "00011", "10010", "01010"];
-const NARROW = 0.96;
+const NARROW = 0.72;
 const WIDE = NARROW * 3;
+
+// A4 in points: three boletos per page, one under the other, each cut along a dashed line.
+const BOLETOS_PER_PAGE = 3;
+const PAGE_MARGIN = 18;
+const SLOT_HEIGHT = 268;
+const STUB_X = PAGE_MARGIN;
+const STUB_WIDTH = 100;
+const SLIP_X = 126;
+const SLIP_WIDTH = 451;
+const SIDE_WIDTH = 112; // the slip's right column: vencimento, valores
+const ROW = 18;
+const SIDE_ROW = 17;
+
+const LINE = "#4a6a9a";
+const LABEL = "#333";
+const HIGHLIGHT = "#fbf3a6";
+const BANK_YELLOW = "#fcea16";
+const BANK_BLUE = "#173c80";
 
 function drawBarcode(doc: PDFKit.PDFDocument, code: string, x: number, y: number, height: number) {
   let cursor = x;
@@ -45,56 +68,180 @@ function drawBarcode(doc: PDFKit.PDFDocument, code: string, x: number, y: number
   bar(false, true);
 }
 
-function box(doc: PDFKit.PDFDocument, x: number, y: number, w: number, h: number, label: string, value: string, bold = false) {
-  doc.rect(x, y, w, h).lineWidth(0.5).stroke("#000");
-  doc.fillColor("#444").font("Helvetica").fontSize(6).text(label, x + 3, y + 2, { width: w - 6 });
-  doc.fillColor("#000").font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(9).text(value, x + 3, y + 11, { width: w - 6, ellipsis: true, lineBreak: false });
+function text(
+  doc: PDFKit.PDFDocument,
+  value: string,
+  x: number,
+  y: number,
+  width: number,
+  size: number,
+  options: { bold?: boolean; align?: "left" | "right"; color?: string } = {}
+) {
+  doc
+    .fillColor(options.color ?? "#000")
+    .font(options.bold ? "Helvetica-Bold" : "Helvetica")
+    .fontSize(size)
+    .text(value, x, y, { width, align: options.align ?? "left", lineBreak: false, ellipsis: true });
 }
 
-/** A one-page boleto (ficha de compensação) — the barcode is the same one the linha digitável encodes. */
-export function renderBoletoPdf(data: BoletoPdfData): Promise<Buffer> {
+interface CellOptions {
+  bold?: boolean;
+  align?: "left" | "right";
+  highlight?: boolean;
+  /** Slip cells are boxed; stub cells only have a line under them. */
+  boxed?: boolean;
+}
+
+function cell(doc: PDFKit.PDFDocument, x: number, y: number, w: number, h: number, label: string, value: string, options: CellOptions = {}) {
+  if (options.highlight) doc.rect(x, y, w, h).fill(HIGHLIGHT);
+  doc.lineWidth(0.6).strokeColor(LINE);
+  if (options.boxed) doc.rect(x, y, w, h).stroke();
+  else doc.moveTo(x, y + h).lineTo(x + w, y + h).stroke();
+  text(doc, label, x + 2, y + 1.5, w - 4, 5, { color: LABEL });
+  if (value) text(doc, value, x + 3, y + h - 8.5, w - 6, 6.5, { bold: options.bold, align: options.align });
+}
+
+function bankHeader(doc: PDFKit.PDFDocument, data: BoletoPdfData, x: number, y: number, label: string) {
+  doc.rect(x, y + 3, 72, 10).fill(BANK_YELLOW);
+  text(doc, data.bankName.toUpperCase(), x + 2, y + 5.5, 68, 6.5, { bold: true, color: BANK_BLUE });
+  doc.lineWidth(1).strokeColor(LINE).moveTo(x + 75, y + 1).lineTo(x + 75, y + 16).stroke();
+  text(doc, label, x + 78, y + 4, 40, 9, { bold: true, color: "#666" });
+}
+
+/** Recibo do sacado: the narrow stub on the left, kept by the client. */
+function drawStub(doc: PDFKit.PDFDocument, data: BoletoPdfData, top: number) {
+  const x = STUB_X;
+  const w = STUB_WIDTH;
+  bankHeader(doc, data, x, top, data.bankLabel.split("-")[0]);
+  doc.lineWidth(1).strokeColor(LINE).moveTo(x, top + 18).lineTo(x + w, top + 18).stroke();
+  let y = top + 19;
+  const stacked: [string, string, CellOptions?][] = [
+    ["Vencimento", data.due, { align: "right" }],
+    ["Agência / Código Cedente", data.agencyAccount, { align: "right" }],
+    ["Nosso Número", data.ourNumber, { align: "right" }],
+    ["Número do Documento", data.document ?? data.contract],
+  ];
+  for (const [label, value, options] of stacked) {
+    cell(doc, x, y, w, ROW, label, value, options);
+    y += ROW;
+  }
+  cell(doc, x, y, w * 0.45, ROW, "Espécie Moeda", "R$");
+  cell(doc, x + w * 0.45, y, w * 0.55, ROW, "Carteira", data.wallet);
+  y += ROW;
+  cell(doc, x, y, w * 0.45, ROW, "Aceite", "N");
+  y += ROW;
+  const valueRow = SIDE_ROW - 2;
+  const values: [string, string][] = [
+    ["1 (=) Valor do Documento", data.value],
+    ["2 (-) Desconto / Abatimento", ""],
+    ["3 (-) Outras Deduções", ""],
+    ["4 (+) Mora / Multa", ""],
+    ["5 (+) Outros Acréscimos", ""],
+    ["6 (=) Valor Cobrado", ""],
+  ];
+  for (const [label, value] of values) {
+    cell(doc, x, y, w, valueRow, label, value, { align: "right" });
+    y += valueRow;
+  }
+  cell(doc, x, y, w, 22, "Sacado", data.payerName);
+  y += 25;
+  text(doc, "Recibo do Sacado", x + 1, y, w, 5.5, { color: LABEL });
+  text(doc, "autenticar no verso", x, y + 8, w, 4.5, { align: "right", color: LABEL });
+}
+
+/** Ficha de compensação: what the bank reads, with the barcode. */
+function drawSlip(doc: PDFKit.PDFDocument, data: BoletoPdfData, top: number) {
+  const x = SLIP_X;
+  const main = SLIP_WIDTH - SIDE_WIDTH;
+  const side = x + main;
+  bankHeader(doc, data, x, top, data.bankLabel);
+  text(doc, data.linha, x + 150, top + 4, SLIP_WIDTH - 150, 10, { bold: true, align: "right" });
+  let y = top + 19;
+
+  cell(doc, x, y, main, ROW, "Local de Pagamento", "Pagável em qualquer banco até o vencimento", { boxed: true });
+  cell(doc, side, y, SIDE_WIDTH, ROW, "Vencimento", data.due, { boxed: true, align: "right", highlight: true });
+  y += ROW;
+  cell(doc, x, y, main, ROW, "Cedente", data.payeeName, { boxed: true });
+  if (data.payeeDocument) text(doc, data.payeeDocument, x + main - 120, y + ROW - 8.5, 117, 6.5, { align: "right" });
+  cell(doc, side, y, SIDE_WIDTH, ROW, "Agência / Código Cedente", data.agencyAccount, { boxed: true, align: "right" });
+  y += ROW;
+  const documentRow: [string, string, number][] = [
+    ["Data do Documento", data.issued, 0.21],
+    ["Número do Documento", data.document ?? data.contract, 0.22],
+    ["Espécie Documento", "DM", 0.17],
+    ["Aceite", "N", 0.13],
+    ["Data Process.", data.issued, 0.27],
+  ];
+  let cx = x;
+  for (const [label, value, share] of documentRow) {
+    cell(doc, cx, y, main * share, ROW, label, value, { boxed: true });
+    cx += main * share;
+  }
+  cell(doc, side, y, SIDE_WIDTH, ROW, "Nosso Número", data.ourNumber, { boxed: true, align: "right" });
+  y += ROW;
+  const bankRow: [string, string, number][] = [
+    ["Uso do Banco", "", 0.12],
+    ["Cip", "", 0.09],
+    ["Carteira", data.wallet, 0.17],
+    ["Espécie Moeda", "R$", 0.17],
+    ["Quantidade", "", 0.17],
+    ["Valor", "", 0.28],
+  ];
+  cx = x;
+  for (const [label, value, share] of bankRow) {
+    cell(doc, cx, y, main * share, ROW, label, value, { boxed: true });
+    cx += main * share;
+  }
+  cell(doc, side, y, SIDE_WIDTH, ROW, "1 (=) Valor do Documento", data.value, { boxed: true, align: "right", highlight: true, bold: true });
+  y += ROW;
+
+  const instructionsHeight = SIDE_ROW * 5;
+  cell(doc, x, y, main, instructionsHeight, "Instruções de responsabilidade do Cedente", "", { boxed: true });
+  const instructions = [
+    "-> Após o vencimento o banco pode cobrar juros e multa.",
+    `-> Contrato: ${data.contract}${data.document ? ` · Documento: ${data.document}` : ""}`,
+  ];
+  instructions.forEach((line, i) => text(doc, line, x + 8, y + 10 + i * 8.5, main - 16, 6.5));
+  ["2 (-) Desconto / Abatimento", "3 (-) Outras Deduções", "4 (+) Mora / Multa", "5 (+) Outros Acréscimos", "6 (=) Valor Cobrado"].forEach((label, i) =>
+    cell(doc, side, y + i * SIDE_ROW, SIDE_WIDTH, SIDE_ROW, label, "", { boxed: true })
+  );
+  y += instructionsHeight;
+
+  const payerHeight = 36;
+  doc.lineWidth(0.6).strokeColor(LINE).rect(x, y, SLIP_WIDTH, payerHeight).stroke();
+  text(doc, "Sacado:", x + 2, y + 1.5, 60, 5, { color: LABEL });
+  text(doc, `${data.payerName}  (${data.contract})`, x + 8, y + 8, main - 70, 6.5, { bold: true });
+  if (data.payerDocument) text(doc, data.payerDocument, side - 60, y + 8, 120, 6.5, { bold: true });
+  if (data.payerAddress) text(doc, data.payerAddress, x + 8, y + 16.5, SLIP_WIDTH - 16, 6.5, { bold: true });
+  if (data.payerLocality) text(doc, data.payerLocality, x + 8, y + 25, SLIP_WIDTH - 16, 6.5, { bold: true });
+  y += payerHeight;
+  text(doc, "Sacador / Avalista:", x + 2, y + 1.5, 100, 5, { color: LABEL });
+  doc.lineWidth(1).strokeColor(LINE).moveTo(x, y + 8).lineTo(x + SLIP_WIDTH, y + 8).stroke();
+  text(doc, "Ficha de Compensação", side - 20, y + 11, SIDE_WIDTH + 20, 8, { bold: true, align: "right", color: "#777" });
+  drawBarcode(doc, data.barcode, x + 6, y + 11, 37);
+}
+
+/**
+ * The boletos in one PDF, three to a page one under the other — each with the recibo do sacado on the left and the
+ * ficha de compensação (whose barcode is the one the linha digitável encodes) on the right.
+ */
+export function renderBoletosPdf(boletos: BoletoPdfData[]): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: "A4", margin: 36 });
+    const doc = new PDFDocument({ size: "A4", margin: 0, autoFirstPage: false });
     const chunks: Buffer[] = [];
     doc.on("data", (c: Buffer) => chunks.push(c));
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
 
-    const left = 36;
-    const width = 523;
-    let y = 60;
-    doc.font("Helvetica-Bold").fontSize(14).text(data.bankName, left, y);
-    doc.fontSize(14).text(`| ${data.bankLabel} |`, left + 190, y);
-    doc.fontSize(11).text(data.linha, left + 260, y + 2, { width: width - 260, align: "right" });
-    y += 24;
-    const row = 26;
-    box(doc, left, y, 400, row, "Local de pagamento", "Pagável em qualquer banco, lotérica ou aplicativo de banco");
-    box(doc, left + 400, y, 123, row, "Vencimento", data.due, true);
-    y += row;
-    box(doc, left, y, 400, row, "Beneficiário", `${data.payeeName}${data.payeeDocument ? ` — CNPJ ${data.payeeDocument}` : ""}`);
-    box(doc, left + 400, y, 123, row, "Agência / Código do beneficiário", data.agencyAccount);
-    y += row;
-    box(doc, left, y, 140, row, "Número do documento", data.document ?? "");
-    box(doc, left + 140, y, 140, row, "Contrato", data.contract);
-    box(doc, left + 280, y, 120, row, "Espécie", "R$");
-    box(doc, left + 400, y, 123, row, "Nosso número", data.ourNumber);
-    y += row;
-    doc.rect(left, y, 400, 70).lineWidth(0.5).stroke("#000");
-    doc.fillColor("#444").font("Helvetica").fontSize(6).text("Instruções", left + 3, y + 2);
-    doc
-      .fillColor("#000")
-      .fontSize(8)
-      .text("Boleto enviado pelo atendimento. Depois do vencimento o banco pode cobrar juros e multa ou recusar o pagamento.", left + 3, y + 12, { width: 394 });
-    box(doc, left + 400, y, 123, 35, "(=) Valor do documento", data.value, true);
-    box(doc, left + 400, y + 35, 123, 35, "(=) Valor cobrado", "");
-    y += 70;
-    doc.rect(left, y, width, 46).lineWidth(0.5).stroke("#000");
-    doc.fillColor("#444").font("Helvetica").fontSize(6).text("Pagador", left + 3, y + 2);
-    doc.fillColor("#000").fontSize(9).text(`${data.payerName}${data.payerDocument ? ` — CPF/CNPJ ${data.payerDocument}` : ""}`, left + 3, y + 12, { width: width - 6 });
-    if (data.payerAddress) doc.fontSize(8).text(data.payerAddress, left + 3, y + 26, { width: width - 6 });
-    y += 58;
-    drawBarcode(doc, data.barcode, left, y, 50);
-    doc.fillColor("#444").fontSize(6).text("Autenticação mecânica — Ficha de compensação", left + 330, y + 54, { width: 193, align: "right" });
+    boletos.forEach((data, i) => {
+      const slot = i % BOLETOS_PER_PAGE;
+      if (slot === 0) doc.addPage();
+      const top = PAGE_MARGIN + slot * SLOT_HEIGHT;
+      drawStub(doc, data, top);
+      drawSlip(doc, data, top);
+      const cut = top + SLOT_HEIGHT - 6;
+      doc.lineWidth(0.5).strokeColor("#888").dash(1, { space: 2.5 }).moveTo(PAGE_MARGIN, cut).lineTo(SLIP_X + SLIP_WIDTH, cut).stroke().undash();
+    });
     doc.end();
   });
 }
