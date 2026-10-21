@@ -486,10 +486,16 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
           .then((photoUrl) => (photoUrl ? conversationsService.updateContactPhoto(contact.id, photoUrl) : undefined))
           .catch(() => undefined);
       }
-      // The customer answering the satisfaction survey of a closed conversation (or thanking for it) — kept there, nothing new opens.
-      // Only the text of a text message can be a score or a thank-you: a picture or an audio is somebody who wants to talk.
+      // The customer answering the satisfaction survey of a closed conversation, or thanking after its last message — kept
+      // there, nothing new opens. Only the text of a text message can be a score or a thank-you: a picture or an audio is
+      // somebody who wants to talk.
       const surveyBody = event.type === "TEXT" ? event.body ?? null : null;
-      if (await satisfaction.captureSurveyAnswer(connectionId, contact, { body: surveyBody, providerMessageId: event.providerMessageId })) return;
+      const kept = { body: surveyBody, providerMessageId: event.providerMessageId };
+      if ((await satisfaction.captureSurveyAnswer(connectionId, contact, kept)) || (await satisfaction.captureThanksAfterClose(connectionId, contact, kept))) {
+        // Nobody opens a closed conversation to read it: the phone must not keep the chat as unread.
+        await provider.markRead(event.chatId, [event.providerMessageId]).catch((err) => logger.warn({ err, connectionId }, "failed to mark a kept message as read on the phone"));
+        return;
+      }
 
       const { conversation, isNewConversation, autoAssignedAgentId, flowId, closedMessage } = await conversationsService.findOrOpenConversationForInboundMessage(
         connectionId,

@@ -11,6 +11,28 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.17.1",
+    date: "21 out 2026",
+    name: "Pesquisa e encerramento lidos no celular",
+    summary: "A nota da pesquisa e o obrigado do cliente depois do encerramento ficam como lidos no celular e não voltam para a fila.",
+    notes: [
+      {
+        type: "correcao",
+        area: "atendimento",
+        title: "Conversas encerradas sem mensagens não lidas no celular",
+        text: "A nota da pesquisa de satisfação e as respostas do cliente guardadas na conversa encerrada ficavam como não lidas no celular, porque só eram marcadas como lidas quando alguém abria a conversa. Agora são marcadas como lidas na hora.",
+        where: "Atendimento",
+      },
+      {
+        type: "correcao",
+        area: "atendimento",
+        title: "Obrigado depois do encerramento não volta para a fila",
+        text: "Um agradecimento simples (obrigado, valeu, ok, 👍...) enviado até 24 horas depois da última mensagem da plataforma, como a mensagem de encerramento, fica na conversa encerrada, marcado como lido, sem abrir atendimento na fila. Uma pergunta, um áudio ou uma foto continuam abrindo uma conversa nova.",
+        where: "Atendimento",
+      },
+    ],
+  },
+  {
     version: "2.17.0",
     date: "21 out 2026",
     name: "Voltar, Menu inicial e Encerrar no fluxo",
