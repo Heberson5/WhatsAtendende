@@ -2149,7 +2149,7 @@ export interface PreviousConversationDetailDTO {
 
 export type ReleaseNoteType = "novo" | "melhoria" | "correcao";
 
-export type ReleaseNoteArea = "geral" | "atendimento" | "gestao" | "contatos" | "dashboard" | "usuarios" | "respostas" | "fluxo" | "conexoes" | "configuracoes" | "landingPage" | "administracao";
+export type ReleaseNoteArea = "geral" | "atendimento" | "gestao" | "contatos" | "dashboard" | "usuarios" | "respostas" | "fluxo" | "dados" | "conexoes" | "configuracoes" | "landingPage" | "administracao";
 
 export interface ReleaseNoteImageDTO {
   /** Address of the screenshot: /notas-de-versao/… (shipped with the system) or /uploads/release-notes/… (sent in Configurações). */
@@ -2205,6 +2205,7 @@ export const RELEASE_NOTE_AREAS: Record<ReleaseNoteArea, { label: string; requir
   usuarios: { label: "Usuários", requires: [PERMISSION.USUARIOS_VISUALIZAR] },
   respostas: { label: "Respostas", requires: [PERMISSION.RESPOSTAS_RAPIDAS_GERENCIAR] },
   fluxo: { label: "Fluxo", requires: [PERMISSION.FLUXO_VISUALIZAR] },
+  dados: { label: "Dados", requires: [PERMISSION.FONTES_DADOS_VER] },
   conexoes: { label: "Conexões", requires: [PERMISSION.CONEXOES_GERENCIAR] },
   configuracoes: { label: "Configurações", requires: [PERMISSION.CONFIGURACOES_GERENCIAR] },
   landingPage: { label: "Landing Page", requires: [PERMISSION.LANDING_PAGE_VISUALIZAR] },
@@ -2395,6 +2396,20 @@ export interface DataSourceDTO {
   lastSyncError: string | null;
   /** Being read right now (a big sheet takes minutes); the panel shows "Processando..." until it ends. */
   syncing: boolean;
+  /** Every connection not linked to another active source, or only connectionIds. */
+  allConnections: boolean;
+  connectionIds: string[];
+  /** Bank code → BoletoLayout id. */
+  bankLayouts: Record<string, string>;
+}
+
+/** A bank found in a source's parcels, and the layout its boletos come out in. */
+export interface DataSourceBankDTO {
+  code: string;
+  name: string;
+  parcels: number;
+  /** Boletos of this bank can be sent (validated with real ones). */
+  enabled: boolean;
 }
 
 export interface ClientBeneficiaryDTO {
@@ -2509,21 +2524,28 @@ export interface BoletoPreviewDTO {
   warnings: string[];
 }
 
-/**
- * Instruções do boleto (Configurações › Fontes de dados): the lines printed in "Instruções de responsabilidade do
- * Cedente". {multa} and {juros_dia} are worked out from each boleto's original value.
- */
-export interface BoletoInstructionsDTO {
+// --- Dados › Mensagens do boleto: instruction lines printed on the boleto -------------------------------------------
+
+/** {multa} and {juros_dia} are worked out from each boleto's original value. */
+export interface BoletoInstructionInput {
+  name: string;
   finePercent: number;
   interestMonthPercent: number;
   lines: string[];
+}
+
+export interface BoletoInstructionDTO extends BoletoInstructionInput {
+  id: string;
+  /** Names of the layouts that bring it in with {mensagem:Nome}. */
+  usedBy: string[];
 }
 
 export const BOLETO_INSTRUCTION_LINES_MAX = 6;
 export const BOLETO_INSTRUCTION_LINE_MAX_LENGTH = 90;
 export const BOLETO_INSTRUCTION_TAGS = ["{multa}", "{juros_dia}", "{contrato}", "{documento}", "{vencimento}", "{valor}"] as const;
 
-export const DEFAULT_BOLETO_INSTRUCTIONS: BoletoInstructionsDTO = {
+export const DEFAULT_BOLETO_INSTRUCTION: BoletoInstructionInput = {
+  name: "Instruções padrão",
   finePercent: 2,
   interestMonthPercent: 1,
   lines: [
@@ -2537,9 +2559,9 @@ export const DEFAULT_BOLETO_INSTRUCTIONS: BoletoInstructionsDTO = {
 
 const centsText = (cents: number) => (cents / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-/** The instruction lines of one boleto: multa = value × %, juros ao dia = value × % ao mês ÷ 30, rounded to the cent. */
+/** Instruction lines of one boleto: multa = value × %, juros ao dia = value × % ao mês ÷ 30, rounded to the cent. */
 export function fillBoletoInstructions(
-  settings: BoletoInstructionsDTO,
+  settings: Pick<BoletoInstructionInput, "finePercent" | "interestMonthPercent" | "lines">,
   boleto: { cents: number; contract: string; document: string | null; due: string }
 ): string[] {
   const values: Record<string, string> = {
@@ -2551,6 +2573,114 @@ export function fillBoletoInstructions(
     "{valor}": centsText(boleto.cents),
   };
   return settings.lines.map((line) => line.replace(/\{(multa|juros_dia|contrato|documento|vencimento|valor)\}/g, (tag) => values[tag]));
+}
+
+// --- Dados › Layouts de boleto ------------------------------------------------------------------------------------
+
+/** Banks a layout can be made for (the boleto code is only built for these). */
+export const BOLETO_BANKS: Record<string, string> = { "001": "Banco do Brasil" };
+
+export const BOLETO_LAYOUT_MODELS = {
+  CARNE: { label: "Carnê: recibo à esquerda e ficha", maxPerPage: 3 },
+  PADRAO: { label: "Padrão: recibo em cima e ficha", maxPerPage: 1 },
+  DEMONSTRATIVO: { label: "Com demonstrativo: mensagem, recibo e ficha", maxPerPage: 1 },
+  FICHA: { label: "Só a ficha de compensação", maxPerPage: 3 },
+} as const;
+export type BoletoLayoutModel = keyof typeof BOLETO_LAYOUT_MODELS;
+
+/** "Data do Documento" / "Data Process.": the day the PDF is printed, or left blank. */
+export type BoletoDateSource = "PRINT" | "BLANK";
+
+export interface BoletoLayoutSettings {
+  paymentPlace: string;
+  documentKind: string;
+  acceptance: string;
+  documentDate: BoletoDateSource;
+  processDate: BoletoDateSource;
+  showLogo: boolean;
+  showPayerDocument: boolean;
+  showPayerAddress: boolean;
+  showPayeeDocument: boolean;
+  showGuarantor: boolean;
+  /** Yellow behind Vencimento and Valor do Documento. */
+  highlight: boolean;
+  /** The "Instruções" box: {mensagem:Nome} lines and/or fixed lines. */
+  instructions: string;
+  /** The DEMONSTRATIVO model's top box — same tags. */
+  demonstrative: string;
+}
+
+export const DEFAULT_BOLETO_LAYOUT_SETTINGS: BoletoLayoutSettings = {
+  paymentPlace: "Pagável em qualquer banco até o vencimento",
+  documentKind: "DM",
+  acceptance: "N",
+  documentDate: "PRINT",
+  processDate: "PRINT",
+  showLogo: true,
+  showPayerDocument: true,
+  showPayerAddress: true,
+  showPayeeDocument: true,
+  showGuarantor: false,
+  highlight: true,
+  instructions: `{mensagem:${DEFAULT_BOLETO_INSTRUCTION.name}}`,
+  demonstrative: "",
+};
+
+export interface BoletoLayoutInput {
+  name: string;
+  bankCode: string;
+  model: BoletoLayoutModel;
+  perPage: number;
+  settings: BoletoLayoutSettings;
+}
+
+export interface BoletoLayoutDTO extends BoletoLayoutInput {
+  id: string;
+  /** Names of the data sources that use it for its bank. */
+  usedBy: string[];
+}
+
+/** {mensagem:Nome} in a layout's text: brings in that instruction message. */
+export const BOLETO_MESSAGE_TAG = /\{mensagem:([^}]+)\}/g;
+
+// --- Dados › Mensagem de envio: the WhatsApp text that goes with the PDF -----------------------------------------
+
+export interface BoletoSendMessageDTO {
+  /** One boleto. */
+  single: string;
+  /** Several boletos in the same PDF. */
+  plural: string;
+}
+
+export const BOLETO_SEND_MESSAGE_MAX_LENGTH = 1000;
+export const BOLETO_SEND_MESSAGE_TAGS = ["{primeiro_nome}", "{cliente}", "{quantidade}", "{vencimento}", "{valor}", "{total}"] as const;
+
+export const DEFAULT_BOLETO_SEND_MESSAGE: BoletoSendMessageDTO = {
+  single: "Olá, {primeiro_nome}! Segue o boleto da parcela com vencimento em {vencimento}, no valor de {valor}.",
+  plural: "Olá, {primeiro_nome}! Seguem os boletos das {quantidade} parcelas, todos no mesmo arquivo, no total de {total}.",
+};
+
+/**
+ * The send message for these boletos: the plural one when there's more than one. {vencimento} and {valor} are the
+ * first boleto's (the only one, in the singular); {total} adds them all up.
+ */
+export function fillBoletoSendMessage(
+  settings: BoletoSendMessageDTO,
+  input: { clientName: string; boletos: { due: string; cents: number }[] }
+): string {
+  const template = input.boletos.length > 1 ? settings.plural : settings.single;
+  const total = input.boletos.reduce((sum, b) => sum + b.cents, 0);
+  const values: Record<string, string> = {
+    "{primeiro_nome}": input.clientName.trim().split(/\s+/)[0] ?? "",
+    "{cliente}": input.clientName.trim(),
+    "{quantidade}": String(input.boletos.length),
+    "{vencimento}": input.boletos[0]?.due ?? "",
+    "{valor}": `R$ ${centsText(input.boletos[0]?.cents ?? 0)}`,
+    "{total}": `R$ ${centsText(total)}`,
+  };
+  return template
+    .replace(/\{(primeiro_nome|cliente|quantidade|vencimento|valor|total)\}/g, (tag) => values[tag])
+    .replace(/,\s*!/g, "!");
 }
 
 /** Why a parcel can't get a boleto (shown next to it), or null when it can. */

@@ -35,7 +35,7 @@ quickRepliesRouter.get(
     const rows = (await service.listQuickRepliesForConnection(conversation.whatsappConnectionId)).map(toQuickReplyDTO);
     // Replies with {{dados.*}} only make sense with a usable data source: agents don't see them without one,
     // managers/admins do, marked unavailable. With one, the picker shows the text already filled.
-    const { available } = await dataSources.availableTags();
+    const { available } = await dataSources.availableTags(conversation);
     const visible = [];
     for (const reply of rows) {
       if (!dataSources.hasDataTags(reply.text)) visible.push(reply);

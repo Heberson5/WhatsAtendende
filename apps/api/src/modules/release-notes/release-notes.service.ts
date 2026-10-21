@@ -22,6 +22,12 @@ export async function listReleases(): Promise<ReleaseDTO[]> {
   return rows.map(toReleaseDTO).sort((a, b) => compareVersions(b.version, a.version));
 }
 
+/** The current version of the system: the highest number in Notas de versão (shipped or written there). */
+export async function currentVersion(): Promise<string | null> {
+  const rows = await prisma.releaseNoteVersion.findMany({ select: { version: true } });
+  return rows.map((r) => r.version).sort((a, b) => compareVersions(b, a))[0] ?? null;
+}
+
 /** The versions as this person sees them — only the notes about screens they can open. */
 export async function listVisibleReleases(role: Role, permissions: PermissionMap): Promise<ReleaseDTO[]> {
   return visibleReleases(await listReleases(), role, permissions);

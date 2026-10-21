@@ -10,12 +10,15 @@ export function BoletoSendModal({ conversationId, parcelIds, onClose, onSent }: 
   const [preview, setPreview] = useState<BoletoPreviewDTO | null>(null);
   const [message, setMessage] = useState("");
   const [confirmOverdue, setConfirmOverdue] = useState(false);
+  // One boleto: its linha goes by default. Several in the same PDF: only if the attendant ticks it.
+  const [sendLinhas, setSendLinhas] = useState(false);
 
   const previewMutation = useMutation({
     mutationFn: async () => (await api.post<BoletoPreviewDTO>(`/messages/conversations/${conversationId}/boletos/preview`, { parcelIds })).data,
     onSuccess: (data) => {
       setPreview(data);
       setMessage(data.message);
+      setSendLinhas(data.items.length === 1);
     },
     onError: (err) => {
       toast.error(getApiErrorMessage(err));
@@ -23,7 +26,7 @@ export function BoletoSendModal({ conversationId, parcelIds, onClose, onSent }: 
     },
   });
   const sendMutation = useMutation({
-    mutationFn: () => api.post(`/messages/conversations/${conversationId}/boletos/send`, { parcelIds, message, confirmOverdue }),
+    mutationFn: () => api.post(`/messages/conversations/${conversationId}/boletos/send`, { parcelIds, message, confirmOverdue, sendLinhas }),
     onSuccess: () => {
       toast.success(parcelIds.length === 1 ? "Boleto enviado." : `${parcelIds.length} boletos enviados.`);
       onSent();
@@ -83,7 +86,18 @@ export function BoletoSendModal({ conversationId, parcelIds, onClose, onSent }: 
             <label className="block">
               <span className="mb-1 block font-medium">Mensagem</span>
               <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={4} className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm" />
-              <span className="mt-1 block text-xs text-muted">Vai primeiro esta mensagem, depois o PDF de cada parcela seguido da linha digitável.</span>
+              <span className="mt-1 block text-xs text-muted">
+                Vai como comentário do PDF{preview.items.length > 1 ? `, que leva os ${preview.items.length} boletos (até 3 por página)` : ""}.
+              </span>
+            </label>
+          )}
+          {preview && (
+            <label className="flex items-start gap-2">
+              <input type="checkbox" checked={sendLinhas} onChange={(e) => setSendLinhas(e.target.checked)} className="mt-0.5 h-4 w-4 accent-[var(--color-primary)]" />
+              <span>
+                {preview.items.length > 1 ? "Enviar também a linha digitável de cada boleto, cada uma numa mensagem" : "Enviar também a linha digitável numa mensagem"}
+                <span className="block text-xs text-muted">Só os números, prontos para colar no aplicativo do banco. O cliente não vê o nome do atendente nela.</span>
+              </span>
             </label>
           )}
         </div>

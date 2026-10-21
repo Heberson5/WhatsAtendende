@@ -15,6 +15,7 @@ import { writeAudit } from "../../lib/audit";
 import { sendMail, sendTemplatedMail, previewTemplatedMail } from "../../lib/mail";
 import { env } from "../../config/env";
 import * as service from "./settings.service";
+import { currentVersion } from "../release-notes/release-notes.service";
 import { getPhoneSettings, updatePhoneSettings } from "../phone-numbers/phone-settings.service";
 
 export const settingsRouter = Router();
@@ -60,7 +61,8 @@ function mimeTypeForBrandingAsset(url: string): string {
 settingsRouter.get(
   "/branding",
   asyncHandler(async (_req, res) => {
-    res.json(await service.getBranding());
+    // The version shown in the menu follows Notas de versão by itself — nobody types it after an update.
+    res.json({ ...(await service.getBranding()), appVersion: await currentVersion() });
   })
 );
 
@@ -174,7 +176,6 @@ const brandingSchema = z.object({
   // Free-form version marker (e.g. "1.3.0") — bump it whenever the app
   // icon/name changes to trigger AppUpdateBanner for already-installed
   // users; null/empty clears the notice.
-  appVersion: z.string().trim().max(30).nullable().optional(),
   readReceiptColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).nullable().optional(),
 });
 

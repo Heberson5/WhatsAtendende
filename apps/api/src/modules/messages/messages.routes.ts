@@ -500,7 +500,8 @@ messagesRouter.post(
   })
 );
 
-// Boleto from Dados do cliente: preview first, then the editable message, one PDF with every parcel (three to a page) and each linha digitável.
+// Boleto from Dados do cliente: preview first, then one PDF with every parcel (in the source's layout) captioned with the
+// editable message, and — when ticked — each linha digitável.
 const boletoSelectionSchema = z.object({ parcelIds: z.array(z.string().uuid()).min(1).max(24) });
 messagesRouter.post(
   "/conversations/:conversationId/boletos/preview",
@@ -513,7 +514,8 @@ messagesRouter.post(
   })
 );
 
-const boletoSendSchema = boletoSelectionSchema.extend({ message: z.string().max(4096), confirmOverdue: z.boolean().default(false) });
+// sendLinhas: the attendant ticks it to also send each boleto's linha digitável in its own message.
+const boletoSendSchema = boletoSelectionSchema.extend({ message: z.string().max(4096), confirmOverdue: z.boolean().default(false), sendLinhas: z.boolean() });
 messagesRouter.post(
   "/conversations/:conversationId/boletos/send",
   requireAttendanceAccess,
@@ -525,20 +527,18 @@ messagesRouter.post(
     const message = input.message.trim() ? await dataSources.fillDataTagsOrThrow(conversation, input.message.trim(), req.auth!.role) : "";
     const connectionId = conversation.whatsappConnectionId!;
     const phone = conversation.contact.phone!;
-    const sendText = async (body: string) => {
-      const created = await service.createOutboundMessage({ conversationId: conversation.id, agentId: req.auth!.userId, type: "TEXT", body });
-      await whatsappService.sendOutboundText(connectionId, created.id, phone, body, req.auth!.displayName);
-    };
 
-    if (message) await sendText(message);
-    const document = await service.createOutboundMessage({ conversationId: conversation.id, agentId: req.auth!.userId, type: "DOCUMENT" });
+    // The message goes as the PDF's caption (comentário), like any file sent with text.
+    const document = await service.createOutboundMessage({ conversationId: conversation.id, agentId: req.auth!.userId, type: "DOCUMENT", body: message || null });
     await service.addAttachment(document.id, { fileName: prepared.fileName, mimeType: "application/pdf", sizeBytes: prepared.pdf.length, storageKey: prepared.storageKey, kind: "DOCUMENT" });
-    await whatsappService.sendOutboundFile(connectionId, document.id, phone, prepared.pdf, prepared.fileName, "application/pdf", req.auth!.displayName);
+    await whatsappService.sendOutboundFile(connectionId, document.id, phone, prepared.pdf, prepared.fileName, "application/pdf", req.auth!.displayName, message || undefined);
     for (const item of prepared.items) {
-      // Only the digits, without the agent's name: the client copies it straight into the bank's app.
-      const linhaDigits = item.linha.replace(/\D/g, "");
-      const linhaMessage = await service.createOutboundMessage({ conversationId: conversation.id, agentId: req.auth!.userId, type: "TEXT", body: linhaDigits });
-      await whatsappService.sendOutboundText(connectionId, linhaMessage.id, phone, linhaDigits, null);
+      if (input.sendLinhas) {
+        // Only the digits, ready to paste in the bank's app. The client doesn't see the agent's name; the platform does.
+        const linhaDigits = item.linha.replace(/\D/g, "");
+        const linhaMessage = await service.createOutboundMessage({ conversationId: conversation.id, agentId: req.auth!.userId, type: "TEXT", body: linhaDigits });
+        await whatsappService.sendOutboundText(connectionId, linhaMessage.id, phone, linhaDigits, null);
+      }
       await prisma.conversationNote.create({
         data: {
           conversationId: conversation.id,

@@ -14,8 +14,7 @@ export interface Branding {
   // label) — separate from companyName/logoUrl, see settings.service.ts.
   appName: string | null;
   appIconUrl: string | null;
-  // Bumped by an admin whenever the icon/name above changes — see
-  // AppUpdateBanner.tsx.
+  // The newest version in Notas de versão — shown in the menu, never typed.
   appVersion: string | null;
   // Overrides the "lida" (read) tick color — null means it follows
   // secondaryColor automatically, see styles/index.css's

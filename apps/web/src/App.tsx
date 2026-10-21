@@ -19,6 +19,7 @@ import ConexoesPage from "./pages/conexoes/ConexoesPage";
 import FluxoPage from "./pages/fluxo/FluxoPage";
 import FlowEditorPage from "./pages/fluxo/FlowEditorPage";
 import ConfiguracoesPage from "./pages/configuracoes/ConfiguracoesPage";
+import DadosPage from "./pages/dados/DadosPage";
 import AuditoriaPage from "./pages/auditoria/AuditoriaPage";
 import MeuPerfilPage from "./pages/perfil/MeuPerfilPage";
 import LandingPagePage from "./pages/landing-page/LandingPagePage";
@@ -102,6 +103,9 @@ export default function App() {
           <Route element={<PermissionRoute permission={PERMISSION.FLUXO_VISUALIZAR} />}>
             <Route path="/fluxo" element={<FluxoPage />} />
             <Route path="/fluxo/:id" element={<FlowEditorPage />} />
+          </Route>
+          <Route element={<PermissionRoute permission={PERMISSION.FONTES_DADOS_VER} />}>
+            <Route path="/dados" element={<DadosPage />} />
           </Route>
           <Route element={<PermissionRoute permission={PERMISSION.CONFIGURACOES_GERENCIAR} />}>
             <Route path="/configuracoes" element={<ConfiguracoesPage />} />

@@ -1555,6 +1555,12 @@ model DataSource {
   overrideContactName Boolean         @default(false)
   maxAgeHours         Int             @default(24)
   refreshMinutes      Int             @default(60)
+  // The connections whose conversations use this source. allConnections = every connection not linked to another
+  // active source (only one such source may be active).
+  allConnections      Boolean         @default(true)
+  connectionIds       String[]        @default([])
+  // Bank code ("001") → BoletoLayout id: the layout each bank's boletos come out in, for this source.
+  bankLayouts         Json            @default("{}")
   columns             String[]        @default([])
   rowCount            Int             @default(0)
   // When the data itself was produced (file's last modification) — what "Dados de dd/mm hh:mm" shows.
@@ -1631,4 +1637,30 @@ model ChatMessage {
   createdAt          DateTime @default(now())
 
   @@index([roomId, createdAt])
+}
+
+/// Dados › Layouts de boleto: how a bank's boleto PDF looks. `settings` holds BoletoLayoutSettings (see types).
+model BoletoLayout {
+  id        String   @id @default(uuid())
+  name      String
+  bankCode  String
+  model     String
+  perPage   Int      @default(1)
+  settings  Json     @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([bankCode, name])
+}
+
+/// Dados › Mensagens do boleto: instruction lines printed on the boleto, with multa/juros worked out from its value.
+/// A layout brings them in with {mensagem:Nome}.
+model BoletoInstruction {
+  id                   String   @id @default(uuid())
+  name                 String   @unique
+  finePercent          Float    @default(0)
+  interestMonthPercent Float    @default(0)
+  lines                String[] @default([])
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 }

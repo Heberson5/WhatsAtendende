@@ -39,8 +39,8 @@ export function BoletoValidationSection() {
   });
 
   return (
-    <div className="border-t border-border pt-5">
-      <h2 className="text-base font-semibold">Boletos</h2>
+    <div className="shadow-soft max-w-3xl rounded-card border border-border bg-surface p-6">
+      <h2 className="text-base font-semibold">Validação de boletos</h2>
       <p className="mt-1 text-sm text-muted">
         O boleto é gerado só com os dados da fonte, nunca com uma linha digitada. Antes de liberar um banco, confira 3 boletos reais: informe o nosso número e a linha
         digitável de cada um. O banco só é liberado quando os 3 saírem idênticos.

@@ -1,13 +1,12 @@
 import { useSearchParams } from "react-router-dom";
 import clsx from "clsx";
-import { Clock3, Columns3, Database, FileDown, KeyRound, Mail, MailPlus, Palette, Phone, ShieldCheck, CalendarDays, Sparkles, type LucideIcon } from "lucide-react";
+import { Clock3, Columns3, FileDown, KeyRound, Mail, MailPlus, Palette, Phone, ShieldCheck, CalendarDays, Sparkles, type LucideIcon } from "lucide-react";
 import { PERMISSION, type Permission } from "@whatsatendende/types";
 import { BrandingPanel } from "./BrandingPanel";
 import { AppInstallPanel } from "./AppInstallPanel";
 import { ExportacoesPanel } from "./ExportacoesPanel";
 import { FeriadosPanel } from "./FeriadosPanel";
 import { FilaSettingsPanel } from "./FilaSettingsPanel";
-import { DataSourcesPanel } from "./DataSourcesPanel";
 import { NumerosTelefonePanel } from "./NumerosTelefonePanel";
 import { EmailSettingsPanel } from "./EmailSettingsPanel";
 import { EmailTemplatesPanel } from "./EmailTemplatesPanel";
@@ -17,14 +16,13 @@ import { SecuritySettingsPanel } from "./SecuritySettingsPanel";
 import { VisoesColunasPanel } from "./VisoesColunasPanel";
 import { useAuthStore } from "../../store/auth-store";
 
-type Tab = "fontes-dados" | "branding" | "exportacoes" | "email" | "email-templates" | "feriados" | "fila" | "telefone" | "seguranca" | "permissoes" | "notas-de-versao" | "visoes";
+type Tab = "branding" | "exportacoes" | "email" | "email-templates" | "feriados" | "fila" | "telefone" | "seguranca" | "permissoes" | "notas-de-versao" | "visoes";
 
 // Grouped by subject in the left-hand section menu.
 const TABS: { key: Tab; label: string; group: string; icon: LucideIcon }[] = [
   { key: "fila", label: "Fila", group: "Atendimento", icon: Clock3 },
   { key: "feriados", label: "Feriados", group: "Atendimento", icon: CalendarDays },
   { key: "telefone", label: "Números de telefone", group: "Atendimento", icon: Phone },
-  { key: "fontes-dados", label: "Fontes de dados", group: "Atendimento", icon: Database },
   { key: "branding", label: "Identidade visual", group: "Aparência", icon: Palette },
   { key: "exportacoes", label: "Exportações", group: "Aparência", icon: FileDown },
   { key: "visoes", label: "Visões de colunas", group: "Aparência", icon: Columns3 },
@@ -51,7 +49,6 @@ const TAB_PERMISSION: Partial<Record<Tab, Permission>> = {
   fila: PERMISSION.CONFIGURACOES_FILA_VISUALIZAR,
   telefone: PERMISSION.CONFIGURACOES_TELEFONE_VISUALIZAR,
   visoes: PERMISSION.CONFIGURACOES_VISOES_VISUALIZAR,
-  "fontes-dados": PERMISSION.FONTES_DADOS_VER,
 };
 
 export default function ConfiguracoesPage() {
@@ -131,7 +128,6 @@ export default function ConfiguracoesPage() {
         {activeTab === "email-templates" && <EmailTemplatesPanel />}
         {activeTab === "feriados" && <FeriadosPanel />}
         {activeTab === "fila" && <FilaSettingsPanel />}
-        {activeTab === "fontes-dados" && <DataSourcesPanel />}
         {activeTab === "telefone" && <NumerosTelefonePanel />}
         {activeTab === "visoes" && <VisoesColunasPanel />}
         {activeTab === "seguranca" && role === "ADMIN" && <SecuritySettingsPanel />}

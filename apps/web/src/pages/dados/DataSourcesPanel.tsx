@@ -4,11 +4,19 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import clsx from "clsx";
 import { Database, FileSpreadsheet, Link2, LogIn, Pencil, Plus, RefreshCw, Trash2, Upload } from "lucide-react";
-import { DATA_SOURCE_ROLES, PERMISSION, type DataSourceDTO, type DataSourceKind, type DataSourceRole, type DataSourceStatus } from "@whatsatendende/types";
+import {
+  DATA_SOURCE_ROLES,
+  PERMISSION,
+  type BoletoLayoutDTO,
+  type DataSourceBankDTO,
+  type DataSourceDTO,
+  type DataSourceKind,
+  type DataSourceRole,
+  type DataSourceStatus,
+} from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
-import { BoletoInstructionsSection } from "./BoletoInstructionsSection";
-import { BoletoValidationSection } from "./BoletoValidationSection";
+import { ConnectionScopePicker } from "../respostas/ConnectionScopePicker";
 
 const KIND_LABEL: Record<DataSourceKind, string> = {
   LINK: "Planilha por link (OneDrive ou Google)",
@@ -38,6 +46,9 @@ type Draft = {
   maxAgeHours: number;
   refreshMinutes: number;
   columns: string[];
+  allConnections: boolean;
+  connectionIds: string[];
+  bankLayouts: Record<string, string>;
 };
 
 function newDraft(kind: DataSourceKind): Draft {
@@ -52,6 +63,9 @@ function newDraft(kind: DataSourceKind): Draft {
     maxAgeHours: 24,
     refreshMinutes: 60,
     columns: [],
+    allConnections: true,
+    connectionIds: [],
+    bankLayouts: {},
   };
 }
 
@@ -69,7 +83,61 @@ const SYNC_POLL_MS = 5_000;
 
 const inputClass = "focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm";
 
-/** Configurações › Fontes de dados: the spreadsheet or database behind "Dados do cliente", the {{dados.*}} tags and the boleto. */
+/** Each bank found in the source's parcels, with the layout its boletos come out in. */
+function BankLayoutsField({ sourceId, value, onChange }: { sourceId: string; value: Record<string, string>; onChange: (value: Record<string, string>) => void }) {
+  const { data: banks } = useQuery({
+    queryKey: ["data-source-banks", sourceId],
+    queryFn: async () => (await api.get<DataSourceBankDTO[]>(`/boletos/sources/${sourceId}/banks`)).data,
+  });
+  const { data: layouts } = useQuery({ queryKey: ["boleto-layouts"], queryFn: async () => (await api.get<BoletoLayoutDTO[]>("/boletos/layouts")).data });
+  return (
+    <div>
+      <p className="text-sm font-medium">Layout de boleto por banco</p>
+      <p className="mb-1.5 text-xs text-muted">Os bancos das parcelas desta fonte. Cada um sai no layout escolhido aqui (Dados › Layouts de boleto).</p>
+      {banks?.length === 0 && <p className="text-xs text-muted">Nenhum banco nas parcelas (confira a coluna &quot;Código do banco&quot;).</p>}
+      {banks && banks.length > 0 && (
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-[11px] uppercase text-muted">
+              <th className="py-1 font-semibold">Banco</th>
+              <th className="py-1 font-semibold">Parcelas</th>
+              <th className="py-1 font-semibold">Layout</th>
+            </tr>
+          </thead>
+          <tbody>
+            {banks.map((bank) => {
+              const options = layouts?.filter((l) => l.bankCode === bank.code) ?? [];
+              return (
+                <tr key={bank.code} className="border-t border-border">
+                  <td className="py-1.5">
+                    {bank.name} ({bank.code})
+                  </td>
+                  <td className="py-1.5">{bank.parcels.toLocaleString("pt-BR")}</td>
+                  <td className="py-1.5">
+                    {options.length === 0 ? (
+                      <span className="text-xs text-muted">Sem envio de boleto</span>
+                    ) : (
+                      <select value={value[bank.code] ?? options[0].id} onChange={(e) => onChange({ ...value, [bank.code]: e.target.value })} className={inputClass}>
+                        {options.map((layout) => (
+                          <option key={layout.id} value={layout.id}>
+                            {layout.name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    {options.length > 0 && !bank.enabled && <span className="mt-0.5 block text-xs text-warning">Envio bloqueado até validar 3 boletos reais</span>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+/** Dados › Fontes de dados: the spreadsheets or databases behind "Dados do cliente", the {{dados.*}} tags and the boleto — each for its connections. */
 export function DataSourcesPanel() {
   const queryClient = useQueryClient();
   const permissions = useAuthStore((s) => s.permissions);
@@ -82,6 +150,11 @@ export function DataSourcesPanel() {
     // A big sheet is read in the background: check until it ends (the socket also refreshes it right when it does).
     refetchInterval: (query) => (query.state.data?.some((s) => s.syncing) ? SYNC_POLL_MS : false),
   });
+  const { data: connections } = useQuery({
+    queryKey: ["whatsapp-connections"],
+    queryFn: async () => (await api.get<{ id: string; name: string }[]>("/whatsapp/connections")).data,
+  });
+  const { data: layouts } = useQuery({ queryKey: ["boleto-layouts"], queryFn: async () => (await api.get<BoletoLayoutDTO[]>("/boletos/layouts")).data });
   const [draft, setDraft] = useState<Draft | null>(null);
   const [uploadFor, setUploadFor] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -119,6 +192,9 @@ export function DataSourcesPanel() {
         overrideContactName: d.overrideContactName,
         maxAgeHours: d.maxAgeHours,
         refreshMinutes: d.refreshMinutes,
+        allConnections: d.allConnections,
+        connectionIds: d.connectionIds,
+        bankLayouts: d.bankLayouts,
       };
       return (d.id ? await api.put<DataSourceDTO>(`/data-sources/${d.id}`, body) : await api.post<DataSourceDTO>("/data-sources", body)).data;
     },
@@ -180,6 +256,9 @@ export function DataSourcesPanel() {
       maxAgeHours: source.maxAgeHours,
       refreshMinutes: source.refreshMinutes,
       columns: source.columns,
+      allConnections: source.allConnections,
+      connectionIds: source.connectionIds,
+      bankLayouts: source.bankLayouts,
     });
   }
 
@@ -192,8 +271,8 @@ export function DataSourcesPanel() {
           <h2 className="text-base font-semibold">Fontes de dados</h2>
           <p className="mt-1 text-sm text-muted">
             A planilha ou o banco que alimenta &quot;Dados do cliente&quot;, as tags <code className="rounded bg-surface-alt px-1">{"{{dados.coluna}}"}</code> e o envio de
-            boleto. O cliente é achado pelo telefone (com ou sem 55 e com ou sem o 9). Só uma fonte fica ativa por vez, e nada aparece para o atendente se ela
-            estiver com erro ou passar do prazo de atualização.
+            boleto. O cliente é achado pelo telefone (com ou sem 55 e com ou sem o 9). Cada fonte vale para as conexões escolhidas nela, e várias podem ficar ativas
+            ao mesmo tempo. Nada aparece para o atendente se a fonte estiver com erro ou passar do prazo de atualização.
           </p>
         </div>
         {canAdd && !draft && (
@@ -238,6 +317,19 @@ export function DataSourcesPanel() {
                     {KIND_LABEL[source.kind]} · {source.rowCount.toLocaleString("pt-BR")} linhas
                     {source.dataUpdatedAt && ` · dados de ${format(new Date(source.dataUpdatedAt), "dd/MM HH:mm")}`}
                     {source.lastSyncAt && ` · lida às ${format(new Date(source.lastSyncAt), "dd/MM HH:mm")}`}
+                  </p>
+                  <p className="text-xs text-muted">
+                    Conexões:{" "}
+                    {source.allConnections
+                      ? "todas (as que não estão em outra fonte)"
+                      : connections
+                          ?.filter((c) => source.connectionIds.includes(c.id))
+                          .map((c) => c.name)
+                          .join(", ") || "nenhuma"}
+                    {Object.entries(source.bankLayouts).map(([bank, layoutId]) => {
+                      const layout = layouts?.find((l) => l.id === layoutId);
+                      return layout ? ` · ${bank} → ${layout.name}` : "";
+                    })}
                   </p>
                 </div>
                 {canEdit && (
@@ -411,6 +503,12 @@ export function DataSourcesPanel() {
               </Field>
             )}
           </div>
+          <ConnectionScopePicker
+            value={{ allConnections: draft.allConnections, connectionIds: draft.connectionIds }}
+            onChange={(scope) => setDraft({ ...draft, ...scope })}
+            hint="Nas conversas dessas conexões, os Dados do cliente, o envio de boleto e as tags de dados usam esta fonte. Uma conexão só pode estar em uma fonte ativa; “Todas as conexões” vale para as conexões que não estão em outra."
+          />
+          {draft.id && <BankLayoutsField sourceId={draft.id} value={draft.bankLayouts} onChange={(bankLayouts) => setDraft({ ...draft, bankLayouts })} />}
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={draft.overrideContactName} onChange={(e) => setDraft({ ...draft, overrideContactName: e.target.checked })} className="h-4 w-4 accent-[var(--color-primary)]" />
             O nome da planilha substitui o nome do contato (quando o telefone é de um cliente só)
@@ -474,9 +572,6 @@ export function DataSourcesPanel() {
           </div>
         </div>
       )}
-
-      <BoletoValidationSection />
-      <BoletoInstructionsSection />
     </div>
   );
 }
