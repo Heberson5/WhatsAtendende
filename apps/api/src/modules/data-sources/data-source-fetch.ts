@@ -24,6 +24,12 @@ export function normalizeColumn(name: string): string {
     .replace(/^_+|_+$/g, "");
 }
 
+/** A cell as the panel shows it. "NULL" is what SQL Server Management Studio writes for an empty cell when copying results. */
+function cellValue(cell: string | undefined): string {
+  const value = (cell ?? "").trim();
+  return value === "NULL" ? "" : value;
+}
+
 function toTable(header: string[], body: string[][], modifiedAt: Date | null): FetchedTable {
   const columns = header.map(normalizeColumn);
   if (columns.some((c) => !c)) throw new Error("A primeira linha precisa ter o nome de todas as colunas");
@@ -31,7 +37,7 @@ function toTable(header: string[], body: string[][], modifiedAt: Date | null): F
   if (body.length > MAX_ROWS) throw new Error(`A planilha tem mais de ${MAX_ROWS} linhas`);
   const rows = body
     .filter((cells) => cells.some((c) => c.trim() !== ""))
-    .map((cells) => Object.fromEntries(columns.map((c, i) => [c, (cells[i] ?? "").trim()])));
+    .map((cells) => Object.fromEntries(columns.map((c, i) => [c, cellValue(cells[i])])));
   return { columns, rows, modifiedAt };
 }
 

@@ -11,6 +11,21 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.18.1",
+    date: "21 out 2026",
+    name: "Planilha sem NULL",
+    summary: "Células com a palavra NULL, que o SQL Server escreve ao copiar resultados, ficam vazias nos Dados do cliente.",
+    notes: [
+      {
+        type: "correcao",
+        area: "configuracoes",
+        title: "NULL vira vazio na planilha",
+        text: "Ao copiar o resultado do SQL Server para o Excel, as células vazias vêm escritas como NULL. Agora o sistema lê essas células como vazias, e o atendente não vê mais NULL nos Dados do cliente.",
+        where: "Configurações › Fontes de dados",
+      },
+    ],
+  },
+  {
     version: "2.18.0",
     date: "21 out 2026",
     name: "Dados do cliente mais claros",
