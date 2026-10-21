@@ -28,11 +28,6 @@ export interface BrandingSettings {
   // circle/squircle crop. See PROMPT: "a logo... está aparecendo com fundo
   // preto... quero que fique com mais espaço nos cantos".
   appIconMaskableUrl: string | null;
-  // Set by an admin whenever the installed app's icon/name changes, so
-  // already-installed users (whose OS-level icon/label is frozen at install
-  // time and never auto-updates) can be told to reinstall — see
-  // AppUpdateBanner.tsx. null/empty means no reinstall notice is shown.
-  appVersion: string | null;
   // Overrides the double-check "lida" (read) tick color, which otherwise
   // follows secondaryColor automatically — null means "no override, use
   // secondaryColor". Exists because the secondary color is sometimes too
@@ -51,7 +46,6 @@ const DEFAULT_BRANDING: BrandingSettings = {
   appName: null,
   appIconUrl: null,
   appIconMaskableUrl: null,
-  appVersion: null,
   readReceiptColor: null,
 };
 

@@ -11,6 +11,7 @@ import { sendNoReplyRemindersIfDue, sendQueueRemindersIfDue } from "./lib/queue-
 import { processNoReturnConversations } from "./modules/conversations/no-return.service";
 import { endIdleSessions } from "./modules/auth/auth.service";
 import { syncDefaultReleaseNotes } from "./modules/release-notes/release-notes.service";
+import { ensureBoletoDefaults } from "./modules/boletos/boleto-layouts.service";
 import { syncDefaultFlows } from "./modules/flows/default-flows";
 import { syncContactsIfDue } from "./lib/contacts-sync";
 import { env } from "./config/env";
@@ -56,6 +57,8 @@ async function main() {
 
   // The release notes shipped with this version — each one copied into the database once (see syncDefaultReleaseNotes).
   await syncDefaultReleaseNotes().catch((err) => logger.error({ err }, "failed to copy the shipped release notes"));
+  // Dados › Layouts and Mensagens do boleto start with the Banco do Brasil layouts and "Instruções padrão".
+  await ensureBoletoDefaults();
   // Flows shipped with this version (e.g. Univida) — copied in once, switched off and with no connection.
   await syncDefaultFlows().catch((err) => logger.error({ err }, "failed to copy the shipped flows"));
 

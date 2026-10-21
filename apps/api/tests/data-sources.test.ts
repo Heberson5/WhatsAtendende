@@ -238,6 +238,7 @@ describe("Fontes de dados", () => {
       .post("/api/data-sources")
       .set("Authorization", `Bearer ${adminToken}`)
       .send({ name: "Link", kind: "LINK", config: { url: "http://127.0.0.1:9/planilha.csv" } });
+    await prisma.dataSource.updateMany({ data: { active: false } });
     await request(app).post(`/api/data-sources/${link.body.id}/active`).set("Authorization", `Bearer ${adminToken}`).send({ active: true }).expect(200);
     const after = await prisma.dataSource.findUniqueOrThrow({ where: { id: link.body.id } });
     expect(after.lastSyncError).toBeTruthy();
@@ -255,6 +256,7 @@ describe("Fontes de dados", () => {
     ].join("\n");
     const created = await request(app).post("/api/data-sources").set("Authorization", `Bearer ${adminToken}`).send({ name: "ERP", kind: "UPLOAD" });
     await request(app).post(`/api/data-sources/${created.body.id}/upload`).set("Authorization", `Bearer ${adminToken}`).attach("file", Buffer.from(csv), { filename: "erp.csv", contentType: "text/csv" });
+    await prisma.dataSource.updateMany({ data: { active: false } });
     await request(app).post(`/api/data-sources/${created.body.id}/active`).set("Authorization", `Bearer ${adminToken}`).send({ active: true }).expect(200);
 
     const conversation = await conversationFor("5565999990099");
@@ -293,4 +295,32 @@ describe("Fontes de dados", () => {
     expect(found.body.items.map((c: { contractNumber: string }) => c.contractNumber)).toContain("K-1");
   });
 
+
+  it("fonte por conexão: a ligada à conexão vence a de todas; não deixa duas fontes para a mesma conexão", async () => {
+    const upload = async (name: string, client: string, body: Record<string, unknown> = {}) => {
+      const created = await request(app).post("/api/data-sources").set("Authorization", `Bearer ${adminToken}`).send({ name, kind: "UPLOAD", ...body });
+      const csv = ["telefone_whatsapp,codigo_cliente,nome_cliente", `5565999990077,1,${client}`].join("\n");
+      await request(app).post(`/api/data-sources/${created.body.id}/upload`).set("Authorization", `Bearer ${adminToken}`).attach("file", Buffer.from(csv), { filename: "f.csv", contentType: "text/csv" });
+      return created.body.id as string;
+    };
+    await prisma.dataSource.updateMany({ data: { active: false } });
+    const all = await upload("Todas", "Cliente Geral");
+    const linked = await upload("Só Dados", "Cliente da Conexão", { allConnections: false, connectionIds: [connectionId] });
+    const otherAll = await upload("Outra geral", "X");
+    const activate = (id: string) => request(app).post(`/api/data-sources/${id}/active`).set("Authorization", `Bearer ${adminToken}`).send({ active: true });
+    await activate(all).expect(200);
+    const conversation = await conversationFor("5565999990077");
+    const nameShown = async () => (await request(app).get(`/api/conversations/${conversation.id}/client-data`).set("Authorization", `Bearer ${agentToken}`)).body.client?.name;
+    expect(await nameShown()).toBe("Cliente Geral");
+    await activate(linked).expect(200);
+    expect(await nameShown()).toBe("Cliente da Conexão");
+
+    const second = await activate(otherAll);
+    expect(second.status).toBe(409);
+    expect(second.body.message).toContain("todas as conexões");
+    const sameConnection = await upload("Também Dados", "Y", { allConnections: false, connectionIds: [connectionId] });
+    const clash = await activate(sameConnection);
+    expect(clash.status).toBe(409);
+    expect(clash.body.message).toContain("uma conexão só pode estar em uma fonte ativa");
+  });
 });

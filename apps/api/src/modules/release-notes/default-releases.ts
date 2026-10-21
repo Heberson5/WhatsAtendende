@@ -11,6 +11,64 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.20.0",
+    date: "21 out 2026",
+    name: "Menu Dados: fontes por conexão e layouts de boleto",
+    summary:
+      "Novo menu Dados com as fontes de dados (agora uma para cada conexão), a validação, os layouts de boleto com prévia, as mensagens do boleto e a mensagem de envio no singular e no plural.",
+    notes: [
+      {
+        type: "novo",
+        area: "dados",
+        title: "Menu Dados",
+        text: "Fontes de dados saiu de Configurações e ganhou um menu próprio, com as guias na lateral: Fontes de dados, Validação de boletos, Layouts de boleto, Mensagens do boleto e Mensagem de envio.",
+        where: "Dados",
+      },
+      {
+        type: "novo",
+        area: "dados",
+        title: "Cada fonte de dados com as suas conexões",
+        text: "Em cada fonte você escolhe \"Todas as conexões\" ou só algumas, e várias fontes podem ficar ativas ao mesmo tempo. Nas conversas de uma conexão, os Dados do cliente, o boleto e as tags de dados usam a fonte dela. Uma conexão só pode estar em uma fonte ativa. A fonte que já estava ativa continua valendo para todas as conexões.",
+        where: "Dados › Fontes de dados › Editar",
+      },
+      {
+        type: "novo",
+        area: "dados",
+        title: "Layouts de boleto",
+        text: "Os layouts ficam agrupados por banco, com nome livre e prévia em PDF ao lado, que muda enquanto você edita. O Banco do Brasil já vem com o Boleto F (o carnê, até 3 por página), o Boleto padrão, o Boleto com demonstrativo e a Ficha de compensação. Em cada fonte de dados você escolhe o layout de cada banco.",
+        where: "Dados › Layouts de boleto",
+      },
+      {
+        type: "novo",
+        area: "dados",
+        title: "Mensagens do boleto",
+        text: "As instruções impressas no boleto viraram mensagens com nome, cada uma com a sua multa (%) e os seus juros (% ao mês). O layout traz a mensagem pela tag {mensagem:Nome}. As instruções que você já tinha salvas viraram a \"Instruções padrão\".",
+        where: "Dados › Mensagens do boleto",
+      },
+      {
+        type: "novo",
+        area: "dados",
+        title: "Mensagem de envio no singular e no plural",
+        text: "O texto que acompanha o boleto é configurado uma vez: um para um boleto e outro para vários, com {primeiro_nome}, {quantidade}, {vencimento}, {valor} e {total}. O sistema escolhe sozinho conforme a quantidade de boletos.",
+        where: "Dados › Mensagem de envio",
+      },
+      {
+        type: "melhoria",
+        area: "atendimento",
+        title: "Boleto com a mensagem como comentário e linha digitável opcional",
+        text: "A mensagem vai como comentário do PDF. A linha digitável de cada boleto vai numa mensagem só se o atendente marcar (marcada sozinha quando é um boleto só). Para o cliente ela vai só com os números, sem o nome do atendente; na plataforma aparece quem enviou.",
+        where: "Atendimento › Dados do cliente › Enviar boleto",
+      },
+      {
+        type: "melhoria",
+        area: "configuracoes",
+        title: "Versão do sistema automática",
+        text: "A versão mostrada no menu lateral e em Identidade visual agora é sempre a mais nova das Notas de versão, sem precisar digitar depois de cada atualização. O aviso de reinstalar o aplicativo aparece só quando o ícone ou o nome mudam.",
+        where: "Configurações › Identidade visual",
+      },
+    ],
+  },
+  {
     version: "2.19.3",
     date: "21 out 2026",
     name: "Instruções do boleto e linha digitável limpa",

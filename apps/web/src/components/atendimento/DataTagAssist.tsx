@@ -50,10 +50,10 @@ export function useDataTagAssist(conversationId: string | undefined, text: strin
       return;
     }
     api
-      .get<DataTagsDTO>("/data-sources/tags")
+      .get<DataTagsDTO>("/data-sources/tags", { params: conversationId ? { conversationId } : undefined })
       .then((res) => setTags(res.data))
       .catch(() => setTags(null));
-  }, [isTypingTag]);
+  }, [isTypingTag, conversationId]);
   const suggestions = typing && tags?.available ? tags.columns.filter((c) => c.startsWith(typing[1])).slice(0, 8) : [];
 
   /** The text ready to send (free fields filled), or null after warning why it can't go. */

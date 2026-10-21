@@ -48,8 +48,10 @@ dataSourcesRouter.use(requireAuth);
 // What the composer offers when "{{" is typed — any logged-in person.
 dataSourcesRouter.get(
   "/tags",
-  asyncHandler(async (_req, res) => {
-    res.json(await service.availableTags());
+  asyncHandler(async (req, res) => {
+    const conversationId = typeof req.query.conversationId === "string" ? req.query.conversationId : null;
+    const conversation = conversationId ? await prisma.conversation.findUnique({ where: { id: conversationId }, select: { whatsappConnectionId: true } }) : null;
+    res.json(await service.availableTags(conversation));
   })
 );
 
@@ -70,6 +72,9 @@ const sourceSchema = z
     overrideContactName: z.boolean().optional(),
     maxAgeHours: z.number().int().min(1).max(24 * 30).optional(),
     refreshMinutes: z.number().int().min(5).max(24 * 60).optional(),
+    allConnections: z.boolean().optional(),
+    connectionIds: z.array(z.string().uuid()).max(200).optional(),
+    bankLayouts: z.record(z.string().regex(/^\d{3}$/), z.string().uuid()).optional(),
   })
   .strict()
   .superRefine((s, ctx) => {

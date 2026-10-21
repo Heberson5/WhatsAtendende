@@ -82,6 +82,9 @@ export function toDataSourceDTO(source: DataSource): DataSourceDTO {
     lastSyncAt: source.lastSyncAt?.toISOString() ?? null,
     lastSyncError: source.lastSyncError,
     syncing: syncing.has(source.id),
+    allConnections: source.allConnections,
+    connectionIds: source.connectionIds,
+    bankLayouts: source.bankLayouts as Record<string, string>,
   };
 }
 
@@ -98,6 +101,9 @@ export interface DataSourceInput {
   overrideContactName?: boolean;
   maxAgeHours?: number;
   refreshMinutes?: number;
+  allConnections?: boolean;
+  connectionIds?: string[];
+  bankLayouts?: Record<string, string>;
 }
 
 export async function listDataSources(): Promise<DataSourceDTO[]> {
@@ -122,6 +128,9 @@ export async function createDataSource(input: DataSourceInput): Promise<DataSour
       overrideContactName: input.overrideContactName ?? false,
       maxAgeHours: input.maxAgeHours ?? 24,
       refreshMinutes: input.refreshMinutes ?? 60,
+      allConnections: input.allConnections ?? true,
+      connectionIds: input.connectionIds ?? [],
+      bankLayouts: input.bankLayouts ?? {},
     },
   });
   return toDataSourceDTO(source);
@@ -129,6 +138,9 @@ export async function createDataSource(input: DataSourceInput): Promise<DataSour
 
 export async function updateDataSource(id: string, input: Partial<DataSourceInput>): Promise<DataSourceDTO> {
   const source = await getDataSourceOrThrow(id);
+  if (source.active) {
+    await assertConnectionsFree(id, input.allConnections ?? source.allConnections, input.connectionIds ?? source.connectionIds);
+  }
   const secrets = input.secrets ? writeSecrets({ ...readSecrets(source), ...Object.fromEntries(Object.entries(input.secrets).filter(([, v]) => v)) }) : undefined;
   const updated = await prisma.dataSource.update({
     where: { id },
@@ -141,19 +153,39 @@ export async function updateDataSource(id: string, input: Partial<DataSourceInpu
       overrideContactName: input.overrideContactName,
       maxAgeHours: input.maxAgeHours,
       refreshMinutes: input.refreshMinutes,
+      allConnections: input.allConnections,
+      connectionIds: input.connectionIds,
+      bankLayouts: input.bankLayouts,
     },
   });
   realtimeEvents.dataSourceStatusChanged();
   return toDataSourceDTO(updated);
 }
 
-/** Only one source is active at a time: activating one turns the others off. */
+/**
+ * Several sources can be active, each for its connections: a connection belongs to at most one active source linked
+ * to it, and only one active source takes "Todas as conexões" (every connection not linked to another one).
+ */
+async function assertConnectionsFree(id: string, allConnections: boolean, connectionIds: string[]) {
+  const others = await prisma.dataSource.findMany({ where: { active: true, id: { not: id } }, select: { name: true, allConnections: true, connectionIds: true } });
+  if (allConnections) {
+    const all = others.find((o) => o.allConnections);
+    if (all) throw Errors.conflict(`A fonte "${all.name}" já está ativa para todas as conexões. Escolha as conexões desta fonte ou desative a outra.`);
+    return;
+  }
+  if (connectionIds.length === 0) throw Errors.badRequest("Escolha ao menos uma conexão para esta fonte");
+  for (const other of others.filter((o) => !o.allConnections)) {
+    const shared = other.connectionIds.filter((c) => connectionIds.includes(c));
+    if (shared.length === 0) continue;
+    const names = await prisma.whatsAppConnection.findMany({ where: { id: { in: shared } }, select: { name: true } });
+    throw Errors.conflict(`${names.map((n) => `"${n.name}"`).join(", ")} já pertence à fonte "${other.name}": uma conexão só pode estar em uma fonte ativa.`);
+  }
+}
+
 export async function setDataSourceActive(id: string, active: boolean): Promise<DataSourceDTO> {
-  await getDataSourceOrThrow(id);
-  const [, updated] = await prisma.$transaction([
-    prisma.dataSource.updateMany({ where: { id: { not: id }, active: true }, data: { active: false } }),
-    prisma.dataSource.update({ where: { id }, data: { active } }),
-  ]);
+  const source = await getDataSourceOrThrow(id);
+  if (active) await assertConnectionsFree(id, source.allConnections, source.connectionIds);
+  const updated = await prisma.dataSource.update({ where: { id }, data: { active } });
   realtimeEvents.dataSourceStatusChanged();
   return toDataSourceDTO(updated);
 }
@@ -354,18 +386,27 @@ export async function startSync(id: string, uploaded?: Buffer): Promise<DataSour
   return (await Promise.race([job, answerAnyway])) ?? toDataSourceDTO(await getDataSourceOrThrow(id));
 }
 
-/** Server timer: refreshes the active source when its interval is due (an uploaded file is only refreshed by a new upload). */
+/** Server timer: refreshes each active source when its interval is due (an uploaded file is only refreshed by a new upload). */
 export async function syncDueDataSources(now = new Date()) {
-  const source = await prisma.dataSource.findFirst({ where: { active: true, kind: { not: "UPLOAD" } } });
-  if (!source) return;
-  if (source.lastSyncAt && now.getTime() - source.lastSyncAt.getTime() < source.refreshMinutes * 60_000) return;
-  await syncDataSource(source.id);
+  const sources = await prisma.dataSource.findMany({ where: { active: true, kind: { not: "UPLOAD" } } });
+  for (const source of sources) {
+    if (syncing.has(source.id)) continue;
+    if (source.lastSyncAt && now.getTime() - source.lastSyncAt.getTime() < source.refreshMinutes * 60_000) continue;
+    await syncDataSource(source.id);
+  }
 }
 
 // --- Client data ---------------------------------------------------------------
 
-export async function usableSource() {
-  const source = await prisma.dataSource.findFirst({ where: { active: true } });
+/** The active source of a connection: the one linked to it, else the one for "Todas as conexões". */
+export async function sourceForConnection(connectionId: string | null) {
+  const linked = connectionId ? await prisma.dataSource.findFirst({ where: { active: true, allConnections: false, connectionIds: { has: connectionId } } }) : null;
+  return linked ?? (await prisma.dataSource.findFirst({ where: { active: true, allConnections: true } }));
+}
+
+/** The conversation's source, when its data can be used right now. */
+export async function usableSource(conversation: Pick<ConversationForData, "whatsappConnectionId">) {
+  const source = await sourceForConnection(conversation.whatsappConnectionId);
   return source && sourceStatus(source) === "OK" ? source : null;
 }
 
@@ -507,6 +548,7 @@ async function canViewSources(role: Role) {
 
 export interface ConversationForData {
   id: string;
+  whatsappConnectionId: string | null;
   dataClientKey: string | null;
   dataSuspensionAckAt: Date | null;
   contact: { phone: string | null };
@@ -530,7 +572,7 @@ export async function clientRows(source: DataSource, conversation: ConversationF
 
 export async function getClientData(conversation: ConversationForData, role: Role): Promise<ClientDataDTO> {
   const empty: ClientDataDTO = { status: "NO_SOURCE", reason: null, dataUpdatedAt: null, clients: [], selectedClientKey: null, client: null, suspensionWarningPending: false };
-  const source = await prisma.dataSource.findFirst({ where: { active: true } });
+  const source = await sourceForConnection(conversation.whatsappConnectionId);
   if (!source) return empty;
   const status = sourceStatus(source);
   const dataUpdatedAt = source.dataUpdatedAt?.toISOString() ?? null;
@@ -574,7 +616,7 @@ export async function getClientData(conversation: ConversationForData, role: Rol
 }
 
 export async function selectClient(conversation: ConversationForData, clientKey: string) {
-  const source = await usableSource();
+  const source = await usableSource(conversation);
   if (!source) throw Errors.badRequest("Dados do cliente indisponíveis no momento");
   const { byClient } = await clientRows(source, conversation);
   if (!byClient.has(clientKey)) throw Errors.badRequest("Cliente não encontrado para este telefone");
@@ -583,7 +625,7 @@ export async function selectClient(conversation: ConversationForData, clientKey:
 
 /** The real value of a sensitive column (the caller audits it). */
 export async function revealColumn(conversation: ConversationForData, column: string): Promise<string> {
-  const source = await usableSource();
+  const source = await usableSource(conversation);
   if (!source) throw Errors.badRequest("Dados do cliente indisponíveis no momento");
   if (!source.sensitiveColumns.includes(column)) throw Errors.badRequest("Esta coluna não é sensível");
   const { byClient, selectedKey } = await clientRows(source, conversation);
@@ -603,9 +645,14 @@ export function hasDataTags(text: string): boolean {
   return /\{\{\s*dados\./.test(text);
 }
 
-export async function availableTags(): Promise<DataTagsDTO> {
-  const source = await usableSource();
-  return source ? { available: true, columns: source.columns } : { available: false, columns: [] };
+/** The columns "{{" offers: the conversation's source, or every usable source when there's no conversation. */
+export async function availableTags(conversation: Pick<ConversationForData, "whatsappConnectionId"> | null): Promise<DataTagsDTO> {
+  if (conversation) {
+    const source = await usableSource(conversation);
+    return source ? { available: true, columns: source.columns } : { available: false, columns: [] };
+  }
+  const sources = (await prisma.dataSource.findMany({ where: { active: true } })).filter((s) => sourceStatus(s) === "OK");
+  return { available: sources.length > 0, columns: distinct(sources.flatMap((s) => s.columns)) };
 }
 
 /**
@@ -616,7 +663,7 @@ export async function availableTags(): Promise<DataTagsDTO> {
 export async function renderDataTags(conversation: ConversationForData, text: string, role: Role): Promise<DataTagRenderDTO> {
   const tags = [...text.matchAll(TAG_PATTERN)].map((m) => m[1]);
   if (tags.length === 0) return { text, missing: [] };
-  const source = await usableSource();
+  const source = await usableSource(conversation);
   if (!source) return { text, missing: distinct(tags) };
   const { byClient, selectedKey } = await clientRows(source, conversation);
   const rows = selectedKey ? byClient.get(selectedKey)! : [];

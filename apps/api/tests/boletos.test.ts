@@ -3,7 +3,7 @@ import request from "supertest";
 import { createApp } from "../src/app";
 import { prisma } from "../src/lib/prisma";
 import { __getProviderForTests } from "../src/modules/whatsapp/whatsapp.service";
-import { DEFAULT_BOLETO_INSTRUCTIONS, fillBoletoInstructions } from "@whatsatendende/types";
+import { DEFAULT_BOLETO_INSTRUCTION, DEFAULT_BOLETO_SEND_MESSAGE, fillBoletoInstructions, fillBoletoSendMessage } from "@whatsatendende/types";
 import { buildBoletoFromRow } from "../src/modules/boletos/boletos.service";
 import type { ColumnMap, Row } from "../src/modules/data-sources/data-sources.service";
 import type { MockWhatsAppProvider } from "@whatsatendende/whatsapp";
@@ -36,7 +36,9 @@ describe("Envio de boleto", () => {
   beforeAll(async () => {
     await resetDatabase();
     await prisma.dataSource.deleteMany();
-    await prisma.systemSetting.deleteMany({ where: { key: { in: ["boleto-validation", "boleto-instructions"] } } });
+    await prisma.systemSetting.deleteMany({ where: { key: { in: ["boleto-validation", "boleto-defaults", "boleto-send-message"] } } });
+    await prisma.boletoLayout.deleteMany();
+    await prisma.boletoInstruction.deleteMany();
     await createTestUser({ email: "admin-bol@test.dev", role: "ADMIN" });
     adminToken = await loginAs("admin-bol@test.dev");
     const connection = await request(app).post("/api/whatsapp/connections").set("Authorization", `Bearer ${adminToken}`).send({ name: "Boletos" });
@@ -121,43 +123,75 @@ describe("Envio de boleto", () => {
     const unconfirmed = await request(app)
       .post(`/api/messages/conversations/${conversationId}/boletos/send`)
       .set("Authorization", `Bearer ${agentToken}`)
-      .send({ parcelIds: [parcelIds["D-1"]], message: "Segue" });
+      .send({ parcelIds: [parcelIds["D-1"]], message: "Segue", sendLinhas: true });
     expect(unconfirmed.status).toBe(400);
   });
 
-  it("envia mensagem, um só PDF com as parcelas e a linha digitável de cada uma, com nota e auditoria", async () => {
+  it("prévia: mensagem de envio no plural para vários boletos", async () => {
+    const res = await preview([parcelIds["D-1"], parcelIds["D-2"]]);
+    expect(res.body.message).toBe("Olá, Cliente! Seguem os boletos das 2 parcelas, todos no mesmo arquivo, no total de R$ 180,00.");
+    const single = await preview([parcelIds["D-1"]]);
+    expect(single.body.message).toBe("Olá, Cliente! Segue o boleto da parcela com vencimento em 10/01/2026, no valor de R$ 90,00.");
+  });
+
+  it("envia um só PDF com a mensagem como comentário e, se marcado, a linha digitável de cada um; nota e auditoria", async () => {
     const files = provider.sentFiles.length;
     const texts = provider.sentTexts.length;
     const res = await request(app)
       .post(`/api/messages/conversations/${conversationId}/boletos/send`)
       .set("Authorization", `Bearer ${agentToken}`)
-      .send({ parcelIds: [parcelIds["D-1"], parcelIds["D-2"]], message: "Seguem os boletos", confirmOverdue: true });
+      .send({ parcelIds: [parcelIds["D-1"], parcelIds["D-2"]], message: "Seguem os boletos", confirmOverdue: true, sendLinhas: true });
     expect(res.status).toBe(201);
     expect(provider.sentFiles.length - files).toBe(1);
-    expect(provider.sentTexts.length - texts).toBe(3);
+    expect(provider.sentFiles.at(-1)!.caption).toBe("*Ana:*\n\nSeguem os boletos");
+    expect(provider.sentTexts.length - texts).toBe(2);
+    // In the platform the linha shows who sent it.
+    const linha = await prisma.message.findFirstOrThrow({ where: { conversationId, type: "TEXT" }, orderBy: { createdAt: "desc" } });
+    expect(linha.senderAgentId).toBeTruthy();
     const d2 = await prisma.dataSourceRow.findUniqueOrThrow({ where: { id: parcelIds["D-2"] } });
     // Only the digits of the linha digitável, without the agent's name.
     expect(provider.sentTexts.at(-1)!.text).toBe(buildBoletoFromRow(d2.data as Row, map).linha.replace(/\D/g, ""));
     expect(await prisma.conversationNote.count({ where: { conversationId, body: { startsWith: "Boleto enviado por Ana" } } })).toBe(2);
     expect(await prisma.auditLog.count({ where: { action: "BOLETO_SENT", entityId: conversationId } })).toBe(2);
+
+    const textsBefore = provider.sentTexts.length;
+    await request(app)
+      .post(`/api/messages/conversations/${conversationId}/boletos/send`)
+      .set("Authorization", `Bearer ${agentToken}`)
+      .send({ parcelIds: [parcelIds["D-1"], parcelIds["D-2"]], message: "", confirmOverdue: true, sendLinhas: false })
+      .expect(201);
+    expect(provider.sentTexts.length).toBe(textsBefore);
   });
 
-  it("instruções: multa e juros ao dia calculados sobre o valor original; o administrador edita", async () => {
-    const lines = fillBoletoInstructions(DEFAULT_BOLETO_INSTRUCTIONS, { cents: 12758, contract: "C-1", document: "D-9", due: "10/11/2026" });
+  it("instruções: multa e juros ao dia calculados sobre o valor original", () => {
+    const lines = fillBoletoInstructions(DEFAULT_BOLETO_INSTRUCTION, { cents: 12758, contract: "C-1", document: "D-9", due: "10/11/2026" });
     expect(lines[0]).toBe("-> Após Vencimento Cobrar Multa de R$ 2,55");
     expect(lines[1]).toBe("-> Após Vencimento Cobrar Juros Diários de R$ 0,04");
     expect(lines[4]).toBe("-> Contrato: C-1  Documento: D-9");
-    expect(fillBoletoInstructions(DEFAULT_BOLETO_INSTRUCTIONS, { cents: 8363, contract: "", document: null, due: "" }).slice(0, 2)).toEqual([
+    expect(fillBoletoInstructions(DEFAULT_BOLETO_INSTRUCTION, { cents: 8363, contract: "", document: null, due: "" }).slice(0, 2)).toEqual([
       "-> Após Vencimento Cobrar Multa de R$ 1,67",
       "-> Após Vencimento Cobrar Juros Diários de R$ 0,03",
     ]);
+    expect(fillBoletoSendMessage(DEFAULT_BOLETO_SEND_MESSAGE, { clientName: "", boletos: [{ due: "10/11/2026", cents: 100 }] })).toMatch(/^Olá! Segue/);
+  });
 
-    const current = await request(app).get("/api/boletos/instructions").set("Authorization", `Bearer ${adminToken}`);
-    expect(current.body).toEqual(DEFAULT_BOLETO_INSTRUCTIONS);
-    const next = { finePercent: 10, interestMonthPercent: 3, lines: ["Multa {multa}"] };
-    await request(app).put("/api/boletos/instructions").set("Authorization", `Bearer ${adminToken}`).send(next).expect(200);
-    expect((await request(app).get("/api/boletos/instructions").set("Authorization", `Bearer ${adminToken}`)).body).toEqual(next);
-    const forbidden = await request(app).put("/api/boletos/instructions").set("Authorization", `Bearer ${agentToken}`).send(next);
-    expect(forbidden.status).toBe(403);
+  it("layouts: os 4 do Banco do Brasil já vêm, com prévia em PDF; renomear a mensagem renomeia a tag no layout", async () => {
+    const auth = { Authorization: `Bearer ${adminToken}` };
+    const layouts = (await request(app).get("/api/boletos/layouts").set(auth)).body;
+    expect(layouts.map((l: { name: string }) => l.name)).toEqual(["Boleto F", "Boleto padrão", "Boleto com demonstrativo", "Ficha de compensação"]);
+    for (const layout of layouts) {
+      const pdf = await request(app).post("/api/boletos/layouts/preview").set(auth).send(layout).buffer(true);
+      expect(pdf.status).toBe(200);
+      expect(pdf.headers["content-type"]).toContain("application/pdf");
+    }
+    const [instruction] = (await request(app).get("/api/boletos/instructions").set(auth)).body;
+    expect(instruction.usedBy).toHaveLength(4);
+    await request(app).put(`/api/boletos/instructions/${instruction.id}`).set(auth).send({ ...instruction, name: "Instruções BB" }).expect(200);
+    const renamed = (await request(app).get("/api/boletos/layouts").set(auth)).body[0];
+    expect(renamed.settings.instructions).toBe("{mensagem:Instruções BB}");
+    const blocked = await request(app).delete(`/api/boletos/instructions/${instruction.id}`).set(auth);
+    expect(blocked.status).toBe(409);
+    const agentEdit = await request(app).put("/api/boletos/send-message").set("Authorization", `Bearer ${agentToken}`).send(DEFAULT_BOLETO_SEND_MESSAGE);
+    expect(agentEdit.status).toBe(403);
   });
 });

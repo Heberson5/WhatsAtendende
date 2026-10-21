@@ -1,20 +1,24 @@
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import type { Prisma } from "@prisma/client";
+import type { DataSource, Prisma } from "@prisma/client";
 import { format } from "date-fns";
 import {
   BOLETO_SAMPLES_REQUIRED,
-  DEFAULT_BOLETO_INSTRUCTIONS,
-  fillBoletoInstructions,
-  type BoletoInstructionsDTO,
-  type BoletoBankValidationDTO, type BoletoPreviewDTO, type BoletoPreviewItemDTO } from "@whatsatendende/types";
+  fillBoletoSendMessage,
+  type BoletoBankValidationDTO,
+  type BoletoLayoutInput,
+  type BoletoPreviewDTO,
+  type BoletoPreviewItemDTO,
+  type DataSourceBankDTO,
+} from "@whatsatendende/types";
 import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
 import { env } from "../../config/env";
-import { buildContracts, clientRows, parseBrDate, usableSource, type ColumnMap, type ConversationForData, type Row } from "../data-sources/data-sources.service";
+import { buildContracts, clientRows, parseBrDate, sourceStatus, usableSource, type ColumnMap, type ConversationForData, type Row } from "../data-sources/data-sources.service";
 import { barcodeFromLinha, buildBarcode, freeFieldBB, linhaFromBarcode } from "./boleto-code";
-import { renderBoletosPdf } from "./boleto-pdf";
+import { renderBoletosPdf, type BoletoPdfData } from "./boleto-pdf";
+import { expandLayoutText, getSendMessage, layoutForBank, toLayoutInput } from "./boleto-layouts.service";
 
 // Only Banco do Brasil boletos are sent.
 export const BANKS: Record<string, { name: string }> = {
@@ -25,18 +29,6 @@ export const BANKS: Record<string, { name: string }> = {
 const NO_BOLETO_METHODS = [/cart[aã]o recorrente/i, /sem boleto/i];
 
 const VALIDATION_KEY = "boleto-validation";
-const INSTRUCTIONS_KEY = "boleto-instructions";
-
-export async function getInstructions(): Promise<BoletoInstructionsDTO> {
-  const row = await prisma.systemSetting.findUnique({ where: { key: INSTRUCTIONS_KEY } });
-  return (row?.value as BoletoInstructionsDTO | undefined) ?? DEFAULT_BOLETO_INSTRUCTIONS;
-}
-
-export async function setInstructions(instructions: BoletoInstructionsDTO): Promise<BoletoInstructionsDTO> {
-  const value = instructions as unknown as Prisma.InputJsonValue;
-  await prisma.systemSetting.upsert({ where: { key: INSTRUCTIONS_KEY }, update: { value }, create: { key: INSTRUCTIONS_KEY, value } });
-  return instructions;
-}
 type ValidationState = Record<string, { matched: string[]; lastFailure: string | null }>;
 
 async function readValidation(): Promise<ValidationState> {
@@ -132,17 +124,27 @@ async function findRowByOurNumber(sourceId: string, column: string, ourNumber: s
  * número; it only counts when the two linhas are identical.
  */
 export async function submitValidationSample(ourNumber: string, realLinha: string): Promise<BoletoBankValidationDTO[]> {
-  const source = await usableSource();
-  if (!source) throw Errors.badRequest("Ative uma fonte de dados funcionando antes de validar boletos");
-  const map = source.columnMap as ColumnMap;
-  if (!map.ourNumber) throw Errors.badRequest("A fonte não tem a coluna do nosso número");
+  const sources = (await prisma.dataSource.findMany({ where: { active: true } })).filter((s) => sourceStatus(s) === "OK");
+  if (sources.length === 0) throw Errors.badRequest("Ative uma fonte de dados funcionando antes de validar boletos");
+  const withOurNumber = sources.filter((s) => (s.columnMap as ColumnMap).ourNumber);
+  if (withOurNumber.length === 0) throw Errors.badRequest("A fonte não tem a coluna do nosso número");
   const realBarcode = barcodeFromLinha(realLinha);
   if (!realBarcode) throw Errors.badRequest("A linha digitável informada tem dígitos verificadores errados — confira a digitação");
   const bank = realBarcode.slice(0, 3);
   if (!BANKS[bank]) throw Errors.badRequest("Banco sem envio de boleto");
   const wanted = digits(ourNumber);
-  const row = await findRowByOurNumber(source.id, map.ourNumber, ourNumber);
-  if (!row) throw Errors.badRequest("Nenhuma parcela da fonte de dados tem esse nosso número");
+  // Any active source may have it: the boleto is the same whichever connection sends it.
+  let found: { row: NonNullable<Awaited<ReturnType<typeof findRowByOurNumber>>>; map: ColumnMap } | null = null;
+  for (const source of withOurNumber) {
+    const map = source.columnMap as ColumnMap;
+    const row = await findRowByOurNumber(source.id, map.ourNumber!, ourNumber);
+    if (row) {
+      found = { row, map };
+      break;
+    }
+  }
+  if (!found) throw Errors.badRequest("Nenhuma parcela da fonte de dados tem esse nosso número");
+  const { row, map } = found;
 
   const state = await readValidation();
   const bankState = state[bank] ?? { matched: [], lastFailure: null };
@@ -180,8 +182,8 @@ interface SelectedParcel {
  * The parcels picked, checked: same client, every older open parcel of the
  * same contract included (no skipping), bank validated, boleto generated.
  */
-async function resolveSelection(conversation: ConversationForData, parcelIds: string[]): Promise<{ map: ColumnMap; parcels: SelectedParcel[] }> {
-  const source = await usableSource();
+async function resolveSelection(conversation: ConversationForData, parcelIds: string[]): Promise<{ source: DataSource; map: ColumnMap; parcels: SelectedParcel[] }> {
+  const source = await usableSource(conversation);
   if (!source) throw Errors.badRequest("Dados do cliente indisponíveis no momento");
   const { map, byClient, selectedKey } = await clientRows(source, conversation);
   if (!selectedKey) throw Errors.badRequest("Escolha o cliente primeiro");
@@ -212,7 +214,7 @@ async function resolveSelection(conversation: ConversationForData, parcelIds: st
     parcelIds = parcelIds.filter((id) => !picked.some((p) => p.id === id));
   }
   if (parcelIds.length > 0 || parcels.length === 0) throw Errors.badRequest("Parcela não encontrada para este cliente");
-  return { map, parcels };
+  return { source, map, parcels };
 }
 
 function previewItem(p: SelectedParcel, today: Date): BoletoPreviewItemDTO {
@@ -237,13 +239,10 @@ export async function previewBoletos(conversation: ConversationForData & { conta
   const today = todayStart();
   const items = parcels.map((p) => previewItem(p, today));
   const clientName = (map.clientName && parcels[0].data[map.clientName]) || conversation.contact.name || "";
-  const firstName = clientName.split(" ")[0];
   return {
     items,
-    message:
-      items.length === 1
-        ? `Olá${firstName ? `, ${firstName}` : ""}! Segue o boleto da parcela com vencimento em ${items[0].due}, no valor de ${items[0].value}. Logo abaixo vai a linha digitável para pagar pelo aplicativo do banco.`
-        : `Olá${firstName ? `, ${firstName}` : ""}! Seguem os boletos de ${items.length} parcelas, todos no mesmo arquivo. Logo abaixo vão as linhas digitáveis para pagar pelo aplicativo do banco.`,
+    // Dados › Mensagem de envio: the plural one when several boletos go in the PDF.
+    message: fillBoletoSendMessage(await getSendMessage(), { clientName, boletos: parcels.map((p, i) => ({ due: items[i].due, cents: p.boleto.cents })) }),
     warnings: items.filter((i) => i.overdue).map((i) => `Boleto vencido em ${i.due} — o banco pode cobrar juros ou recusar`),
   };
 }
@@ -261,16 +260,23 @@ export async function prepareBoletos(
   parcelIds: string[],
   confirmOverdue: boolean
 ): Promise<PreparedBoletos> {
-  const { map, parcels } = await resolveSelection(conversation, parcelIds);
+  const { source, map, parcels } = await resolveSelection(conversation, parcelIds);
   const today = todayStart();
   const issued = format(new Date(), "dd/MM/yyyy");
   const col = (data: Row, role: keyof ColumnMap) => (map[role] ? data[map[role]!] : undefined) || null;
   const items = parcels.map((p) => previewItem(p, today));
   const overdue = items.find((item) => item.overdue);
   if (overdue && !confirmOverdue) throw Errors.badRequest(`Boleto vencido em ${overdue.due} — confirme o envio`);
-  const instructions = await getInstructions();
-  const pdf = await renderBoletosPdf(
-    parcels.map((p, i) => ({
+  const instructions = await prisma.boletoInstruction.findMany();
+  // Each bank's boletos in the layout this source chose for it.
+  const groups = new Map<string, { layout: BoletoLayoutInput; boletos: BoletoPdfData[] }>();
+  for (const [i, p] of parcels.entries()) {
+    if (!groups.has(p.boleto.bank)) {
+      groups.set(p.boleto.bank, { layout: toLayoutInput(await layoutForBank(source.bankLayouts as Record<string, string>, p.boleto.bank)), boletos: [] });
+    }
+    const group = groups.get(p.boleto.bank)!;
+    const fill = { cents: p.boleto.cents, contract: p.contract, document: p.document, due: items[i].due };
+    group.boletos.push({
       bankCode: p.boleto.bank,
       linha: p.boleto.linha,
       barcode: p.boleto.barcode,
@@ -288,9 +294,11 @@ export async function prepareBoletos(
       payerDocument: col(p.data, "cpf"),
       payerAddress: col(p.data, "payerAddress"),
       payerLocality: [col(p.data, "payerZip"), col(p.data, "payerCity")].filter(Boolean).join("   ") || null,
-      instructions: fillBoletoInstructions(instructions, { cents: p.boleto.cents, contract: p.contract, document: p.document, due: items[i].due }),
-    }))
-  );
+      instructions: expandLayoutText(group.layout.settings.instructions, instructions, fill),
+      demonstrative: expandLayoutText(group.layout.settings.demonstrative, instructions, fill),
+    });
+  }
+  const pdf = await renderBoletosPdf([...groups.values()]);
   const storageKey = `${randomUUID()}.pdf`;
   fs.writeFileSync(path.join(env.UPLOAD_DIR, storageKey), pdf);
   const contracts = [...new Set(items.map((item) => item.contract))];
@@ -301,3 +309,59 @@ export async function prepareBoletos(
   return { items, pdf, storageKey, fileName };
 }
 
+
+/** Dados › Layouts de boleto: the layout being edited, with fictitious boletos — a full page of them. */
+export async function previewLayoutPdf(layout: BoletoLayoutInput): Promise<Buffer> {
+  const instructions = await prisma.boletoInstruction.findMany();
+  const boletos = Array.from({ length: layout.perPage }, (_, i): BoletoPdfData => {
+    const due = new Date(2026, 10 + i, 10);
+    const cents = 12758;
+    const ourNumber = `1234567000000010${i + 1}`;
+    const barcode = buildBarcode(layout.bankCode, due, cents, freeFieldBB("1234567", ourNumber, "17"));
+    const dueText = format(due, "dd/MM/yyyy");
+    const fill = { cents, contract: "C-10", document: `D-${i + 1}`, due: dueText };
+    return {
+      bankCode: layout.bankCode,
+      linha: linhaFromBarcode(barcode),
+      barcode,
+      due: dueText,
+      value: formatMoney(cents),
+      issued: format(new Date(), "dd/MM/yyyy"),
+      ourNumber,
+      document: `D-${i + 1}`,
+      contract: "C-10",
+      wallet: "17",
+      payeeName: "EMPRESA EXEMPLO LTDA",
+      payeeDocument: "00.000.000/0001-00",
+      agencyAccount: "1234-5/99999-9",
+      payerName: "CLIENTE DE EXEMPLO DA SILVA",
+      payerDocument: "000.000.000-00",
+      payerAddress: "RUA DOS EXEMPLOS, 100 - CENTRO",
+      payerLocality: "78000-000   CIDADE EXEMPLO",
+      instructions: expandLayoutText(layout.settings.instructions, instructions, fill),
+      demonstrative: expandLayoutText(layout.settings.demonstrative, instructions, fill),
+    };
+  });
+  return renderBoletosPdf([{ layout, boletos }]);
+}
+
+/** The banks in a source's parcels — to choose each one's layout. */
+export async function sourceBanks(sourceId: string): Promise<DataSourceBankDTO[]> {
+  const source = await prisma.dataSource.findUnique({ where: { id: sourceId } });
+  if (!source) throw Errors.notFound("Fonte de dados não encontrada");
+  const column = (source.columnMap as ColumnMap).bankCode;
+  if (!column) return [];
+  const counts = await prisma.$queryRaw<{ code: string; parcels: bigint }[]>`
+    SELECT lpad(regexp_replace(data->>${column}, '\D', '', 'g'), 3, '0') AS code, count(*) AS parcels
+    FROM "DataSourceRow" WHERE "dataSourceId" = ${sourceId} AND coalesce(data->>${column}, '') <> ''
+    GROUP BY 1 ORDER BY 2 DESC`;
+  const validation = await getValidation();
+  return counts
+    .filter((c) => c.code !== "000")
+    .map((c) => ({
+      code: c.code,
+      name: BANKS[c.code]?.name ?? `Banco ${c.code}`,
+      parcels: Number(c.parcels),
+      enabled: Boolean(validation.find((v) => v.code === c.code)?.enabled),
+    }));
+}

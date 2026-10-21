@@ -19,13 +19,10 @@ export function AppInstallPanel() {
   const queryClient = useQueryClient();
   const canEditar = useAuthStore((s) => s.permissions?.[PERMISSION.CONFIGURACOES_IDENTIDADE_EDITAR]);
   const savedName = branding?.appName ?? branding?.companyName ?? "";
-  const savedVersion = branding?.appVersion ?? "";
   const [appName, setAppName] = useState(savedName);
-  const [appVersion, setAppVersion] = useState(savedVersion);
   useEffect(() => {
     setAppName(savedName);
-    setAppVersion(savedVersion);
-  }, [savedName, savedVersion]);
+  }, [savedName]);
   const iconInputRef = useRef<HTMLInputElement>(null);
 
   const nameMutation = useMutation({
@@ -33,15 +30,6 @@ export function AppInstallPanel() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["branding"] });
       toast.success("Nome do aplicativo atualizado.");
-    },
-    onError: (err) => toast.error(getApiErrorMessage(err)),
-  });
-
-  const versionMutation = useMutation({
-    mutationFn: (version: string) => api.patch("/settings/branding", { appVersion: version.trim() || null }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["branding"] });
-      toast.success("Versão do aplicativo atualizada.");
     },
     onError: (err) => toast.error(getApiErrorMessage(err)),
   });
@@ -122,41 +110,20 @@ export function AppInstallPanel() {
       </p>
 
       <div className="border-t border-border pt-6">
-        <label className="block">
-          <span className="mb-1 block text-sm font-medium">Versão do aplicativo</span>
-          <input
-            value={appVersion}
-            onChange={(e) => setAppVersion(e.target.value)}
-            maxLength={30}
-            placeholder="Ex: 1.3.0"
-            className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm"
-          />
-          <span className="mt-1 block text-xs text-muted">
-            Mude aqui sempre que trocar o ícone/nome acima. Quem já tem o aplicativo instalado vê um aviso dentro do
-            sistema pedindo pra reinstalar — quem já reinstalou pode ignorar o aviso. Aparece também no menu lateral.
-          </span>
-        </label>
-        <button
-          onClick={() => versionMutation.mutate(appVersion)}
-          disabled={versionMutation.isPending}
-          className="focus-ring mt-3 rounded-card bg-primary px-4 py-2 text-sm font-semibold text-primary-fg disabled:opacity-60"
-        >
-          Salvar versão
-        </button>
+        <p className="text-sm font-medium">Versão do aplicativo</p>
+        <p className="mt-1 text-sm">{branding?.appVersion ?? "—"}</p>
+        <span className="mt-1 block text-xs text-muted">
+          Atualizada sozinha: é sempre a versão mais nova das Notas de versão, e aparece no menu lateral. Quando o ícone ou o nome
+          acima mudam, quem já tem o aplicativo instalado vê um aviso pedindo para reinstalar.
+        </span>
       </div>
       </fieldset>
       {canEditar && branding && (
         <UnsavedChangesBar
-          dirty={appName !== savedName || appVersion !== savedVersion}
-          saving={nameMutation.isPending || versionMutation.isPending}
-          onSave={() => {
-            if (appName !== savedName) nameMutation.mutate(appName);
-            if (appVersion !== savedVersion) versionMutation.mutate(appVersion);
-          }}
-          onDiscard={() => {
-            setAppName(savedName);
-            setAppVersion(savedVersion);
-          }}
+          dirty={appName !== savedName}
+          saving={nameMutation.isPending}
+          onSave={() => nameMutation.mutate(appName)}
+          onDiscard={() => setAppName(savedName)}
         />
       )}
     </div>
