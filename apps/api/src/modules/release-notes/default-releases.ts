@@ -11,6 +11,21 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.19.2",
+    date: "21 out 2026",
+    name: "Boletos no layout do banco",
+    summary: "O PDF do boleto segue o layout do Banco do Brasil e, com várias parcelas, vai um arquivo só, com até 3 boletos por página.",
+    notes: [
+      {
+        type: "melhoria",
+        area: "atendimento",
+        title: "Vários boletos num arquivo só",
+        text: "O boleto agora sai no layout do Banco do Brasil: recibo do sacado à esquerda e ficha de compensação à direita. Ao enviar várias parcelas, o cliente recebe um único PDF com os boletos um abaixo do outro, até 3 por página, e logo depois a linha digitável de cada parcela.",
+        where: "Atendimento › Dados do cliente › Enviar boleto",
+      },
+    ],
+  },
+  {
     version: "2.19.1",
     date: "21 out 2026",
     name: "Nosso número protegido do arredondamento do Excel",

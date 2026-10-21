@@ -500,7 +500,7 @@ messagesRouter.post(
   })
 );
 
-// Boleto from Dados do cliente: preview first, then the editable message, one PDF per parcel and its linha digitável.
+// Boleto from Dados do cliente: preview first, then the editable message, one PDF with every parcel (three to a page) and each linha digitável.
 const boletoSelectionSchema = z.object({ parcelIds: z.array(z.string().uuid()).min(1).max(24) });
 messagesRouter.post(
   "/conversations/:conversationId/boletos/preview",
@@ -531,16 +531,16 @@ messagesRouter.post(
     };
 
     if (message) await sendText(message);
-    for (const boleto of prepared) {
-      const created = await service.createOutboundMessage({ conversationId: conversation.id, agentId: req.auth!.userId, type: "DOCUMENT" });
-      await service.addAttachment(created.id, { fileName: boleto.fileName, mimeType: "application/pdf", sizeBytes: boleto.pdf.length, storageKey: boleto.storageKey, kind: "DOCUMENT" });
-      await whatsappService.sendOutboundFile(connectionId, created.id, phone, boleto.pdf, boleto.fileName, "application/pdf", req.auth!.displayName);
-      await sendText(`Linha digitável (vencimento ${boleto.item.due}, ${boleto.item.value}):\n${boleto.item.linha}`);
+    const document = await service.createOutboundMessage({ conversationId: conversation.id, agentId: req.auth!.userId, type: "DOCUMENT" });
+    await service.addAttachment(document.id, { fileName: prepared.fileName, mimeType: "application/pdf", sizeBytes: prepared.pdf.length, storageKey: prepared.storageKey, kind: "DOCUMENT" });
+    await whatsappService.sendOutboundFile(connectionId, document.id, phone, prepared.pdf, prepared.fileName, "application/pdf", req.auth!.displayName);
+    for (const item of prepared.items) {
+      await sendText(`Linha digitável (vencimento ${item.due}, ${item.value}):\n${item.linha}`);
       await prisma.conversationNote.create({
         data: {
           conversationId: conversation.id,
           authorId: null,
-          body: `Boleto enviado por ${req.auth!.displayName}: contrato ${boleto.item.contract}, vencimento ${boleto.item.due}, ${boleto.item.value}${boleto.item.overdue ? " (já vencido, envio confirmado)" : ""}.`,
+          body: `Boleto enviado por ${req.auth!.displayName}: contrato ${item.contract}, vencimento ${item.due}, ${item.value}${item.overdue ? " (já vencido, envio confirmado)" : ""}.`,
         },
       });
       await writeAudit({
@@ -549,12 +549,12 @@ messagesRouter.post(
         entity: "Conversation",
         entityId: conversation.id,
         ipAddress: req.ip ?? null,
-        metadata: { ...boleto.item, contactName: conversation.contact.name, contactPhone: phone },
+        metadata: { ...item, contactName: conversation.contact.name, contactPhone: phone },
       });
     }
     realtimeEvents.newMessage(conversation.id, req.auth!.userId);
     realtimeEvents.notesChanged(conversation.id, [req.auth!.userId]);
-    res.status(201).json({ sent: prepared.map((b) => b.item) });
+    res.status(201).json({ sent: prepared.items });
   })
 );
 
