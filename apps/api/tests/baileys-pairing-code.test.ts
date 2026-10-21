@@ -2,7 +2,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { EventEmitter } from "node:events";
+import { setTimeout as realDelay } from "node:timers/promises";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { BufferJSON, initAuthCreds } from "@whiskeysockets/baileys";
 import { BaileysWhatsAppProvider, type WhatsAppStatusSnapshot } from "@whatsatendende/whatsapp";
 
 /**
@@ -21,6 +23,8 @@ const LOGGED_OUT = 401;
 
 interface Creds {
   me?: { id: string };
+  /** What WhatsApp signs on pair-success, for a QR Code link and a code link alike. */
+  account?: object;
   pairingCode?: string;
   registered?: boolean;
 }
@@ -34,8 +38,11 @@ interface FakeSocket {
   logout: () => Promise<void>;
 }
 
-/** `deadAfterFirst`: every socket after the first dies before WhatsApp is ready (it never gets that far again). */
-function setup(codes: string[], { deadAfterFirst = false } = {}) {
+/**
+ * `deadAfterFirst`: every socket after the first dies before WhatsApp is ready (it never gets that far again).
+ * `savedCreds`: a session already on disk, as the API finds it when it starts again (after an update).
+ */
+function setup(codes: string[], { deadAfterFirst = false, savedCreds }: { deadAfterFirst?: boolean; savedCreds?: Creds } = {}) {
   const sockets: FakeSocket[] = [];
   const requests: string[] = [];
   const refused: string[] = [];
@@ -71,11 +78,11 @@ function setup(codes: string[], { deadAfterFirst = false } = {}) {
       const c = config.auth.creds;
       if (deadAfterFirst && sockets.length > 1) {
         closeSocket(socket, QR_REFS_ENDED);
-      } else if (c.me && !c.registered) {
+      } else if (c.me && (c.account || c.registered)) {
+        socket.ev.emit("connection.update", { connection: "open" });
+      } else if (c.me) {
         refused.push("login of a device that is not linked");
         closeSocket(socket, LOGGED_OUT);
-      } else if (c.registered) {
-        socket.ev.emit("connection.update", { connection: "open" });
       } else {
         socket.ready = true;
         socket.ev.emit("connection.update", { qr: "ref,noise,identity,adv" });
@@ -85,6 +92,10 @@ function setup(codes: string[], { deadAfterFirst = false } = {}) {
   }) as never;
 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pairing-"));
+  if (savedCreds) {
+    fs.mkdirSync(path.join(dir, "auth"));
+    fs.writeFileSync(path.join(dir, "auth", "creds.json"), JSON.stringify({ ...initAuthCreds(), ...savedCreds }, BufferJSON.replacer));
+  }
   const provider = new BaileysWhatsAppProvider({ authStateDir: path.join(dir, "auth"), socketFactory });
   const history: WhatsAppStatusSnapshot[] = [];
   provider.onConnectionUpdate((s) => history.push(s));
@@ -92,15 +103,21 @@ function setup(codes: string[], { deadAfterFirst = false } = {}) {
   /** The phone typed the code: WhatsApp links the device and restarts the socket. */
   const phoneAccepts = () => {
     creds!.registered = true;
-    sockets.at(-1)!.ev.emit("creds.update", { registered: true });
+    creds!.account = { details: "signed" };
+    sockets.at(-1)!.ev.emit("creds.update", { registered: true, account: creds!.account });
     close(RESTART_REQUIRED);
   };
-  return { provider, sockets, requests, refused, history, close, phoneAccepts };
+  return { provider, sockets, requests, refused, history, close, phoneAccepts, credsOnDisk: () => JSON.parse(fs.readFileSync(path.join(dir, "auth", "creds.json"), "utf8")) as Creds };
 }
 
-// Real file I/O (the session credentials) runs between fake timers — give it room to finish.
+// Real file I/O (the session credentials) runs between fake timers — give it room to finish. A burst of
+// setImmediate alone can end before the disk answers on a busy machine, so real milliseconds pass too
+// (node:timers/promises is not faked).
 async function settle() {
-  for (let i = 0; i < 200; i++) await new Promise((resolve) => setImmediate(resolve));
+  for (let i = 0; i < 20; i++) {
+    await realDelay(2);
+    for (let j = 0; j < 20; j++) await new Promise((resolve) => setImmediate(resolve));
+  }
 }
 
 describe("código de conexão pelo número", () => {
@@ -194,6 +211,18 @@ describe("código de conexão pelo número", () => {
     expect(provider.getStatus().pairingCode).toBe("EFGH-5678");
     expect(requests).toHaveLength(2);
     expect(refused).toEqual([]);
+  });
+
+  it("conexão vinculada pelo QR Code continua conectada quando o sistema reinicia (atualização)", async () => {
+    // Baileys never sets `registered` for a QR Code link — only `me` and `account`.
+    const linkedByQr = { me: { id: "5565988887777:12@s.whatsapp.net" }, account: { details: "signed" }, registered: false };
+    const { provider, refused, credsOnDisk } = setup([], { savedCreds: linkedByQr });
+    await provider.connect();
+    await settle();
+
+    expect(provider.getStatus().state).toBe("CONNECTED");
+    expect(refused).toEqual([]);
+    expect(credsOnDisk().me).toEqual(linkedByQr.me);
   });
 
   it("se o WhatsApp encerra de vez (tentativas esgotadas), aí sim o código sai", async () => {

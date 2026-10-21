@@ -9,6 +9,7 @@ import makeWASocket, {
   useMultiFileAuthState,
   downloadMediaMessage,
   proto,
+  type AuthenticationCreds,
   type WASocket,
   type WAMessage,
 } from "@whiskeysockets/baileys";
@@ -62,6 +63,15 @@ export interface BaileysProviderOptions {
  * for automated tests and local demos, and this class for a real staging
  * device.
  */
+/**
+ * The session finished linking to the phone. `account` (the identity WhatsApp signs on pair-success) is set for QR
+ * Code and pairing-code links alike; `registered` only ever turns true for a pairing-code link, so a QR Code session
+ * read as unlinked by it — and every restart wiped its number and logged it out.
+ */
+function isLinked(creds: AuthenticationCreds): boolean {
+  return Boolean(creds.account || creds.registered);
+}
+
 export class BaileysWhatsAppProvider implements WhatsAppProvider {
   private emitter = new EventEmitter();
   private socket: WASocket | null = null;
@@ -370,7 +380,7 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
 
     try {
       const { state, saveCreds } = await useMultiFileAuthState(this.options.authStateDir);
-      const wasAlreadyLinked = Boolean(state.creds.registered);
+      const wasAlreadyLinked = isLinked(state.creds);
       // requestPairingCode() writes the number into creds.me (saved to disk). A session that never finished
       // linking must not carry it into a new socket: Baileys' handshake then logs in as an already-linked
       // device instead of registering a new one, WhatsApp refuses it, and the code on screen dies with it.
@@ -527,7 +537,7 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
 
           // The phone typed the code: WhatsApp restarts the socket (515) and the next one logs in, linked. Short of
           // that, an attempt past its window stops here, on "Gerar novo código", instead of asking for more codes.
-          const pairingSucceeded = !wasAlreadyLinked && Boolean(state.creds.registered);
+          const pairingSucceeded = !wasAlreadyLinked && isLinked(state.creds);
           if (connectOptions?.phoneNumber && !wasAlreadyLinked && !pairingSucceeded && this.pairingWindowOver()) {
             this.settleDisconnected();
             return;
@@ -538,7 +548,7 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
             // phone's own "Aparelhos conectados", or logged out) — the
             // credentials saved on disk are now permanently dead. Without
             // clearing them, the *next* connect() attempt would keep
-            // seeing `state.creds.registered === true` and silently retry
+            // seeing a linked session and silently retry
             // this same dead session instead of falling back to a fresh
             // QR/pairing-code flow — which is exactly what used to leave
             // "Conectar" on an existing connection generating nothing at
