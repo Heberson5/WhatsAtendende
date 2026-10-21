@@ -331,6 +331,18 @@ export async function usableSource() {
   return source && sourceStatus(source) === "OK" ? source : null;
 }
 
+// Shown in the panel some other way (the contract's header, its boletos and beneficiaries) or only a rule for the
+// system (parcelas para suspender): never as a plain line.
+const PANEL_ROLES_SHOWN_ELSEWHERE: DataSourceRole[] = [
+  "contract", "plan", "contractStatus", "beneficiaries", "suspensionThreshold", "document", "parcelDue", "daysLate", "parcelValue", "fine",
+  "interest", "updatedValue", "paymentMethod", "boletoDue", "boletoValue", "ourNumber", "bankCode", "agency", "account", "agreement",
+  "wallet", "walletVariation", "payeeName", "payeeDocument",
+];
+// Bookkeeping columns of the spreadsheet script: the panel already shows the client chosen and the beneficiaries counted.
+const PANEL_HIDDEN_COLUMN = /^(clientes_neste_telefone|(quantidade|qtd|qtde)_(de_)?beneficiarios)$/;
+// A contract's own columns go inside its card; the rest is about the person.
+const CONTRACT_COLUMN = /contrato|plano|vencimento|parcela|atraso|adesao/;
+
 function distinct(values: (string | undefined)[]): string[] {
   return [...new Set(values.filter((v): v is string => Boolean(v && v.trim())))];
 }
@@ -384,6 +396,17 @@ export function parseBeneficiaries(value: string | undefined, today = new Date()
   });
 }
 
+/** The ERP list can repeat the holder (as titular and as a beneficiary): each person once, the first mention kept. */
+function uniqueBeneficiaries(list: ClientBeneficiaryDTO[]): ClientBeneficiaryDTO[] {
+  const seen = new Set<string>();
+  return list.filter((b) => {
+    const key = b.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function toInt(value: string | undefined): number {
   const n = parseInt((value ?? "").replace(/\D/g, ""), 10);
   return Number.isFinite(n) ? n : 0;
@@ -433,8 +456,9 @@ export function buildContracts(rows: { id: string; data: Row }[], map: ColumnMap
       overdueCount,
       suspensionThreshold: threshold,
       suspended: threshold !== null && overdueCount >= threshold && status?.toLowerCase() !== "cancelado",
-      beneficiaries: parseBeneficiaries(col(first, "beneficiaries")),
+      beneficiaries: uniqueBeneficiaries(parseBeneficiaries(col(first, "beneficiaries"))),
       parcels,
+      fields: [],
     };
   });
 }
@@ -486,13 +510,20 @@ export async function getClientData(conversation: ConversationForData, role: Rol
   if (!selectedKey) return { ...empty, status: "OK", dataUpdatedAt, clients };
 
   const rows = byClient.get(selectedKey)!;
-  // The beneficiaries column is already shown, readable, inside each contract.
-  const fields = source.columns.filter((column) => column !== map.beneficiaries).map((column) => {
-    const value = distinct(rows.map((r) => r.data[column])).join(", ");
+  const shownElsewhere = new Set(PANEL_ROLES_SHOWN_ELSEWHERE.map((role) => map[role]).filter(Boolean));
+  const shown = source.columns.filter((column) => !shownElsewhere.has(column) && !PANEL_HIDDEN_COLUMN.test(column));
+  const toField = (column: string, from: { data: Row }[]) => {
+    const value = distinct(from.map((r) => r.data[column])).join(", ");
     const sensitive = source.sensitiveColumns.includes(column);
     return { column, value: sensitive && value ? maskValue(value) : value, sensitive };
-  });
-  const contracts = buildContracts(rows, map);
+  };
+  const fields = shown.filter((column) => !CONTRACT_COLUMN.test(column)).map((column) => toField(column, rows));
+  const contractColumns = shown.filter((column) => CONTRACT_COLUMN.test(column));
+  const contractOf = (row: { data: Row }) => (map.contract ? row.data[map.contract] : undefined) || "Sem contrato";
+  const contracts = buildContracts(rows, map).map((contract) => ({
+    ...contract,
+    fields: contractColumns.map((column) => toField(column, rows.filter((r) => contractOf(r) === contract.number))),
+  }));
   return {
     status: "OK",
     reason: null,

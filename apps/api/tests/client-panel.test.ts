@@ -102,4 +102,25 @@ describe("client panel: tags, earlier conversations and internal notes", () => {
     const afterReply = await prisma.conversation.findUniqueOrThrow({ where: { id: conversationId } });
     expect(afterReply.awaitingReplySince).toBeNull();
   });
+
+  it("conversas anteriores: 3 no painel, as próximas em páginas, com o nome completo do atendente", async () => {
+    await prisma.user.update({ where: { id: ownerId }, data: { fullName: "Bruna Carvalho Lopes" } });
+    for (let day = 1; day <= 5; day++) {
+      await prisma.conversation.create({
+        data: { contactId, whatsappConnectionId: connectionId, status: "CLOSED", enteredQueueAt: new Date(`2026-08-0${day}`), closedAt: new Date(`2026-08-0${day}T01:00:00Z`), assignedAgentId: ownerId },
+      });
+    }
+    const panel = (await request(app).get(`/api/conversations/${conversationId}/contact-panel`).set("Authorization", `Bearer ${ownerToken}`)).body;
+    expect(panel.previousConversationCount).toBeGreaterThanOrEqual(5);
+    expect(panel.previousConversations).toHaveLength(3);
+    expect(panel.previousConversations[0].agentName).toBe("Bruna Carvalho Lopes");
+
+    const more = await request(app).get(`/api/conversations/${conversationId}/previous-conversations?skip=3&take=5`).set("Authorization", `Bearer ${ownerToken}`);
+    expect(more.status).toBe(200);
+    expect(more.body).toHaveLength(panel.previousConversationCount - 3);
+    const ids = [...panel.previousConversations, ...more.body].map((c: { id: string }) => c.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect((await request(app).get(`/api/conversations/${conversationId}/previous-conversations?skip=0&take=99`).set("Authorization", `Bearer ${ownerToken}`)).status).toBe(400);
+  });
+
 });

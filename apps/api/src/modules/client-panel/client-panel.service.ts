@@ -4,7 +4,8 @@ import { messageInclude } from "../messages/messages.service";
 import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
 
-const PREVIOUS_CONVERSATIONS_LIMIT = 10;
+// The panel opens with the last few; "Mostrar mais" brings the next page (see listPreviousConversations).
+const PREVIOUS_CONVERSATIONS_FIRST = 3;
 
 export function toTagDTO(tag: { id: string; name: string; color: string; skipSurvey: boolean }): TagDTO {
   return { id: tag.id, name: tag.name, color: tag.color, skipSurvey: tag.skipSurvey };
@@ -33,37 +34,44 @@ export async function getContactPanel(conversationId: string, contactId: string,
   const [contact, tags, previous, previousCount] = await Promise.all([
     prisma.contact.findUniqueOrThrow({ where: { id: contactId }, select: { pinnedNote: true, pinnedNoteUpdatedAt: true, pinnedNoteUpdatedBy: true } }),
     prisma.contactTag.findMany({ where: { contactId }, include: { tag: true }, orderBy: { createdAt: "asc" } }),
-    prisma.conversation.findMany({
-      where: { contactId, id: { not: conversationId } },
-      orderBy: { enteredQueueAt: "desc" },
-      take: PREVIOUS_CONVERSATIONS_LIMIT,
-      include: {
-        assignedAgent: { select: { displayName: true } },
-        whatsappConnection: { select: { name: true } },
-        metaConnection: { select: { name: true } },
-        _count: { select: { messages: true } },
-      },
-    }),
+    listPreviousConversations(conversationId, contactId, 0, PREVIOUS_CONVERSATIONS_FIRST),
     prisma.conversation.count({ where: { contactId, id: { not: conversationId } } }),
   ]);
   return {
     contactId,
     firstConversationAt: firstConversationAt.toISOString(),
     tags: tags.map((t) => toTagDTO(t.tag)),
-    previousConversations: previous.map((c) => ({
-      id: c.id,
-      status: c.status,
-      agentName: c.assignedAgent?.displayName ?? null,
-      connectionName: c.whatsappConnection?.name ?? c.metaConnection?.name ?? "",
-      startedAt: c.enteredQueueAt.toISOString(),
-      closedAt: c.closedAt ? c.closedAt.toISOString() : null,
-      messageCount: c._count.messages,
-    })),
+    previousConversations: previous,
     previousConversationCount: previousCount,
     pinnedNote: contact.pinnedNote
       ? { text: contact.pinnedNote, updatedAt: contact.pinnedNoteUpdatedAt!.toISOString(), updatedByName: contact.pinnedNoteUpdatedBy }
       : null,
   };
+}
+
+/** The customer's other conversations, newest first — `skip`/`take` page "Mostrar mais". The attendant by full name. */
+export async function listPreviousConversations(conversationId: string, contactId: string, skip: number, take: number): Promise<ContactPanelDTO["previousConversations"]> {
+  const rows = await prisma.conversation.findMany({
+    where: { contactId, id: { not: conversationId } },
+    orderBy: { enteredQueueAt: "desc" },
+    skip,
+    take,
+    include: {
+      assignedAgent: { select: { fullName: true } },
+      whatsappConnection: { select: { name: true } },
+      metaConnection: { select: { name: true } },
+      _count: { select: { messages: true } },
+    },
+  });
+  return rows.map((c) => ({
+    id: c.id,
+    status: c.status,
+    agentName: c.assignedAgent?.fullName ?? null,
+    connectionName: c.whatsappConnection?.name ?? c.metaConnection?.name ?? "",
+    startedAt: c.enteredQueueAt.toISOString(),
+    closedAt: c.closedAt ? c.closedAt.toISOString() : null,
+    messageCount: c._count.messages,
+  }));
 }
 
 export async function setPinnedNote(contactId: string, text: string | null, userName: string) {

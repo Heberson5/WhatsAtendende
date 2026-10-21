@@ -2339,6 +2339,36 @@ export const DATA_SOURCE_ROLES = {
 } as const;
 export type DataSourceRole = keyof typeof DATA_SOURCE_ROLES;
 
+// Spreadsheet column names are written without accents ("situacao_contrato"): the words as people read them.
+const COLUMN_WORDS: Record<string, string> = {
+  codigo: "código", numero: "número", situacao: "situação", endereco: "endereço", beneficiarios: "beneficiários",
+  beneficiario: "beneficiário", mae: "mãe", pai: "pai", observacao: "observação", observacoes: "observações",
+  informacao: "informação", informacoes: "informações", ultimo: "último", ultima: "última", proximo: "próximo",
+  proxima: "próxima", responsavel: "responsável", conjuge: "cônjuge", orgao: "órgão", emissao: "emissão",
+  inicio: "início", adesao: "adesão", cep: "CEP", cpf: "CPF", cnpj: "CNPJ", rg: "RG", uf: "UF", whatsapp: "WhatsApp", email: "e-mail",
+  id: "ID", ddd: "DDD", nascimento: "nascimento",
+};
+const COLUMN_LABELS: Record<string, string> = {
+  cpf_cnpj: "CPF/CNPJ",
+  telefone_whatsapp: "Telefone (WhatsApp)",
+};
+
+// "data_contrato" reads "Data do contrato": the article a second word takes.
+const OF_THE: Record<string, string> = {
+  contrato: "do", cliente: "do", vencimento: "do", plano: "do", pagamento: "do", cadastro: "do", titular: "do", boleto: "do",
+  parcela: "da", adesao: "da", empresa: "da", cidade: "da", mae: "da",
+};
+
+/** "situacao_contrato" → "Situação do contrato"; the system's own columns keep their names ("CPF/CNPJ", "Telefone (WhatsApp)"). */
+export function dataColumnLabel(column: string): string {
+  if (COLUMN_LABELS[column]) return COLUMN_LABELS[column];
+  const raw = column.split(/_+/).filter(Boolean);
+  const words = raw.map((w) => COLUMN_WORDS[w] ?? w);
+  if (raw.length >= 2 && OF_THE[raw[1]]) words.splice(1, 0, OF_THE[raw[1]]);
+  const text = words.join(" ");
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : column;
+}
+
 export interface DataSourceDTO {
   id: string;
   name: string;
@@ -2397,6 +2427,8 @@ export interface ClientContractDTO {
   suspended: boolean;
   beneficiaries: ClientBeneficiaryDTO[];
   parcels: ClientParcelDTO[];
+  /** This contract's own columns (data do contrato, dia do vencimento, valor em atraso...). */
+  fields: ClientDataFieldDTO[];
 }
 
 export interface ClientDataFieldDTO {

@@ -42,6 +42,18 @@ clientPanelRouter.get(
   })
 );
 
+// "Mostrar mais" under Conversas anteriores.
+const previousPageSchema = z.object({ skip: z.coerce.number().int().min(0), take: z.coerce.number().int().min(1).max(20) });
+
+clientPanelRouter.get(
+  "/:id/previous-conversations",
+  asyncHandler(async (req, res) => {
+    const { skip, take } = previousPageSchema.parse(req.query);
+    const conversation = await conversationForRead(req);
+    res.json(await service.listPreviousConversations(conversation.id, conversation.contactId, skip, take));
+  })
+);
+
 clientPanelRouter.get(
   "/:id/previous/:previousId",
   asyncHandler(async (req, res) => {
