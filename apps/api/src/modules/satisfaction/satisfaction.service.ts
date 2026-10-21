@@ -242,6 +242,38 @@ export function scheduleCloseFollowUp(conversationId: string, closingMessage?: H
   setTimeout(() => void sendCloseFollowUp(conversationId, closingMessage), CONVERSATION_UNDO_WINDOW_MS).unref();
 }
 
+/**
+ * How long after the platform's last message on a closed conversation a plain thank-you ("obrigado", 👍...) still
+ * belongs to it — the answer to the survey's thanks, the closing message or the agent's goodbye.
+ */
+const THANKS_AFTER_CLOSE_MS = 24 * 3_600_000;
+
+/**
+ * A plain thank-you right after the platform's last message on the customer's closed conversation: kept there,
+ * nothing opens in the queue. Anything else (a question, a picture...) is the customer wanting to talk.
+ */
+export async function captureThanksAfterClose(
+  connectionId: string,
+  contact: { id: string },
+  message: { body: string | null; providerMessageId: string }
+): Promise<boolean> {
+  if (!isGratitudeMessage(message.body)) return false;
+  const conversation = await prisma.conversation.findFirst({
+    where: { contactId: contact.id, whatsappConnectionId: connectionId },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, status: true },
+  });
+  if (conversation?.status !== "CLOSED") return false;
+  const lastSent = await prisma.message.findFirst({
+    where: { conversationId: conversation.id, direction: "OUTBOUND" },
+    orderBy: { createdAt: "desc" },
+    select: { createdAt: true },
+  });
+  if (!lastSent || Date.now() - lastSent.createdAt.getTime() > THANKS_AFTER_CLOSE_MS) return false;
+  await keepOnClosedConversation(conversation.id, message);
+  return true;
+}
+
 /** Whether a conversation with this customer was started after `since` — it owns the chat from then on. */
 async function hasConversationSince(contactId: string, since: Date): Promise<boolean> {
   return (await prisma.conversation.count({ where: { contactId, createdAt: { gt: since } } })) > 0;

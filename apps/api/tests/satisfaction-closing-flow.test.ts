@@ -127,6 +127,49 @@ describe("encerrar com a mensagem de encerramento e a pesquisa de satisfação l
     expect(texts[2]).toContain("Obrigado, *Joana Cliente*! Foi um prazer atender você.");
   }, 20000);
 
+  /** The read receipts that went to this customer's chat — what makes the phone show it as read. */
+  const readsOf = (phone: string) => provider.readReceiptsSent.filter((r) => r.chatId.startsWith(`${phone}@`)).flatMap((r) => r.providerMessageIds);
+  const inboundIdsOf = async (conversationId: string) =>
+    (await prisma.message.findMany({ where: { conversationId, direction: "INBOUND" }, orderBy: { createdAt: "asc" } })).map((m) => m.providerMessageId);
+
+  it("a nota e o obrigado depois da mensagem de encerramento ficam lidos no celular e nada volta para a fila", async () => {
+    const phone = "5511990007008";
+    const { conversation, sentSince } = await closedAndAsked(phone);
+
+    provider.simulateIncomingMessage(phone, "9");
+    await waitUntil(() => sentSince().length >= 2);
+    expect(await processDueClosingMessages(new Date(Date.now() + 11_000))).toBe(1);
+
+    provider.simulateIncomingMessage(phone, "Muito obrigada 🙏");
+    await waitUntilAsync(async () => (await inboundIdsOf(conversation.id)).length === 2);
+    await waitUntil(() => readsOf(phone).length >= 2);
+
+    expect(await conversationsOf(conversation.contactId)).toBe(1);
+    expect(readsOf(phone).sort()).toEqual((await inboundIdsOf(conversation.id)).sort());
+  }, 20000);
+
+  it("sem pesquisa: um obrigado depois do encerramento fica na conversa encerrada; uma pergunta abre na fila", async () => {
+    await prisma.satisfactionSurveyConfig.deleteMany();
+    const phone = "5511990007009";
+    const conversation = await acceptedConversation(phone);
+    const base = textsTo(phone).length;
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    expect((await request(app).post(`/api/conversations/${conversation.id}/close`).set("Authorization", `Bearer ${anaToken}`)).status).toBe(200);
+    await vi.advanceTimersByTimeAsync(CONVERSATION_UNDO_WINDOW_MS);
+    vi.useRealTimers();
+    await waitUntil(() => textsTo(phone).length > base); // the closing message
+
+    provider.simulateIncomingMessage(phone, "valeu!");
+    await waitUntilAsync(async () => (await inboundIdsOf(conversation.id)).length === 1);
+    await waitUntil(() => readsOf(phone).length >= 1);
+    expect(await conversationsOf(conversation.contactId)).toBe(1);
+
+    provider.simulateIncomingMessage(phone, "Tenho mais uma dúvida sobre o plano");
+    await waitUntilAsync(async () => (await conversationsOf(conversation.contactId)) === 2);
+    const queued = await prisma.conversation.findFirstOrThrow({ where: { contactId: conversation.contactId, id: { not: conversation.id } } });
+    expect(queued.status).toBe("NEW");
+  }, 20000);
+
   it("o cliente não responde: a mensagem de encerramento sai quando a espera de 30 minutos acaba", async () => {
     const { conversation, sentSince } = await closedAndAsked("5511990007004");
     const survey = await surveyOf(conversation.id);
