@@ -271,8 +271,9 @@ async function storeTable(source: DataSource, table: FetchedTable) {
     },
     { timeout: 300_000 }
   );
-  if (source.overrideContactName && columnMap.clientName) await overrideContactNames(source.id, columnMap);
-  if (columnMap.contract) await fillContactContracts(source.id, columnMap);
+  // From the rows just read, not read back from the database: a big sheet would sit in memory twice.
+  if (source.overrideContactName && columnMap.clientName) await overrideContactNames(rows, columnMap);
+  if (columnMap.contract) await fillContactContracts(rows, columnMap);
 }
 
 /** Contract numbers of a client as Contatos › Contrato keeps them. */
@@ -284,8 +285,9 @@ function contractNumbersOf(contracts: { number: string }[]): string | null {
  * Contatos › Contrato from the source, for contacts that have none yet — what the attendant typed in the client
  * panel stays. Only a phone of a single client: with several, the attendant's choice in the panel fills it.
  */
-async function fillContactContracts(sourceId: string, columnMap: ColumnMap) {
-  const rows = await prisma.dataSourceRow.findMany({ where: { dataSourceId: sourceId }, select: { phoneKey: true, data: true } });
+type StoredRow = { phoneKey: string; data: Row };
+
+async function fillContactContracts(rows: StoredRow[], columnMap: ColumnMap) {
   const clientColumn = columnMap.clientKey ?? columnMap.clientName;
   const byPhone = new Map<string, { clients: Set<string>; contracts: Set<string> }>();
   for (const row of rows) {
@@ -313,8 +315,7 @@ export async function rememberContractNumber(contact: { id: string; contractNumb
 }
 
 /** "O nome da planilha substitui o do contato" — only when the phone belongs to a single client. */
-async function overrideContactNames(sourceId: string, columnMap: ColumnMap) {
-  const rows = await prisma.dataSourceRow.findMany({ where: { dataSourceId: sourceId }, select: { phoneKey: true, data: true } });
+async function overrideContactNames(rows: StoredRow[], columnMap: ColumnMap) {
   const namesByPhone = new Map<string, Set<string>>();
   for (const row of rows) {
     const name = (row.data as Row)[columnMap.clientName!];

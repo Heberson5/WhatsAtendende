@@ -14,7 +14,7 @@ import * as service from "./data-sources.service";
 
 export const dataSourcesRouter = Router();
 
-const MAX_UPLOAD_MB = 100;
+const MAX_UPLOAD_MB = 200;
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_UPLOAD_MB * 1024 * 1024 } });
 
 // Microsoft sign-in in progress: state -> source, valid for 10 minutes (single API process).

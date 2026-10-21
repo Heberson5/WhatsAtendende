@@ -52,8 +52,9 @@ proposital, para não expor banco de dados/cache numa VPS pública (veja
 ## Tamanho máximo dos arquivos enviados
 
 Quem recebe o arquivo primeiro é o nginx do container `web`, que deixa
-passar até **100 MB** por envio (`client_max_body_size` em
-`infrastructure/docker/nginx.conf`). Depois vem o limite da própria API,
+passar até **200 MB** por envio (`client_max_body_size` em
+`infrastructure/docker/nginx.conf`) — é o tamanho máximo do arquivo de Dados ›
+Fontes de dados. Depois vem o limite da própria API para anexos do atendimento,
 **25 MB por arquivo** por padrão — acima disso a tela mostra "Arquivo muito
 grande". Para mudar esse segundo limite, coloque `UPLOAD_MAX_SIZE_MB=40` (por
 exemplo) no `.env` da VPS e rode o deploy **[15]**; não passe de 100.
@@ -64,7 +65,11 @@ ele tem o limite dele, que o repositório não controla. Um envio recusado com
 rodapé dessa página (aba Rede do F12 › Resposta) diz de qual: `nginx/1.27.x` é
 o do container `web` (corrigido aqui); outro número, como `nginx/1.24.0
 (Ubuntu)`, é o proxy da VPS — e lá é preciso colocar `client_max_body_size
-100m;` no `server` do site.
+200m;` no `server` do site.
+
+Um arquivo de 200 MB (cerca de 480 mil linhas) leva perto de 2 minutos para ser
+lido e usa até 1,5 GB de memória enquanto isso: a VPS precisa ter memória livre
+para isso, além do que o sistema já usa.
 
 ## Backup e restauração completos
 
