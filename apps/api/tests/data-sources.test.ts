@@ -259,4 +259,30 @@ describe("Fontes de dados", () => {
     expect(client.contracts[0].beneficiaries.map((b: { name: string }) => b.name)).toEqual(["Rita Teste", "Lia Teste"]);
   });
 
+
+  it("Contatos › Contrato: vem da planilha, o atendente corrige e a planilha não apaga a correção", async () => {
+    const source = await prisma.dataSource.findFirstOrThrow({ where: { name: "ERP" } });
+    // The conversation the previous test opened for this phone.
+    const conversation = await prisma.conversation.findFirstOrThrow({ where: { contact: { phone: "5565999990099" } } });
+    const contact = () => prisma.contact.findUniqueOrThrow({ where: { id: conversation.contactId } });
+    await prisma.contact.update({ where: { id: conversation.contactId }, data: { contractNumber: null } });
+
+    await request(app).get(`/api/conversations/${conversation.id}/client-data`).set("Authorization", `Bearer ${agentToken}`).expect(200);
+    expect((await contact()).contractNumber).toBe("K-1, K-2");
+
+    const edited = await request(app)
+      .put(`/api/conversations/${conversation.id}/contact-contract`)
+      .set("Authorization", `Bearer ${agentToken}`)
+      .send({ contractNumber: " K-1 " });
+    expect(edited.status).toBe(200);
+    expect(edited.body.contractNumber).toBe("K-1");
+
+    await request(app).post(`/api/data-sources/${source.id}/sync`).set("Authorization", `Bearer ${adminToken}`);
+    await request(app).get(`/api/conversations/${conversation.id}/client-data`).set("Authorization", `Bearer ${agentToken}`).expect(200);
+    expect((await contact()).contractNumber).toBe("K-1");
+
+    const found = await request(app).get("/api/contacts?search=K-1").set("Authorization", `Bearer ${adminToken}`);
+    expect(found.body.items.map((c: { contractNumber: string }) => c.contractNumber)).toContain("K-1");
+  });
+
 });

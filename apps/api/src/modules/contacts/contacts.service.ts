@@ -38,6 +38,7 @@ function toListItem(row: ContactRow): ContactListItemDTO {
     channel: row.channel,
     connectionName: row.whatsappConnection?.name ?? row.metaConnection?.name ?? null,
     whatsappConnectionId: row.whatsappConnectionId,
+    contractNumber: row.contractNumber,
     tags: row.tags.map((t) => toTagDTO(t.tag)),
     conversationCount: row._count.conversations,
     firstConversationAt: row.firstConversationAt.toISOString(),
@@ -54,7 +55,11 @@ function buildWhere(filters: ContactFilters): Prisma.ContactWhereInput {
     ...(filters.connectionIds && { whatsappConnectionId: { in: filters.connectionIds } }),
     ...(filters.tagId && { tags: { some: { tagId: filters.tagId } } }),
     ...(search && {
-      OR: [{ name: { contains: search, mode: "insensitive" as const } }, ...(digits ? [{ phone: { contains: digits } }] : [])],
+      OR: [
+        { name: { contains: search, mode: "insensitive" as const } },
+        { contractNumber: { contains: search, mode: "insensitive" as const } },
+        ...(digits ? [{ phone: { contains: digits } }] : []),
+      ],
     }),
   };
 }
@@ -66,13 +71,13 @@ export interface ContactSort {
 
 /** The ORDER BY of a column; ties (same name, same date...) always fall back to the most recent interaction, then the id. */
 function orderByFor({ field, dir }: ContactSort): Prisma.ContactOrderByWithRelationInput[] {
-  // name and connection are ordered in Portuguese by listContactsByText.
+  // name, contract and connection are ordered in Portuguese by listContactsByText.
   const primary: Prisma.ContactOrderByWithRelationInput = {
     phone: { phone: { sort: dir, nulls: "last" as const } },
     conversations: { conversations: { _count: dir } },
     firstConversationAt: { firstConversationAt: dir },
     lastInteractionAt: { lastInteractionAt: dir },
-  }[field as Exclude<ContactSortField, "name" | "connection">];
+  }[field as Exclude<ContactSortField, TextSortField>];
   return [primary, ...(field === "lastInteractionAt" ? [] : [{ lastInteractionAt: "desc" as const }]), { id: "asc" }];
 }
 
@@ -80,13 +85,24 @@ function orderByFor({ field, dir }: ContactSort): Prisma.ContactOrderByWithRelat
 // (C on the server's Postgres image) would put every capital first and every accent after "z".
 const ptCollator = new Intl.Collator("pt-BR", { sensitivity: "base", numeric: true });
 
-/** One page of contacts ordered by a text column (name, connection) in Portuguese order; contacts with no value go last. */
+type TextSortField = "name" | "contract" | "connection";
+const TEXT_SORT_FIELDS: ContactSortField[] = ["name", "contract", "connection"];
+
+/** One page of contacts ordered by a text column (name, contract, connection) in Portuguese order; contacts with no value go last. */
 async function listContactsByText(where: Prisma.ContactWhereInput, page: number, pageSize: number, sort: ContactSort) {
   const keys = await prisma.contact.findMany({
     where,
-    select: { id: true, name: true, lastInteractionAt: true, whatsappConnection: { select: { name: true } }, metaConnection: { select: { name: true } } },
+    select: {
+      id: true,
+      name: true,
+      contractNumber: true,
+      lastInteractionAt: true,
+      whatsappConnection: { select: { name: true } },
+      metaConnection: { select: { name: true } },
+    },
   });
-  const text = (k: (typeof keys)[number]) => (sort.field === "name" ? k.name : (k.whatsappConnection?.name ?? k.metaConnection?.name ?? null))?.trim() || null;
+  const text = (k: (typeof keys)[number]) =>
+    (sort.field === "name" ? k.name : sort.field === "contract" ? k.contractNumber : (k.whatsappConnection?.name ?? k.metaConnection?.name ?? null))?.trim() || null;
   const sign = sort.dir === "asc" ? 1 : -1;
   keys.sort((a, b) => {
     const ta = text(a);
@@ -102,7 +118,7 @@ async function listContactsByText(where: Prisma.ContactWhereInput, page: number,
 
 export async function listContacts(filters: ContactFilters, page: number, pageSize: number, sort: ContactSort = { field: "lastInteractionAt", dir: "desc" }) {
   const where = buildWhere(filters);
-  if (sort.field === "name" || sort.field === "connection") return listContactsByText(where, page, pageSize, sort);
+  if (TEXT_SORT_FIELDS.includes(sort.field)) return listContactsByText(where, page, pageSize, sort);
   const [rows, total] = await Promise.all([
     prisma.contact.findMany({ where, include: listInclude, orderBy: orderByFor(sort), skip: (page - 1) * pageSize, take: pageSize }),
     prisma.contact.count({ where }),
@@ -176,6 +192,7 @@ type ExportRow = Prisma.ContactGetPayload<{ include: typeof listInclude }>;
 const EXPORT_CELLS: Record<string, (row: ExportRow, item: ContactListItemDTO) => unknown> = {
   name: (_r, item) => item.name,
   phone: (_r, item) => item.phone,
+  contract: (_r, item) => item.contractNumber,
   connection: (_r, item) => item.connectionName,
   tags: (_r, item) => item.tags.map((t) => t.name).join(", "),
   conversations: (_r, item) => item.conversationCount,

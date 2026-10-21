@@ -62,7 +62,7 @@ describe("Contatos e etiquetas", () => {
 
     const exported = await request(app).get("/api/contacts/export").set("Authorization", `Bearer ${token}`);
     expect(exported.status).toBe(200);
-    expect(exported.text).toContain("Ana Souza;5511900000001;Suporte;VIP, Atacado;0;");
+    expect(exported.text).toContain("Ana Souza;5511900000001;;Suporte;VIP, Atacado;0;");
   });
 
   it("edita nome e etiquetas; renomeia, muda cor e exclui etiqueta", async () => {

@@ -240,6 +240,44 @@ async function storeTable(source: DataSource, table: FetchedTable) {
     { timeout: 300_000 }
   );
   if (source.overrideContactName && columnMap.clientName) await overrideContactNames(source.id, columnMap);
+  if (columnMap.contract) await fillContactContracts(source.id, columnMap);
+}
+
+/** Contract numbers of a client as Contatos › Contrato keeps them. */
+function contractNumbersOf(contracts: { number: string }[]): string | null {
+  return contracts.map((c) => c.number).filter((n) => n !== "Sem contrato").join(", ") || null;
+}
+
+/**
+ * Contatos › Contrato from the source, for contacts that have none yet — what the attendant typed in the client
+ * panel stays. Only a phone of a single client: with several, the attendant's choice in the panel fills it.
+ */
+async function fillContactContracts(sourceId: string, columnMap: ColumnMap) {
+  const rows = await prisma.dataSourceRow.findMany({ where: { dataSourceId: sourceId }, select: { phoneKey: true, data: true } });
+  const clientColumn = columnMap.clientKey ?? columnMap.clientName;
+  const byPhone = new Map<string, { clients: Set<string>; contracts: Set<string> }>();
+  for (const row of rows) {
+    const data = row.data as Row;
+    const contract = data[columnMap.contract!];
+    if (!contract) continue;
+    if (!byPhone.has(row.phoneKey)) byPhone.set(row.phoneKey, { clients: new Set(), contracts: new Set() });
+    const entry = byPhone.get(row.phoneKey)!;
+    entry.clients.add(clientColumn ? data[clientColumn] ?? "" : "");
+    entry.contracts.add(contract);
+  }
+  const contacts = await prisma.contact.findMany({ where: { phone: { not: null }, contractNumber: null, isGroup: false }, select: { id: true, phone: true } });
+  for (const contact of contacts) {
+    const entry = byPhone.get(phoneKey(contact.phone) ?? "");
+    if (entry?.clients.size !== 1) continue;
+    await prisma.contact.update({ where: { id: contact.id }, data: { contractNumber: [...entry.contracts].join(", ") } });
+  }
+}
+
+/** The client chosen in the panel: their contracts go to Contatos › Contrato when it is still empty. */
+export async function rememberContractNumber(contact: { id: string; contractNumber: string | null }, data: ClientDataDTO) {
+  const numbers = data.client ? contractNumbersOf(data.client.contracts) : null;
+  if (contact.contractNumber || !numbers) return;
+  await prisma.contact.update({ where: { id: contact.id }, data: { contractNumber: numbers } });
 }
 
 /** "O nome da planilha substitui o do contato" — only when the phone belongs to a single client. */

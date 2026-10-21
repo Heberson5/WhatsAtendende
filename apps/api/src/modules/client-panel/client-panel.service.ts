@@ -32,7 +32,7 @@ export async function listTags(): Promise<TagDTO[]> {
 
 export async function getContactPanel(conversationId: string, contactId: string, firstConversationAt: Date): Promise<ContactPanelDTO> {
   const [contact, tags, previous, previousCount] = await Promise.all([
-    prisma.contact.findUniqueOrThrow({ where: { id: contactId }, select: { pinnedNote: true, pinnedNoteUpdatedAt: true, pinnedNoteUpdatedBy: true } }),
+    prisma.contact.findUniqueOrThrow({ where: { id: contactId }, select: { pinnedNote: true, pinnedNoteUpdatedAt: true, pinnedNoteUpdatedBy: true, contractNumber: true } }),
     prisma.contactTag.findMany({ where: { contactId }, include: { tag: true }, orderBy: { createdAt: "asc" } }),
     listPreviousConversations(conversationId, contactId, 0, PREVIOUS_CONVERSATIONS_FIRST),
     prisma.conversation.count({ where: { contactId, id: { not: conversationId } } }),
@@ -46,6 +46,7 @@ export async function getContactPanel(conversationId: string, contactId: string,
     pinnedNote: contact.pinnedNote
       ? { text: contact.pinnedNote, updatedAt: contact.pinnedNoteUpdatedAt!.toISOString(), updatedByName: contact.pinnedNoteUpdatedBy }
       : null,
+    contractNumber: contact.contractNumber,
   };
 }
 
@@ -72,6 +73,11 @@ export async function listPreviousConversations(conversationId: string, contactI
     closedAt: c.closedAt ? c.closedAt.toISOString() : null,
     messageCount: c._count.messages,
   }));
+}
+
+/** Contatos › Contrato, as the attendant typed it in the client panel (empty clears it). */
+export async function setContractNumber(contactId: string, contractNumber: string | null) {
+  await prisma.contact.update({ where: { id: contactId }, data: { contractNumber } });
 }
 
 export async function setPinnedNote(contactId: string, text: string | null, userName: string) {
