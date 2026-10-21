@@ -11,6 +11,20 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.20.1",
+    date: "21 out 2026",
+    name: "Aviso de nova versão",
+    summary: "Quem estava com o sistema aberto durante uma atualização recebe um aviso para atualizar a página.",
+    notes: [
+      {
+        type: "novo",
+        area: "geral",
+        title: "Aviso de nova versão do sistema",
+        text: "Quando o sistema é atualizado com a página aberta, aparece o aviso \"Nova versão do sistema disponível\" com o botão Atualizar agora. Se você estiver escrevendo uma mensagem ou gravando um áudio, o aviso espera o envio. Dá para pedir para lembrar em 10 minutos; até atualizar, fica uma faixa no topo. Se não atualizar, pode ocorrer alguma falha inesperada.",
+      },
+    ],
+  },
+  {
     version: "2.20.0",
     date: "21 out 2026",
     name: "Menu Dados: fontes por conexão e layouts de boleto",
