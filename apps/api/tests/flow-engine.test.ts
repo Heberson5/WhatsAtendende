@@ -60,7 +60,7 @@ describe("Fluxo: motor de execução", () => {
     expect(first.status).toBe("IN_FLOW");
     expect(sent.map((m) => m.text)).toEqual([
       "Olá, Ana! 👋 Bem-vindo ao nosso atendimento.",
-      "Escolha uma opção respondendo com o número:\n1. Vendas\n2. Suporte\n3. Financeiro",
+      "Escolha uma opção respondendo com o número:\n1. Vendas\n2. Suporte\n3. Financeiro\n4. Encerrar atendimento",
     ]);
 
     const second = await customerWrites("5511900000002", "2");

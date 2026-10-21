@@ -38,7 +38,10 @@ import {
   FLOW_HOURS_CLOSED,
   FLOW_HOURS_OPEN,
   FLOW_MENU_DEFAULT_PROMPT,
+  FLOW_MENU_NAV_OPTIONS,
+  flowMenuNavOptions,
   renderFlowMenuText,
+  type FlowMenuNavigation,
 } from "@whatsatendende/types";
 import { useAuthStore } from "../../store/auth-store";
 import { api, getApiErrorMessage } from "../../lib/api";
@@ -1158,12 +1161,20 @@ function NodeInspector({
                   Na conexão por QR Code o cliente responde com o número ou com o nome da opção. Na API Oficial, até 3 opções curtas viram botões e até 10 viram
                   uma lista. Depois de 3 respostas que não batem com nenhuma opção, a conversa vai para a fila.
                 </p>
+                <MenuNavigationField
+                  disabled={disabled}
+                  navigation={(node.data as { navigation?: FlowMenuNavigation }).navigation}
+                  onChange={(navigation) => onChange({ ...(node.data as object), navigation } as FlowNodeData, "navigation")}
+                />
                 <FlowImageField disabled={disabled} image={(node.data as { image?: FlowImage | null }).image ?? null} onChange={(image) => onChange({ ...(node.data as object), image } as FlowNodeData, "image")} />
                 <WhatsAppPreview
                   text={PREVIEW_VARS(
                     renderFlowMenuText({
                       prompt: (node.data as { prompt?: string }).prompt,
-                      options: menuOptions(node).map((o) => ({ ...o, label: o.label || "…" })),
+                      options: [
+                        ...menuOptions(node).map((o) => ({ ...o, label: o.label || "…" })),
+                        ...flowMenuNavOptions((node.data as { navigation?: FlowMenuNavigation }).navigation, true),
+                      ],
                     })
                   )}
                   image={(node.data as { image?: FlowImage | null }).image ?? null}
@@ -1467,5 +1478,44 @@ function WhatsAppFormatted({ text }: { text: string }) {
         part.length > 2 && part.startsWith("*") && part.endsWith("*") ? <strong key={i}>{part.slice(1, -1)}</strong> : <span key={i}>{part}</span>
       )}
     </>
+  );
+}
+
+const MENU_NAVIGATION_FIELDS: { key: keyof FlowMenuNavigation; hint: string }[] = [
+  { key: "back", hint: "Volta para o menu anterior." },
+  { key: "home", hint: "Volta para o primeiro menu do fluxo." },
+  { key: "end", hint: "Encerra a conversa na hora, sem enviar a pesquisa de satisfação." },
+];
+
+/** Voltar / Menu inicial / Encerrar atendimento: on by default, numbered after the menu's own options (QR Code). */
+function MenuNavigationField({
+  disabled,
+  navigation,
+  onChange,
+}: {
+  disabled: boolean;
+  navigation: FlowMenuNavigation | undefined;
+  onChange: (navigation: FlowMenuNavigation) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <span className="block text-xs font-medium text-muted">Opções de navegação (QR Code)</span>
+      {MENU_NAVIGATION_FIELDS.map(({ key, hint }) => (
+        <label key={key} className="flex items-start gap-2 rounded-lg border border-border px-3 py-2">
+          <input
+            type="checkbox"
+            disabled={disabled}
+            checked={navigation?.[key] !== false}
+            onChange={(e) => onChange({ ...navigation, [key]: e.target.checked })}
+            className="mt-0.5 h-4 w-4 accent-[var(--color-primary)]"
+          />
+          <span>
+            <span className="block text-sm font-medium">{FLOW_MENU_NAV_OPTIONS[key].label}</span>
+            <span className="block text-xs text-muted">{hint}</span>
+          </span>
+        </label>
+      ))}
+      <p className="text-xs text-muted">Aparecem numeradas depois das opções do menu. Voltar e Menu inicial não aparecem no primeiro menu do fluxo.</p>
+    </div>
   );
 }

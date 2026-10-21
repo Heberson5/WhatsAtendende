@@ -386,6 +386,33 @@ export interface FlowMenuOption {
 }
 
 /**
+ * The navigation options a menu adds after its own on the QR Code (all on unless switched off on the node):
+ * "Voltar" to the menu before, "Menu inicial" to the flow's first menu (neither on the first menu itself) and
+ * "Encerrar atendimento", which closes the conversation with no satisfaction survey.
+ */
+export interface FlowMenuNavigation {
+  back?: boolean;
+  home?: boolean;
+  end?: boolean;
+}
+
+export const FLOW_MENU_NAV_OPTIONS = {
+  back: { id: "__nav_back__", label: "Voltar" },
+  home: { id: "__nav_home__", label: "Menu inicial" },
+  end: { id: "__nav_end__", label: "Encerrar atendimento" },
+} as const satisfies Record<keyof FlowMenuNavigation, FlowMenuOption>;
+
+/** The navigation options a menu shows — `hasPrevious` is false on the first menu the customer sees. */
+export function flowMenuNavOptions(navigation: FlowMenuNavigation | undefined, hasPrevious: boolean): FlowMenuOption[] {
+  const on = (key: keyof FlowMenuNavigation) => navigation?.[key] !== false;
+  return [
+    ...(hasPrevious && on("back") ? [FLOW_MENU_NAV_OPTIONS.back] : []),
+    ...(hasPrevious && on("home") ? [FLOW_MENU_NAV_OPTIONS.home] : []),
+    ...(on("end") ? [FLOW_MENU_NAV_OPTIONS.end] : []),
+  ];
+}
+
+/**
  * Node-type-specific config — which shape applies is driven by the node's
  * own `type`. assignedAgentIds on TRANSFER_TO_AGENT is empty by default
  * (any agent on the connection's queue); see PROMPT: "para quais
@@ -393,7 +420,7 @@ export interface FlowMenuOption {
  */
 export type FlowNodeData = { name?: string } & (
   | { text?: string; image?: FlowImage | null } // TEXT_MESSAGE
-  | { options: FlowMenuOption[]; prompt?: string; image?: FlowImage | null } // MENU — prompt defaults to FLOW_MENU_DEFAULT_PROMPT
+  | { options: FlowMenuOption[]; prompt?: string; image?: FlowImage | null; navigation?: FlowMenuNavigation } // MENU — prompt defaults to FLOW_MENU_DEFAULT_PROMPT
   | FlowBusinessHoursData // BUSINESS_HOURS
   | { assignedAgentIds: string[]; mode?: "any" | "selected" } // TRANSFER_TO_AGENT — "selected": those people attend it, from any connection
   | FlowStartData // START
