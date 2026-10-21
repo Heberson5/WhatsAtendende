@@ -2509,6 +2509,50 @@ export interface BoletoPreviewDTO {
   warnings: string[];
 }
 
+/**
+ * Instruções do boleto (Configurações › Fontes de dados): the lines printed in "Instruções de responsabilidade do
+ * Cedente". {multa} and {juros_dia} are worked out from each boleto's original value.
+ */
+export interface BoletoInstructionsDTO {
+  finePercent: number;
+  interestMonthPercent: number;
+  lines: string[];
+}
+
+export const BOLETO_INSTRUCTION_LINES_MAX = 6;
+export const BOLETO_INSTRUCTION_LINE_MAX_LENGTH = 90;
+export const BOLETO_INSTRUCTION_TAGS = ["{multa}", "{juros_dia}", "{contrato}", "{documento}", "{vencimento}", "{valor}"] as const;
+
+export const DEFAULT_BOLETO_INSTRUCTIONS: BoletoInstructionsDTO = {
+  finePercent: 2,
+  interestMonthPercent: 1,
+  lines: [
+    "-> Após Vencimento Cobrar Multa de R$ {multa}",
+    "-> Após Vencimento Cobrar Juros Diários de R$ {juros_dia}",
+    "-> Sujeito a protesto após 5 (cinco) dias do vencto.",
+    "-> Para pagamento até o vencimento o desconto será de 5%",
+    "-> Contrato: {contrato}  Documento: {documento}",
+  ],
+};
+
+const centsText = (cents: number) => (cents / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/** The instruction lines of one boleto: multa = value × %, juros ao dia = value × % ao mês ÷ 30, rounded to the cent. */
+export function fillBoletoInstructions(
+  settings: BoletoInstructionsDTO,
+  boleto: { cents: number; contract: string; document: string | null; due: string }
+): string[] {
+  const values: Record<string, string> = {
+    "{multa}": centsText(Math.round((boleto.cents * settings.finePercent) / 100)),
+    "{juros_dia}": centsText(Math.round((boleto.cents * settings.interestMonthPercent) / 100 / 30)),
+    "{contrato}": boleto.contract,
+    "{documento}": boleto.document ?? "",
+    "{vencimento}": boleto.due,
+    "{valor}": centsText(boleto.cents),
+  };
+  return settings.lines.map((line) => line.replace(/\{(multa|juros_dia|contrato|documento|vencimento|valor)\}/g, (tag) => values[tag]));
+}
+
 /** Why a parcel can't get a boleto (shown next to it), or null when it can. */
 export interface BoletoAvailabilityDTO {
   parcelId: string;

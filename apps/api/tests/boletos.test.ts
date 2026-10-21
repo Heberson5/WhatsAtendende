@@ -3,6 +3,7 @@ import request from "supertest";
 import { createApp } from "../src/app";
 import { prisma } from "../src/lib/prisma";
 import { __getProviderForTests } from "../src/modules/whatsapp/whatsapp.service";
+import { DEFAULT_BOLETO_INSTRUCTIONS, fillBoletoInstructions } from "@whatsatendende/types";
 import { buildBoletoFromRow } from "../src/modules/boletos/boletos.service";
 import type { ColumnMap, Row } from "../src/modules/data-sources/data-sources.service";
 import type { MockWhatsAppProvider } from "@whatsatendende/whatsapp";
@@ -35,7 +36,7 @@ describe("Envio de boleto", () => {
   beforeAll(async () => {
     await resetDatabase();
     await prisma.dataSource.deleteMany();
-    await prisma.systemSetting.deleteMany({ where: { key: "boleto-validation" } });
+    await prisma.systemSetting.deleteMany({ where: { key: { in: ["boleto-validation", "boleto-instructions"] } } });
     await createTestUser({ email: "admin-bol@test.dev", role: "ADMIN" });
     adminToken = await loginAs("admin-bol@test.dev");
     const connection = await request(app).post("/api/whatsapp/connections").set("Authorization", `Bearer ${adminToken}`).send({ name: "Boletos" });
@@ -134,8 +135,29 @@ describe("Envio de boleto", () => {
     expect(res.status).toBe(201);
     expect(provider.sentFiles.length - files).toBe(1);
     expect(provider.sentTexts.length - texts).toBe(3);
-    expect(provider.sentTexts.at(-1)!.text).toMatch(/Linha digitável \(vencimento 10\/02\/2026, R\$\s?90,00\):\n00190\.00009/);
+    const d2 = await prisma.dataSourceRow.findUniqueOrThrow({ where: { id: parcelIds["D-2"] } });
+    // Only the digits of the linha digitável, without the agent's name.
+    expect(provider.sentTexts.at(-1)!.text).toBe(buildBoletoFromRow(d2.data as Row, map).linha.replace(/\D/g, ""));
     expect(await prisma.conversationNote.count({ where: { conversationId, body: { startsWith: "Boleto enviado por Ana" } } })).toBe(2);
     expect(await prisma.auditLog.count({ where: { action: "BOLETO_SENT", entityId: conversationId } })).toBe(2);
+  });
+
+  it("instruções: multa e juros ao dia calculados sobre o valor original; o administrador edita", async () => {
+    const lines = fillBoletoInstructions(DEFAULT_BOLETO_INSTRUCTIONS, { cents: 12758, contract: "C-1", document: "D-9", due: "10/11/2026" });
+    expect(lines[0]).toBe("-> Após Vencimento Cobrar Multa de R$ 2,55");
+    expect(lines[1]).toBe("-> Após Vencimento Cobrar Juros Diários de R$ 0,04");
+    expect(lines[4]).toBe("-> Contrato: C-1  Documento: D-9");
+    expect(fillBoletoInstructions(DEFAULT_BOLETO_INSTRUCTIONS, { cents: 8363, contract: "", document: null, due: "" }).slice(0, 2)).toEqual([
+      "-> Após Vencimento Cobrar Multa de R$ 1,67",
+      "-> Após Vencimento Cobrar Juros Diários de R$ 0,03",
+    ]);
+
+    const current = await request(app).get("/api/boletos/instructions").set("Authorization", `Bearer ${adminToken}`);
+    expect(current.body).toEqual(DEFAULT_BOLETO_INSTRUCTIONS);
+    const next = { finePercent: 10, interestMonthPercent: 3, lines: ["Multa {multa}"] };
+    await request(app).put("/api/boletos/instructions").set("Authorization", `Bearer ${adminToken}`).send(next).expect(200);
+    expect((await request(app).get("/api/boletos/instructions").set("Authorization", `Bearer ${adminToken}`)).body).toEqual(next);
+    const forbidden = await request(app).put("/api/boletos/instructions").set("Authorization", `Bearer ${agentToken}`).send(next);
+    expect(forbidden.status).toBe(403);
   });
 });

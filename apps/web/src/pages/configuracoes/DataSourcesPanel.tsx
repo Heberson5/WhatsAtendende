@@ -7,6 +7,7 @@ import { Database, FileSpreadsheet, Link2, LogIn, Pencil, Plus, RefreshCw, Trash
 import { DATA_SOURCE_ROLES, PERMISSION, type DataSourceDTO, type DataSourceKind, type DataSourceRole, type DataSourceStatus } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
+import { BoletoInstructionsSection } from "./BoletoInstructionsSection";
 import { BoletoValidationSection } from "./BoletoValidationSection";
 
 const KIND_LABEL: Record<DataSourceKind, string> = {
@@ -475,6 +476,7 @@ export function DataSourcesPanel() {
       )}
 
       <BoletoValidationSection />
+      <BoletoInstructionsSection />
     </div>
   );
 }

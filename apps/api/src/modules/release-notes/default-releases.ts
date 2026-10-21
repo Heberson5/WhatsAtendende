@@ -11,6 +11,35 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.19.3",
+    date: "21 out 2026",
+    name: "Instruções do boleto e linha digitável limpa",
+    summary: "As instruções do boleto são configuradas em Fontes de dados, com multa e juros calculados sobre o valor de cada boleto; a linha digitável vai só com os números.",
+    notes: [
+      {
+        type: "novo",
+        area: "configuracoes",
+        title: "Instruções do boleto",
+        text: "Informe a multa (%) e os juros (% ao mês) e escreva as linhas das instruções. {multa} e {juros_dia} são calculados sobre o valor original de cada boleto (juros ao dia = valor × % ÷ 30), e a prévia mostra como fica.",
+        where: "Configurações › Fontes de dados › Instruções do boleto",
+      },
+      {
+        type: "melhoria",
+        area: "atendimento",
+        title: "Boleto com o logotipo do banco",
+        text: "O boleto passou a sair com o logotipo do Banco do Brasil, como o boleto do banco.",
+        where: "Atendimento › Dados do cliente › Enviar boleto",
+      },
+      {
+        type: "melhoria",
+        area: "atendimento",
+        title: "Linha digitável só com os números",
+        text: "Depois do PDF, cada linha digitável vai numa mensagem só com os números, sem o nome do atendente, sem espaços e sem pontos, pronta para o cliente copiar no aplicativo do banco.",
+        where: "Atendimento › Dados do cliente › Enviar boleto",
+      },
+    ],
+  },
+  {
     version: "2.19.2",
     date: "21 out 2026",
     name: "Boletos no layout do banco",
