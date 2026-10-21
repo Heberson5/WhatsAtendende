@@ -1,8 +1,24 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 
+// Every build gets its own id, baked into the code (__BUILD_ID__) and written
+// to /version.json. A page left open across a deploy compares the two and asks
+// the person to reload (NewVersionModal) — the release-notes version can't do
+// this, it only changes when a note is published.
+const BUILD_ID = process.env.BUILD_ID || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+function buildVersion(): Plugin {
+  return {
+    name: "build-version",
+    config: () => ({ define: { __BUILD_ID__: JSON.stringify(BUILD_ID) } }),
+    generateBundle() {
+      this.emitFile({ type: "asset", fileName: "version.json", source: JSON.stringify({ id: BUILD_ID }) });
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), buildVersion()],
   // @whatsatendende/types is a CommonJS workspace package reached through a
   // node_modules symlink — both Vite's dev-time dependency pre-bundling and
   // its production Rollup build resolve symlinks to the package's real path

@@ -5,6 +5,7 @@ import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 import { BottomNav } from "./BottomNav";
 import { AppUpdateBanner } from "./AppUpdateBanner";
+import { NewVersionModal } from "./NewVersionModal";
 import { CommandPalette } from "./CommandPalette";
 import { WhatsNewModal } from "./WhatsNewModal";
 import { useAuthStore } from "../../store/auth-store";
@@ -117,6 +118,8 @@ export function AppLayout() {
       <Sidebar mobileOpen={mobileNavOpen} onMobileClose={() => setMobileNavOpen(false)} />
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-card border border-border bg-surface shadow-soft">
         <AppUpdateBanner />
+        {/* A new version was deployed while this page was open: popup, or a bar while a message is unsent / snoozed. */}
+        <NewVersionModal />
         <Topbar title={title} onMenuClick={() => setMobileNavOpen(true)} />
         <main className="flex-1 overflow-hidden">
           <Outlet />

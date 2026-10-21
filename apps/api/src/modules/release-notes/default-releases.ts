@@ -11,7 +11,7 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
-    version: "2.20.1",
+    version: "2.20.2",
     date: "22 out 2026",
     name: "Arquivo de dados até 200 MB",
     summary: "O arquivo enviado em Dados › Fontes de dados pode ter até 200 MB, aceita TXT e é lido com menos memória.",
@@ -22,6 +22,20 @@ export const DEFAULT_RELEASES: ReleaseContent[] = [
         title: "Arquivo de dados até 200 MB",
         text: "O botão Enviar arquivo aceita até 200 MB (antes 100 MB), em XLSX, CSV ou TXT separado por ponto e vírgula. CSV é o formato mais leve: um arquivo de 200 MB, com cerca de 480 mil linhas, é lido em uns 2 minutos, em segundo plano. A leitura também passou a usar menos memória do servidor.",
         where: "Dados › Fontes de dados › Enviar arquivo",
+      },
+    ],
+  },
+  {
+    version: "2.20.1",
+    date: "21 out 2026",
+    name: "Aviso de nova versão",
+    summary: "Quem estava com o sistema aberto durante uma atualização recebe um aviso para atualizar a página.",
+    notes: [
+      {
+        type: "novo",
+        area: "geral",
+        title: "Aviso de nova versão do sistema",
+        text: "Quando o sistema é atualizado com a página aberta, aparece o aviso \"Nova versão do sistema disponível\" com o botão Atualizar agora. Se você estiver escrevendo uma mensagem ou gravando um áudio, o aviso espera o envio. Dá para pedir para lembrar em 10 minutos; até atualizar, fica uma faixa no topo. Se não atualizar, pode ocorrer alguma falha inesperada.",
       },
     ],
   },
