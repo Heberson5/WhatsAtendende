@@ -1,6 +1,7 @@
 import type { AutoMessageTrigger, Role } from "@prisma/client";
 import { z } from "zod";
 import { customerFirstName } from "@whatsatendende/types";
+import { fillGreeting } from "../../lib/customer-tags";
 import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
 import { appliesToConnection, assertScopeConnectionsExist, scopeData, withScopeConnections, type ConnectionScopeInput } from "../../lib/connection-scope";
@@ -127,9 +128,9 @@ export interface AutoMessageTemplateVars {
   primeiroNome?: string | null;
 }
 
-/** Substitutes {{atendente}}/{{atendente_nome}}/{{atendente_cargo}}/{{cliente}}/{{primeiro_nome}} with real values — see AutoMessageTemplate's own doc comment. */
+/** Substitutes {{atendente}}/{{atendente_nome}}/{{atendente_cargo}}/{{cliente}}/{{primeiro_nome}}/{{saudacao}} with real values — see AutoMessageTemplate's own doc comment. */
 export function renderAutoMessageTemplate(text: string, vars: AutoMessageTemplateVars): string {
-  return text
+  return fillGreeting(text)
     .replace(TAGS.atendente, vars.atendente)
     .replace(TAGS.atendenteNome, vars.atendenteNome)
     .replace(TAGS.atendenteCargo, vars.atendenteCargo)

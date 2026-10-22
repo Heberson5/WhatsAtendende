@@ -1,7 +1,8 @@
 import fs from "node:fs";
+import { fillSendTags } from "../../lib/customer-tags";
 import path from "node:path";
 import type { Prisma, SatisfactionSurveyConfig } from "@prisma/client";
-import { CONVERSATION_UNDO_WINDOW_MS, fillCustomerTags, npsFromCounts, replyMediaKind, type SatisfactionSettingsDTO, type SatisfactionQuestionSummaryDTO, type SatisfactionSummaryDTO, type SatisfactionSurveyDTO } from "@whatsatendende/types";
+import { CONVERSATION_UNDO_WINDOW_MS, npsFromCounts, replyMediaKind, type SatisfactionSettingsDTO, type SatisfactionQuestionSummaryDTO, type SatisfactionSummaryDTO, type SatisfactionSurveyDTO } from "@whatsatendende/types";
 import { prisma } from "../../lib/prisma";
 import { logger } from "../../lib/logger";
 import { Errors } from "../../lib/http-error";
@@ -335,7 +336,7 @@ export async function sendCloseFollowUp(conversationId: string, closingMessage?:
         }),
       },
     });
-    await sendSurveyText({ id: conversationId, whatsappConnectionId: conversation.whatsappConnectionId! }, conversation.contact.phone!, fillCustomerTags(survey.question, conversation.contact.name ?? conversation.contact.phone!, conversation.contact.firstName));
+    await sendSurveyText({ id: conversationId, whatsappConnectionId: conversation.whatsappConnectionId! }, conversation.contact.phone!, fillSendTags(survey.question, conversation.contact.name ?? conversation.contact.phone!, conversation.contact.firstName));
   } catch (err) {
     logger.error({ err, conversationId }, "failed to send closing follow-up");
   }

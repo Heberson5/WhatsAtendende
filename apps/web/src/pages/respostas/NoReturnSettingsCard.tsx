@@ -6,7 +6,7 @@ import type { NoReturnSettingsDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { TagButtons, insertTag } from "../dados/TagButtons";
 
-const MESSAGE_TAGS = ["{{primeiro_nome}}", "{{cliente}}", "{{atendente}}"] as const;
+const MESSAGE_TAGS = ["{{saudacao}}", "{{primeiro_nome}}", "{{cliente}}", "{{atendente}}"] as const;
 
 const MAX_MINUTES = 240;
 
@@ -114,7 +114,7 @@ export function NoReturnSettingsCard({ canEdit }: { canEdit: boolean }) {
         </label>
       </div>
       <p className="mt-2 text-xs text-muted">
-        Use {"{{primeiro_nome}}"}, {"{{cliente}}"} e {"{{atendente}}"} nas mensagens. Não encerra quando a última mensagem é do cliente, quando há "Lembrar de retornar" ou envio
+        Use {"{{saudacao}}"}, {"{{primeiro_nome}}"}, {"{{cliente}}"} e {"{{atendente}}"} nas mensagens. Não encerra quando a última mensagem é do cliente, quando há "Lembrar de retornar" ou envio
         agendado pendente, ou quando o atendente marcou "Aguardar cliente". Se o cliente voltar, a conversa vai para o mesmo atendente (se estiver online).
       </p>
       {canEdit && (

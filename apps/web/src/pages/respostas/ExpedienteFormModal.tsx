@@ -12,6 +12,7 @@ const DEFAULT_END = "18:00";
 const CLIENT_TAGS = [
   { tag: "{{cliente}}", label: "nome do cliente" },
   { tag: "{{primeiro_nome}}", label: "primeiro nome do cliente" },
+  { tag: "{{saudacao}}", label: "Bom dia, Boa tarde ou Boa noite, conforme o horário" },
 ];
 const CLOSED_MESSAGE_PLACEHOLDER = "Olá, {{cliente}}! No momento estamos fora do horário de atendimento. Assim que abrirmos, responderemos você.";
 
