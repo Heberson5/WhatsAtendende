@@ -9,37 +9,57 @@ import { getNoReturnSettings } from "../settings/settings.service";
 import { getConnectionSchedule, isWorkScheduleOpen } from "../work-schedules/work-schedules.service";
 import { renderAutoMessageTemplate, ROLE_LABEL } from "../auto-message-templates/auto-message-templates.service";
 import { getConversationOrThrow, NO_RETURN_CLOSE_REASON } from "./conversations.service";
+import { scheduleCloseFollowUp, willSendSurveyOnClose, type HeldClosingMessage } from "../satisfaction/satisfaction.service";
 
 const OPEN_STATUSES: ConversationStatus[] = ["IN_PROGRESS", "TRANSFERRED"];
 
 type Conversation = Awaited<ReturnType<typeof getConversationOrThrow>>;
 
-/** Sends one of the "falta de retorno" texts in the assigned agent's name, without restarting the countdown. */
-async function sendNoReturnText(conversation: Conversation, template: string) {
+/** A "falta de retorno" text with its tags filled for this conversation. */
+function renderNoReturnText(conversation: Conversation, template: string): string {
   const agent = conversation.assignedAgent!;
-  const text = renderAutoMessageTemplate(template, {
+  return renderAutoMessageTemplate(template, {
     atendente: agent.displayName,
     atendenteNome: agent.fullName,
     atendenteCargo: ROLE_LABEL[agent.role],
     cliente: conversation.contact.name ?? conversation.contact.phone ?? "",
     primeiroNome: conversation.contact.firstName,
   });
+}
+
+/**
+ * Sends one of the "falta de retorno" texts, recorded as the assigned agent's but WITHOUT the "*Nome:*" on top — an
+ * automatic message never carries the agent's name — and without restarting the countdown.
+ */
+async function sendNoReturnText(conversation: Conversation, template: string) {
+  const agent = conversation.assignedAgent!;
+  const text = renderNoReturnText(conversation, template);
   const message = await createSystemOutboundMessage({ conversationId: conversation.id, type: "TEXT", body: text, agentId: agent.id });
   await sendOutboundTextViaChannel(conversation, message.id, text, null);
   realtimeEvents.newMessage(conversation.id, agent.id);
 }
 
 /**
- * "Encerrar por falta de retorno": the customer gets the no-return message, no satisfaction survey follows, and the
- * close counts for the assigned agent like any other — kept apart by closeReason in the reports. `byUserId` null =
- * the automatic close.
+ * "Encerrar por falta de retorno": the customer gets the no-return message and the close counts for the assigned agent
+ * like any other — kept apart by closeReason in the reports. `byUserId` null = the automatic close. With "Enviar a
+ * pesquisa de satisfação" on (and a survey for the connection) the survey follows, and the no-return message waits for
+ * the score like any closing message; survey and message go without the agent's name.
  */
 export async function closeForNoReturn(conversationId: string, byUserId: string | null) {
   const conversation = await getConversationOrThrow(conversationId);
   if (!OPEN_STATUSES.includes(conversation.status) || !conversation.assignedAgentId) throw Errors.conflict("Esta conversa não está em atendimento");
+  if (await hasPendingScheduledMessage(conversationId)) {
+    throw Errors.conflict("Esta conversa tem mensagem agendada. O encerramento por falta de retorno fica bloqueado até ela ser enviada ou cancelada.");
+  }
   const agentId = conversation.assignedAgentId;
 
-  await sendNoReturnText(conversation, (await getNoReturnSettings()).closeText);
+  const settings = await getNoReturnSettings();
+  let heldClosingMessage: HeldClosingMessage | undefined;
+  if (settings.sendSurvey && conversation.channel === "WHATSAPP" && (await willSendSurveyOnClose(conversationId))) {
+    heldClosingMessage = { text: renderNoReturnText(conversation, settings.closeText), senderId: agentId, senderDisplayName: null };
+  } else {
+    await sendNoReturnText(conversation, settings.closeText);
+  }
   await prisma.conversation.update({
     where: { id: conversationId },
     data: {
@@ -67,7 +87,30 @@ export async function closeForNoReturn(conversationId: string, byUserId: string 
   });
   realtimeEvents.conversationClosed(conversationId, agentId);
   if (conversation.interventionById) realtimeEvents.conversationClosed(conversationId, conversation.interventionById);
+  if (heldClosingMessage) scheduleCloseFollowUp(conversationId, heldClosingMessage);
   return getConversationOrThrow(conversationId);
+}
+
+async function hasPendingScheduledMessage(conversationId: string): Promise<boolean> {
+  return (await prisma.scheduledMessage.count({ where: { conversationId, sentAt: null, canceledAt: null, failedAt: null } })) > 0;
+}
+
+/**
+ * A scheduled message pauses the "falta de retorno" countdown. Scheduling one clears the deadlines already running
+ * (a reminder that went out must not close the conversation later); when the last pending one is canceled or fails,
+ * the countdown starts over from that moment — a sent one restarts it on its own, like any message the agent writes.
+ */
+export async function pauseNoReturnForScheduledMessage(conversationId: string) {
+  await prisma.conversation.update({ where: { id: conversationId }, data: { noReturnReminderAt: null, noReturnCloseAt: null } });
+}
+
+export async function restartNoReturnAfterScheduledMessage(conversationId: string, now = new Date()) {
+  if (await hasPendingScheduledMessage(conversationId)) return;
+  const settings = await getNoReturnSettings();
+  await prisma.conversation.updateMany({
+    where: { id: conversationId, status: { in: OPEN_STATUSES }, lastMessageDirection: "OUTBOUND" },
+    data: { noReturnReminderAt: new Date(now.getTime() + settings.reminderMinutes * 60_000), noReturnCloseAt: null },
+  });
 }
 
 /** "Aguardar cliente" / "Manter aberta": no automatic close until the customer answers (or the agent turns it off). */

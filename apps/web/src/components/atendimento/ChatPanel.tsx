@@ -475,6 +475,11 @@ export function ChatPanel({
   const scheduled = extras?.scheduledMessages.filter((m) => m.conversationId === conversation.id) ?? [];
   const [reminderOpen, setReminderOpen] = useState(false);
   const invalidateExtras = () => queryClient.invalidateQueries({ queryKey: ["agent-extras"] });
+  // Scheduling or canceling pauses/restarts the "falta de retorno" close shown on the conversation itself.
+  const invalidateScheduled = () => {
+    invalidateExtras();
+    queryClient.invalidateQueries({ queryKey: ["mine"] });
+  };
   const pinMutation = useMutation({
     mutationFn: (next: boolean) => api.put(`/agent-tools/pins/${conversation.id}`, { pinned: next }),
     onSuccess: (_res, next) => {
@@ -501,7 +506,7 @@ export function ChatPanel({
   const cancelScheduledMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/agent-tools/scheduled-messages/${id}`),
     onSuccess: () => {
-      invalidateExtras();
+      invalidateScheduled();
       toast.success("Envio agendado cancelado.");
     },
     onError: (err) => toast.error(getApiErrorMessage(err)),
@@ -1019,7 +1024,7 @@ export function ChatPanel({
             ? async (body, sendAt) => {
                 try {
                   await api.post("/agent-tools/scheduled-messages", { conversationId: conversation.id, body, sendAt: sendAt.toISOString() });
-                  invalidateExtras();
+                  invalidateScheduled();
                   toast.success(`Mensagem agendada para ${format(sendAt, "dd/MM 'às' HH:mm")}.`);
                 } catch (err) {
                   toast.error(getApiErrorMessage(err));
@@ -1094,13 +1099,20 @@ export function ChatPanel({
             </div>
             <button
               onClick={() => closeNoReturnMutation.mutate()}
-              disabled={closeNoReturnMutation.isPending}
+              disabled={closeNoReturnMutation.isPending || conversation.scheduledMessagePending}
+              title={conversation.scheduledMessagePending ? "Há mensagem agendada: envie ou cancele o agendamento para encerrar por falta de retorno" : undefined}
               className="focus-ring mt-2 flex w-full items-center justify-center gap-1.5 rounded-card border border-border py-2 text-sm font-medium hover:bg-surface-alt disabled:opacity-60"
             >
               <MessageSquareOff className="h-4 w-4" />
               {closeNoReturnMutation.isPending ? "Encerrando..." : "Encerrar por falta de retorno"}
             </button>
-            <p className="mt-1 text-center text-[11px] text-muted">Envia a mensagem de falta de retorno, sem pesquisa de satisfação.</p>
+            <p className="mt-1 text-center text-[11px] text-muted">
+              {conversation.scheduledMessagePending
+                ? "Bloqueado: esta conversa tem mensagem agendada. Envie ou cancele o agendamento primeiro."
+                : noReturnSettings?.sendSurvey
+                  ? "Envia a mensagem de falta de retorno e a pesquisa de satisfação, sem o nome do atendente."
+                  : "Envia a mensagem de falta de retorno, sem pesquisa de satisfação."}
+            </p>
           </div>
         </div>
       )}

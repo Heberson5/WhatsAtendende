@@ -51,8 +51,8 @@ export function NoReturnSettingsCard({ canEdit }: { canEdit: boolean }) {
             <MessageSquareOff className="h-4 w-4 text-primary" /> Encerramento por falta de retorno
           </h3>
           <p className="mt-1 text-xs text-muted">
-            Sem pesquisa de satisfação. Conta na meta do atendente e aparece à parte como "Sem retorno do cliente". O tempo só corre dentro do
-            horário de expediente da conexão.
+            Conta na meta do atendente e aparece à parte como "Sem retorno do cliente". O tempo só corre dentro do horário de expediente da
+            conexão. As mensagens saem sem o nome do atendente.
           </p>
         </div>
         <label className="flex cursor-pointer items-center gap-2 text-sm font-medium">
@@ -113,6 +113,22 @@ export function NoReturnSettingsCard({ canEdit }: { canEdit: boolean }) {
           {canEdit && <TagButtons tags={MESSAGE_TAGS} onInsert={(tag) => insertTag(closeEl, form.closeText, tag, (text) => set("closeText", text))} />}
         </label>
       </div>
+      <label className="mt-3 flex cursor-pointer items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={form.sendSurvey}
+          disabled={!canEdit}
+          onChange={(e) => set("sendSurvey", e.target.checked)}
+          className="mt-0.5 h-4 w-4 accent-primary"
+        />
+        <span>
+          <span className="font-medium">Enviar a pesquisa de satisfação</span>
+          <span className="block text-xs text-muted">
+            Ao encerrar por falta de retorno, envia a pesquisa da conexão (Respostas › Pesquisa), sem o nome do atendente. A mensagem de encerramento
+            vai depois da nota do cliente, ou quando o tempo de espera da pesquisa acabar.
+          </span>
+        </span>
+      </label>
       <p className="mt-2 text-xs text-muted">
         Use {"{{saudacao}}"}, {"{{primeiro_nome}}"}, {"{{cliente}}"} e {"{{atendente}}"} nas mensagens. Não encerra quando a última mensagem é do cliente, quando há "Lembrar de retornar" ou envio
         agendado pendente, ou quando o atendente marcou "Aguardar cliente". Se o cliente voltar, a conversa vai para o mesmo atendente (se estiver online).

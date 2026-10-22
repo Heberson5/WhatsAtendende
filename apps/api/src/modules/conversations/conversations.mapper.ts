@@ -12,6 +12,7 @@ type ConversationWithRelations = Conversation & {
   transfers: (ConversationTransfer & { fromAgent: User; toAgent: User })[];
   _lastMessageBody?: string | null;
   _unreadCount?: number;
+  _count?: { scheduledMessages?: number };
 };
 
 // True when this contact's `phone` is still just the raw digits of its @lid
@@ -68,6 +69,7 @@ export function toConversationListItemDTO(
     awaitingReplySince: revealPreview && conversation.awaitingReplySince ? conversation.awaitingReplySince.toISOString() : null,
     noReturnCloseAt: conversation.noReturnCloseAt?.toISOString() ?? null,
     noReturnHold: conversation.noReturnHold,
+    scheduledMessagePending: (conversation._count?.scheduledMessages ?? 0) > 0,
     unreadCount: conversation._unreadCount ?? 0,
     isNew: conversation.status === "NEW",
     pendingTransferDeadline: revealPreview && conversation.pendingTransferDeadline ? conversation.pendingTransferDeadline.toISOString() : null,

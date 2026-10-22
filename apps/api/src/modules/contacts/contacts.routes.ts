@@ -1,6 +1,6 @@
 import { Router, type Request } from "express";
 import { z } from "zod";
-import { COLUMN_SCREENS, CONTACT_SORT_FIELDS, PERMISSION } from "@whatsatendende/types";
+import { COLUMN_SCREENS, CONTACT_SORT_FIELDS, PERMISSION, mergeColumnView } from "@whatsatendende/types";
 import { asyncHandler } from "../../lib/async-handler";
 import { requireAuth } from "../../middleware/auth";
 import { requirePermission } from "../../lib/permissions";
@@ -53,13 +53,17 @@ contactsRouter.get(
 );
 
 const CONTACT_COLUMN_KEYS = COLUMN_SCREENS.contatos.columns.map((c) => c.key);
+// What the screen shows with no saved view: every column except those that start hidden (Primeiro nome).
+const DEFAULT_EXPORT_KEYS = mergeColumnView("contatos", null)
+  .filter((c) => c.visible)
+  .map((c) => c.key);
 
-// The keys visible in the user's column view, comma-separated, in their order; all columns when absent.
+// The keys visible in the user's column view, comma-separated, in their order; the default columns when absent.
 const exportColumnsSchema = z.object({
   columns: z
     .string()
     .optional()
-    .transform((value) => (value ? value.split(",") : CONTACT_COLUMN_KEYS))
+    .transform((value) => (value ? value.split(",") : DEFAULT_EXPORT_KEYS))
     .pipe(z.array(z.enum(CONTACT_COLUMN_KEYS as [string, ...string[]])).min(1)),
 });
 

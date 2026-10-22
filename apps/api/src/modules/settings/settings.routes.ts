@@ -404,6 +404,7 @@ const noReturnSettingsSchema = z
     closeMinutes: z.number().int().min(1).max(240),
     reminderText: z.string().trim().min(1).max(1000),
     closeText: z.string().trim().min(1).max(1000),
+    sendSurvey: z.boolean().default(false),
   })
   .strict();
 
@@ -425,6 +426,7 @@ settingsRouter.put(
       noReturnCloseMinutes: input.closeMinutes,
       noReturnReminderText: input.reminderText,
       noReturnCloseText: input.closeText,
+      noReturnSendSurvey: input.sendSurvey,
     });
     await writeAudit({ userId: req.auth!.userId, action: "SETTINGS_NO_RETURN_UPDATED", entity: "SystemSetting", entityId: "business", ipAddress: req.ip ?? null, metadata: input });
     res.json(await service.getNoReturnSettings());
