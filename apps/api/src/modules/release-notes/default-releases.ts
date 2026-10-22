@@ -11,6 +11,21 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.20.4",
+    date: "22 out 2026",
+    name: "Arquivo de dados até 300 MB",
+    summary: "O arquivo enviado em Dados › Fontes de dados pode ter até 300 MB e 750 mil linhas.",
+    notes: [
+      {
+        type: "melhoria",
+        area: "dados",
+        title: "Arquivo de dados até 300 MB",
+        text: "O botão Enviar arquivo aceita até 300 MB (antes 200 MB) e até 750 mil linhas (antes 500 mil). Um CSV de 300 MB, com cerca de 720 mil linhas, é lido em uns 3 minutos, em segundo plano. Compactado em .zip ou .gz, o arquivo fica cerca de 10 vezes menor e sobe bem mais rápido.",
+        where: "Dados › Fontes de dados › Enviar arquivo",
+      },
+    ],
+  },
+  {
     version: "2.20.3",
     date: "22 out 2026",
     name: "Planilha grande pelo link do Google Drive",

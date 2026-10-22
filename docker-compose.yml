@@ -66,7 +66,7 @@ services:
       UPLOAD_DIR: /data/uploads
       # Largest single file an agent can attach in Atendimento (video, photo,
       # PDF, audio) — the API answers "Arquivo muito grande" above it. Set
-      # UPLOAD_MAX_SIZE_MB in .env to change it; nginx.conf lets up to 200 MB
+      # UPLOAD_MAX_SIZE_MB in .env to change it; nginx.conf lets up to 300 MB
       # through to the API, so keep it at or below that. The whole file is
       # held in memory while it is sent, so a small VPS wants this modest.
       UPLOAD_MAX_SIZE_MB: ${UPLOAD_MAX_SIZE_MB:-25}
