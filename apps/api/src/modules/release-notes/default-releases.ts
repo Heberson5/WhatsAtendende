@@ -11,6 +11,28 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.20.3",
+    date: "22 out 2026",
+    name: "Planilha grande pelo link do Google Drive",
+    summary: "O link do Google Drive passa pelo aviso de arquivo grande, e o arquivo de dados pode ir compactado em .zip ou .gz.",
+    notes: [
+      {
+        type: "melhoria",
+        area: "dados",
+        title: "Arquivo grande no Google Drive",
+        text: "Quando o arquivo no Google Drive é grande, o Google mostra um aviso (\"não foi possível verificar se há vírus\") em vez de entregar o arquivo. O sistema agora passa por esse aviso sozinho e baixa o arquivo. Se mesmo assim o Google não entregar, a mensagem diz o que fazer.",
+        where: "Dados › Fontes de dados › Planilha por link",
+      },
+      {
+        type: "novo",
+        area: "dados",
+        title: "Arquivo compactado (.zip ou .gz)",
+        text: "O CSV, TXT ou XLSX pode ir compactado em .zip (com um único arquivo dentro) ou .gz, tanto pelo link quanto pelo botão Enviar arquivo. Um CSV compactado fica cerca de 10 vezes menor.",
+        where: "Dados › Fontes de dados",
+      },
+    ],
+  },
+  {
     version: "2.20.2",
     date: "22 out 2026",
     name: "Arquivo de dados até 200 MB",
