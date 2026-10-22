@@ -11,6 +11,21 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.22.1",
+    date: "22 out 2026",
+    name: "Planilha XLSX lida sempre, na primeira aba",
+    summary: "O envio de planilha .xlsx em Fontes de dados deixa de falhar com alguns arquivos e passa a ler sempre a primeira aba.",
+    notes: [
+      {
+        type: "correcao",
+        area: "dados",
+        title: "Planilha XLSX que dava erro ao enviar",
+        text: "Alguns arquivos .xlsx (principalmente os gerados por outros programas, não pelo Excel) davam erro na leitura quase sempre. Agora são lidos normalmente, e é sempre a primeira aba da planilha que vale — antes, dependendo do arquivo, podia ser lida outra aba.",
+        where: "Dados › Fontes de dados › Enviar arquivo",
+      },
+    ],
+  },
+  {
     version: "2.22.0",
     date: "22 out 2026",
     name: "Gestão por páginas, pesquisa no encerramento automático e mensagem agendada",

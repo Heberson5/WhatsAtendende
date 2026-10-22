@@ -107,8 +107,13 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
       lastConnectedAt: new Date(),
     });
 
-    this.scheduleSimulatedInboundTraffic();
-    this.simulatePreExistingUnreadChat();
+    // Demo traffic (a customer every 45s, an old unread chat ~0.8s after connecting) only outside the automated
+    // tests: landing at a random moment in the middle of one, it made counts and inserts fail now and then — a
+    // different test each run. Tests that need inbound messages simulate them explicitly.
+    if (process.env.NODE_ENV !== "test") {
+      this.scheduleSimulatedInboundTraffic();
+      this.simulatePreExistingUnreadChat();
+    }
   }
 
   async disconnect(): Promise<void> {
