@@ -12,11 +12,12 @@ export interface FetchedTable {
   modifiedAt: Date | null;
 }
 
-const MAX_ROWS = 500_000;
+// A 300 MB CSV holds about 720 thousand lines.
+const MAX_ROWS = 750_000;
 // Excel stores numbers with 15 significant digits: from 16 digits on, the value in the file is already rounded.
 const EXCEL_SAFE_NUMBER = 1e15;
 const FETCH_TIMEOUT_MS = 60_000;
-// A 200 MB file over a slow link takes minutes.
+// A 300 MB file over a slow link takes minutes.
 const DOWNLOAD_TIMEOUT_MS = 10 * 60_000;
 // The most a .zip/.gz may hold once unpacked — a CSV compresses about 10×.
 const MAX_UNPACKED_BYTES = 400 * 1024 * 1024;
@@ -73,7 +74,7 @@ function parseCsv(buffer: Buffer, modifiedAt: Date | null): FetchedTable {
   const firstLine = text.slice(0, text.indexOf("\n") >>> 0);
   // Excel in Portuguese saves with ";", SQL Server Management Studio with ",".
   const delimiter = (firstLine.match(/;/g)?.length ?? 0) > (firstLine.match(/,/g)?.length ?? 0) ? ";" : ",";
-  // Each line becomes its row as it is read: a 200 MB file never sits in memory twice (as lines, then as rows).
+  // Each line becomes its row as it is read: a 300 MB file never sits in memory twice (as lines, then as rows).
   let columns: string[] | null = null;
   const rows: Record<string, string>[] = parseCsvSync(text, {
     delimiter,

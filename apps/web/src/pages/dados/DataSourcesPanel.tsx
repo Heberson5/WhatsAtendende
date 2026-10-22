@@ -450,7 +450,7 @@ export function DataSourcesPanel() {
 
           {draft.kind === "UPLOAD" && (
             <p className="text-xs text-muted">
-              Depois de salvar, use &quot;Enviar arquivo&quot; para mandar a planilha do jeito que está, em XLSX, CSV ou TXT separado por ponto e vírgula (até 500 mil linhas e 200 MB). CSV é o mais leve, e compactado em .zip ou .gz fica cerca de 10 vezes menor. Planilhas grandes são
+              Depois de salvar, use &quot;Enviar arquivo&quot; para mandar a planilha do jeito que está, em XLSX, CSV ou TXT separado por ponto e vírgula (até 750 mil linhas e 300 MB). CSV é o mais leve, e compactado em .zip ou .gz fica cerca de 10 vezes menor. Planilhas grandes são
               processadas em segundo plano. Para atualizar, envie de novo.
             </p>
           )}
