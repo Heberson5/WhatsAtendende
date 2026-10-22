@@ -1,5 +1,7 @@
 import { Readable } from "node:stream";
+import { gunzipSync } from "node:zlib";
 import ExcelJS from "exceljs";
+import JSZip from "jszip";
 import { parse as parseCsvSync } from "csv-parse/sync";
 import type { DataSourceDialect } from "@whatsatendende/types";
 
@@ -14,6 +16,10 @@ const MAX_ROWS = 500_000;
 // Excel stores numbers with 15 significant digits: from 16 digits on, the value in the file is already rounded.
 const EXCEL_SAFE_NUMBER = 1e15;
 const FETCH_TIMEOUT_MS = 60_000;
+// A 200 MB file over a slow link takes minutes.
+const DOWNLOAD_TIMEOUT_MS = 10 * 60_000;
+// The most a .zip/.gz may hold once unpacked — a CSV compresses about 10×.
+const MAX_UNPACKED_BYTES = 400 * 1024 * 1024;
 
 /** Column names as tags use them: lowercase, no accents, words joined by "_". */
 export function normalizeColumn(name: string): string {
@@ -114,10 +120,36 @@ async function parseXlsx(buffer: Buffer, modifiedAt: Date | null): Promise<Fetch
   return toTable(records[0], records.slice(1), modifiedAt);
 }
 
-/** CSV or XLSX, told apart by content (an XLSX is a zip: starts with "PK"). */
-export async function parseSpreadsheet(buffer: Buffer, modifiedAt: Date | null): Promise<FetchedTable> {
-  if (buffer.subarray(0, 2).toString("latin1") === "PK") return parseXlsx(buffer, modifiedAt);
-  if (/^\s*<(!doctype|html)/i.test(buffer.subarray(0, 200).toString("utf8"))) {
+const isZip = (buffer: Buffer) => buffer.subarray(0, 2).toString("latin1") === "PK";
+const isHtml = (buffer: Buffer) => /^\s*<(!doctype|html)/i.test(buffer.subarray(0, 200).toString("utf8"));
+const TOO_BIG_UNPACKED = `O arquivo compactado passa de ${MAX_UNPACKED_BYTES / 1024 / 1024} MB depois de descompactado. Envie só os contratos e as colunas usados.`;
+
+/**
+ * A CSV/TXT/XLSX sent compressed — .gz, or a .zip with one of them inside — comes out as the file itself. An XLSX is
+ * also a zip (with xl/workbook.xml): it is not unpacked here.
+ */
+async function unpack(buffer: Buffer): Promise<Buffer> {
+  if (buffer[0] === 0x1f && buffer[1] === 0x8b) {
+    try {
+      return gunzipSync(buffer, { maxOutputLength: MAX_UNPACKED_BYTES });
+    } catch (err) {
+      throw new Error((err as NodeJS.ErrnoException).code === "ERR_BUFFER_TOO_LARGE" ? TOO_BIG_UNPACKED : "Não consegui descompactar o arquivo .gz");
+    }
+  }
+  if (!isZip(buffer) || buffer.includes("xl/workbook.xml")) return buffer;
+  const zip = await JSZip.loadAsync(buffer);
+  const inside = Object.values(zip.files).filter((f) => !f.dir && !f.name.startsWith("__MACOSX") && /\.(csv|txt|xlsx)$/i.test(f.name));
+  if (inside.length !== 1) throw new Error("O .zip precisa ter dentro um único arquivo CSV, TXT ou XLSX");
+  const unpacked = await inside[0].async("nodebuffer");
+  if (unpacked.length > MAX_UNPACKED_BYTES) throw new Error(TOO_BIG_UNPACKED);
+  return unpacked;
+}
+
+/** CSV/TXT or XLSX, told apart by content (an XLSX is a zip: starts with "PK"), possibly inside a .zip or .gz. */
+export async function parseSpreadsheet(packed: Buffer, modifiedAt: Date | null): Promise<FetchedTable> {
+  const buffer = await unpack(packed);
+  if (isZip(buffer)) return parseXlsx(buffer, modifiedAt);
+  if (isHtml(buffer)) {
     throw new Error("O link abriu uma página, não a planilha. Confira se o compartilhamento está como \"Qualquer pessoa com o link\".");
   }
   return parseCsv(buffer, modifiedAt);
@@ -135,9 +167,12 @@ export function downloadCandidates(link: string): string[] {
     const gid = url.hash.match(/gid=(\d+)/)?.[1] ?? url.searchParams.get("gid");
     return [`https://docs.google.com/spreadsheets/d/${google[1]}/export?format=csv${gid ? `&gid=${gid}` : ""}`];
   }
-  // An .xlsx/.csv file uploaded to Google Drive (not converted to Google Planilhas).
+  // A file uploaded to Google Drive (not converted to Google Planilhas). confirm=t skips the "can't scan for viruses"
+  // page Google shows instead of a big file; the older address is the fallback.
   const driveFile = url.hostname === "drive.google.com" ? (url.pathname.match(/\/file\/d\/([^/]+)/)?.[1] ?? url.searchParams.get("id")) : null;
-  if (driveFile) return [`https://drive.google.com/uc?export=download&id=${driveFile}`];
+  if (driveFile) {
+    return [`https://drive.usercontent.google.com/download?id=${driveFile}&export=download&confirm=t`, `https://drive.google.com/uc?export=download&id=${driveFile}`];
+  }
   const withDownload = new URL(link);
   withDownload.searchParams.set("download", "1");
   if (/1drv\.ms|onedrive\.live\.com/.test(url.hostname)) {
@@ -150,20 +185,57 @@ export function downloadCandidates(link: string): string[] {
 const ONEDRIVE_DENIED =
   'A Microsoft não permite mais baixar automaticamente planilhas pelo link de compartilhamento do OneDrive, mesmo com "Qualquer pessoa com o link". Use "Planilha privada (conta Microsoft)", um link do Google Planilhas ou "Enviar arquivo".';
 
+/**
+ * Google Drive's "can't scan this file for viruses" page: its form downloads the file anyway. The address it posts
+ * to, with its hidden fields — or null for any other page.
+ */
+export function googleDownloadFormUrl(html: string): string | null {
+  const form = /<form[^>]*id="download-form"[^>]*>([\s\S]*?)<\/form>/i.exec(html);
+  const action = form && /action="([^"]+)"/i.exec(form[0])?.[1];
+  if (!form || !action) return null;
+  const url = new URL(action.replace(/&amp;/g, "&"));
+  for (const input of form[1].matchAll(/<input[^>]*>/gi)) {
+    const name = /name="([^"]+)"/i.exec(input[0])?.[1];
+    const value = /value="([^"]*)"/i.exec(input[0])?.[1];
+    if (name && value !== undefined) url.searchParams.set(name, value);
+  }
+  return url.toString();
+}
+
+/** Why a Google link brought a page instead of the file, and what to do. */
+function googleHint(link: string): string {
+  return /\/spreadsheets\//.test(link)
+    ? 'O Google Planilhas não entregou a planilha. Confira o compartilhamento ("Qualquer pessoa com o link"). Se a planilha for grande, o Google Planilhas não exporta: coloque o arquivo CSV no Google Drive sem converter para Planilhas (de preferência compactado em .zip) e use o link do arquivo.'
+    : 'O Google Drive não entregou o arquivo. Confira o compartilhamento ("Qualquer pessoa com o link"). Se o arquivo for grande, compacte o CSV em .zip: fica cerca de 10 vezes menor.';
+}
+
+async function download(url: string, isOneDrive: boolean): Promise<{ body: Buffer; modifiedAt: Date | null }> {
+  const res = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
+  if (!res.ok) {
+    if (isOneDrive && (res.status === 401 || res.status === 403)) throw new Error(ONEDRIVE_DENIED);
+    throw new Error(`O link respondeu ${res.status}. Confira se o compartilhamento está como "Qualquer pessoa com o link".`);
+  }
+  const modified = res.headers.get("last-modified");
+  return { body: Buffer.from(await res.arrayBuffer()), modifiedAt: modified ? new Date(modified) : null };
+}
+
 export async function fetchFromLink(link: string): Promise<FetchedTable> {
-  const isOneDrive = /1drv\.ms|onedrive\.live\.com/.test(new URL(link).hostname);
+  const host = new URL(link).hostname;
+  const isOneDrive = /1drv\.ms|onedrive\.live\.com/.test(host);
+  const isGoogle = /(^|\.)google\.com$/.test(host);
   let lastError: Error = new Error("Não foi possível baixar a planilha do link");
   for (const candidate of downloadCandidates(link)) {
     try {
-      const res = await fetch(candidate, { redirect: "follow", signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
-      if (!res.ok) {
-        if (isOneDrive && (res.status === 401 || res.status === 403)) throw new Error(ONEDRIVE_DENIED);
-        throw new Error(`O link respondeu ${res.status}. Confira se o compartilhamento está como "Qualquer pessoa com o link".`);
-      }
-      const modified = res.headers.get("last-modified");
-      return await parseSpreadsheet(Buffer.from(await res.arrayBuffer()), modified ? new Date(modified) : null);
+      let { body, modifiedAt } = await download(candidate, isOneDrive);
+      // Google's warning page instead of a big file: confirm the download, as the page's own button does.
+      const confirmUrl = isGoogle && isHtml(body) ? googleDownloadFormUrl(body.toString("utf8")) : null;
+      if (confirmUrl) ({ body, modifiedAt } = await download(confirmUrl, false));
+      if (isGoogle && isHtml(body)) throw new Error(googleHint(link));
+      return await parseSpreadsheet(body, modifiedAt);
     } catch (err) {
-      lastError = err as Error;
+      const message = (err as Error).message;
+      // Google answers an error code too (a sheet too big to export, a file not shared): say what to do.
+      lastError = isGoogle && message.startsWith("O link respondeu") ? new Error(`${message.split(".")[0]}. ${googleHint(link)}`) : (err as Error);
     }
   }
   throw lastError;

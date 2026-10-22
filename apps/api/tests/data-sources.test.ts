@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import request from "supertest";
+import { gzipSync } from "node:zlib";
 import ExcelJS from "exceljs";
+import JSZip from "jszip";
 import { createApp } from "../src/app";
 import { prisma } from "../src/lib/prisma";
 import { phoneKey } from "../src/lib/phone-key";
@@ -67,7 +69,53 @@ describe("Fontes de dados", () => {
     expect(downloadCandidates("https://docs.google.com/spreadsheets/d/abc123/edit#gid=7")).toEqual(["https://docs.google.com/spreadsheets/d/abc123/export?format=csv&gid=7"]);
     expect(downloadCandidates("https://1drv.ms/x/s!AbC")[0]).toMatch(/^https:\/\/api\.onedrive\.com\/v1\.0\/shares\/u!/);
     expect(downloadCandidates("https://empresa.sharepoint.com/:x:/g/abc")).toEqual(["https://empresa.sharepoint.com/:x:/g/abc?download=1"]);
-    expect(downloadCandidates("https://drive.google.com/file/d/1AbC-xyz/view?usp=sharing")).toEqual(["https://drive.google.com/uc?export=download&id=1AbC-xyz"]);
+    expect(downloadCandidates("https://drive.google.com/file/d/1AbC-xyz/view?usp=sharing")).toEqual([
+      "https://drive.usercontent.google.com/download?id=1AbC-xyz&export=download&confirm=t",
+      "https://drive.google.com/uc?export=download&id=1AbC-xyz",
+    ]);
+  });
+
+  it("arquivo grande do Google Drive: passa pela página de aviso de vírus e baixa o arquivo", async () => {
+    const warning = `<!DOCTYPE html><html><body><p>O Google Drive não pode verificar este arquivo.</p>
+      <form id="download-form" action="https://drive.usercontent.google.com/download" method="get">
+      <input type="submit" value="Fazer o download mesmo assim"/>
+      <input type="hidden" name="id" value="1AbC"><input type="hidden" name="export" value="download">
+      <input type="hidden" name="confirm" value="t"><input type="hidden" name="uuid" value="u-123"></form></body></html>`;
+    const fetchMock = vi.fn(async (url: string) =>
+      url.includes("uuid=u-123") ? new Response("telefone_whatsapp;nome_cliente\n5565999990001;Maria") : new Response(warning, { headers: { "content-type": "text/html" } })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const table = await fetchFromLink("https://drive.google.com/file/d/1AbC/view");
+      expect(table.rows).toEqual([{ telefone_whatsapp: "5565999990001", nome_cliente: "Maria" }]);
+      expect(fetchMock.mock.calls[1][0]).toBe("https://drive.usercontent.google.com/download?id=1AbC&export=download&confirm=t&uuid=u-123");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("Google que não entrega o arquivo: explica o que fazer", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("<html><body>Erro</body></html>")));
+    try {
+      await expect(fetchFromLink("https://drive.google.com/file/d/1AbC/view")).rejects.toThrow(/compacte o CSV em \.zip/);
+      vi.stubGlobal("fetch", vi.fn(async () => new Response("", { status: 413 })));
+      await expect(fetchFromLink("https://docs.google.com/spreadsheets/d/abc/edit")).rejects.toThrow(/O link respondeu 413\. O Google Planilhas não entregou/);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("lê o CSV compactado em .gz ou dentro de um .zip", async () => {
+    const csv = Buffer.from("telefone_whatsapp;nome_cliente\n5565999990001;Maria\n");
+    const zip = new JSZip();
+    zip.file("clientes.csv", csv);
+    for (const packed of [gzipSync(csv), await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" })]) {
+      expect((await parseSpreadsheet(packed, null)).rows).toEqual([{ telefone_whatsapp: "5565999990001", nome_cliente: "Maria" }]);
+    }
+    const two = new JSZip();
+    two.file("a.csv", csv);
+    two.file("b.csv", csv);
+    await expect(parseSpreadsheet(await two.generateAsync({ type: "nodebuffer" }), null)).rejects.toThrow("um único arquivo");
   });
 
   it("link do OneDrive recusado pela Microsoft: explica e indica a conta Microsoft", async () => {
