@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { Channel } from "@prisma/client";
+import { fillCustomerTags } from "@whatsatendende/types";
 import { prisma } from "../../lib/prisma";
 import { logger } from "../../lib/logger";
 import * as conversationsService from "../conversations/conversations.service";
@@ -112,7 +113,7 @@ async function handleInboundEvent(channel: Channel, pageId: string, event: MetaM
 
   // The connection is outside its Horário de expediente: the notice goes out once, with the conversation that just opened.
   if (closedMessage) {
-    const text = closedMessage.replace(/\{\{\s*cliente\s*\}\}/gi, contact.name ?? "Contato");
+    const text = fillCustomerTags(closedMessage, contact.name ?? "Contato", contact.firstName);
     const notice = await prisma.message.create({ data: { conversationId: conversation.id, direction: "OUTBOUND", type: "TEXT", status: "PENDING", body: text, automatedBy: "WORK_SCHEDULE" } });
     await sendMetaMessage(channel, notice.id, event.sender.id, text);
     realtimeEvents.newMessage(conversation.id, null);

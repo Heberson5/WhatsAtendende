@@ -4,6 +4,10 @@ import { PERMISSION, REPLY_MEDIA_CAPTION_MAX, type QuickReplyDTO } from "@whatsa
 import { useAuthStore } from "../../store/auth-store";
 import { ConnectionScopePicker, toConnectionScopeValue, type ConnectionScopeValue } from "./ConnectionScopePicker";
 import { ReplyMediaField, captionTooLong, hasReplyMedia, type ReplyMediaChange } from "./ReplyMediaField";
+import { TagButtons, insertTag } from "../dados/TagButtons";
+
+// Filled with the conversation's customer when the reply is picked in the "/" menu.
+const CUSTOMER_TAGS = ["{{primeiro_nome}}", "{{cliente}}"] as const;
 
 export interface QuickReplyFormValues {
   name: string;
@@ -31,6 +35,7 @@ export function QuickReplyFormModal({
   });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [textEl, setTextEl] = useState<HTMLTextAreaElement | null>(null);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -100,10 +105,12 @@ export function QuickReplyFormModal({
               required
               rows={5}
               value={values.text}
+              ref={setTextEl}
               onChange={(e) => setValues((v) => ({ ...v, text: e.target.value }))}
               placeholder="Texto que será inserido no campo de mensagem..."
               className="focus-ring w-full resize-none rounded-card border border-border bg-transparent px-3 py-2 text-sm"
             />
+            <TagButtons tags={CUSTOMER_TAGS} onInsert={(tag) => insertTag(textEl, values.text, tag, (text) => setValues((v) => ({ ...v, text })))} />
             {hasReplyMedia(quickReply?.media, media) && (
               <p className={`mt-1 text-xs ${values.text.length > REPLY_MEDIA_CAPTION_MAX ? "text-danger" : "text-muted"}`}>
                 Legenda do anexo: {values.text.length.toLocaleString("pt-BR")} de {REPLY_MEDIA_CAPTION_MAX.toLocaleString("pt-BR")} caracteres

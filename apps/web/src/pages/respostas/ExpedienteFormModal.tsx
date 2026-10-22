@@ -4,10 +4,15 @@ import { X } from "lucide-react";
 import { WEEKDAY_KEYS, stateUtcOffsetMinutes, type WeekdayKey, type WorkScheduleDTO, type WorkScheduleHolidayDTO } from "@whatsatendende/types";
 import { api } from "../../lib/api";
 import { StateCitySelect } from "../../components/common/StateCitySelect";
+import { insertTag } from "../dados/TagButtons";
 
 const WEEKDAY_LABEL: Record<WeekdayKey, string> = { MON: "Segunda", TUE: "Terça", WED: "Quarta", THU: "Quinta", FRI: "Sexta", SAT: "Sábado", SUN: "Domingo" };
 const DEFAULT_START = "08:00";
 const DEFAULT_END = "18:00";
+const CLIENT_TAGS = [
+  { tag: "{{cliente}}", label: "nome do cliente" },
+  { tag: "{{primeiro_nome}}", label: "primeiro nome do cliente" },
+];
 const CLOSED_MESSAGE_PLACEHOLDER = "Olá, {{cliente}}! No momento estamos fora do horário de atendimento. Assim que abrirmos, responderemos você.";
 
 interface DayValue {
@@ -74,6 +79,7 @@ export function ExpedienteFormModal({
     Object.fromEntries((schedule?.partialHolidays ?? []).map((h) => [h.date, { allDayClosed: false, start: h.start, end: h.end }]))
   );
   const [closedMessage, setClosedMessage] = useState(schedule?.closedMessage ?? "");
+  const [closedMessageEl, setClosedMessageEl] = useState<HTMLTextAreaElement | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -96,8 +102,8 @@ export function ExpedienteFormModal({
     setPartials((p) => ({ ...p, [date]: { ...(p[date] ?? { allDayClosed: true, start: DEFAULT_START, end: DEFAULT_END }), ...patch } }));
   }
 
-  function insertClientTag() {
-    setClosedMessage((m) => `${m}{{cliente}}`);
+  function insertClientTag(tag: string) {
+    insertTag(closedMessageEl, closedMessage, tag, setClosedMessage);
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -280,19 +286,25 @@ export function ExpedienteFormModal({
           <div>
             <div className="mb-1 flex items-center justify-between">
               <span className="text-sm font-medium">Mensagem de fora do expediente</span>
-              <button
-                type="button"
-                onClick={insertClientTag}
-                title="Inserir o nome do cliente"
-                className="focus-ring rounded-full bg-secondary/30 px-2 py-0.5 text-[11px] font-medium text-text hover:bg-secondary/50"
-              >
-                {"{{cliente}}"}
-              </button>
+              <div className="flex flex-wrap gap-1">
+                {CLIENT_TAGS.map((t) => (
+                  <button
+                    key={t.tag}
+                    type="button"
+                    onClick={() => insertClientTag(t.tag)}
+                    title={`Inserir o ${t.label}`}
+                    className="focus-ring rounded-full bg-secondary/30 px-2 py-0.5 text-[11px] font-medium text-text hover:bg-secondary/50"
+                  >
+                    {t.tag}
+                  </button>
+                ))}
+              </div>
             </div>
             <textarea
               required
               rows={4}
               value={closedMessage}
+              ref={setClosedMessageEl}
               onChange={(e) => setClosedMessage(e.target.value)}
               maxLength={1024}
               placeholder={CLOSED_MESSAGE_PLACEHOLDER}

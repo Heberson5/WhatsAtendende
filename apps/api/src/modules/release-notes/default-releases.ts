@@ -11,6 +11,35 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.21.0",
+    date: "22 out 2026",
+    name: "Tag de primeiro nome e campo Primeiro nome",
+    summary: "Nova tag {{primeiro_nome}} em todas as mensagens do menu Respostas, e o contato ganhou o campo Primeiro nome, editável no atendimento.",
+    notes: [
+      {
+        type: "novo",
+        area: "respostas",
+        title: "Tag {{primeiro_nome}} nas respostas",
+        text: "Em Respostas rápidas, Encerramento, Transferência, Aceite, Pesquisa, Horário de expediente e Encerramento por falta de retorno, a tag {{primeiro_nome}} aparece entre as tags clicáveis: um clique e ela entra no texto onde está o cursor. Na hora do envio ela vira o primeiro nome do cliente (\"MARIA DA SILVA\" vira \"Maria\"). Nas respostas rápidas, {{cliente}} e {{primeiro_nome}} já entram preenchidas no campo de mensagem.",
+        where: "Respostas",
+      },
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "Primeiro nome do cliente",
+        text: "O painel do cliente mostra o Primeiro nome, com o lápis para corrigir (por exemplo, quando o cliente é chamado pelo segundo nome ou por um apelido). Em branco, vale a primeira palavra do nome, marcada como automático. A tag {{primeiro_nome}} usa o que estiver salvo.",
+        where: "Atendimento › Painel do cliente",
+      },
+      {
+        type: "novo",
+        area: "contatos",
+        title: "Campo e coluna Primeiro nome em Contatos",
+        text: "A ficha do contato tem o campo Primeiro nome. Na lista, a coluna Primeiro nome começa oculta: para ver, ligue no menu ⋮ das colunas. Ela também entra na exportação quando estiver visível.",
+        where: "Contatos",
+      },
+    ],
+  },
+  {
     version: "2.20.4",
     date: "22 out 2026",
     name: "Arquivo de dados até 300 MB",

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { PERMISSION } from "@whatsatendende/types";
+import { PERMISSION, fillCustomerTags } from "@whatsatendende/types";
 import { asyncHandler } from "../../lib/async-handler";
 import { requireAuth } from "../../middleware/auth";
 import { requirePermission } from "../../lib/permissions";
@@ -42,7 +42,15 @@ quickRepliesRouter.get(
       else if (available) visible.push({ ...reply, filledText: (await dataSources.renderDataTags(conversation, reply.text, req.auth!.role)).text });
       else if (req.auth!.role !== "AGENT") visible.push({ ...reply, dataUnavailable: true });
     }
-    res.json(visible);
+    // {{cliente}} and {{primeiro_nome}} come already filled with this conversation's customer.
+    const customer = conversation.contact.name ?? conversation.contact.phone ?? "";
+    res.json(
+      visible.map((reply) => {
+        const text = reply.filledText ?? reply.text;
+        const filled = fillCustomerTags(text, customer, conversation.contact.firstName);
+        return filled === text ? reply : { ...reply, filledText: filled };
+      })
+    );
   })
 );
 

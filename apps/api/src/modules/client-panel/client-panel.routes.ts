@@ -102,6 +102,26 @@ clientPanelRouter.put(
   })
 );
 
+// Contatos › Primeiro nome — how the customer is called ({{primeiro_nome}}); empty goes back to the first word of the name.
+const firstNameSchema = z.object({ firstName: z.string().trim().max(60).nullable() });
+clientPanelRouter.put(
+  "/:id/contact-first-name",
+  asyncHandler(async (req, res) => {
+    const conversation = await conversationForWrite(req);
+    const { firstName } = firstNameSchema.parse(req.body);
+    await service.setFirstName(conversation.contactId, firstName || null);
+    await writeAudit({
+      userId: req.auth!.userId,
+      action: "CONTACT_FIRST_NAME_UPDATED",
+      entity: "Contact",
+      entityId: conversation.contactId,
+      ipAddress: req.ip ?? null,
+      metadata: { firstName: firstName || null },
+    });
+    res.json(await service.getContactPanel(conversation.id, conversation.contactId, conversation.contact.firstConversationAt));
+  })
+);
+
 // Dados do cliente (Fontes de dados): what the active spreadsheet/database knows about this conversation's phone.
 clientPanelRouter.get(
   "/:id/client-data",

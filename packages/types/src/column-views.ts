@@ -5,6 +5,8 @@ export interface ColumnDefinition {
   label: string;
   /** Essential column — always shown, can still be moved. */
   fixed?: boolean;
+  /** Starts hidden: shown once someone turns it on in the ⋮ menu. */
+  hiddenByDefault?: boolean;
 }
 
 export interface ColumnScreenDefinition {
@@ -35,6 +37,7 @@ export const COLUMN_SCREENS = {
       { key: "name", label: "Nome", fixed: true },
       { key: "phone", label: "Telefone" },
       { key: "contract", label: "Contrato" },
+      { key: "firstName", label: "Primeiro nome", hiddenByDefault: true },
       { key: "connection", label: "Conexão" },
       { key: "tags", label: "Etiquetas" },
       { key: "conversations", label: "Conversas" },
@@ -294,7 +297,7 @@ export interface EffectiveColumnViewDTO extends ColumnViewDTO {
 /**
  * The saved columns laid over the screen's current definition: unknown keys
  * dropped, columns added after the view was saved appended at the end
- * (visible), and essential ones always visible.
+ * (visible, unless they start hidden), and essential ones always visible.
  */
 export function mergeColumnView(screen: ColumnScreen, saved: ColumnViewColumn[] | null | undefined): ColumnViewColumn[] {
   const defs: ColumnDefinition[] = COLUMN_SCREENS[screen].columns;
@@ -307,6 +310,6 @@ export function mergeColumnView(screen: ColumnScreen, saved: ColumnViewColumn[] 
     seen.add(column.key);
     merged.push({ key: column.key, visible: def.fixed ? true : column.visible });
   }
-  for (const def of defs) if (!seen.has(def.key)) merged.push({ key: def.key, visible: true });
+  for (const def of defs) if (!seen.has(def.key)) merged.push({ key: def.key, visible: !def.hiddenByDefault });
   return merged;
 }

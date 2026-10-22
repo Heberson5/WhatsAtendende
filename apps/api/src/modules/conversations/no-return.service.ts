@@ -22,6 +22,7 @@ async function sendNoReturnText(conversation: Conversation, template: string) {
     atendenteNome: agent.fullName,
     atendenteCargo: ROLE_LABEL[agent.role],
     cliente: conversation.contact.name ?? conversation.contact.phone ?? "",
+    primeiroNome: conversation.contact.firstName,
   });
   const message = await createSystemOutboundMessage({ conversationId: conversation.id, type: "TEXT", body: text, agentId: agent.id });
   await sendOutboundTextViaChannel(conversation, message.id, text, null);

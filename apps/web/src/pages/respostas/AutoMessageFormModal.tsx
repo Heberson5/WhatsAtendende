@@ -29,6 +29,7 @@ const TAGS: { tag: string; label: string }[] = [
   { tag: "{{atendente_nome}}", label: "Nome completo do atendente" },
   { tag: "{{atendente_cargo}}", label: "Cargo do atendente" },
   { tag: "{{cliente}}", label: "Nome do cliente" },
+  { tag: "{{primeiro_nome}}", label: "Primeiro nome do cliente" },
 ];
 
 /**
@@ -132,7 +133,7 @@ export function AutoMessageFormModal({
           </label>
 
           <div>
-            {/* Wraps: the four tags don't fit beside "Texto" in the panel, and pushed the whole form sideways. */}
+            {/* Wraps: the tags don't fit beside "Texto" in the panel, and pushed the whole form sideways. */}
             <div className="mb-1 flex flex-wrap items-center justify-between gap-1">
               <span className="text-sm font-medium">Texto</span>
               <div className="flex flex-wrap gap-1">

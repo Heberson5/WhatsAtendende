@@ -666,6 +666,8 @@ model Contact {
   pinnedNoteUpdatedBy    String? // display name at the time, kept even if the user is later renamed/deleted
   // Contract number(s) of the client — filled from the active Fonte de dados when empty, editable in the client panel.
   contractNumber         String?
+  // How the customer is called — {{primeiro_nome}} in Respostas. Empty: the first word of the name.
+  firstName              String?
   // WhatsApp's raw chat id (e.g. "<n>@lid" or "<n>@s.whatsapp.net") as first
   // learned for this contact — WhatsApp's @lid privacy migration means the
   // SAME chat can report this id in either form across different events
