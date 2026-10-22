@@ -14,6 +14,8 @@ import { parseListParam } from "../../lib/parse-list-param";
 import { optionalDateQueryParam, resolvePeriod } from "../../lib/period";
 import { resolveAllowedConnectionIds, canManagerAccessConnection } from "../../lib/connection-access";
 import { toConversationListItemDTO } from "./conversations.mapper";
+import { attachBusinessClocks } from "../../lib/business-clock";
+import { customerArrivalIds } from "../dashboard/dashboard.service";
 import * as service from "./conversations.service";
 import { realtimeEvents } from "../../realtime/realtime";
 import { syncReadReceiptToDevice, requestOlderHistory } from "../whatsapp/whatsapp.service";
@@ -75,7 +77,7 @@ conversationsRouter.get(
       connectionIds = await resolveAllowedConnectionIds(req.auth!, connectionIds, "receive");
     }
     const conversations = await service.listQueue(connectionIds);
-    res.json(conversations.map((c) => toConversationListItemDTO(c, false)));
+    res.json(await attachBusinessClocks(conversations.map((c) => toConversationListItemDTO(c, false))));
   })
 );
 
@@ -88,7 +90,7 @@ conversationsRouter.get(
     let connectionIds = req.auth!.role === "AGENT" ? undefined : parseListParam(req.query.connectionId as string | string[] | undefined);
     if (req.auth!.role === "MANAGER") connectionIds = await resolveAllowedConnectionIds(req.auth!, connectionIds, "receive");
     const conversations = await service.listAbandoned({ userId: req.auth!.userId, role: req.auth!.role, whatsappConnectionId: viewer?.whatsappConnectionId ?? null }, connectionIds);
-    res.json(conversations.map((c) => toConversationListItemDTO(c, false)));
+    res.json(await attachBusinessClocks(conversations.map((c) => toConversationListItemDTO(c, false))));
   })
 );
 
@@ -97,7 +99,7 @@ conversationsRouter.get(
   requireAttendanceAccess,
   asyncHandler(async (req, res) => {
     const conversations = await service.listMyConversations(req.auth!.userId);
-    res.json(conversations.map((c) => toConversationListItemDTO(c, true)));
+    res.json(await attachBusinessClocks(conversations.map((c) => toConversationListItemDTO(c, true))));
   })
 );
 
@@ -229,6 +231,10 @@ const oversightPageSchema = oversightQuerySchema.extend({
     .int()
     .refine((n) => (OVERSIGHT_PAGE_SIZES as readonly number[]).includes(n), { message: "Quantidade de linhas inválida" })
     .default(50),
+  // From the Dashboard's "Conversas que chegam ao longo do dia": only the conversations the customer opened in the
+  // period — at this hour (0–23, the viewer's time zone), when given.
+  openedByCustomer: z.enum(["1", "true"]).optional(),
+  arrivalHour: z.coerce.number().int().min(0).max(23).optional(),
 });
 
 conversationsRouter.get(
@@ -245,14 +251,18 @@ conversationsRouter.get(
       filters.period && (filters.period !== "custom" || (filters.from && filters.to))
         ? resolvePeriod(filters.period, filters.from, filters.to, filters.tzOffsetMinutes)
         : { from: filters.from, to: filters.to };
+    const ids =
+      filters.openedByCustomer || filters.arrivalHour !== undefined
+        ? await customerArrivalIds({ from: range.from ?? new Date(0), to: range.to ?? new Date(), agentId: filters.agentId, connectionIds }, filters.arrivalHour, filters.tzOffsetMinutes)
+        : undefined;
     const { items, total, statusCounts } = await service.listOversightPage(
-      { from: range.from, to: range.to, agentId: filters.agentId, status, search: filters.q, connectionIds },
+      { from: range.from, to: range.to, agentId: filters.agentId, status, search: filters.q, connectionIds, ids },
       filters.page,
       filters.pageSize
     );
     const matches = filters.q ? await service.findSearchMatches(items.map((c) => c.id), filters.q) : new Map<string, string>();
     const body: OversightPageDTO = {
-      items: items.map((c) => ({ ...toConversationListItemDTO(c, true), searchMatch: matches.get(c.id) ?? null })),
+      items: await attachBusinessClocks(items.map((c) => ({ ...toConversationListItemDTO(c, true), searchMatch: matches.get(c.id) ?? null }))),
       total,
       page: filters.page,
       pageSize: filters.pageSize,
@@ -272,7 +282,8 @@ conversationsRouter.get(
     // MANAGER/ADMIN fall through: read access granted, but this GET route
     // never permits mutation — reply/transfer/close routes independently
     // re-check assertAgentCanAccessConversation below.
-    res.json(toConversationListItemDTO(conversation, true));
+    const [item] = await attachBusinessClocks([toConversationListItemDTO(conversation, true)]);
+    res.json(item);
   })
 );
 
@@ -725,7 +736,7 @@ conversationsRouter.post(
   })
 );
 
-// "Aguardar cliente" / "Manter aberta": pauses (or resumes) the automatic close for falta de retorno.
+// "Não encerrar automaticamente" / "Manter aberta": pauses (or resumes) the automatic close for falta de retorno.
 conversationsRouter.post(
   "/:id/no-return-hold",
   requireAttendanceAccess,

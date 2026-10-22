@@ -28,7 +28,7 @@ holidaysRouter.get(
   asyncHandler(async (req, res) => {
     const filter = listQuerySchema.parse(req.query);
     const holidays = await service.listHolidays(filter);
-    res.json(holidays.map(toHolidayDTO));
+    res.json(holidays.map((h) => toHolidayDTO(h, filter.year)));
   })
 );
 
@@ -38,6 +38,8 @@ const createSchema = z.object({
   scope: scopeSchema,
   state: z.string().length(2).nullable().optional(),
   city: z.string().min(1).nullable().optional(),
+  // "Repete todo ano (mesmo dia e mês)".
+  recurringYearly: z.boolean().optional(),
 });
 
 holidaysRouter.post(

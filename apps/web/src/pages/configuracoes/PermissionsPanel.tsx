@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ShieldCheck } from "lucide-react";
+import { ChevronDown, ChevronRight, ShieldCheck } from "lucide-react";
 import clsx from "clsx";
 import { columnLabel, type Permission, type PermissionDefinition, type Role } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
@@ -33,6 +33,8 @@ export function PermissionsPanel() {
   // Local edit buffer — only sent to the server on "Salvar alterações", so a
   // toggle can be reverted mid-edit without round-tripping every click.
   const [draft, setDraft] = useState<Record<Role, Record<Permission, boolean>> | null>(null);
+  // Menus folded up by the arrow — none when the page opens.
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (data) setDraft(data.matrix);
@@ -73,6 +75,13 @@ export function PermissionsPanel() {
   }
 
   const groups = Array.from(new Set(data.definitions.map((d) => d.group)));
+  const toggleGroup = (group: string) =>
+    setCollapsed((current) => {
+      const next = new Set(current);
+      if (next.has(group)) next.delete(group);
+      else next.add(group);
+      return next;
+    });
 
   return (
     <div className="shadow-soft max-w-3xl space-y-6 rounded-card border border-border bg-surface p-6">
@@ -83,6 +92,23 @@ export function PermissionsPanel() {
           acesso total — por segurança, isso não pode ser alterado, para que nunca seja possível ficar sem acesso a
           esta própria tela.
         </p>
+      </div>
+
+      <div className="flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={() => setCollapsed(new Set())}
+          className="focus-ring rounded-card border border-border px-3 py-1.5 text-xs font-medium hover:bg-surface-alt"
+        >
+          Expandir tudo
+        </button>
+        <button
+          type="button"
+          onClick={() => setCollapsed(new Set(groups))}
+          className="focus-ring rounded-card border border-border px-3 py-1.5 text-xs font-medium hover:bg-surface-alt"
+        >
+          Recolher tudo
+        </button>
       </div>
 
       <div className="overflow-x-auto">
@@ -103,12 +129,21 @@ export function PermissionsPanel() {
             {groups.map((group) => (
               <Fragment key={group}>
                 <tr className="bg-surface-alt/60">
-                  <td colSpan={columnView.visibleKeys.length + 1} className="px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
-                    {group}
+                  <td colSpan={columnView.visibleKeys.length + 1} className="p-0">
+                    {/* Each menu folds up — the arrow on the right; the page opens with all of them expanded. */}
+                    <button
+                      type="button"
+                      onClick={() => toggleGroup(group)}
+                      aria-expanded={!collapsed.has(group)}
+                      className="focus-ring flex w-full items-center justify-between px-2 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-muted hover:text-[var(--color-text)]"
+                    >
+                      {group}
+                      {collapsed.has(group) ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                    </button>
                   </td>
                 </tr>
                 {data.definitions
-                  .filter((d) => d.group === group)
+                  .filter((d) => d.group === group && !collapsed.has(group))
                   .map((def) => (
                     <tr key={def.key} className="border-b border-border last:border-b-0">
                       <td className="w-0 p-0" />

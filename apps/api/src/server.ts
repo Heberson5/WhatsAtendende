@@ -9,8 +9,9 @@ import { processDueClosingMessages } from "./modules/satisfaction/satisfaction.s
 import { runHolidaySyncIfDue } from "./modules/holidays/holidays.service";
 import { sendNoReplyRemindersIfDue, sendQueueRemindersIfDue } from "./lib/queue-reminder";
 import { processNoReturnConversations } from "./modules/conversations/no-return.service";
+import { sendQueueWaitMessages } from "./modules/queue-wait-messages/queue-wait.sweep";
 import { endIdleSessions } from "./modules/auth/auth.service";
-import { syncDefaultReleaseNotes } from "./modules/release-notes/release-notes.service";
+import { fillShippedNoteImages, syncDefaultReleaseNotes } from "./modules/release-notes/release-notes.service";
 import { ensureBoletoDefaults } from "./modules/boletos/boleto-layouts.service";
 import { syncDefaultFlows } from "./modules/flows/default-flows";
 import { syncContactsIfDue } from "./lib/contacts-sync";
@@ -57,6 +58,7 @@ async function main() {
 
   // The release notes shipped with this version — each one copied into the database once (see syncDefaultReleaseNotes).
   await syncDefaultReleaseNotes().catch((err) => logger.error({ err }, "failed to copy the shipped release notes"));
+  await fillShippedNoteImages().catch((err) => logger.error({ err }, "failed to fill in the screenshots of shipped release notes"));
   // Dados › Layouts and Mensagens do boleto start with the Banco do Brasil layouts and "Instruções padrão".
   await ensureBoletoDefaults();
   // Flows shipped with this version (e.g. Univida) — copied in once, switched off and with no connection.
@@ -85,6 +87,7 @@ async function main() {
     sendQueueRemindersIfDue().catch((err) => logger.error({ err }, "failed to check/send queue reminders"));
     sendNoReplyRemindersIfDue().catch((err) => logger.error({ err }, "failed to check/send no-reply reminders"));
     processNoReturnConversations().catch((err) => logger.error({ err }, "failed to process falta de retorno"));
+    sendQueueWaitMessages().catch((err) => logger.error({ err }, "failed to send the queue wait messages"));
   }, QUEUE_REMINDER_CHECK_INTERVAL_MS);
   queueReminderTimer.unref();
 

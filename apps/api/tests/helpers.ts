@@ -31,6 +31,7 @@ export async function resetDatabase() {
   await prisma.user.deleteMany();
   await prisma.systemSetting.deleteMany();
   await prisma.quickReply.deleteMany();
+  await prisma.queueWaitMessage.deleteMany();
   await prisma.whatsAppConnection.deleteMany();
   await prisma.metaConnection.deleteMany();
   await prisma.workSchedule.deleteMany();

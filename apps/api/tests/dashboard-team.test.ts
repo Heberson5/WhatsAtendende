@@ -94,4 +94,43 @@ describe("dashboard: team now and presence durations", () => {
     const totals = res.body.hours.reduce((sum: number, h: { inside: number; outside: number }) => sum + h.inside + h.outside, 0);
     expect(totals).toBe(2);
   });
+
+  it("explica a diferença para a Gestão e abre na Gestão só as abertas pelo cliente naquela hora", async () => {
+    const connection = await createTestConnection("Suporte");
+    const now = Date.now();
+    const conversation = async (phone: string, direction: "INBOUND" | "OUTBOUND", createdAt: Date, lastMessageAt: Date) => {
+      const contact = await prisma.contact.create({ data: { phone, name: phone, whatsappConnectionId: connection.id } });
+      return prisma.conversation.create({
+        data: {
+          contactId: contact.id,
+          whatsappConnectionId: connection.id,
+          status: "CLOSED",
+          createdAt,
+          lastMessageAt,
+          messages: { create: { direction, type: "TEXT", body: "Oi", createdAt } },
+        },
+      });
+    };
+    const twoHoursAgo = new Date(now - 2 * HOUR);
+    const oneHourAgo = new Date(now - HOUR);
+    const early = await conversation("5565990000011", "INBOUND", twoHoursAgo, twoHoursAgo);
+    await conversation("5565990000012", "INBOUND", oneHourAgo, oneHourAgo);
+    await conversation("5565990000013", "OUTBOUND", oneHourAgo, oneHourAgo);
+    // Opened two days ago, a message in the period: Gestão lists it, the chart doesn't.
+    await conversation("5565990000014", "INBOUND", new Date(now - 48 * HOUR), oneHourAgo);
+
+    const range = { period: "custom", from: new Date(now - 3 * HOUR).toISOString(), to: new Date(now).toISOString(), tzOffsetMinutes: 0 };
+    const res = await request(app).get("/api/dashboard/arrivals-by-hour").query(range).set("Authorization", `Bearer ${token}`);
+    expect(res.body.summary).toEqual({ withActivity: 4, openedByCustomer: 2, startedByTeam: 1, fromEarlierDays: 1 });
+
+    const gestao = await request(app).get("/api/conversations/oversight/page").query(range).set("Authorization", `Bearer ${token}`);
+    expect(gestao.body.total).toBe(4);
+    const opened = await request(app).get("/api/conversations/oversight/page").query({ ...range, openedByCustomer: "1" }).set("Authorization", `Bearer ${token}`);
+    expect(opened.body.total).toBe(2);
+    const atHour = await request(app)
+      .get("/api/conversations/oversight/page")
+      .query({ ...range, arrivalHour: twoHoursAgo.getUTCHours() })
+      .set("Authorization", `Bearer ${token}`);
+    expect(atHour.body.items.map((c: { id: string }) => c.id)).toEqual([early.id]);
+  });
 });

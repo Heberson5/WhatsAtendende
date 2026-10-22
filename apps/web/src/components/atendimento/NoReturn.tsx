@@ -23,7 +23,7 @@ export function useNoReturnHold(conversationId: string) {
   return useMutation({
     mutationFn: (hold: boolean) => api.post(`/conversations/${conversationId}/no-return-hold`, { hold }),
     onSuccess: (_res, hold) => {
-      toast.success(hold ? "Conversa aguardando o cliente: não será encerrada automaticamente." : "Encerramento automático retomado.");
+      toast.success(hold ? "Não encerrar automaticamente: a conversa fica aberta até o cliente responder." : "Encerramento automático retomado.");
       queryClient.invalidateQueries({ queryKey: ["mine"] });
     },
     onError: (err) => toast.error(getApiErrorMessage(err)),
@@ -34,7 +34,7 @@ function minutesLeft(closeAt: string) {
   return Math.max(1, Math.ceil((new Date(closeAt).getTime() - Date.now()) / 60_000));
 }
 
-/** Card badge: "⏳ encerra em N min" after the reminder went out, or "Aguardando cliente". */
+/** Card badge: "⏳ encerra em N min" after the reminder went out, or "Não encerrar". */
 export function NoReturnBadge({ conversation }: { conversation: ConversationListItemDTO }) {
   if (conversation.scheduledMessagePending) {
     return (
@@ -45,8 +45,8 @@ export function NoReturnBadge({ conversation }: { conversation: ConversationList
   }
   if (conversation.noReturnHold) {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-surface-alt px-2 py-0.5 text-[10.5px] font-semibold text-muted">
-        <PauseCircle className="h-3 w-3" /> Aguardando cliente
+      <span className="inline-flex items-center gap-1 rounded-full bg-surface-alt px-2 py-0.5 text-[10.5px] font-semibold text-muted" title="Não será encerrada automaticamente por falta de retorno">
+        <PauseCircle className="h-3 w-3" /> Não encerrar
       </span>
     );
   }
@@ -58,7 +58,7 @@ export function NoReturnBadge({ conversation }: { conversation: ConversationList
   );
 }
 
-/** Chat header: the countdown plus "Aguardar cliente" (pauses the automatic close until the customer answers). */
+/** Chat header: the countdown plus "Não encerrar automaticamente" (pauses the automatic close until the customer answers). */
 export function NoReturnStatus({
   conversation,
   onHold,
@@ -91,20 +91,20 @@ export function NoReturnStatus({
       title={
         conversation.noReturnHold
           ? "Retomar o encerramento automático por falta de retorno"
-          : "Aguardar cliente: não encerrar automaticamente por falta de retorno até o cliente responder"
+          : "Não encerrar automaticamente: a conversa não será encerrada por falta de retorno até o cliente responder ou você desmarcar"
       }
       className="focus-ring flex items-center gap-1.5 rounded-card border border-border px-2 py-1.5 text-xs font-medium hover:bg-surface-alt disabled:opacity-60 sm:px-3"
     >
       {conversation.noReturnHold ? <PauseCircle className="h-3.5 w-3.5 text-primary" /> : <Hourglass className="h-3.5 w-3.5" />}
       <span className={labelClassName}>
-        {conversation.noReturnHold ? "Aguardando cliente" : conversation.noReturnCloseAt ? `Encerra em ${minutesLeft(conversation.noReturnCloseAt)} min` : "Aguardar cliente"}
+        {conversation.noReturnHold ? "Não encerrar (ativo)" : conversation.noReturnCloseAt ? `Encerra em ${minutesLeft(conversation.noReturnCloseAt)} min` : "Não encerrar automaticamente"}
       </span>
     </button>
   );
 }
 
 /**
- * One minute before an automatic close, warns the agent with "Manter aberta" (= Aguardar cliente) and "Encerrar
+ * One minute before an automatic close, warns the agent with "Manter aberta" (= Não encerrar automaticamente) and "Encerrar
  * agora" — once per countdown.
  */
 export function useNoReturnWarnings(conversations: ConversationListItemDTO[] | undefined) {

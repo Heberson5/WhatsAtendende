@@ -10,6 +10,8 @@ import { getConnectionSchedule, isWorkScheduleOpen } from "../work-schedules/wor
 import { renderAutoMessageTemplate, ROLE_LABEL } from "../auto-message-templates/auto-message-templates.service";
 import { getConversationOrThrow, NO_RETURN_CLOSE_REASON } from "./conversations.service";
 import { scheduleCloseFollowUp, willSendSurveyOnClose, type HeldClosingMessage } from "../satisfaction/satisfaction.service";
+import { getActiveClosingMessageForAgent } from "../closing-messages/closing-messages.service";
+import { copyReplyMediaFile, type HeldReplyMedia } from "../../lib/reply-media";
 
 const OPEN_STATUSES: ConversationStatus[] = ["IN_PROGRESS", "TRANSFERRED"];
 
@@ -40,6 +42,16 @@ async function sendNoReturnText(conversation: Conversation, template: string) {
 }
 
 /**
+ * What follows the survey's thanks when the customer does give a score: the agent's own closing message (Respostas ›
+ * Encerramento), never the "como não tivemos retorno" text — or nothing, when the agent has none.
+ */
+async function agentClosingMessage(conversation: Conversation): Promise<{ text: string | null; media?: HeldReplyMedia | null }> {
+  const closing = await getActiveClosingMessageForAgent(conversation.assignedAgentId!, conversation.whatsappConnectionId);
+  if (!closing) return { text: null };
+  return { text: renderNoReturnText(conversation, closing.text), media: copyReplyMediaFile(closing) };
+}
+
+/**
  * "Encerrar por falta de retorno": the customer gets the no-return message and the close counts for the assigned agent
  * like any other — kept apart by closeReason in the reports. `byUserId` null = the automatic close. With "Enviar a
  * pesquisa de satisfação" on (and a survey for the connection) the survey follows, and the no-return message waits for
@@ -56,7 +68,12 @@ export async function closeForNoReturn(conversationId: string, byUserId: string 
   const settings = await getNoReturnSettings();
   let heldClosingMessage: HeldClosingMessage | undefined;
   if (settings.sendSurvey && conversation.channel === "WHATSAPP" && (await willSendSurveyOnClose(conversationId))) {
-    heldClosingMessage = { text: renderNoReturnText(conversation, settings.closeText), senderId: agentId, senderDisplayName: null };
+    heldClosingMessage = {
+      text: renderNoReturnText(conversation, settings.closeText),
+      senderId: agentId,
+      senderDisplayName: null,
+      whenAnswered: await agentClosingMessage(conversation),
+    };
   } else {
     await sendNoReturnText(conversation, settings.closeText);
   }
@@ -113,7 +130,7 @@ export async function restartNoReturnAfterScheduledMessage(conversationId: strin
   });
 }
 
-/** "Aguardar cliente" / "Manter aberta": no automatic close until the customer answers (or the agent turns it off). */
+/** "Não encerrar automaticamente" / "Manter aberta": no automatic close until the customer answers (or the agent turns it off). */
 export async function setNoReturnHold(conversationId: string, hold: boolean) {
   await prisma.conversation.update({
     where: { id: conversationId },
@@ -129,7 +146,7 @@ let lastTickAt: number | null = null;
  * reminderMinutes to answer before the reminder goes out, then closeMinutes before the conversation closes — both
  * deadlines are pushed forward while the connection is outside its work schedule, so only expediente counts. Never
  * runs on a conversation whose last word is the customer's, with a pending "lembrar de retornar" or scheduled
- * message, or that the agent put on "Aguardar cliente".
+ * message, or that the agent put on "Não encerrar automaticamente".
  */
 export async function processNoReturnConversations(now = new Date()): Promise<void> {
   const elapsedMs = lastTickAt === null ? 0 : Math.max(0, now.getTime() - lastTickAt);

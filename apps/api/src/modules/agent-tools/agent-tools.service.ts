@@ -10,6 +10,7 @@ import { createNotification } from "../notifications/notifications.service";
 import { toNotificationDTO } from "../notifications/notifications.mapper";
 import { assertAgentCanAccessConversation, assertCanReplyToConversation, getConversationOrThrow } from "../conversations/conversations.service";
 import { createOutboundMessage } from "../messages/messages.service";
+import { firstResponseDiffs, SCHEDULE_SELECT } from "../../lib/conversation-timings";
 import { pauseNoReturnForScheduledMessage, restartNoReturnAfterScheduledMessage } from "../conversations/no-return.service";
 import * as whatsappService from "../whatsapp/whatsapp.service";
 import * as metaService from "../meta/meta.service";
@@ -179,7 +180,7 @@ export async function getMyDay(userId: string, tzOffsetMinutes: number): Promise
     prisma.conversation.count({ where: { assignedAgentId: userId, status: "CLOSED", closedAt: { gte: today.from, lte: today.to } } }),
     prisma.conversation.findMany({
       where: { assignedAgentId: userId, firstResponseAt: { gte: today.from, lte: today.to }, acceptedAt: { not: null } },
-      select: { acceptedAt: true, firstResponseAt: true },
+      select: { acceptedAt: true, firstResponseAt: true, ...SCHEDULE_SELECT },
     }),
     prisma.satisfactionSurvey.groupBy({
       by: ["score"],
@@ -188,7 +189,8 @@ export async function getMyDay(userId: string, tzOffsetMinutes: number): Promise
     }),
     goalsForUser(userId, user.whatsappConnectionId),
   ]);
-  const diffs = firstResponses.map((c) => c.firstResponseAt!.getTime() - c.acceptedAt!.getTime()).filter((ms) => ms >= 0);
+  // Only the Horário de expediente counts.
+  const diffs = await firstResponseDiffs(firstResponses);
   const distribution = Array<number>(11).fill(0);
   for (const row of scores) if (row.score !== null) distribution[row.score] += row._count._all;
   const values = {

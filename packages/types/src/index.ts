@@ -187,6 +187,8 @@ export interface HolidayDTO {
   city: string | null;
   source: HolidaySource;
   year: number;
+  /** "Repete todo ano": the same day and month every year (manual holidays only). Listed in every year. */
+  recurringYearly: boolean;
 }
 
 export interface PauseReasonDTO {
@@ -214,6 +216,12 @@ export interface PresenceByHourPoint {
  */
 export interface ArrivalsByHourDTO {
   hours: { hour: number; inside: number; outside: number; onlineAvg: number; days: number }[];
+  /**
+   * How the chart's conversations relate to Gestão's list for the same period: Gestão lists every conversation with
+   * any movement in it (withActivity) = opened by the customer in the period (the chart) + started by the team in the
+   * period + opened on earlier days.
+   */
+  summary?: { withActivity: number; openedByCustomer: number; startedByTeam: number; fromEarlierDays: number };
 }
 
 export interface PresenceByHourDTO {
@@ -273,6 +281,20 @@ export interface QuickReplyDTO {
 export interface ConnectionScopeDTO {
   allConnections: boolean;
   connections: { id: string; name: string }[];
+}
+
+/** Respostas › Espera na fila — sent `delayMinutes` after the previous one (the first: after entering the queue), only inside the Horário de expediente. */
+export interface QueueWaitMessageDTO {
+  id: string;
+  /** 1, 2, 3… — the order they go out in. */
+  position: number;
+  delayMinutes: number;
+  text: string;
+  media: ReplyMediaDTO | null;
+  active: boolean;
+  connectionScope: ConnectionScopeDTO;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface ClosingMessageDTO {
@@ -812,6 +834,52 @@ export function stateUtcOffsetMinutes(state: string): number {
   return BR_STATE_UTC_OFFSET_MINUTES[state] ?? BR_DEFAULT_UTC_OFFSET_MINUTES;
 }
 
+/**
+ * A connection's Horário de expediente as the screen needs it to count a wait only while open ("na fila há",
+ * "sem resposta há"): the state (time zone), the week, the partial holidays and the holidays (closed days) around now.
+ */
+export interface BusinessClockDTO {
+  state: string;
+  days: WorkScheduleDaysDTO;
+  partialHolidays: WorkSchedulePartialHolidayDTO[];
+  /** YYYY-MM-DD days that are holidays for this connection's place (closed, unless in partialHolidays). */
+  holidays: string[];
+}
+
+const BUSINESS_DAY_MS = 86_400_000;
+const BUSINESS_WEEKDAYS: WeekdayKey[] = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+const businessMinutes = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
+
+/** Milliseconds between `start` and `end` (epoch ms) inside the open hours; no clock = 24 hours, the plain difference. */
+export function businessMsBetween(clock: BusinessClockDTO | null | undefined, start: number, end: number): number {
+  if (end <= start) return 0;
+  if (!clock) return end - start;
+  const offsetMs = stateUtcOffsetMinutes(clock.state) * 60_000;
+  const holidays = new Set(clock.holidays);
+  let dayStart = Math.floor((start - offsetMs) / BUSINESS_DAY_MS) * BUSINESS_DAY_MS + offsetMs;
+  let total = 0;
+  while (dayStart < end) {
+    const local = new Date(dayStart - offsetMs);
+    const dateKey = local.toISOString().slice(0, 10);
+    let windows: [number, number][] = [];
+    if (holidays.has(dateKey)) {
+      const partial = clock.partialHolidays.find((h) => h.date === dateKey);
+      if (partial) windows = [[businessMinutes(partial.start), businessMinutes(partial.end)]];
+    } else {
+      const w = clock.days[BUSINESS_WEEKDAYS[local.getUTCDay()]];
+      if (w) windows = w.allDay ? [[0, 1440]] : [[businessMinutes(w.start), businessMinutes(w.end)]];
+    }
+    for (const [a, b] of windows) total += Math.max(0, Math.min(dayStart + b * 60_000, end) - Math.max(dayStart + a * 60_000, start));
+    dayStart += BUSINESS_DAY_MS;
+  }
+  return total;
+}
+
+/** Whether the clock is open at `at` (epoch ms): the next minute counts. */
+export function isBusinessOpenAt(clock: BusinessClockDTO | null | undefined, at: number): boolean {
+  return businessMsBetween(clock, at, at + 60_000) > 0;
+}
+
 export interface UserScopeDTO {
   allUsers: boolean;
   /** Empty when allUsers. */
@@ -912,8 +980,10 @@ export interface ConversationListItemDTO {
   awaitingReplySince: string | null;
   /** Falta de retorno: the reminder already went out and the conversation closes by itself at this time ("⏳ encerra em N min"). */
   noReturnCloseAt: string | null;
-  /** "Aguardar cliente": the agent paused the automatic close until the customer answers. */
+  /** "Não encerrar automaticamente": the agent paused the automatic close until the customer answers. */
   noReturnHold: boolean;
+  /** The connection's Horário de expediente: waits shown on screen count only while it is open. Null = 24 hours. */
+  businessClock?: BusinessClockDTO | null;
   /** A scheduled message is still to go out: the "falta de retorno" close is paused, and the manual one blocked. */
   scheduledMessagePending?: boolean;
   /** Started or answered on the linked phone — accepting it sends no "Aceite" message. */
@@ -1212,6 +1282,10 @@ export const PERMISSION = {
   RESPOSTAS_EXPEDIENTE_ADICIONAR: "respostas_expediente.adicionar",
   RESPOSTAS_EXPEDIENTE_EDITAR: "respostas_expediente.editar",
   RESPOSTAS_EXPEDIENTE_EXCLUIR: "respostas_expediente.excluir",
+  RESPOSTAS_ESPERA_VISUALIZAR: "respostas_espera.visualizar",
+  RESPOSTAS_ESPERA_ADICIONAR: "respostas_espera.adicionar",
+  RESPOSTAS_ESPERA_EDITAR: "respostas_espera.editar",
+  RESPOSTAS_ESPERA_EXCLUIR: "respostas_espera.excluir",
   // Standalone top-level menu (not nested under CONFIGURACOES_GERENCIAR) —
   // see PROMPT: "planeje um novo menu chamado landing page". Single record
   // to edit (no list), so only visualizar/editar.
@@ -1917,6 +1991,38 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     group: "Respostas",
     label: "Respostas — Horário de expediente (excluir)",
     description: "Excluir um horário de expediente que nenhuma conexão esteja usando.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.RESPOSTAS_ESPERA_VISUALIZAR,
+    group: "Respostas",
+    label: "Respostas — Espera na fila (visualizar)",
+    description: "Ver as mensagens enviadas ao cliente enquanto ele espera na fila (aba Espera na fila).",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.RESPOSTAS_ESPERA_ADICIONAR,
+    group: "Respostas",
+    label: "Respostas — Espera na fila (adicionar)",
+    description: "Cadastrar uma nova mensagem de espera.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.RESPOSTAS_ESPERA_EDITAR,
+    group: "Respostas",
+    label: "Respostas — Espera na fila (editar)",
+    description: "Editar o texto, o tempo, as conexões e a ordem das mensagens de espera.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.RESPOSTAS_ESPERA_EXCLUIR,
+    group: "Respostas",
+    label: "Respostas — Espera na fila (excluir)",
+    description: "Excluir uma mensagem de espera.",
     editableRoles: ["AGENT", "MANAGER"],
     defaultAllowed: { AGENT: false, MANAGER: true },
   },

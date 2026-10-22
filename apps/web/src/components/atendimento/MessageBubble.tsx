@@ -372,7 +372,8 @@ export function MessageBubble({
               role="dialog"
               aria-label="Reações"
               className={clsx(
-                "absolute top-full z-20 mt-1 w-56 rounded-card border border-border bg-surface p-2 text-sm text-[var(--color-text)] shadow-elevated",
+                // Opens upward, over the message itself: below, the conversation's last message (the usual one) cut it off.
+                "absolute bottom-full z-20 mb-1 w-56 rounded-card border border-border bg-surface p-2 text-sm text-[var(--color-text)] shadow-elevated",
                 isOutbound ? "right-0" : "left-0"
               )}
             >

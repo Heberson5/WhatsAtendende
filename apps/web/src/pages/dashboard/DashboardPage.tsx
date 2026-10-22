@@ -74,6 +74,17 @@ export default function DashboardPage() {
     navigate(`/gestao?${params.toString()}`);
   }
 
+  // A bar of "Conversas que chegam ao longo do dia" (or its "abertas pelo cliente" total): Gestão with exactly those.
+  function goToArrivals(hour: number | null) {
+    const params = new URLSearchParams({ openedBy: "customer", period: period.period });
+    if (period.from) params.set("from", period.from);
+    if (period.to) params.set("to", period.to);
+    if (hour !== null) params.set("hour", String(hour));
+    if (agentId !== "all") params.set("agentId", agentId);
+    if (connectionIds.length) params.set("connectionId", connectionIds.join(","));
+    navigate(`/gestao?${params.toString()}`);
+  }
+
   const { data: branding } = useBranding();
   const { data: exportBranding } = useExportBranding();
   const primaryColor = branding?.primaryColor ?? "#0097B4";
@@ -386,6 +397,7 @@ export default function DashboardPage() {
               initialRange={savedArrivalsRange}
               onSaveDefaultRange={(range) => saveDefaultArrivalsRangeMutation.mutate(range)}
               onActiveRangeChange={setActiveArrivalsRange}
+              onOpenInGestao={canOpenGestao ? goToArrivals : undefined}
             />
           </section>
 

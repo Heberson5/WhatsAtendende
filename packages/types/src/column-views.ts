@@ -226,6 +226,7 @@ export const COLUMN_SCREENS = {
       { key: "name", label: "Nome" },
       { key: "scope", label: "Abrangência" },
       { key: "source", label: "Origem" },
+      { key: "repeat", label: "Repete" },
     ],
   },
   permissoes: {

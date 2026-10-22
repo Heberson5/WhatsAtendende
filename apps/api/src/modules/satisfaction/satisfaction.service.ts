@@ -203,6 +203,8 @@ export interface HeldClosingMessage {
   senderDisplayName: string | null;
   /** The closing message's image, video or PDF — this conversation's own copy; the text goes as its caption. */
   media?: HeldReplyMedia | null;
+  /** Sent instead when the customer answers the survey (text null = nothing) — see SatisfactionSurvey.closingWhenAnswered. */
+  whenAnswered?: { text: string | null; media?: HeldReplyMedia | null };
 }
 
 /** The type of the message a closing message becomes: the attachment's kind, or a plain text. */
@@ -333,6 +335,9 @@ export async function sendCloseFollowUp(conversationId: string, closingMessage?:
           closingText: closingMessage.text,
           closingSenderId: closingMessage.senderId,
           ...(closingMessage.media && { closingMedia: { ...closingMessage.media } }),
+          ...(closingMessage.whenAnswered && {
+            closingWhenAnswered: { text: closingMessage.whenAnswered.text, ...(closingMessage.whenAnswered.media && { media: { ...closingMessage.whenAnswered.media } }) },
+          }),
         }),
       },
     });
@@ -349,6 +354,13 @@ const CLOSING_FAILED = "FAILED";
 const CLOSING_CANCELED_CUSTOMER_WROTE = "CANCELED_CUSTOMER_WROTE";
 const CLOSING_CANCELED_NEWER_CONVERSATION = "CANCELED_NEWER_CONVERSATION";
 const CLOSING_CANCELED_NOT_CLOSED = "CANCELED_NOT_CLOSED";
+const CLOSING_SKIPPED_ANSWERED = "SKIPPED_ANSWERED";
+
+function whenAnsweredOf(value: Prisma.JsonValue | null | undefined): { text: string | null; media: HeldReplyMedia | null } | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const held = value as Record<string, Prisma.JsonValue>;
+  return { text: typeof held.text === "string" && held.text ? held.text : null, media: heldMediaOf(held.media) };
+}
 
 /**
  * Sends the closing message kept on this survey, once, if it is due and still fits.
@@ -378,6 +390,8 @@ async function deliverClosingMessage(surveyId: string, now: Date): Promise<strin
         closingText: true,
         closingSenderId: true,
         closingMedia: true,
+        closingWhenAnswered: true,
+        answeredAt: true,
         conversation: { select: { id: true, status: true, whatsappConnectionId: true, assignedAgentId: true, contact: { select: { phone: true } } } },
       },
     });
@@ -388,12 +402,17 @@ async function deliverClosingMessage(surveyId: string, now: Date): Promise<strin
 
     // The agent may have been removed since the conversation was closed — the message still goes out, just without their name on the row.
     const sender = survey.closingSenderId ? await prisma.user.findUnique({ where: { id: survey.closingSenderId }, select: { id: true } }) : null;
-    const media = heldMediaOf(survey.closingMedia);
-    const message = await createSystemOutboundMessage({ conversationId: conversation.id, type: closingMessageType(media), body: survey.closingText, agentId: sender?.id, allowClosed: true });
+    // Closed for falta de retorno but the customer gave a score: they came back, so the "não tivemos retorno" text
+    // gives way to the agent's own closing message — or to nothing, after the thanks, when the agent has none.
+    const answered = survey.answeredAt !== null ? whenAnsweredOf(survey.closingWhenAnswered) : null;
+    if (answered && !answered.text) return await finish(CLOSING_SKIPPED_ANSWERED);
+    const text = answered?.text ?? survey.closingText;
+    const media = answered ? answered.media : heldMediaOf(survey.closingMedia);
+    const message = await createSystemOutboundMessage({ conversationId: conversation.id, type: closingMessageType(media), body: text, agentId: sender?.id, allowClosed: true });
     // After the survey the closing message goes without the "*Nome:*" on top — the name only goes with it when there is no survey.
     const sent = media
-      ? await sendClosingMedia(conversation.whatsappConnectionId, message.id, conversation.contact.phone, media, survey.closingText, null)
-      : await whatsappService.sendOutboundText(conversation.whatsappConnectionId, message.id, conversation.contact.phone, survey.closingText, null);
+      ? await sendClosingMedia(conversation.whatsappConnectionId, message.id, conversation.contact.phone, media, text, null)
+      : await whatsappService.sendOutboundText(conversation.whatsappConnectionId, message.id, conversation.contact.phone, text, null);
     realtimeEvents.newMessage(conversation.id, conversation.assignedAgentId);
     return await finish(sent?.status === "FAILED" ? CLOSING_FAILED : CLOSING_SENT);
   } catch (err) {
