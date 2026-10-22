@@ -87,7 +87,9 @@ describe("WhatsApp groups in Atendimento", () => {
     provider.simulateIncomingGroupMessage(GROUP, "5565999990000", "Ana Souza", "Bom dia, equipe");
     await wait(300);
     expect(await prisma.contact.count({ where: { isGroup: true } })).toBe(0);
-    expect(await prisma.conversation.count()).toBe(0);
+    // Only this group's message counts: the mock's own pre-existing unread chat (Ana Ribeiro, ~0.8s after connecting)
+    // may land at any moment and is not about groups.
+    expect(await prisma.conversation.count({ where: { contact: { OR: [{ isGroup: true }, { providerChatId: GROUP }, { phone: "5565999990000" }] } } })).toBe(0);
   });
 
   it("only an administrator turns groups on; doing so brings the number's groups in", async () => {

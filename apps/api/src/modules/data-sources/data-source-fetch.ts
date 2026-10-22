@@ -1,4 +1,4 @@
-import { Readable } from "node:stream";
+import { PassThrough, Readable } from "node:stream";
 import { gunzipSync } from "node:zlib";
 import ExcelJS from "exceljs";
 import JSZip from "jszip";
@@ -93,9 +93,69 @@ function parseCsv(buffer: Buffer, modifiedAt: Date | null): FetchedTable {
   return { columns, rows, modifiedAt };
 }
 
+/**
+ * The parts ExcelJS' streaming reader needs, in the order it needs them, and only the workbook's first sheet.
+ *
+ * The reader expects the relationships, xl/workbook.xml and the shared strings to come before the sheets inside the
+ * zip. Many files have the sheets first (ExcelJS itself writes sheet1.xml, sheet2.xml, sharedStrings.xml and only then
+ * workbook.xml): the reader then parks the sheets in temp files while it reads on, and most of the time it ended
+ * with "Cannot read properties of undefined (reading 'sheets')" — 28 of 30 reads of one such file. It also took
+ * the first sheet found in the zip, which is not always the first tab. Rebuilt uncompressed (STORE) and streamed, so
+ * a big sheet is never held in memory twice.
+ */
+async function orderedXlsx(buffer: Buffer): Promise<{ stream: Readable; hasSharedStrings: boolean }> {
+  const zip = await JSZip.loadAsync(buffer);
+  const text = async (name: string) => (await zip.file(name)?.async("string")) ?? null;
+  const workbookXml = await text("xl/workbook.xml");
+  const relsXml = await text("xl/_rels/workbook.xml.rels");
+  if (!workbookXml || !relsXml) throw new Error("Não foi possível ler a planilha: o arquivo XLSX está incompleto ou corrompido");
+
+  // The first <sheet> of workbook.xml is the first tab; its r:id says which file holds it.
+  const firstSheetTag = /<(?:\w+:)?sheet\s[^>]*>/.exec(workbookXml)?.[0] ?? "";
+  const firstSheetRelId = attribute(firstSheetTag, "r:id");
+  const relationship = (relsXml.match(/<(?:\w+:)?Relationship\s[^>]*>/g) ?? []).find((tag) => attribute(tag, "Id") === firstSheetRelId);
+  const targetPath = relationship ? attribute(relationship, "Target") : null;
+  const sheetPath = targetPath ? (targetPath.startsWith("/") ? targetPath.slice(1) : `xl/${targetPath}`) : null;
+  const sheet = sheetPath ? zip.file(sheetPath) : null;
+  if (!sheet) throw new Error("Não foi possível ler a planilha: a primeira aba não foi encontrada no arquivo XLSX");
+
+  const ordered = new JSZip();
+  const copy = (name: string, as = name) => {
+    const file = zip.file(name);
+    if (file) ordered.file(as, file.nodeStream());
+  };
+  copy("[Content_Types].xml");
+  copy("_rels/.rels");
+  copy("xl/_rels/workbook.xml.rels");
+  copy("xl/workbook.xml");
+  copy("xl/sharedStrings.xml");
+  copy("xl/styles.xml");
+  // Kept under the name the reader recognizes (sheetN.xml), whatever the file was called.
+  const asName = /^xl\/worksheets\/sheet\d+\.xml$/.test(sheet.name) ? sheet.name : "xl/worksheets/sheet1.xml";
+  ordered.file(asName, sheet.nodeStream());
+  // ExcelJS only takes a Node Readable; JSZip's stream is its own kind — piped through one.
+  const stream = new PassThrough();
+  const generated = ordered.generateNodeStream({ streamFiles: true, compression: "STORE" });
+  generated.on("error", (err) => stream.destroy(err));
+  generated.pipe(stream);
+  return { stream, hasSharedStrings: Boolean(zip.file("xl/sharedStrings.xml")) };
+}
+
+/** An XML attribute's value inside one tag (`name="value"`). */
+function attribute(tag: string, name: string): string | null {
+  const at = tag.indexOf(` ${name}="`);
+  if (at < 0) return null;
+  const start = at + name.length + 3;
+  const end = tag.indexOf('"', start);
+  return end < 0 ? null : tag.slice(start, end);
+}
+
 /** Read row by row (streaming): a 250k-row sheet loaded whole takes minutes and gigabytes. Only the first sheet. */
 async function parseXlsx(buffer: Buffer, modifiedAt: Date | null): Promise<FetchedTable> {
-  const reader = new ExcelJS.stream.xlsx.WorkbookReader(Readable.from(buffer), { sharedStrings: "cache", styles: "cache", hyperlinks: "ignore", worksheets: "emit" });
+  const { stream, hasSharedStrings } = await orderedXlsx(buffer);
+  const reader = new ExcelJS.stream.xlsx.WorkbookReader(stream, { sharedStrings: "cache", styles: "cache", hyperlinks: "ignore", worksheets: "emit" });
+  // A file with no shared strings (all inline): without this the reader would park the sheet in a temp file.
+  if (!hasSharedStrings) (reader as unknown as { sharedStrings: string[] }).sharedStrings = [];
   const records: string[][] = [];
   for await (const sheet of reader) {
     for await (const row of sheet) {

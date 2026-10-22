@@ -202,20 +202,26 @@ describe("conversa pelo celular, pelos eventos do WhatsApp (de ponta a ponta)", 
     provider.simulateIncomingMessage("5511990001234", "Bom dia, tudo bem?");
     await waitForMessages(2);
 
+    // Only this customer's rows: the mock's own pre-existing unread chat (another number, ~0.8s after connecting) may
+    // land at any moment, in the queue.
+    const ofThisCustomer = (rows: { contact: { phone: string | null } }[]) => rows.filter((c) => c.contact.phone === "5511990001234");
     const oversight = await request(app).get("/api/conversations/oversight").set("Authorization", `Bearer ${token}`);
     expect(oversight.status).toBe(200);
-    expect(oversight.body).toHaveLength(1);
-    expect(oversight.body[0].status).toBe("HANDLED_EXTERNALLY");
-    const messages = await prisma.message.findMany({ where: { conversationId: oversight.body[0].id }, orderBy: { createdAt: "asc" } });
+    const rows = ofThisCustomer(oversight.body);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].status).toBe("HANDLED_EXTERNALLY");
+    const messages = await prisma.message.findMany({ where: { conversationId: rows[0].id }, orderBy: { createdAt: "asc" } });
     expect(messages.map((m) => `${m.direction}:${m.body}`)).toEqual(["OUTBOUND:Bom dia! Aqui é da loja.", "INBOUND:Bom dia, tudo bem?"]);
     const queue = await request(app).get("/api/conversations/queue").set("Authorization", `Bearer ${token}`);
-    expect(queue.body).toHaveLength(0);
+    expect(ofThisCustomer(queue.body)).toHaveLength(0);
   }, 20000);
 
+  // Counted for this test's customer only (see the mock's pre-existing unread chat above).
+  const THIS_CUSTOMER = { contact: { phone: "5511990001234" } };
   async function waitForRows(count: number) {
-    for (let i = 0; i < 100 && (await prisma.conversation.count()) < count; i++) await new Promise((r) => setTimeout(r, 50));
+    for (let i = 0; i < 100 && (await prisma.conversation.count({ where: THIS_CUSTOMER })) < count; i++) await new Promise((r) => setTimeout(r, 50));
   }
   async function waitForMessages(count: number) {
-    for (let i = 0; i < 100 && (await prisma.message.count()) < count; i++) await new Promise((r) => setTimeout(r, 50));
+    for (let i = 0; i < 100 && (await prisma.message.count({ where: { conversation: THIS_CUSTOMER } })) < count; i++) await new Promise((r) => setTimeout(r, 50));
   }
 });
