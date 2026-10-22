@@ -406,6 +406,15 @@ async function storeInboundGroupMessage(connectionId: string, event: InboundMess
   await announceGroupMessage(conversation.id, connectionId, contact.name ?? "Grupo", senderName, previewText({ body: event.body, type: event.type }), null);
 }
 
+/** A participant's reaction changed: everybody who sees the group gets it redrawn. */
+export async function announceGroupReaction(groupId: string, connectionId: string): Promise<void> {
+  const team = await groupTeam(connectionId, groupId);
+  realtimeEvents.groupReaction(
+    team.map((m) => m.id),
+    groupId
+  );
+}
+
 /** A participant's name as known to this connection (they may also be a customer with a conversation). */
 async function savedContactName(connectionId: string, phone: string): Promise<string | null> {
   const contact = await prisma.contact.findFirst({ where: { whatsappConnectionId: connectionId, phone, isGroup: false }, select: { name: true } });

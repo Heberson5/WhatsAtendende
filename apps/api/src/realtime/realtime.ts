@@ -37,6 +37,11 @@ export const realtimeEvents = {
     for (const userId of userIds) getIO()?.to(ROOMS.user(userId)).emit("group:read", { conversationId, userId: readerId });
     getIO()?.to(ROOMS.oversight()).emit("groups:updated");
   },
+  /** A participant reacted to a group message (or took the reaction back): the open group redraws it. */
+  groupReaction: (userIds: string[], conversationId: string) => {
+    for (const userId of userIds) getIO()?.to(ROOMS.user(userId)).emit("group:reaction", { conversationId });
+    getIO()?.to(ROOMS.oversight()).emit("group:reaction", { conversationId });
+  },
   /** Older messages of a group arrived from WhatsApp (the "Carregar mensagens anteriores" button). */
   groupHistory: (userIds: string[], conversationId: string, count: number) => {
     for (const userId of userIds) getIO()?.to(ROOMS.user(userId)).emit("group:history", { conversationId, count });

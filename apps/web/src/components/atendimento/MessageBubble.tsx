@@ -1,7 +1,7 @@
 import clsx from "clsx";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Calendar, Check, CheckCheck, Clock, ExternalLink, FileText, Forward, ListChecks, MapPin, MessageCircle, ReplyIcon, Smile, Trash2, User } from "lucide-react";
+import { Calendar, Check, CheckCheck, Clock, ExternalLink, FileText, Forward, ListChecks, MapPin, MessageCircle, ReplyIcon, Smile, Trash2, User, X } from "lucide-react";
 import type { MessageDTO, MessageAttachmentDTO } from "@whatsatendende/types";
 import { useState } from "react";
 import { firstUrl, renderWhatsAppFormatting } from "../../lib/whatsappFormatting";
@@ -62,6 +62,16 @@ function Attachment({
     return (
       <button type="button" onClick={() => onOpenMedia({ url: src, kind: "IMAGE", fileName: att.fileName })} className="focus-ring block">
         <img src={src} alt={att.fileName} className="max-h-64 max-w-full cursor-zoom-in rounded object-cover" />
+      </button>
+    );
+  }
+  if (att.kind === "VIDEO" && att.isGif) {
+    // A WhatsApp GIF is a short silent video: it plays by itself, in a loop, like in WhatsApp.
+    const src = withAuthToken(att.url);
+    return (
+      <button type="button" onClick={() => onOpenMedia({ url: src, kind: "VIDEO", fileName: att.fileName })} className="focus-ring relative block overflow-hidden rounded">
+        <video src={src} autoPlay loop muted playsInline className="max-h-64 max-w-full cursor-zoom-in rounded" aria-label="GIF" />
+        <span className="pointer-events-none absolute left-1.5 top-1.5 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-bold text-white">GIF</span>
       </button>
     );
   }
@@ -234,6 +244,7 @@ export function MessageBubble({
   highlighted?: boolean;
 }) {
   const [showReactions, setShowReactions] = useState(false);
+  const [showReactors, setShowReactors] = useState(false);
   const [openMedia, setOpenMedia] = useState<LightboxMedia | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const isOutbound = message.direction === "OUTBOUND";
@@ -340,13 +351,49 @@ export function MessageBubble({
       </div>
 
       {message.reactions.length > 0 && (
-        <div className="absolute -bottom-3 right-2 flex gap-1 rounded-full border border-border bg-surface px-1.5 py-0.5 text-xs shadow">
-          {groupReactions(message.reactions).map((group) => (
-            <span key={group.emoji} title={group.names.join(", ")} data-testid="reaction-chip">
-              {group.emoji}
-              {group.count > 1 && <span className="ml-0.5 text-[10px] font-medium opacity-75">{group.count}</span>}
-            </span>
-          ))}
+        <div className="absolute -bottom-3 right-2 z-10">
+          {/* Like WhatsApp Web: the emojis with how many used each; a click lists who reacted with what. */}
+          <button
+            type="button"
+            onClick={() => setShowReactors((s) => !s)}
+            aria-expanded={showReactors}
+            aria-label="Ver quem reagiu"
+            className="focus-ring flex gap-1 rounded-full border border-border bg-surface px-1.5 py-0.5 text-xs shadow hover:bg-surface-alt"
+          >
+            {groupReactions(message.reactions).map((group) => (
+              <span key={group.emoji} title={group.names.join(", ")} data-testid="reaction-chip">
+                {group.emoji}
+                {group.count > 1 && <span className="ml-0.5 text-[10px] font-medium opacity-75">{group.count}</span>}
+              </span>
+            ))}
+          </button>
+          {showReactors && (
+            <div
+              role="dialog"
+              aria-label="Reações"
+              className={clsx(
+                "absolute top-full z-20 mt-1 w-56 rounded-card border border-border bg-surface p-2 text-sm text-[var(--color-text)] shadow-elevated",
+                isOutbound ? "right-0" : "left-0"
+              )}
+            >
+              <div className="mb-1 flex items-center justify-between px-1 text-xs text-muted">
+                <span>
+                  {message.reactions.length} {message.reactions.length === 1 ? "reação" : "reações"}
+                </span>
+                <button type="button" onClick={() => setShowReactors(false)} className="focus-ring rounded p-0.5 hover:bg-surface-alt" aria-label="Fechar reações">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <ul className="max-h-56 overflow-y-auto">
+                {message.reactions.map((reaction) => (
+                  <li key={reaction.id} className="flex items-center gap-2 rounded px-1 py-1">
+                    <span className="truncate flex-1">{reaction.userDisplayName}</span>
+                    <span className="text-base leading-none">{reaction.emoji}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
     </div>

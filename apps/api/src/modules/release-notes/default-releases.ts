@@ -11,6 +11,28 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.21.2",
+    date: "22 out 2026",
+    name: "GIFs, figurinhas e reações nos grupos",
+    summary: "GIFs e figurinhas recebidos passam a aparecer, e nos grupos dá para ver quem reagiu a cada mensagem.",
+    notes: [
+      {
+        type: "correcao",
+        area: "atendimento",
+        title: "GIFs e figurinhas aparecem nas conversas e nos grupos",
+        text: "O GIF enviado pelo cliente ou por um participante aparece rodando sozinho, em repetição e sem som, com a etiqueta GIF, como no WhatsApp. Figurinhas (inclusive as animadas) aparecem como imagem. Mensagens temporárias e de visualização única, que antes não chegavam, também passam a aparecer.",
+        where: "Atendimento",
+      },
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "Reações dos participantes nos grupos",
+        text: "As reações dos participantes aparecem embaixo da mensagem, como no WhatsApp Web: cada emoji com quantas pessoas o usaram. Clique nelas para ver a lista de quem reagiu e com qual emoji. Se o participante trocar ou tirar a reação, a lista acompanha.",
+        where: "Atendimento › Grupos",
+      },
+    ],
+  },
+  {
     version: "2.21.1",
     date: "22 out 2026",
     name: "Tag de saudação conforme o horário",

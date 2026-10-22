@@ -999,6 +999,8 @@ export interface GroupsSummaryDTO {
 
 export interface MessageAttachmentDTO {
   id: string;
+  /** VIDEO: a WhatsApp GIF — plays by itself, in a loop, muted. */
+  isGif?: boolean;
   fileName: string;
   mimeType: string;
   sizeBytes: number;

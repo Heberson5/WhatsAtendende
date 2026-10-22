@@ -46,6 +46,8 @@ export interface InboundMessageEvent {
   mediaBuffer?: Buffer;
   mediaMimeType?: string;
   mediaFileName?: string;
+  /** A WhatsApp GIF: a short silent video that plays by itself, in a loop (videoMessage.gifPlayback). */
+  mediaIsGif?: boolean;
   latitude?: number;
   longitude?: number;
   vcard?: string;
@@ -156,6 +158,8 @@ export interface ReactionEvent {
    * customer's own reaction.
    */
   fromMe?: boolean;
+  /** In a group: the participant who reacted (their phone, when WhatsApp reveals it). Absent in a 1:1 chat. */
+  participant?: { jid: string; phone: string | null } | null;
   timestamp: Date;
 }
 

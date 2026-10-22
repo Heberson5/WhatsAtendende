@@ -639,6 +639,7 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
         sizeBytes: event.mediaBuffer.length,
         storageKey,
         kind: event.type,
+        isGif: event.type === "VIDEO" && Boolean(event.mediaIsGif),
       });
     }
     if (event.type === "LOCATION" && event.latitude != null && event.longitude != null) {
@@ -892,13 +893,34 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
           include: { conversation: { select: { assignedAgentId: true } } },
         });
         if (!message) return;
-        await messagesService.setCustomerReaction(message.id, event.emoji);
+        if (event.participant) {
+          // A group: each participant has their own reaction, shown with their name.
+          const name = await groupParticipantName(connectionId, message.conversationId, event.participant.jid, event.participant.phone);
+          await messagesService.setParticipantReaction(message.id, { jid: event.participant.jid, name, phone: event.participant.phone }, event.emoji);
+          await groupsService.announceGroupReaction(message.conversationId, connectionId);
+          return;
+        } else {
+          await messagesService.setCustomerReaction(message.id, event.emoji);
+        }
         realtimeEvents.messageStatusChanged(message.conversationId, message.conversation.assignedAgentId);
       } catch (err) {
         logger.error({ err, connectionId, providerMessageId: event.providerMessageId }, "failed to record a customer reaction");
       }
     });
   });
+}
+
+/** A group participant's name: the one their messages in this group carried, else the contact saved with that number. */
+async function groupParticipantName(connectionId: string, conversationId: string, jid: string, phone: string | null): Promise<string | null> {
+  const lastMessage = await prisma.message.findFirst({
+    where: { conversationId, senderParticipantJid: jid, senderParticipantName: { not: null } },
+    orderBy: { createdAt: "desc" },
+    select: { senderParticipantName: true },
+  });
+  if (lastMessage?.senderParticipantName) return lastMessage.senderParticipantName;
+  if (!phone) return null;
+  const contact = await prisma.contact.findFirst({ where: { whatsappConnectionId: connectionId, phone, isGroup: false }, select: { name: true } });
+  return contact?.name ?? null;
 }
 
 async function persistConnectionStatus(connectionId: string, status: WhatsAppStatusSnapshot, linkedNumber?: string) {

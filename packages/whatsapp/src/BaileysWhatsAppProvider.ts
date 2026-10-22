@@ -8,6 +8,7 @@ import makeWASocket, {
   makeCacheableSignalKeyStore,
   useMultiFileAuthState,
   downloadMediaMessage,
+  normalizeMessageContent,
   proto,
   type AuthenticationCreds,
   type WASocket,
@@ -663,8 +664,8 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
       });
 
       socket.ev.on("messages.reaction", (reactions) => {
-        // Reactions inside groups are left out for now.
-        for (const r of reactions) if (!isGroupChat(r.key.remoteJid ?? "")) this.emitter.emit("reaction", reactionEventFromBaileys(r));
+        // In a group the event also says which participant reacted.
+        for (const r of reactions) this.emitter.emit("reaction", reactionEventFromBaileys(r));
       });
     } catch (err) {
       // A failure before the socket even got a chance to try connecting
@@ -1103,7 +1104,8 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
     // A group message: the app decides whether that connection takes groups at all.
     const group = groupSenderFromBaileys(message.key, message.key.fromMe ? null : message.pushName);
 
-    const content = message.message;
+    // Disappearing ("temporária"), view-once and captioned-document messages come wrapped: unwrapped here, or they never showed up.
+    const content = normalizeMessageContent(message.message);
     if (!content) return;
 
     const quotedStory = extractQuotedStory(content);
@@ -1192,9 +1194,11 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
       return;
     }
 
-    const mediaType = content.imageMessage
+    // A sticker (figurinha, animated or not) is a WebP image; a round video note (ptvMessage) is a video.
+    const video = content.videoMessage ?? content.ptvMessage;
+    const mediaType = content.imageMessage || content.stickerMessage
       ? "IMAGE"
-      : content.videoMessage
+      : video
         ? "VIDEO"
         : content.audioMessage
           ? "AUDIO"
@@ -1206,14 +1210,15 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
       try {
         const buffer = (await downloadMediaMessage(message, "buffer", {})) as Buffer;
         const mediaMsg =
-          content.imageMessage ?? content.videoMessage ?? content.audioMessage ?? content.documentMessage;
+          content.imageMessage ?? content.stickerMessage ?? video ?? content.audioMessage ?? content.documentMessage;
         this.emitter.emit("message", {
           ...base,
           type: mediaType,
-          body: (content.imageMessage?.caption || content.videoMessage?.caption) ?? null,
+          body: (content.imageMessage?.caption || video?.caption) ?? null,
           mediaBuffer: buffer,
-          mediaMimeType: mediaMsg?.mimetype ?? "application/octet-stream",
+          mediaMimeType: mediaMsg?.mimetype ?? (content.stickerMessage ? "image/webp" : "application/octet-stream"),
           mediaFileName: (content.documentMessage as any)?.fileName ?? undefined,
+          mediaIsGif: Boolean(content.videoMessage?.gifPlayback),
         } satisfies InboundMessageEvent);
       } catch (err) {
         this.logger.error({ err }, "failed to download inbound media");
@@ -1313,7 +1318,7 @@ function phoneFromJid(jid: string, altPnJid?: string | null): string {
  * for those. Only TEXT/LOCATION/CONTACT (cheap, no binary) carry full content.
  */
 function convertHistoryMessage(message: WAMessage, chatId: string): HistoryMessageEvent | null {
-  const content = message.message;
+  const content = normalizeMessageContent(message.message);
   if (!content) return null;
 
   const base = {
@@ -1364,7 +1369,9 @@ function convertHistoryMessage(message: WAMessage, chatId: string): HistoryMessa
     };
   }
   if (content.imageMessage) return { ...base, type: "IMAGE", body: content.imageMessage.caption ?? null };
+  if (content.stickerMessage) return { ...base, type: "IMAGE", body: null };
   if (content.videoMessage) return { ...base, type: "VIDEO", body: content.videoMessage.caption ?? null };
+  if (content.ptvMessage) return { ...base, type: "VIDEO", body: null };
   if (content.audioMessage) return { ...base, type: "AUDIO", body: null };
   if (content.documentMessage) return { ...base, type: "DOCUMENT", body: content.documentMessage.title ?? null };
   return null;
