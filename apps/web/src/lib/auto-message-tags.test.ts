@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { COLUMN_SCREENS, customerFirstName, fillCustomerTags, firstNameOf, mergeColumnView } from "@whatsatendende/types";
+import { COLUMN_SCREENS, customerFirstName, fillCustomerTags, fillGreetingTag, firstNameOf, greetingFor, mergeColumnView } from "@whatsatendende/types";
 import { fillAutoMessageTags } from "./auto-message-tags";
 
 describe("tag {{primeiro_nome}}", () => {
@@ -36,5 +36,26 @@ describe("tag {{primeiro_nome}}", () => {
     expect(mergeColumnView("contatos", null).find((c) => c.key === "firstName")?.visible).toBe(false);
     expect(mergeColumnView("contatos", null).find((c) => c.key === "phone")?.visible).toBe(true);
     expect(mergeColumnView("contatos", [{ key: "firstName", visible: true }]).find((c) => c.key === "firstName")?.visible).toBe(true);
+  });
+});
+
+describe("tag {{saudacao}}", () => {
+  // Tangará da Serra, UTC−4: getTimezoneOffset() = 240.
+  const at = (hh: number, mm: number) => greetingFor(new Date(Date.UTC(2026, 9, 22, hh + 4, mm)), 240);
+
+  it("Bom dia de 05:00 até 12:00, Boa tarde de 12:01 a 17:59 e Boa noite de 18:00 a 04:59", () => {
+    expect(at(4, 59)).toBe("Boa noite");
+    expect(at(5, 0)).toBe("Bom dia");
+    expect(at(12, 0)).toBe("Bom dia");
+    expect(at(12, 1)).toBe("Boa tarde");
+    expect(at(17, 59)).toBe("Boa tarde");
+    expect(at(18, 0)).toBe("Boa noite");
+    expect(at(23, 30)).toBe("Boa noite");
+    expect(at(0, 15)).toBe("Boa noite");
+  });
+
+  it("troca {{saudacao}} no texto pela saudação da hora", () => {
+    const tarde = new Date(Date.UTC(2026, 9, 22, 19, 0)); // 15:00 em UTC−4
+    expect(fillGreetingTag("{{saudacao}}, {{primeiro_nome}}!", 240, tarde)).toBe("Boa tarde, {{primeiro_nome}}!");
   });
 });

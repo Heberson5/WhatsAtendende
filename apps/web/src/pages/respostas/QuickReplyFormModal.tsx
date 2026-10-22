@@ -6,8 +6,8 @@ import { ConnectionScopePicker, toConnectionScopeValue, type ConnectionScopeValu
 import { ReplyMediaField, captionTooLong, hasReplyMedia, type ReplyMediaChange } from "./ReplyMediaField";
 import { TagButtons, insertTag } from "../dados/TagButtons";
 
-// Filled with the conversation's customer when the reply is picked in the "/" menu.
-const CUSTOMER_TAGS = ["{{primeiro_nome}}", "{{cliente}}"] as const;
+// Filled with the conversation's customer (and the greeting for the hour) when the reply is picked in the "/" menu.
+const CUSTOMER_TAGS = ["{{saudacao}}", "{{primeiro_nome}}", "{{cliente}}"] as const;
 
 export interface QuickReplyFormValues {
   name: string;

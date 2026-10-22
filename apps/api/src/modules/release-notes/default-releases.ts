@@ -11,6 +11,21 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.21.1",
+    date: "22 out 2026",
+    name: "Tag de saudação conforme o horário",
+    summary: "Nova tag {{saudacao}}: vira Bom dia, Boa tarde ou Boa noite na hora do envio.",
+    notes: [
+      {
+        type: "novo",
+        area: "respostas",
+        title: "Tag {{saudacao}}",
+        text: "Nas mesmas telas da tag {{primeiro_nome}}, a tag {{saudacao}} vira Bom dia (das 5h às 12h), Boa tarde (das 12h01 às 17h59) ou Boa noite (das 18h às 4h59), pelo horário da empresa no momento do envio. Exemplo: \"{{saudacao}}, {{primeiro_nome}}!\" sai como \"Boa tarde, Maria!\".",
+        where: "Respostas",
+      },
+    ],
+  },
+  {
     version: "2.21.0",
     date: "22 out 2026",
     name: "Tag de primeiro nome e campo Primeiro nome",

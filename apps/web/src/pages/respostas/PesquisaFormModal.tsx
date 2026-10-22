@@ -4,10 +4,10 @@ import type { SatisfactionSurveyDTO } from "@whatsatendende/types";
 import { renderWhatsAppFormatting } from "../../lib/whatsappFormatting";
 import { ConnectionScopePicker, toConnectionScopeValue, type ConnectionScopeValue } from "./ConnectionScopePicker";
 import { TagButtons, insertTag } from "../dados/TagButtons";
-import { fillCustomerTags } from "@whatsatendende/types";
+import { fillCustomerTags, fillGreetingTag } from "@whatsatendende/types";
 import { CLIENT_EXAMPLE_NAME } from "../../lib/auto-message-tags";
 
-const CUSTOMER_TAGS = ["{{primeiro_nome}}", "{{cliente}}"] as const;
+const CUSTOMER_TAGS = ["{{saudacao}}", "{{primeiro_nome}}", "{{cliente}}"] as const;
 
 const MIN_WINDOW_HOURS = 1;
 const MAX_WINDOW_HOURS = 72; // matches the backend's zod schema
@@ -235,7 +235,7 @@ export function PesquisaFormModal({
           <div>
             <p className="mb-1 text-xs font-medium text-muted">Prévia de como o cliente vai receber:</p>
             <div className="max-w-sm whitespace-pre-wrap break-words rounded-card bg-primary px-3 py-2 text-sm text-primary-fg shadow-soft">
-              {renderWhatsAppFormatting(fillCustomerTags(values.question, CLIENT_EXAMPLE_NAME) || "...")}
+              {renderWhatsAppFormatting(fillGreetingTag(fillCustomerTags(values.question, CLIENT_EXAMPLE_NAME), new Date().getTimezoneOffset()) || "...")}
             </div>
           </div>
         </fieldset>

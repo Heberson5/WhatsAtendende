@@ -2667,6 +2667,22 @@ export function firstNameOf(name: string | null | undefined): string {
   return allSameCase ? first.charAt(0).toLocaleUpperCase("pt-BR") + first.slice(1).toLocaleLowerCase("pt-BR") : first;
 }
 
+/**
+ * {{saudacao}}: "Bom dia" from 05:00 to 12:00, "Boa tarde" from 12:01 to 17:59 and "Boa noite" from 18:00 to 04:59, at
+ * the business' local time. utcOffsetMinutes is what Date.getTimezoneOffset reports there (240 = UTC−4).
+ */
+export function greetingFor(now: Date, utcOffsetMinutes: number): "Bom dia" | "Boa tarde" | "Boa noite" {
+  const minutes = (((now.getUTCHours() * 60 + now.getUTCMinutes() - utcOffsetMinutes) % 1440) + 1440) % 1440;
+  if (minutes >= 5 * 60 && minutes <= 12 * 60) return "Bom dia";
+  if (minutes < 18 * 60 && minutes > 12 * 60) return "Boa tarde";
+  return "Boa noite";
+}
+
+/** Replaces {{saudacao}} with the greeting for this moment. */
+export function fillGreetingTag(text: string, utcOffsetMinutes: number, now: Date = new Date()): string {
+  return text.replace(/\{\{\s*saudacao\s*\}\}/gi, () => greetingFor(now, utcOffsetMinutes));
+}
+
 /** {{primeiro_nome}}: the contact's own Primeiro nome when filled, else the first word of the name. */
 export function customerFirstName(customerName: string, savedFirstName?: string | null): string {
   return savedFirstName?.trim() || firstNameOf(customerName);

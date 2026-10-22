@@ -1,4 +1,5 @@
 import path from "node:path";
+import { fillSendTags } from "../../lib/customer-tags";
 import fs from "node:fs";
 import { randomUUID } from "node:crypto";
 import {
@@ -20,7 +21,7 @@ import { prisma } from "../../lib/prisma";
 import { logger } from "../../lib/logger";
 import { Errors } from "../../lib/http-error";
 import type { Prisma, Role } from "@prisma/client";
-import { brazilianPhoneVariants, fillCustomerTags, type ManagerConnectionAccessDTO } from "@whatsatendende/types";
+import { brazilianPhoneVariants, type ManagerConnectionAccessDTO } from "@whatsatendende/types";
 import { realtimeEvents } from "../../realtime/realtime";
 import { writeAudit } from "../../lib/audit";
 import * as conversationsService from "../conversations/conversations.service";
@@ -1405,7 +1406,7 @@ export async function sendOutboundText(
 /** A message written by the system itself (Fluxo, pesquisa de satisfação) — sent as-is, without the "*Nome:*" agent prefix. */
 /** The out-of-hours notice of a connection's Horário de expediente — {{cliente}} is the customer's name (or number), {{primeiro_nome}} its first word. */
 async function sendClosedHoursNotice(conversationId: string, connectionId: string, phone: string, contactName: string | null, firstName: string | null, text: string): Promise<void> {
-  const body = fillCustomerTags(text, contactName ?? phone, firstName);
+  const body = fillSendTags(text, contactName ?? phone, firstName);
   const message = await prisma.message.create({
     data: { conversationId, direction: "OUTBOUND", type: "TEXT", status: "PENDING", body, automatedBy: "WORK_SCHEDULE" },
   });

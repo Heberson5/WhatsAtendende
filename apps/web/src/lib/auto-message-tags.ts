@@ -1,4 +1,4 @@
-import { firstNameOf } from "@whatsatendende/types";
+import { fillGreetingTag, firstNameOf } from "@whatsatendende/types";
 
 /**
  * Mirrors auto-message-templates.service.ts's renderAutoMessageTemplate on
@@ -23,7 +23,8 @@ const TAG_PATTERNS: { key: keyof AutoMessageTagValues; pattern: RegExp }[] = [
 
 export function fillAutoMessageTags(text: string, values: AutoMessageTagValues): string {
   const filled = TAG_PATTERNS.reduce((acc, { key, pattern }) => acc.replace(pattern, values[key]), text);
-  return filled.replace(/\{\{\s*primeiro_nome\s*\}\}/gi, firstNameOf(values.cliente));
+  // {{saudacao}} in the preview: the greeting for the time on this computer now.
+  return fillGreetingTag(filled.replace(/\{\{\s*primeiro_nome\s*\}\}/gi, firstNameOf(values.cliente)), new Date().getTimezoneOffset());
 }
 
 // Example values for the live preview only — illustrate the two agents a
