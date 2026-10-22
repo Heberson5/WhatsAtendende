@@ -5,8 +5,8 @@ import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import clsx from "clsx";
-import { ArrowRightLeft, CheckCircle2, Eye, GitMerge, Hand, Inbox, Search, Undo2, X } from "lucide-react";
-import { COLUMN_SCREENS, PERMISSION, type ConversationListItemDTO, type ConversationStatus } from "@whatsatendende/types";
+import { ArrowRightLeft, CheckCircle2, ChevronLeft, ChevronRight, Eye, GitMerge, Hand, Inbox, Search, Undo2, X } from "lucide-react";
+import { COLUMN_SCREENS, OVERSIGHT_PAGE_SIZES, PERMISSION, type ConversationListItemDTO, type ConversationStatus, type OversightPageDTO, type OversightPageSize } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { contactDisplayName } from "../../lib/contact-display";
 import { useAuthStore } from "../../store/auth-store";
@@ -42,6 +42,17 @@ const STATUS_CHIPS: { key: string; label: string; statuses: ConversationStatus[]
   { key: "closed", label: "Encerradas", statuses: ["CLOSED"] },
   { key: "abandoned", label: "Abandonadas", statuses: ["ABANDONED", "FLOW_ABANDONED"] },
 ];
+
+// "Linhas por página" is remembered in this browser.
+const PAGE_SIZE_KEY = "gestao-page-size";
+function savedPageSize(): OversightPageSize {
+  try {
+    const saved = Number(localStorage.getItem(PAGE_SIZE_KEY));
+    return (OVERSIGHT_PAGE_SIZES as readonly number[]).includes(saved) ? (saved as OversightPageSize) : 50;
+  } catch {
+    return 50;
+  }
+}
 
 // Waiting this long (queue, or customer without a reply) turns amber, then red.
 const WAIT_WARNING_MINUTES = 5;
@@ -189,12 +200,22 @@ export default function GestaoPage() {
     onError: (err) => toast.error(getApiErrorMessage(err)),
   });
 
-  const { data: conversations, isLoading } = useQuery({
-    queryKey: ["oversight", period, agentId, debouncedSearch, connectionIds],
+  // Page by page, with the status filter, the total and each chip's count worked out by the API: a capped list
+  // filtered here used to hide an open conversation older than the newest 200 that the Dashboard still counted.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<OversightPageSize>(savedPageSize);
+  const filterKey = JSON.stringify([period, agentId, debouncedSearch, connectionIds, status, pageSize]);
+  useEffect(() => setPage(1), [filterKey]);
+  const { data: pageData, isLoading } = useQuery({
+    queryKey: ["oversight", "page", period, agentId, debouncedSearch, connectionIds, status, page, pageSize],
+    placeholderData: (previous) => previous,
     queryFn: async () =>
       (
-        await api.get<ConversationListItemDTO[]>("/conversations/oversight", {
+        await api.get<OversightPageDTO>("/conversations/oversight/page", {
           params: {
+            status: status === "all" ? undefined : status,
+            page,
+            pageSize,
             // The period itself — the API turns "hoje", "este mês"... into dates in this browser's time zone
             // (same rule as the Dashboard and Relatórios); only "personalizado" carries from/to, and
             // "Todo o período" sends nothing. Leaving `period` out used to list everything under "Hoje".
@@ -210,13 +231,16 @@ export default function GestaoPage() {
       ).data,
   });
 
+  const conversations = pageData?.items;
   // The live row (it refreshes on every oversight update), so the panel follows the conversation as it changes.
   const intervening = interveningSnapshot ? ((conversations ?? []).find((c) => c.id === interveningSnapshot.id) ?? interveningSnapshot) : null;
 
-  // Status is filtered here (not server-side) so every chip can show its count.
-  const statusSet = status === "all" ? null : new Set(status.split(","));
-  const visible = (conversations ?? []).filter((c) => !statusSet || statusSet.has(c.status));
-  const countFor = (statuses: ConversationStatus[]) => (conversations ?? []).filter((c) => statuses.includes(c.status)).length;
+  const visible = conversations ?? [];
+  const statusCounts = pageData?.statusCounts ?? {};
+  const countFor = (statuses: ConversationStatus[]) => statuses.reduce((sum, s) => sum + (statusCounts[s] ?? 0), 0);
+  const allCount = Object.values(statusCounts).reduce<number>((sum, n) => sum + (n ?? 0), 0);
+  const total = pageData?.total ?? 0;
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const selectable = visible.filter((c) => canManage && ROUTABLE_STATUSES.has(c.status));
   const selectedRows = visible.filter((c) => selectedIds.has(c.id));
   const allSelected = selectable.length > 0 && selectable.every((c) => selectedIds.has(c.id));
@@ -495,7 +519,7 @@ export default function GestaoPage() {
       <div className="-mx-3 mb-3 flex shrink-0 gap-1.5 overflow-x-auto px-3 md:mx-0 md:flex-wrap md:px-0" role="group" aria-label="Filtrar por status">
         {[{ key: "all", label: "Todas", statuses: [] as ConversationStatus[] }, ...STATUS_CHIPS].map((chip) => {
           const value = chip.key === "all" ? "all" : chip.statuses.join(",");
-          const count = chip.key === "all" ? (conversations?.length ?? 0) : countFor(chip.statuses);
+          const count = chip.key === "all" ? allCount : countFor(chip.statuses);
           const active = status === value;
           return (
             <button
@@ -670,9 +694,57 @@ export default function GestaoPage() {
       </div>
       )}
 
-      <p className="mt-2 text-xs text-muted">
-        Mostrando {visible.length} de {conversations?.length ?? 0} {conversations?.length === 1 ? "conversa" : "conversas"}
-      </p>
+      <div className="mt-2 flex flex-wrap items-center justify-end gap-x-4 gap-y-2 text-xs text-muted">
+        <span>
+          Mostrando {visible.length.toLocaleString("pt-BR")} de {total.toLocaleString("pt-BR")} {total === 1 ? "conversa" : "conversas"}
+        </span>
+        <span className="flex items-center gap-2">
+          <label className="flex items-center gap-2">
+            Linhas por página
+            <select
+              value={pageSize}
+              onChange={(e) => {
+                const next = Number(e.target.value) as OversightPageSize;
+                setPageSize(next);
+                try {
+                  localStorage.setItem(PAGE_SIZE_KEY, String(next));
+                } catch {
+                  // storage blocked: kept until the page reloads
+                }
+              }}
+              className="focus-ring h-8 w-[84px] min-w-[84px] rounded-lg border border-border bg-surface pl-2.5 pr-7 text-sm text-[var(--color-text)]"
+            >
+              {OVERSIGHT_PAGE_SIZES.map((size) => (
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
+            </select>
+          </label>
+          <span aria-hidden="true">·</span>
+          <button
+            type="button"
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page <= 1}
+            aria-label="Página anterior"
+            className="focus-ring flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-surface text-[var(--color-text)] hover:bg-surface-alt disabled:opacity-40"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <span className="min-w-[92px] text-center text-sm text-[var(--color-text)]">
+            Página {Math.min(page, pageCount)} de {pageCount}
+          </span>
+          <button
+            type="button"
+            onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+            disabled={page >= pageCount}
+            aria-label="Próxima página"
+            className="focus-ring flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-surface text-[var(--color-text)] hover:bg-surface-alt disabled:opacity-40"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </span>
+      </div>
 
       {selected && <ReadOnlyConversationDrawer key={selected.id} conversation={selected} onClose={() => setSelected(null)} />}
 

@@ -2,7 +2,7 @@ import { Router, type Request } from "express";
 import { z } from "zod";
 import rateLimit from "express-rate-limit";
 import type { Channel, Role } from "@prisma/client";
-import { PERMISSION } from "@whatsatendende/types";
+import { OVERSIGHT_PAGE_SIZES, PERMISSION, type OversightPageDTO } from "@whatsatendende/types";
 import { asyncHandler } from "../../lib/async-handler";
 import { requireAuth, requireRole } from "../../middleware/auth";
 import { requirePermission } from "../../lib/permissions";
@@ -218,6 +218,47 @@ conversationsRouter.get(
     });
     const matches = filters.q ? await service.findSearchMatches(conversations.map((c) => c.id), filters.q) : new Map<string, string>();
     res.json(conversations.map((c) => ({ ...toConversationListItemDTO(c, true), searchMatch: matches.get(c.id) ?? null })));
+  })
+);
+
+// Gestão's own list, page by page — "Linhas por página" (50/100/200/300) and "Página X de Y".
+const oversightPageSchema = oversightQuerySchema.extend({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce
+    .number()
+    .int()
+    .refine((n) => (OVERSIGHT_PAGE_SIZES as readonly number[]).includes(n), { message: "Quantidade de linhas inválida" })
+    .default(50),
+});
+
+conversationsRouter.get(
+  "/oversight/page",
+  requirePermission(PERMISSION.GESTAO_ACESSAR),
+  asyncHandler(async (req, res) => {
+    const filters = oversightPageSchema.parse(req.query);
+    let connectionIds = parseListParam(filters.connectionId);
+    if (req.auth!.role === "MANAGER") {
+      connectionIds = await resolveAllowedConnectionIds(req.auth!, connectionIds, "manage");
+    }
+    const status = parseListParam(filters.status)?.filter((s) => OVERSIGHT_STATUSES.has(s));
+    const range =
+      filters.period && (filters.period !== "custom" || (filters.from && filters.to))
+        ? resolvePeriod(filters.period, filters.from, filters.to, filters.tzOffsetMinutes)
+        : { from: filters.from, to: filters.to };
+    const { items, total, statusCounts } = await service.listOversightPage(
+      { from: range.from, to: range.to, agentId: filters.agentId, status, search: filters.q, connectionIds },
+      filters.page,
+      filters.pageSize
+    );
+    const matches = filters.q ? await service.findSearchMatches(items.map((c) => c.id), filters.q) : new Map<string, string>();
+    const body: OversightPageDTO = {
+      items: items.map((c) => ({ ...toConversationListItemDTO(c, true), searchMatch: matches.get(c.id) ?? null })),
+      total,
+      page: filters.page,
+      pageSize: filters.pageSize,
+      statusCounts,
+    };
+    res.json(body);
   })
 );
 

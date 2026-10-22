@@ -224,6 +224,8 @@ const DEFAULT_BUSINESS_SETTINGS = {
   noReturnReminderMinutes: 10,
   noReturnCloseMinutes: 15,
   noReturnReminderText: "Oi, {{cliente}}! Ainda está por aí? 😊 Fico aguardando seu retorno para continuarmos o atendimento.",
+  // The satisfaction survey after a no-return close — off by default (it never went out before).
+  noReturnSendSurvey: false,
   noReturnCloseText:
     "{{cliente}}, como não tivemos retorno, estamos encerrando este atendimento por enquanto. Quando quiser continuar, é só mandar uma mensagem aqui que retomamos de onde paramos. Até logo! 👋",
 };
@@ -236,6 +238,7 @@ export async function getNoReturnSettings(): Promise<NoReturnSettingsDTO> {
     closeMinutes: s.noReturnCloseMinutes as number,
     reminderText: s.noReturnReminderText as string,
     closeText: s.noReturnCloseText as string,
+    sendSurvey: Boolean(s.noReturnSendSurvey),
   };
 }
 

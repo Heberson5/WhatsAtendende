@@ -54,13 +54,24 @@ function row(
 function oversightCalls() {
   return vi
     .mocked(api.get)
-    .mock.calls.filter(([url]) => url === "/conversations/oversight")
+    .mock.calls.filter(([url]) => url === "/conversations/oversight/page")
     .map(([, config]) => (config as { params: Record<string, unknown> }).params);
 }
 
+/** What the API answers for one page: the status filter, the total and the chip counts over every row. */
+function pageOf(rows: ConversationListItemDTO[], params: Record<string, unknown>) {
+  const statuses = typeof params.status === "string" ? params.status.split(",") : null;
+  const matching = statuses ? rows.filter((r) => statuses.includes(r.status)) : rows;
+  const page = Number(params.page ?? 1);
+  const pageSize = Number(params.pageSize ?? 50);
+  const statusCounts: Record<string, number> = {};
+  for (const r of rows) statusCounts[r.status] = (statusCounts[r.status] ?? 0) + 1;
+  return { items: matching.slice((page - 1) * pageSize, page * pageSize), total: matching.length, page, pageSize, statusCounts };
+}
+
 function renderPage(url = "/gestao", rows: ConversationListItemDTO[] = []) {
-  vi.mocked(api.get).mockImplementation(((url: string) => {
-    if (url === "/conversations/oversight") return Promise.resolve({ data: rows });
+  vi.mocked(api.get).mockImplementation(((url: string, config?: { params?: Record<string, unknown> }) => {
+    if (url === "/conversations/oversight/page") return Promise.resolve({ data: pageOf(rows, config?.params ?? {}) });
     return Promise.resolve({ data: [] }); // /agents, /whatsapp/connections
   }) as never);
   useAuthStore.setState({ permissions: {} as PermissionMap, user: { role: "ADMIN" } as never });
@@ -216,5 +227,46 @@ describe("Gestão no celular", () => {
 
     fireEvent.click(card);
     expect(await screen.findByRole("dialog", { name: "Conversa com Bruna Lima" })).toBeInTheDocument();
+  });
+});
+
+describe("Gestão: linhas por página e páginas", () => {
+  beforeEach(() => {
+    vi.mocked(api.get).mockReset();
+    localStorage.removeItem("gestao-page-size");
+  });
+
+  const many = (count: number) =>
+    Array.from({ length: count }, (_, i) => row(`r${i}`, `Cliente ${i}`, new Date(2026, 9, 22, 10, 0, 0, -i * 1000).toISOString(), i % 2 ? "CLOSED" : "IN_PROGRESS"));
+
+  it("mostra 50 por padrão, o total da busca e quantas páginas; as setas trocam de página", async () => {
+    renderPage("/gestao", many(120));
+    expect(await screen.findByText("Mostrando 50 de 120 conversas")).toBeInTheDocument();
+    expect(screen.getByText("Página 1 de 3")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Página anterior" })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Próxima página" }));
+    await waitFor(() => expect(oversightCalls().at(-1)).toMatchObject({ page: 2, pageSize: 50 }));
+    expect(await screen.findByText("Página 2 de 3")).toBeInTheDocument();
+  });
+
+  it("trocar as linhas por página volta para a página 1 e fica guardado", async () => {
+    renderPage("/gestao", many(120));
+    await screen.findByText("Página 1 de 3");
+    fireEvent.click(screen.getByRole("button", { name: "Próxima página" }));
+    await screen.findByText("Página 2 de 3");
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Linhas por página" }), { target: { value: "100" } });
+    await waitFor(() => expect(oversightCalls().at(-1)).toMatchObject({ page: 1, pageSize: 100 }));
+    expect(await screen.findByText("Página 1 de 2")).toBeInTheDocument();
+    expect(localStorage.getItem("gestao-page-size")).toBe("100");
+  });
+
+  it("o filtro de status vai para o servidor e o número de cada filtro cobre a busca toda", async () => {
+    renderPage("/gestao", many(120));
+    expect(await screen.findByRole("button", { name: "Em atendimento · 60" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Em atendimento · 60" }));
+    await waitFor(() => expect(oversightCalls().at(-1)).toMatchObject({ status: "IN_PROGRESS,TRANSFERRED", page: 1 }));
+    expect(await screen.findByText("Mostrando 50 de 60 conversas")).toBeInTheDocument();
   });
 });

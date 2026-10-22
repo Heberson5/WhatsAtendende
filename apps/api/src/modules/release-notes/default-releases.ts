@@ -11,6 +11,50 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.22.0",
+    date: "22 out 2026",
+    name: "Gestão por páginas, pesquisa no encerramento automático e mensagem agendada",
+    summary:
+      "A Gestão mostra todas as conversas da busca, página por página; o encerramento por falta de retorno pode enviar a pesquisa de satisfação; e uma mensagem agendada pausa esse encerramento.",
+    notes: [
+      {
+        type: "correcao",
+        area: "gestao",
+        title: "Gestão mostra todas as conversas da busca",
+        text: "A lista trazia no máximo 200 conversas e filtrava o status só nelas: uma conversa antiga ainda em atendimento podia contar no Dashboard e não aparecer na Gestão. Agora o filtro de status e os números de cada filtro cobrem a busca inteira.",
+        where: "Gestão",
+      },
+      {
+        type: "novo",
+        area: "gestao",
+        title: "Linhas por página e páginas",
+        text: "No rodapé da lista, ao lado de \"Mostrando X de Y conversas\", escolha 50, 100, 200 ou 300 linhas por página e passe as páginas pelas setas (\"Página 1 de 7\"). A quantidade escolhida fica guardada no navegador.",
+        where: "Gestão",
+      },
+      {
+        type: "novo",
+        area: "respostas",
+        title: "Pesquisa de satisfação no encerramento por falta de retorno",
+        text: "Marque \"Enviar a pesquisa de satisfação\" para que, ao encerrar por falta de retorno, o cliente receba a pesquisa da conexão. A mensagem de encerramento vai depois da nota, ou quando o tempo de espera acabar. Nenhuma das mensagens automáticas leva o nome do atendente.",
+        where: "Respostas › Encerramento › Encerramento por falta de retorno",
+      },
+      {
+        type: "melhoria",
+        area: "atendimento",
+        title: "Mensagem agendada pausa o encerramento por falta de retorno",
+        text: "Enquanto a conversa tem uma mensagem agendada, o lembrete e o encerramento automático não acontecem, e o botão \"Encerrar por falta de retorno\" fica bloqueado. A conversa mostra \"Pausado: mensagem agendada\". Quando a mensagem é enviada, ou o agendamento cancelado, a contagem recomeça do zero.",
+        where: "Atendimento",
+      },
+      {
+        type: "correcao",
+        area: "contatos",
+        title: "Exportação de Contatos sem a coluna oculta",
+        text: "Sem visão de colunas salva, a exportação trazia também a coluna Primeiro nome, que começa oculta. Agora ela só vai para o arquivo quando estiver visível na lista.",
+        where: "Contatos › Exportar",
+      },
+    ],
+  },
+  {
     version: "2.21.2",
     date: "22 out 2026",
     name: "GIFs, figurinhas e reações nos grupos",

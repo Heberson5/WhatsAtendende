@@ -10,6 +10,7 @@ import { createNotification } from "../notifications/notifications.service";
 import { toNotificationDTO } from "../notifications/notifications.mapper";
 import { assertAgentCanAccessConversation, assertCanReplyToConversation, getConversationOrThrow } from "../conversations/conversations.service";
 import { createOutboundMessage } from "../messages/messages.service";
+import { pauseNoReturnForScheduledMessage, restartNoReturnAfterScheduledMessage } from "../conversations/no-return.service";
 import * as whatsappService from "../whatsapp/whatsapp.service";
 import * as metaService from "../meta/meta.service";
 import { calculateNps, npsExcludedContactIds } from "../satisfaction/satisfaction.service";
@@ -113,12 +114,15 @@ export async function fireDueReminders(now = new Date()) {
 export async function scheduleMessage(userId: string, input: { conversationId: string; body: string; sendAt: Date }) {
   if (input.sendAt.getTime() <= Date.now()) throw Errors.badRequest("Escolha um horário no futuro.");
   const message = await prisma.scheduledMessage.create({ data: { userId, ...input } });
+  await pauseNoReturnForScheduledMessage(input.conversationId);
   return toScheduledDTO(message);
 }
 
 export async function cancelScheduledMessage(userId: string, id: string) {
+  const scheduled = await prisma.scheduledMessage.findFirst({ where: { id, userId }, select: { conversationId: true } });
   const canceled = await prisma.scheduledMessage.updateMany({ where: { id, userId, sentAt: null, canceledAt: null, failedAt: null }, data: { canceledAt: new Date() } });
   if (canceled.count === 0) throw Errors.notFound("Mensagem agendada não encontrada ou já enviada.");
+  await restartNoReturnAfterScheduledMessage(scheduled!.conversationId);
 }
 
 /**
@@ -152,6 +156,7 @@ export async function sendDueScheduledMessages(now = new Date()) {
       const reason = err instanceof Error ? err.message : "Não foi possível enviar.";
       logger.warn({ err, scheduledMessageId: scheduled.id }, "a scheduled message could not be sent");
       await prisma.scheduledMessage.update({ where: { id: scheduled.id }, data: { sentAt: null, failedAt: now, failedReason: reason } });
+      await restartNoReturnAfterScheduledMessage(scheduled.conversationId, now).catch(() => undefined);
       const notification = await createNotification({
         userId: scheduled.userId,
         type: "SCHEDULED_MESSAGE_FAILED",

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Hourglass, PauseCircle } from "lucide-react";
+import { CalendarClock, Hourglass, PauseCircle } from "lucide-react";
 import { toast } from "sonner";
 import type { ConversationListItemDTO, NoReturnSettingsDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
@@ -36,6 +36,13 @@ function minutesLeft(closeAt: string) {
 
 /** Card badge: "⏳ encerra em N min" after the reminder went out, or "Aguardando cliente". */
 export function NoReturnBadge({ conversation }: { conversation: ConversationListItemDTO }) {
+  if (conversation.scheduledMessagePending) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-surface-alt px-2 py-0.5 text-[10.5px] font-semibold text-muted" title="Há mensagem agendada: não encerra por falta de retorno">
+        <CalendarClock className="h-3 w-3" /> Agendada
+      </span>
+    );
+  }
   if (conversation.noReturnHold) {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-surface-alt px-2 py-0.5 text-[10.5px] font-semibold text-muted">
@@ -64,6 +71,18 @@ export function NoReturnStatus({
   /** The header's own rule for when button labels fit (icon-only while the client panel is open). */
   labelClassName: string;
 }) {
+  // A scheduled message pauses the automatic close until it goes out (or is canceled).
+  if (conversation.scheduledMessagePending) {
+    return (
+      <span
+        title="Encerramento automático pausado: há mensagem agendada. Volta a contar quando ela for enviada ou cancelada."
+        className="flex items-center gap-1.5 rounded-card border border-border px-2 py-1.5 text-xs font-medium text-muted sm:px-3"
+      >
+        <CalendarClock className="h-3.5 w-3.5" />
+        <span className={labelClassName}>Pausado: mensagem agendada</span>
+      </span>
+    );
+  }
   return (
     <button
       type="button"
@@ -95,7 +114,7 @@ export function useNoReturnWarnings(conversations: ConversationListItemDTO[] | u
   useEffect(() => {
     const timers: number[] = [];
     for (const c of conversations ?? []) {
-      if (!c.noReturnCloseAt || c.noReturnHold) continue;
+      if (!c.noReturnCloseAt || c.noReturnHold || c.scheduledMessagePending) continue;
       const key = `${c.id}|${c.noReturnCloseAt}`;
       if (warned.current.has(key)) continue;
       const closeAt = new Date(c.noReturnCloseAt).getTime();

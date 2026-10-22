@@ -914,6 +914,8 @@ export interface ConversationListItemDTO {
   noReturnCloseAt: string | null;
   /** "Aguardar cliente": the agent paused the automatic close until the customer answers. */
   noReturnHold: boolean;
+  /** A scheduled message is still to go out: the "falta de retorno" close is paused, and the manual one blocked. */
+  scheduledMessagePending?: boolean;
   /** Started or answered on the linked phone — accepting it sends no "Aceite" message. */
   startedOnDevice: boolean;
   unreadCount: number;
@@ -927,6 +929,20 @@ export interface ConversationListItemDTO {
   } | null;
   /** Gestão search only: the latest message that contains the searched text. */
   searchMatch?: string | null;
+}
+
+/** Gestão › "Linhas por página". */
+export const OVERSIGHT_PAGE_SIZES = [50, 100, 200, 300] as const;
+export type OversightPageSize = (typeof OVERSIGHT_PAGE_SIZES)[number];
+
+/** One page of Gestão's list: the total and each status' count cover the whole search, not only this page. */
+export interface OversightPageDTO {
+  items: ConversationListItemDTO[];
+  total: number;
+  page: number;
+  pageSize: number;
+  /** Every status in the search (period, attendant, connection, text) — what the status chips show. */
+  statusCounts: Partial<Record<ConversationStatus, number>>;
 }
 
 export interface MessageDTO {
@@ -2049,6 +2065,8 @@ export interface NoReturnSettingsDTO {
   closeMinutes: number;
   reminderText: string;
   closeText: string;
+  /** The satisfaction survey follows the no-return close (sent without the agent's name, like every automatic text). */
+  sendSurvey: boolean;
 }
 
 export interface ManagedTagDTO extends TagDTO {

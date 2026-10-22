@@ -21,6 +21,8 @@ import { closeForNoReturn, processNoReturnConversations, resetNoReturnClock } fr
 import { createInboundMessage } from "../src/modules/messages/messages.service";
 import { findOrOpenConversationForInboundMessage } from "../src/modules/conversations/conversations.service";
 import { createSurvey, willSendSurveyOnClose } from "../src/modules/satisfaction/satisfaction.service";
+import { CONVERSATION_UNDO_WINDOW_MS } from "@whatsatendende/types";
+import { cancelScheduledMessage, scheduleMessage } from "../src/modules/agent-tools/agent-tools.service";
 
 const app = createApp();
 const MINUTE = 60_000;
@@ -134,6 +136,95 @@ describe("Encerramento por falta de retorno", () => {
     await processNoReturnConversations(new Date(start + 30 * MINUTE));
     const after = (await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).noReturnReminderAt!.getTime();
     expect(after - before).toBe(30 * MINUTE);
+    expect(sent).toHaveLength(0);
+  });
+
+  it("com \"Enviar a pesquisa de satisfação\" marcado, a pesquisa vai depois do encerramento e a mensagem espera a nota, sem o nome do atendente", async () => {
+    await createSurvey({
+      name: "Pesquisa",
+      active: true,
+      connectionScope: { allConnections: true, connectionIds: [] },
+      question: "De 0 a 10?",
+      thanks: "Obrigado!",
+      answerWindowHours: 24,
+      closingWaitMinutes: 30,
+    });
+    await updateBusinessSettings({ noReturnSendSurvey: true });
+    const conversation = await waitingOnCustomer("5511900000008", 2);
+
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    try {
+      await closeForNoReturn(conversation.id, null);
+      // Held: nothing goes out at the close itself.
+      expect(sent).toHaveLength(0);
+      await vi.advanceTimersByTimeAsync(CONVERSATION_UNDO_WINDOW_MS);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    // The follow-up runs on its own after the timer: wait for the survey row.
+    for (let i = 0; i < 50 && !(await prisma.satisfactionSurvey.findUnique({ where: { conversationId: conversation.id } })); i++) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    const survey = await prisma.satisfactionSurvey.findUniqueOrThrow({ where: { conversationId: conversation.id } });
+    expect(survey.closingText).toBe(
+      "Joana, como não tivemos retorno, estamos encerrando este atendimento por enquanto. Quando quiser continuar, é só mandar uma mensagem aqui que retomamos de onde paramos. Até logo! 👋"
+    );
+    expect(survey.closingText).not.toContain("Ana");
+    const question = await prisma.message.findFirstOrThrow({ where: { conversationId: conversation.id, automatedBy: "SURVEY" } });
+    expect(question.body).toBe("De 0 a 10?");
+  });
+
+  it("sem a marcação (padrão), o encerramento por falta de retorno continua sem pesquisa", async () => {
+    await createSurvey({
+      name: "Pesquisa",
+      active: true,
+      connectionScope: { allConnections: true, connectionIds: [] },
+      question: "De 0 a 10?",
+      thanks: "Obrigado!",
+      answerWindowHours: 24,
+      closingWaitMinutes: 30,
+    });
+    const conversation = await waitingOnCustomer("5511900000009", 2);
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    try {
+      await closeForNoReturn(conversation.id, null);
+      await vi.advanceTimersByTimeAsync(CONVERSATION_UNDO_WINDOW_MS);
+    } finally {
+      vi.useRealTimers();
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300)); // a survey that should not be there gets time to show up
+    expect(sent).toHaveLength(1);
+    expect(await prisma.satisfactionSurvey.findUnique({ where: { conversationId: conversation.id } })).toBeNull();
+  });
+
+  it("mensagem agendada: pausa o encerramento, apaga o prazo que já corria e bloqueia o botão manual", async () => {
+    await enable();
+    const conversation = await waitingOnCustomer("5511900000010", 30);
+    // The reminder already went out: the close was due a minute ago.
+    await prisma.conversation.update({ where: { id: conversation.id }, data: { noReturnCloseAt: new Date(Date.now() - MINUTE) } });
+
+    const scheduled = await scheduleMessage(agentId, { conversationId: conversation.id, body: "Retorno amanhã cedo", sendAt: new Date(Date.now() + 60 * MINUTE) });
+    expect(await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).toMatchObject({ noReturnCloseAt: null, noReturnReminderAt: null });
+
+    await processNoReturnConversations();
+    expect((await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).status).toBe("IN_PROGRESS");
+    expect(sent).toHaveLength(0);
+
+    const manual = await request(app).post(`/api/conversations/${conversation.id}/close-no-return`).set("Authorization", `Bearer ${token}`);
+    expect(manual.status).toBe(409);
+    expect(JSON.stringify(manual.body)).toMatch(/mensagem agendada/);
+
+    const listed = await request(app).get("/api/conversations/mine").set("Authorization", `Bearer ${token}`);
+    expect(listed.body.find((c: { id: string }) => c.id === conversation.id)?.scheduledMessagePending).toBe(true);
+
+    // Canceled: the countdown starts over from now, nothing closes at once.
+    await cancelScheduledMessage(agentId, scheduled.id);
+    const after = await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } });
+    expect(after.noReturnCloseAt).toBeNull();
+    expect(after.noReturnReminderAt!.getTime()).toBeGreaterThan(Date.now() + 9 * MINUTE);
+    await processNoReturnConversations();
+    expect((await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).status).toBe("IN_PROGRESS");
     expect(sent).toHaveLength(0);
   });
 

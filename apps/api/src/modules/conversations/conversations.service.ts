@@ -22,6 +22,8 @@ const conversationInclude = {
   whatsappConnection: true,
   metaConnection: true,
   transfers: { orderBy: { createdAt: "desc" as const }, take: 1, include: { fromAgent: true, toAgent: true } },
+  // A scheduled message still to go out pauses the "falta de retorno" close (and blocks the manual one).
+  _count: { select: { scheduledMessages: { where: { sentAt: null, canceledAt: null, failedAt: null } } } },
 };
 
 /**
@@ -1077,37 +1079,64 @@ export interface OversightFilters {
  * morning, instead of only the ones created today. Newest activity first.
  */
 export async function listAllConversations(filters: OversightFilters) {
-  const inPeriod = { gte: filters.from, lte: filters.to };
   return prisma.conversation.findMany({
-    where: {
-      assignedAgentId: filters.agentId,
-      status: filters.status?.length ? { in: filters.status as any } : undefined,
-      AND: [
-        // WhatsApp groups have their own tab in Atendimento — never in Gestão.
-        { status: { not: "GROUP" } },
-        // Same WhatsApp-only-filter + "every Meta conversation regardless"
-        // OR shape as listQueue above (see its own comment for why).
-        {
-          OR: [
-            { channel: "WHATSAPP", whatsappConnectionId: filters.connectionIds === undefined ? undefined : { in: filters.connectionIds } },
-            { channel: { not: "WHATSAPP" } },
-          ],
-        },
-        ...(filters.from || filters.to ? [{ OR: [{ createdAt: inPeriod }, { lastMessageAt: inPeriod }, { closedAt: inPeriod }] }] : []),
-      ],
-      // The customer's name or number, or (from 3 letters) anything written in the conversation.
-      OR: filters.search
-        ? [
-            { contact: { name: { contains: filters.search, mode: "insensitive" } } },
-            { contact: { phone: { contains: filters.search } } },
-            ...(filters.search.length >= MIN_MESSAGE_SEARCH_LENGTH ? [{ messages: { some: { body: { contains: filters.search, mode: "insensitive" as const } } } }] : []),
-          ]
-        : undefined,
-    },
+    where: oversightWhere(filters),
     include: conversationInclude,
     orderBy: { lastMessageAt: "desc" },
     take: 200,
   });
+}
+
+/**
+ * Gestão's list, one page at a time: the status filter, the total and each status' count are worked out in the
+ * database — not in the browser over a capped list, which hid an open conversation whose last message was older than
+ * the newest 200 (the Dashboard counted it, Gestão showed nothing).
+ */
+export async function listOversightPage(filters: OversightFilters, page: number, pageSize: number) {
+  const base = oversightWhere({ ...filters, status: undefined });
+  const where: Prisma.ConversationWhereInput = filters.status?.length ? { AND: [base, { status: { in: filters.status as ConversationStatus[] } }] } : base;
+  const [items, total, byStatus] = await Promise.all([
+    prisma.conversation.findMany({
+      where,
+      include: conversationInclude,
+      orderBy: [{ lastMessageAt: "desc" }, { id: "desc" }],
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+    prisma.conversation.count({ where }),
+    prisma.conversation.groupBy({ by: ["status"], where: base, _count: { _all: true } }),
+  ]);
+  const statusCounts = Object.fromEntries(byStatus.map((row) => [row.status, row._count._all])) as Partial<Record<ConversationStatus, number>>;
+  return { items, total, statusCounts };
+}
+
+function oversightWhere(filters: OversightFilters): Prisma.ConversationWhereInput {
+  const inPeriod = { gte: filters.from, lte: filters.to };
+  return {
+    assignedAgentId: filters.agentId,
+    status: filters.status?.length ? { in: filters.status as any } : undefined,
+    AND: [
+      // WhatsApp groups have their own tab in Atendimento — never in Gestão.
+      { status: { not: "GROUP" } },
+      // Same WhatsApp-only-filter + "every Meta conversation regardless"
+      // OR shape as listQueue above (see its own comment for why).
+      {
+        OR: [
+          { channel: "WHATSAPP", whatsappConnectionId: filters.connectionIds === undefined ? undefined : { in: filters.connectionIds } },
+          { channel: { not: "WHATSAPP" } },
+        ],
+      },
+      ...(filters.from || filters.to ? [{ OR: [{ createdAt: inPeriod }, { lastMessageAt: inPeriod }, { closedAt: inPeriod }] }] : []),
+    ],
+    // The customer's name or number, or (from 3 letters) anything written in the conversation.
+    OR: filters.search
+      ? [
+          { contact: { name: { contains: filters.search, mode: "insensitive" } } },
+          { contact: { phone: { contains: filters.search } } },
+          ...(filters.search.length >= MIN_MESSAGE_SEARCH_LENGTH ? [{ messages: { some: { body: { contains: filters.search, mode: "insensitive" as const } } } }] : []),
+        ]
+      : undefined,
+  };
 }
 
 const MIN_MESSAGE_SEARCH_LENGTH = 3;
