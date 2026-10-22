@@ -983,6 +983,8 @@ model MessageAttachment {
   eventDescription String?
   eventStartAt     DateTime?
   eventJoinLink    String?
+  // VIDEO only: a WhatsApp GIF — shown playing by itself, in a loop and muted.
+  isGif            Boolean     @default(false)
   createdAt        DateTime    @default(now())
 
   @@index([messageId])
@@ -995,6 +997,10 @@ model MessageReaction {
   user         User?    @relation(fields: [userId], references: [id])
   userId       String?
   fromCustomer Boolean  @default(false)
+  // In a group: the participant who reacted (one reaction each, like WhatsApp). Null in a 1:1 chat.
+  participantJid   String?
+  participantName  String?
+  participantPhone String?
   emoji        String
   createdAt    DateTime @default(now())
 

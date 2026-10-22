@@ -170,6 +170,8 @@ export function useSocketEvents(activeConversationId: string | null) {
       notifyDesktop(payload.groupName, text, `wa-group-${payload.conversationId}`);
     };
     const onGroupsUpdated = () => queryClient.invalidateQueries({ queryKey: ["groups"] });
+    // A participant reacted: only the open group's messages change.
+    const onGroupReaction = (payload: { conversationId: string }) => queryClient.invalidateQueries({ queryKey: ["group-messages", payload.conversationId] });
     const onTyping = (payload: { conversationId: string; typing: boolean }) => useTypingStore.getState().setTyping(payload.conversationId, payload.typing);
     const onAgentExtras = () => queryClient.invalidateQueries({ queryKey: ["agent-extras"] });
     const onAbandoned = () => queryClient.invalidateQueries({ queryKey: ["abandoned"] });
@@ -202,6 +204,7 @@ export function useSocketEvents(activeConversationId: string | null) {
     socket.on("presence:self", onPresenceSelf);
     socket.on("notification:new", onNotificationNew);
     socket.on("group:message", onGroupMessage);
+    socket.on("group:reaction", onGroupReaction);
     socket.on("group:read", onGroupsUpdated);
     socket.on("groups:updated", onGroupsUpdated);
     socket.on("conversation:typing", onTyping);
@@ -236,6 +239,7 @@ export function useSocketEvents(activeConversationId: string | null) {
       socket.off("branding:updated", onBrandingUpdated);
       socket.off("notification:new", onNotificationNew);
       socket.off("group:message", onGroupMessage);
+      socket.off("group:reaction", onGroupReaction);
       socket.off("group:read", onGroupsUpdated);
       socket.off("groups:updated", onGroupsUpdated);
       socket.off("conversation:typing", onTyping);

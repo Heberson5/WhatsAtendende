@@ -335,6 +335,7 @@ export async function addAttachment(
     eventDescription?: string;
     eventStartAt?: Date;
     eventJoinLink?: string;
+    isGif?: boolean;
   }
 ) {
   return prisma.messageAttachment.create({ data: { messageId, ...attachment } });
@@ -378,6 +379,26 @@ export async function setCustomerReaction(messageId: string, emoji: string | nul
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('message-reaction'), hashtext(${messageId}))`;
     await tx.messageReaction.deleteMany({ where: { messageId, fromCustomer: true } });
     if (emoji) await tx.messageReaction.create({ data: { messageId, emoji, fromCustomer: true } });
+  });
+}
+
+/**
+ * A group participant's reaction: one per participant, like WhatsApp — a new one replaces theirs, null takes it back.
+ * Serialized per message the same way as setCustomerReaction.
+ */
+export async function setParticipantReaction(
+  messageId: string,
+  participant: { jid: string; name: string | null; phone: string | null },
+  emoji: string | null
+): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('message-reaction'), hashtext(${messageId}))`;
+    await tx.messageReaction.deleteMany({ where: { messageId, fromCustomer: true, participantJid: participant.jid } });
+    if (emoji) {
+      await tx.messageReaction.create({
+        data: { messageId, emoji, fromCustomer: true, participantJid: participant.jid, participantName: participant.name, participantPhone: participant.phone },
+      });
+    }
   });
 }
 

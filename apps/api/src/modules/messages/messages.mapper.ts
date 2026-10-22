@@ -64,12 +64,14 @@ export function toMessageDTO(message: MessageWithRelations): MessageDTO {
       eventDescription: a.eventDescription ?? undefined,
       eventStartAt: a.eventStartAt ? a.eventStartAt.toISOString() : undefined,
       eventJoinLink: a.eventJoinLink ?? undefined,
+      ...(a.isGif ? { isGif: true } : {}),
     })),
     reactions: message.reactions.map((r) => ({
       id: r.id,
       emoji: r.emoji,
-      userId: r.userId ?? "customer",
-      userDisplayName: r.user?.displayName ?? "Cliente",
+      userId: r.userId ?? (r.participantJid ? `participant:${r.participantJid}` : "customer"),
+      // In a group, who reacted: the participant's name, or their number.
+      userDisplayName: r.user?.displayName ?? r.participantName ?? (r.participantPhone ? `+${r.participantPhone}` : r.participantJid ? "Participante" : "Cliente"),
     })),
     senderParticipant:
       message.direction === "INBOUND" && (message.senderParticipantJid || message.senderParticipantName)
