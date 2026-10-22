@@ -155,6 +155,7 @@ contactsRouter.get(
 
 const updateSchema = z.object({
   name: z.string().trim().max(120).optional(),
+  firstName: z.string().trim().max(60).nullable().optional(),
   tagIds: z.array(z.string().uuid()).max(50).optional(),
 });
 

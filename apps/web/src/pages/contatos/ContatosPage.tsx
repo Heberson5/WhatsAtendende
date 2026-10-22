@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Download, MessageSquarePlus, Search, Tags, Upload } from "lucide-react";
 import clsx from "clsx";
 import { toast } from "sonner";
-import { COLUMN_SCREENS, PERMISSION, type ContactListItemDTO, type ContactSortField, type ConversationListItemDTO, type TagDTO } from "@whatsatendende/types";
+import { COLUMN_SCREENS, PERMISSION, firstNameOf, type ContactListItemDTO, type ContactSortField, type ConversationListItemDTO, type TagDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
 import { ContactDrawer } from "./ContactDrawer";
@@ -52,6 +52,11 @@ const CONTACT_COLUMNS: Record<string, { sort?: Omit<SortColumn, "label">; classN
     sort: { field: "contract", firstDir: "asc", hint: { asc: "A a Z", desc: "Z a A" } },
     className: "whitespace-nowrap px-4 py-3 tabular-nums",
     render: (c) => c.contractNumber ?? <span className="text-muted">-</span>,
+  },
+  // Hidden until turned on in the ⋮ menu. Empty: the first word of the name is used, shown in grey.
+  firstName: {
+    className: "whitespace-nowrap px-4 py-3",
+    render: (c) => c.firstName ?? <span className="text-muted">{firstNameOf(c.name) || "-"}</span>,
   },
   connection: {
     sort: { field: "connection", firstDir: "asc", hint: { asc: "A a Z", desc: "Z a A" } },

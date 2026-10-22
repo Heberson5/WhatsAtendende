@@ -16,6 +16,7 @@ const TAGS: { tag: string; label: string }[] = [
   { tag: "{{atendente_nome}}", label: "Nome completo do atendente" },
   { tag: "{{atendente_cargo}}", label: "Cargo do atendente" },
   { tag: "{{cliente}}", label: "Nome do cliente" },
+  { tag: "{{primeiro_nome}}", label: "Primeiro nome do cliente" },
 ];
 
 export interface EncerramentoFormValues {

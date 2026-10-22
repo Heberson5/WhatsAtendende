@@ -3,6 +3,11 @@ import { X } from "lucide-react";
 import type { SatisfactionSurveyDTO } from "@whatsatendende/types";
 import { renderWhatsAppFormatting } from "../../lib/whatsappFormatting";
 import { ConnectionScopePicker, toConnectionScopeValue, type ConnectionScopeValue } from "./ConnectionScopePicker";
+import { TagButtons, insertTag } from "../dados/TagButtons";
+import { fillCustomerTags } from "@whatsatendende/types";
+import { CLIENT_EXAMPLE_NAME } from "../../lib/auto-message-tags";
+
+const CUSTOMER_TAGS = ["{{primeiro_nome}}", "{{cliente}}"] as const;
 
 const MIN_WINDOW_HOURS = 1;
 const MAX_WINDOW_HOURS = 72; // matches the backend's zod schema
@@ -72,6 +77,7 @@ export function PesquisaFormModal({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const set = (patch: Partial<PesquisaFormValues>) => setValues((v) => ({ ...v, ...patch }));
+  const [questionEl, setQuestionEl] = useState<HTMLTextAreaElement | null>(null);
 
   const scopeMissing = !values.connectionScope.allConnections && values.connectionScope.connectionIds.length === 0;
   const waitInRange =
@@ -162,10 +168,12 @@ export function PesquisaFormModal({
             <textarea
               rows={3}
               value={values.question}
+              ref={setQuestionEl}
               onChange={(e) => set({ question: e.target.value })}
               maxLength={1024}
               className="focus-ring w-full resize-none rounded-card border border-border bg-transparent px-3 py-2 text-sm"
             />
+            <TagButtons tags={CUSTOMER_TAGS} onInsert={(tag) => insertTag(questionEl, values.question, tag, (question) => set({ question }))} />
             <span className="mt-1 block text-xs text-muted">
               {savedQuestion !== null && values.question.trim() !== savedQuestion
                 ? "Ao salvar, este texto passa a ser uma nova pergunta no Dashboard. O NPS da anterior continua no histórico."
@@ -227,7 +235,7 @@ export function PesquisaFormModal({
           <div>
             <p className="mb-1 text-xs font-medium text-muted">Prévia de como o cliente vai receber:</p>
             <div className="max-w-sm whitespace-pre-wrap break-words rounded-card bg-primary px-3 py-2 text-sm text-primary-fg shadow-soft">
-              {renderWhatsAppFormatting(values.question || "...")}
+              {renderWhatsAppFormatting(fillCustomerTags(values.question, CLIENT_EXAMPLE_NAME) || "...")}
             </div>
           </div>
         </fieldset>

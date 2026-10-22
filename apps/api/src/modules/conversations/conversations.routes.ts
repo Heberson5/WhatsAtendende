@@ -268,7 +268,7 @@ async function sendAutoMessage(
     whatsappConnectionId: string | null;
     assignedAgentId: string | null;
     assignedAgent: { displayName: string; fullName: string; role: Role } | null;
-    contact: { phone: string | null; externalUserId: string | null; name: string | null };
+    contact: { phone: string | null; externalUserId: string | null; name: string | null; firstName?: string | null };
   },
   sender: { id: string; name: string }
 ): Promise<void> {
@@ -280,6 +280,7 @@ async function sendAutoMessage(
     atendenteNome: templateAgent?.fullName ?? "",
     atendenteCargo: templateAgent ? ROLE_LABEL[templateAgent.role] : "",
     cliente: conversation.contact.name ?? conversation.contact.phone ?? "",
+    primeiroNome: conversation.contact.firstName,
   });
   const message = await createSystemOutboundMessage({ conversationId: conversation.id, type: "TEXT", body: text, agentId: sender.id });
   await sendOutboundTextViaChannel(conversation, message.id, text, template.showSenderName ? sender.name : null);
@@ -525,6 +526,7 @@ conversationsRouter.post(
           atendenteNome: closingAgent?.fullName ?? req.auth!.displayName,
           atendenteCargo: ROLE_LABEL[req.auth!.role],
           cliente: existing.contact.name ?? existing.contact.phone ?? "",
+          primeiroNome: existing.contact.firstName,
         });
         // Its attachment (WhatsApp only), copied for this conversation — the text goes as the caption.
         const media = existing.channel === "WHATSAPP" ? copyReplyMediaFile(closingMessage) : null;
@@ -632,6 +634,7 @@ conversationsRouter.post(
         atendenteNome: closingAgent?.fullName ?? req.auth!.displayName,
         atendenteCargo: ROLE_LABEL[req.auth!.role],
         cliente: existing.contact.name ?? existing.contact.phone ?? "",
+        primeiroNome: existing.contact.firstName,
       });
       // Its attachment (WhatsApp only), copied for this conversation — the text goes as the caption.
       const media = existing.channel === "WHATSAPP" ? copyReplyMediaFile(closingMessage) : null;

@@ -9,6 +9,7 @@ import type { ContactPanelDTO, ConversationListItemDTO, TagDTO } from "@whatsate
 import { PreviousConversationDrawer } from "./PreviousConversationDrawer";
 import { ClientDataSection } from "./ClientDataSection";
 import { ContactContractField } from "./ContactContractField";
+import { ContactFirstNameField } from "./ContactFirstNameField";
 import { useClientData } from "../../hooks/useClientData";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { contactDisplayName } from "../../lib/contact-display";
@@ -193,6 +194,7 @@ export function ClientPanel({
           <Avatar conversation={conversation} size="lg" />
           <p className="mt-2 max-w-full truncate text-[15px] font-semibold">{name}</p>
           {conversation.contact.phone && <p className="text-xs tabular-nums text-muted">{formatPhone(conversation.contact.phone)}</p>}
+          {panel && <ContactFirstNameField conversationId={conversation.id} firstName={panel.firstName} contactName={conversation.contact.name} readOnly={readOnly} />}
           {panel && <ContactContractField conversationId={conversation.id} contractNumber={panel.contractNumber} readOnly={readOnly} />}
         </div>
 

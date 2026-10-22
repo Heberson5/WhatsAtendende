@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
 import { Star, X } from "lucide-react";
 import { toast } from "sonner";
-import { PERMISSION, type ContactDetailDTO, type TagDTO } from "@whatsatendende/types";
+import { PERMISSION, firstNameOf, type ContactDetailDTO, type TagDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { STATUS_COLOR, STATUS_LABEL } from "../../lib/conversationStatus";
 import { useAuthStore } from "../../store/auth-store";
@@ -23,15 +23,17 @@ export function ContactDrawer({ contactId, tags, onClose }: { contactId: string;
   });
 
   const [name, setName] = useState("");
+  const [firstName, setFirstName] = useState("");
   const [tagIds, setTagIds] = useState<string[]>([]);
   useEffect(() => {
     if (!contact) return;
     setName(contact.name ?? "");
+    setFirstName(contact.firstName ?? "");
     setTagIds(contact.tags.map((t) => t.id));
   }, [contact]);
 
   const save = useMutation({
-    mutationFn: async () => (await api.patch<ContactDetailDTO>(`/contacts/${contactId}`, { name, tagIds })).data,
+    mutationFn: async () => (await api.patch<ContactDetailDTO>(`/contacts/${contactId}`, { name, firstName: firstName.trim() || null, tagIds })).data,
     onSuccess: (updated) => {
       queryClient.setQueryData(["contact", contactId], updated);
       queryClient.invalidateQueries({ queryKey: ["contacts"] });
@@ -40,7 +42,7 @@ export function ContactDrawer({ contactId, tags, onClose }: { contactId: string;
     onError: (err) => toast.error(getApiErrorMessage(err)),
   });
 
-  const dirty = contact && (name !== (contact.name ?? "") || tagIds.join() !== contact.tags.map((t) => t.id).join());
+  const dirty = contact && (name !== (contact.name ?? "") || firstName !== (contact.firstName ?? "") || tagIds.join() !== contact.tags.map((t) => t.id).join());
   const toggleTag = (id: string) => setTagIds((ids) => (ids.includes(id) ? ids.filter((t) => t !== id) : [...ids, id]));
 
   return (
@@ -73,6 +75,19 @@ export function ContactDrawer({ contactId, tags, onClose }: { contactId: string;
                 maxLength={120}
                 className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm disabled:opacity-70"
               />
+            </label>
+
+            <label className="block">
+              <span className="mb-1 block text-sm font-medium">Primeiro nome</span>
+              <input
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
+                disabled={!canEditar}
+                maxLength={60}
+                placeholder={firstNameOf(name) || "Como o cliente é chamado"}
+                className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm disabled:opacity-70"
+              />
+              <span className="mt-1 block text-xs text-muted">Usado na tag {"{{primeiro_nome}}"} das respostas. Em branco, usa a primeira palavra do nome.</span>
             </label>
 
             <div>

@@ -2064,6 +2064,8 @@ export interface ContactListItemDTO {
   whatsappConnectionId: string | null;
   /** Contract number(s) — filled from the Fonte de dados, editable in the client panel. */
   contractNumber: string | null;
+  /** How the customer is called ({{primeiro_nome}}); null = the first word of the name. */
+  firstName: string | null;
   tags: TagDTO[];
   conversationCount: number;
   firstConversationAt: string;
@@ -2125,6 +2127,8 @@ export interface ContactPanelDTO {
   pinnedNote: { text: string; updatedAt: string; updatedByName: string | null } | null;
   /** The contact's contract number(s) (Contatos › Contrato), editable by the attendant. */
   contractNumber: string | null;
+  /** Contatos › Primeiro nome, editable by the attendant; null = the first word of the name. */
+  firstName: string | null;
 }
 
 /** A previous conversation opened read-only from the client panel. */
@@ -2652,6 +2656,29 @@ export interface BoletoSendMessageDTO {
   plural: string;
 }
 
+/**
+ * {{primeiro_nome}} (Respostas) and {primeiro_nome} (boleto): the first word of the customer's name, "MARIA SILVA" →
+ * "Maria". With no name saved the conversation shows the number, and a number stays whole.
+ */
+export function firstNameOf(name: string | null | undefined): string {
+  const first = (name ?? "").trim().split(/\s+/)[0] ?? "";
+  if (!/\p{L}/u.test(first)) return first;
+  const allSameCase = first === first.toUpperCase() || first === first.toLowerCase();
+  return allSameCase ? first.charAt(0).toLocaleUpperCase("pt-BR") + first.slice(1).toLocaleLowerCase("pt-BR") : first;
+}
+
+/** {{primeiro_nome}}: the contact's own Primeiro nome when filled, else the first word of the name. */
+export function customerFirstName(customerName: string, savedFirstName?: string | null): string {
+  return savedFirstName?.trim() || firstNameOf(customerName);
+}
+
+/** Replaces {{cliente}} and {{primeiro_nome}} in a text sent to a customer. */
+export function fillCustomerTags(text: string, customerName: string, savedFirstName?: string | null): string {
+  return text
+    .replace(/\{\{\s*primeiro_nome\s*\}\}/gi, customerFirstName(customerName, savedFirstName))
+    .replace(/\{\{\s*cliente\s*\}\}/gi, customerName);
+}
+
 export const BOLETO_SEND_MESSAGE_MAX_LENGTH = 1000;
 export const BOLETO_SEND_MESSAGE_TAGS = ["{primeiro_nome}", "{cliente}", "{quantidade}", "{vencimento}", "{valor}", "{total}"] as const;
 
@@ -2671,7 +2698,7 @@ export function fillBoletoSendMessage(
   const template = input.boletos.length > 1 ? settings.plural : settings.single;
   const total = input.boletos.reduce((sum, b) => sum + b.cents, 0);
   const values: Record<string, string> = {
-    "{primeiro_nome}": input.clientName.trim().split(/\s+/)[0] ?? "",
+    "{primeiro_nome}": firstNameOf(input.clientName),
     "{cliente}": input.clientName.trim(),
     "{quantidade}": String(input.boletos.length),
     "{vencimento}": input.boletos[0]?.due ?? "",

@@ -39,6 +39,7 @@ function toListItem(row: ContactRow): ContactListItemDTO {
     connectionName: row.whatsappConnection?.name ?? row.metaConnection?.name ?? null,
     whatsappConnectionId: row.whatsappConnectionId,
     contractNumber: row.contractNumber,
+    firstName: row.firstName,
     tags: row.tags.map((t) => toTagDTO(t.tag)),
     conversationCount: row._count.conversations,
     firstConversationAt: row.firstConversationAt.toISOString(),
@@ -164,13 +165,14 @@ export async function getContactDetail(id: string, connectionIds: string[] | und
   };
 }
 
-export async function updateContact(id: string, input: { name?: string; tagIds?: string[] }, userId: string) {
+export async function updateContact(id: string, input: { name?: string; firstName?: string | null; tagIds?: string[] }, userId: string) {
   if (input.tagIds) {
     const count = await prisma.tag.count({ where: { id: { in: input.tagIds } } });
     if (count !== new Set(input.tagIds).size) throw Errors.badRequest("Uma ou mais etiquetas são inválidas");
   }
   await prisma.$transaction([
     ...(input.name !== undefined ? [prisma.contact.update({ where: { id }, data: { name: input.name } })] : []),
+    ...(input.firstName !== undefined ? [prisma.contact.update({ where: { id }, data: { firstName: input.firstName?.trim() || null } })] : []),
     ...(input.tagIds
       ? [
           prisma.contactTag.deleteMany({ where: { contactId: id, tagId: { notIn: input.tagIds } } }),
@@ -193,6 +195,7 @@ const EXPORT_CELLS: Record<string, (row: ExportRow, item: ContactListItemDTO) =>
   name: (_r, item) => item.name,
   phone: (_r, item) => item.phone,
   contract: (_r, item) => item.contractNumber,
+  firstName: (_r, item) => item.firstName,
   connection: (_r, item) => item.connectionName,
   tags: (_r, item) => item.tags.map((t) => t.name).join(", "),
   conversations: (_r, item) => item.conversationCount,

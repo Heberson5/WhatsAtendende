@@ -4,6 +4,9 @@ import { MessageSquareOff } from "lucide-react";
 import { toast } from "sonner";
 import type { NoReturnSettingsDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
+import { TagButtons, insertTag } from "../dados/TagButtons";
+
+const MESSAGE_TAGS = ["{{primeiro_nome}}", "{{cliente}}", "{{atendente}}"] as const;
 
 const MAX_MINUTES = 240;
 
@@ -19,6 +22,8 @@ export function NoReturnSettingsCard({ canEdit }: { canEdit: boolean }) {
     queryFn: async () => (await api.get<NoReturnSettingsDTO>("/settings/no-return")).data,
   });
   const [form, setForm] = useState<NoReturnSettingsDTO | null>(null);
+  const [reminderEl, setReminderEl] = useState<HTMLTextAreaElement | null>(null);
+  const [closeEl, setCloseEl] = useState<HTMLTextAreaElement | null>(null);
   useEffect(() => {
     if (data) setForm(data);
   }, [data]);
@@ -87,10 +92,12 @@ export function NoReturnSettingsCard({ canEdit }: { canEdit: boolean }) {
             rows={3}
             maxLength={1000}
             value={form.reminderText}
+            ref={setReminderEl}
             disabled={!canEdit}
             onChange={(e) => set("reminderText", e.target.value)}
             className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm disabled:opacity-60"
           />
+          {canEdit && <TagButtons tags={MESSAGE_TAGS} onInsert={(tag) => insertTag(reminderEl, form.reminderText, tag, (text) => set("reminderText", text))} />}
         </label>
         <label className="block">
           <span className="mb-1 block text-sm font-medium">Mensagem de encerramento</span>
@@ -98,14 +105,16 @@ export function NoReturnSettingsCard({ canEdit }: { canEdit: boolean }) {
             rows={3}
             maxLength={1000}
             value={form.closeText}
+            ref={setCloseEl}
             disabled={!canEdit}
             onChange={(e) => set("closeText", e.target.value)}
             className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm disabled:opacity-60"
           />
+          {canEdit && <TagButtons tags={MESSAGE_TAGS} onInsert={(tag) => insertTag(closeEl, form.closeText, tag, (text) => set("closeText", text))} />}
         </label>
       </div>
       <p className="mt-2 text-xs text-muted">
-        Use {"{{cliente}}"} e {"{{atendente}}"} nas mensagens. Não encerra quando a última mensagem é do cliente, quando há "Lembrar de retornar" ou envio
+        Use {"{{primeiro_nome}}"}, {"{{cliente}}"} e {"{{atendente}}"} nas mensagens. Não encerra quando a última mensagem é do cliente, quando há "Lembrar de retornar" ou envio
         agendado pendente, ou quando o atendente marcou "Aguardar cliente". Se o cliente voltar, a conversa vai para o mesmo atendente (se estiver online).
       </p>
       {canEdit && (

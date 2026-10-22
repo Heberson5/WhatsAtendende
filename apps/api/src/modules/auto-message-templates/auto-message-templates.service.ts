@@ -1,5 +1,6 @@
 import type { AutoMessageTrigger, Role } from "@prisma/client";
 import { z } from "zod";
+import { customerFirstName } from "@whatsatendende/types";
 import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
 import { appliesToConnection, assertScopeConnectionsExist, scopeData, withScopeConnections, type ConnectionScopeInput } from "../../lib/connection-scope";
@@ -106,6 +107,7 @@ const TAGS = {
   atendenteNome: /\{\{\s*atendente_nome\s*\}\}/gi,
   atendenteCargo: /\{\{\s*atendente_cargo\s*\}\}/gi,
   cliente: /\{\{\s*cliente\s*\}\}/gi,
+  primeiroNome: /\{\{\s*primeiro_nome\s*\}\}/gi,
 };
 
 // See PROMPT: "quero que tenha as tags do cadastro do usuário" — used by
@@ -121,13 +123,16 @@ export interface AutoMessageTemplateVars {
   /** Cargo do usuário (Atendente/Gestor/Administrador) — {{atendente_cargo}}. */
   atendenteCargo: string;
   cliente: string;
+  /** Contatos › Primeiro nome — {{primeiro_nome}}; empty uses the first word of cliente. */
+  primeiroNome?: string | null;
 }
 
-/** Substitutes {{atendente}}/{{atendente_nome}}/{{atendente_cargo}}/{{cliente}} with real values — see AutoMessageTemplate's own doc comment. */
+/** Substitutes {{atendente}}/{{atendente_nome}}/{{atendente_cargo}}/{{cliente}}/{{primeiro_nome}} with real values — see AutoMessageTemplate's own doc comment. */
 export function renderAutoMessageTemplate(text: string, vars: AutoMessageTemplateVars): string {
   return text
     .replace(TAGS.atendente, vars.atendente)
     .replace(TAGS.atendenteNome, vars.atendenteNome)
     .replace(TAGS.atendenteCargo, vars.atendenteCargo)
+    .replace(TAGS.primeiroNome, customerFirstName(vars.cliente, vars.primeiroNome))
     .replace(TAGS.cliente, vars.cliente);
 }
