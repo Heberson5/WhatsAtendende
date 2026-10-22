@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Slash, LogOut, ArrowRightLeft, UserCheck, PauseCircle, FileText, Star, Clock } from "lucide-react";
+import { Slash, LogOut, ArrowRightLeft, UserCheck, PauseCircle, FileText, Star, Clock, Hourglass } from "lucide-react";
 import { PERMISSION, type Permission } from "@whatsatendende/types";
 import { useAuthStore } from "../../store/auth-store";
 import { RespostasRapidasTab } from "./RespostasRapidasTab";
@@ -9,8 +9,9 @@ import { MotivoPausaTab } from "./MotivoPausaTab";
 import { TemplatesTab } from "./TemplatesTab";
 import { PesquisaTab } from "./PesquisaTab";
 import { ExpedienteTab } from "./ExpedienteTab";
+import { EsperaFilaTab } from "./EsperaFilaTab";
 
-type Tab = "rapidas" | "encerramento" | "transferencia" | "aceite" | "motivo-pausa" | "templates" | "pesquisa" | "expediente";
+type Tab = "rapidas" | "encerramento" | "transferencia" | "aceite" | "motivo-pausa" | "templates" | "pesquisa" | "expediente" | "espera";
 
 // Reaching /respostas at all already requires the RESPOSTAS_RAPIDAS_GERENCIAR
 // umbrella (see Sidebar's MENU_ITEMS) — each tab below additionally sits
@@ -26,6 +27,7 @@ const TAB_PERMISSION: Partial<Record<Tab, Permission>> = {
   templates: PERMISSION.RESPOSTAS_TEMPLATES_VISUALIZAR,
   pesquisa: PERMISSION.RESPOSTAS_PESQUISA_VISUALIZAR,
   expediente: PERMISSION.RESPOSTAS_EXPEDIENTE_VISUALIZAR,
+  espera: PERMISSION.RESPOSTAS_ESPERA_VISUALIZAR,
 };
 
 const TABS: { key: Tab; label: string; icon: typeof Slash }[] = [
@@ -37,6 +39,7 @@ const TABS: { key: Tab; label: string; icon: typeof Slash }[] = [
   { key: "templates", label: "Templates", icon: FileText },
   { key: "pesquisa", label: "Pesquisa", icon: Star },
   { key: "expediente", label: "Horário de expediente", icon: Clock },
+  { key: "espera", label: "Espera na fila", icon: Hourglass },
 ];
 
 export default function RespostasPage() {
@@ -84,6 +87,7 @@ export default function RespostasPage() {
         {tab === "templates" && <TemplatesTab />}
         {tab === "pesquisa" && <PesquisaTab />}
         {tab === "expediente" && <ExpedienteTab />}
+        {tab === "espera" && <EsperaFilaTab />}
       </div>
     </div>
   );

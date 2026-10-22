@@ -1,6 +1,8 @@
 import { prisma } from "./prisma";
 import { getBusinessSettings } from "../modules/settings/settings.service";
 import { realtimeEvents } from "../realtime/realtime";
+import { conversationSpanMs, SCHEDULE_SELECT } from "./conversation-timings";
+import { cachedHolidayLookup } from "./business-time";
 
 const REMINDER_CADENCE_KEY = "queueReminderLastSentAt";
 
@@ -80,14 +82,18 @@ export async function sendNoReplyRemindersIfDue(now = new Date()): Promise<void>
   const waitingSince = new Date(now.getTime() - (Number(noReplyWarningMinutes) || 5) * 60_000);
   const conversations = await prisma.conversation.findMany({
     where: { status: { in: ["IN_PROGRESS", "TRANSFERRED"] }, assignedAgentId: { not: null }, awaitingReplySince: { lte: waitingSince } },
-    select: { id: true, assignedAgentId: true, interventionById: true, awaitingReplySince: true, contact: { select: { name: true, phone: true } } },
+    select: { id: true, assignedAgentId: true, interventionById: true, awaitingReplySince: true, contact: { select: { name: true, phone: true } }, ...SCHEDULE_SELECT },
   });
   if (conversations.length === 0) return;
+  const isHoliday = cachedHolidayLookup();
   for (const c of conversations) {
+    // Only the Horário de expediente counts: a customer who wrote right before closing hasn't "waited" all night.
+    const waitedMs = (await conversationSpanMs(c, c.awaitingReplySince, now, isHoliday)) ?? 0;
+    if (waitedMs < (Number(noReplyWarningMinutes) || 5) * 60_000) continue;
     realtimeEvents.noReplyReminder(c.interventionById ?? c.assignedAgentId!, {
       conversationId: c.id,
       contactName: c.contact.name ?? c.contact.phone ?? "Cliente",
-      minutes: Math.floor((now.getTime() - c.awaitingReplySince!.getTime()) / 60_000),
+      minutes: Math.floor(waitedMs / 60_000),
     });
   }
   await prisma.systemSetting.upsert({

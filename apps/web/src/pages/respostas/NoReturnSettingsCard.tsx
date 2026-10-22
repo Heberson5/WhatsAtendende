@@ -131,7 +131,7 @@ export function NoReturnSettingsCard({ canEdit }: { canEdit: boolean }) {
       </label>
       <p className="mt-2 text-xs text-muted">
         Use {"{{saudacao}}"}, {"{{primeiro_nome}}"}, {"{{cliente}}"} e {"{{atendente}}"} nas mensagens. Não encerra quando a última mensagem é do cliente, quando há "Lembrar de retornar" ou envio
-        agendado pendente, ou quando o atendente marcou "Aguardar cliente". Se o cliente voltar, a conversa vai para o mesmo atendente (se estiver online).
+        agendado pendente, ou quando o atendente marcou "Não encerrar automaticamente". Se o cliente voltar, a conversa vai para o mesmo atendente (se estiver online).
       </p>
       {canEdit && (
         <div className="mt-3 flex justify-end">

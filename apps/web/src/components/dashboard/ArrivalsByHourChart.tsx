@@ -36,6 +36,7 @@ export function ArrivalsByHourChart({
   initialRange,
   onSaveDefaultRange,
   onActiveRangeChange,
+  onOpenInGestao,
 }: {
   data: ArrivalsByHourDTO | undefined;
   isLoading: boolean;
@@ -44,6 +45,8 @@ export function ArrivalsByHourChart({
   initialRange: HourRange | null;
   onSaveDefaultRange: (range: HourRange | null) => void;
   onActiveRangeChange?: (range: HourRange | null) => void;
+  /** Gestão with the conversations the customer opened in the period — at `hour` (a bar), or all of them (null). */
+  onOpenInGestao?: (hour: number | null) => void;
 }) {
   const [range, setRange] = useState<HourRange | null>(initialRange);
   const [kind, setKind] = useState<SeriesKind>("bar");
@@ -57,8 +60,16 @@ export function ArrivalsByHourChart({
   const chartData = (data?.hours ?? [])
     .filter((h) => !range || (h.hour >= range.start && h.hour <= range.end))
     .filter((h) => !isToday || h.hour <= currentLocalHour)
-    .map((h) => ({ hourLabel: formatHour(h.hour), [INSIDE_LABEL]: h.inside, [OUTSIDE_LABEL]: h.outside, [ONLINE_LABEL]: h.onlineAvg, days: h.days }));
+    .map((h) => ({ hour: h.hour, hourLabel: formatHour(h.hour), [INSIDE_LABEL]: h.inside, [OUTSIDE_LABEL]: h.outside, [ONLINE_LABEL]: h.onlineAvg, days: h.days }));
   const summary = arrivalsSummary(data);
+  // Conversations in the hours the gear hides — a peak at 05h must not vanish from a chart cut to 08h–20h.
+  const hidden = range ? (data?.hours ?? []).filter((h) => (h.hour < range.start || h.hour > range.end) && h.inside + h.outside > 0) : [];
+  const hiddenCount = hidden.reduce((sum, h) => sum + h.inside + h.outside, 0);
+  const breakdown = data?.summary;
+  const openBar = (state: { activePayload?: { payload?: { hour?: number } }[] } | null) => {
+    const hour = state?.activePayload?.[0]?.payload?.hour;
+    if (onOpenInGestao && hour !== undefined) onOpenInGestao(hour);
+  };
   const insideId = gradientId("arrin", primaryColor);
   const outsideId = gradientId("arrout", OUTSIDE_COLOR);
 
@@ -67,7 +78,9 @@ export function ArrivalsByHourChart({
       <div className="mb-2 flex items-start justify-between gap-3">
         <div>
           <p className="text-xs font-medium text-muted">Conversas que chegam ao longo do dia</p>
-          <p className="text-[11px] text-muted/80">Conversas novas abertas pelo cliente, pela hora da primeira mensagem</p>
+          <p className="text-[11px] text-muted/80">
+            Conversas novas abertas pelo cliente, pela hora da primeira mensagem{onOpenInGestao ? " · clique numa barra para ver a lista na Gestão" : ""}
+          </p>
         </div>
         <div className="flex items-center gap-1">
           <ChartTypeMenu value={kind} onChange={setKind} options={SERIES_KIND_OPTIONS} />
@@ -89,13 +102,38 @@ export function ArrivalsByHourChart({
         </div>
       )}
 
+      {breakdown && breakdown.withActivity > 0 && (
+        <p className="mb-2 text-[11px] text-muted" data-testid="arrivals-breakdown">
+          De {breakdown.withActivity.toLocaleString("pt-BR")} conversas com movimento no período (as que a Gestão lista):{" "}
+          {onOpenInGestao ? (
+            <button type="button" onClick={() => onOpenInGestao(null)} className="focus-ring font-semibold text-primary hover:underline">
+              {breakdown.openedByCustomer.toLocaleString("pt-BR")} abertas pelo cliente
+            </button>
+          ) : (
+            <strong>{breakdown.openedByCustomer.toLocaleString("pt-BR")} abertas pelo cliente</strong>
+          )}{" "}
+          · {breakdown.startedByTeam.toLocaleString("pt-BR")} iniciadas pela equipe · {breakdown.fromEarlierDays.toLocaleString("pt-BR")} vindas de dias anteriores
+        </p>
+      )}
+
+      {hiddenCount > 0 && (
+        <div className="mb-2 flex flex-wrap items-center gap-2 rounded-card bg-warning-soft px-3 py-1.5 text-xs text-warning">
+          <span>
+            {hiddenCount.toLocaleString("pt-BR")} {hiddenCount === 1 ? "conversa chegou" : "conversas chegaram"} fora das horas mostradas ({hidden.map((h) => formatHour(h.hour)).join(", ")}).
+          </span>
+          <button type="button" onClick={() => setRange(null)} className="focus-ring rounded-full border border-warning/40 px-2 py-0.5 font-semibold hover:bg-warning/10">
+            Mostrar todas as horas
+          </button>
+        </div>
+      )}
+
       {isLoading ? (
         <p className="py-8 text-center text-sm text-muted">Carregando...</p>
       ) : summary.total === 0 ? (
         <p className="py-8 text-center text-sm text-muted">Nenhuma conversa nova no período selecionado.</p>
       ) : (
         <ResponsiveContainer width="100%" height={280}>
-          <ComposedChart data={chartData} style={{ filter: CHART_DEPTH_FILTER }}>
+          <ComposedChart data={chartData} style={{ filter: CHART_DEPTH_FILTER, cursor: onOpenInGestao ? "pointer" : undefined }} onClick={openBar}>
             <defs>
               <linearGradient id={insideId} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={lighten(primaryColor, 0.25)} />

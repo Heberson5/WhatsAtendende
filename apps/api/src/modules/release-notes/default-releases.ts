@@ -11,6 +11,104 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.23.0",
+    date: "22 out 2026",
+    name: "Mensagem de espera na fila e tempo só no expediente",
+    summary:
+      "O cliente na fila recebe mensagens de espera; os tempos de espera e de atendimento contam só o Horário de expediente; o encerramento por falta de retorno respeita quem respondeu a pesquisa; e o Dashboard explica a diferença para a Gestão.",
+    notes: [
+      {
+        type: "novo",
+        area: "respostas",
+        title: "Mensagem de espera na fila",
+        text: "Enquanto o cliente espera na fila, ele recebe as mensagens cadastradas, uma depois da outra: cada uma alguns minutos depois da anterior (a primeira, depois que ele entra na fila). Cada mensagem pode levar uma imagem, um vídeo ou um PDF, com o texto como legenda, e aceita as tags {{saudacao}}, {{primeiro_nome}} e {{cliente}} — nunca o nome de um atendente. Só conta o tempo dentro do Horário de expediente e nada sai fora dele. Para quando alguém aceita a conversa ou depois da última mensagem, e não vale enquanto o cliente está no Fluxo.",
+        steps: [
+          "Abra Respostas › Espera na fila e clique em Nova mensagem de espera.",
+          "Informe depois de quantos minutos ela sai, escreva o texto e, se quiser, inclua uma imagem, vídeo ou PDF.",
+          "Escolha as conexões e salve. Use as setas para mudar a ordem.",
+        ],
+        where: "Respostas › Espera na fila",
+        requires: [PERMISSION.RESPOSTAS_ESPERA_VISUALIZAR],
+        images: [
+          { src: "/notas-de-versao/respostas-espera-fila.webp", caption: "A sequência: cada mensagem com o tempo depois da anterior e quando sai na fila" },
+          { src: "/notas-de-versao/respostas-espera-fila-editar.webp", caption: "O cadastro: minutos, texto com tags, anexo e conexões", size: "small" },
+        ],
+      },
+      {
+        type: "melhoria",
+        area: "atendimento",
+        title: "Tempo de espera só conta no Horário de expediente",
+        text: "\"Na fila há\" e \"sem resposta há\", com as cores de alerta, contam só o horário de expediente da conexão: quem escreveu às 17h58, com o expediente terminando às 18h, às 8h do dia seguinte esperou 2 minutos, não 14 horas. Feriados contam como fechado. Enquanto a conexão está fora do expediente, o cartão mostra \"⏸ fora do expediente\". O mesmo vale para a coluna Esperando da Gestão e para os tempos do Dashboard, Relatórios e Meu dia. Conexão sem horário de expediente conta as 24 horas, como antes.",
+        where: "Atendimento › Fila e Meus",
+        images: [{ src: "/notas-de-versao/atendimento-fila-fora-expediente.webp", caption: "Na fila, fora do expediente: o tempo fica parado", size: "small" }],
+      },
+      {
+        type: "melhoria",
+        area: "atendimento",
+        title: "\"Aguardar cliente\" agora é \"Não encerrar automaticamente\"",
+        text: "O botão no topo da conversa mudou de nome para deixar claro o que faz: a conversa não é encerrada por falta de retorno até o cliente responder ou você desmarcar. Marcado, o botão mostra \"Não encerrar (ativo)\" e o cartão da conversa, \"Não encerrar\".",
+        where: "Atendimento › conversa aberta",
+        images: [{ src: "/notas-de-versao/atendimento-nao-encerrar-ativo.webp", caption: "Marcado: o botão e o cartão mostram Não encerrar" }],
+      },
+      {
+        type: "correcao",
+        area: "atendimento",
+        title: "Encerramento por falta de retorno respeita quem respondeu a pesquisa",
+        text: "Depois do encerramento por falta de retorno com pesquisa, quando o cliente dava a nota ele recebia o agradecimento e, em seguida, \"como não tivemos retorno...\" — mesmo tendo acabado de responder. Agora, se o cliente responde a pesquisa, depois do agradecimento vai a mensagem de encerramento do atendente (Respostas › Encerramento), ou nada, se ele não tiver uma. A mensagem de falta de retorno só sai se o cliente não responder até o fim da espera.",
+        where: "Respostas › Encerramento › Encerramento por falta de retorno",
+      },
+      {
+        type: "melhoria",
+        area: "dashboard",
+        title: "Conversas que chegam ao longo do dia: a conta bate com a Gestão",
+        text: "O gráfico mostra só as conversas novas abertas pelo cliente (cada vez que ele abre uma conversa conta, mesmo várias no mesmo dia). Acima dele, uma linha explica a diferença para a Gestão: de todas as conversas com movimento no período, quantas o cliente abriu, quantas a equipe iniciou e quantas vieram de dias anteriores. Se alguma conversa chegou fora das horas escolhidas na engrenagem, um aviso mostra quantas e o botão \"Mostrar todas as horas\". Clique numa barra (ou em \"abertas pelo cliente\") para abrir a Gestão já filtrada nessas conversas.",
+        where: "Dashboard",
+        images: [
+          { src: "/notas-de-versao/dashboard-chegadas-gestao.webp", caption: "A explicação da diferença para a Gestão e o aviso das horas escondidas" },
+          { src: "/notas-de-versao/gestao-filtro-chegadas.webp", caption: "A Gestão aberta pelo gráfico, com o filtro que pode ser removido no X" },
+        ],
+      },
+      {
+        type: "novo",
+        area: "configuracoes",
+        title: "Feriados manuais: editar e repetir todo ano",
+        text: "Os feriados cadastrados manualmente agora podem ser editados (lápis na linha) e marcados como \"Repete todo ano (mesmo dia e mês)\" — o aniversário da cidade, por exemplo, vale em todos os anos sem cadastrar de novo. A nova coluna Repete mostra Anual ou Só este ano.",
+        where: "Configurações › Feriados",
+        requires: [PERMISSION.CONFIGURACOES_FERIADOS_VISUALIZAR],
+        images: [{ src: "/notas-de-versao/feriados-repete.webp", caption: "Editando um feriado anual e a coluna Repete" }],
+      },
+      {
+        type: "melhoria",
+        area: "configuracoes",
+        title: "Permissões: recolher e expandir cada menu",
+        text: "Cada menu da lista de permissões tem uma seta à direita para recolher ou expandir. A tela abre com tudo expandido, e os botões Expandir tudo e Recolher tudo ficam no topo.",
+        where: "Configurações › Permissões",
+        images: [{ src: "/notas-de-versao/permissoes-recolher.webp", caption: "Menus recolhidos, com Respostas aberto", size: "small" }],
+      },
+      {
+        type: "correcao",
+        area: "respostas",
+        title: "Aba Pesquisa rola no celular",
+        text: "No celular, o texto e as configurações da aba Pesquisa ocupavam a tela inteira e nada rolava: não dava para ver as pesquisas nem editá-las. Agora a aba inteira rola, e a tabela pode ser arrastada para o lado até os botões Duplicar, Editar e Excluir.",
+        where: "Respostas › Pesquisa",
+      },
+      {
+        type: "correcao",
+        area: "atendimento",
+        title: "Lista de quem reagiu aparece inteira",
+        text: "Ao clicar nas reações da última mensagem da conversa, a lista de quem reagiu abria para baixo e ficava cortada. Agora ela abre para cima, sobre a própria mensagem.",
+        where: "Atendimento › Grupos",
+        images: [{ src: "/notas-de-versao/grupo-gif-reacoes.webp", caption: "Um clique nas reações mostra quem reagiu e com qual emoji" }],
+      },
+      {
+        type: "melhoria",
+        area: "geral",
+        title: "Notas de versão com imagens",
+        text: "As novidades das últimas versões ganharam imagens mostrando onde fica cada coisa: o aviso de nova versão, o primeiro nome no painel do cliente, o GIF e as reações nos grupos, a mensagem agendada pausando o encerramento, a paginação da Gestão e as novas tags.",
+      },
+    ],
+  },
+  {
     version: "2.22.1",
     date: "22 out 2026",
     name: "Planilha XLSX lida sempre, na primeira aba",
@@ -45,6 +143,7 @@ export const DEFAULT_RELEASES: ReleaseContent[] = [
         title: "Linhas por página e páginas",
         text: "No rodapé da lista, ao lado de \"Mostrando X de Y conversas\", escolha 50, 100, 200 ou 300 linhas por página e passe as páginas pelas setas (\"Página 1 de 7\"). A quantidade escolhida fica guardada no navegador.",
         where: "Gestão",
+        images: [{ src: "/notas-de-versao/gestao-paginacao.webp", caption: "O rodapé da Gestão: total da busca, linhas por página e páginas" }],
       },
       {
         type: "novo",
@@ -52,6 +151,7 @@ export const DEFAULT_RELEASES: ReleaseContent[] = [
         title: "Pesquisa de satisfação no encerramento por falta de retorno",
         text: "Marque \"Enviar a pesquisa de satisfação\" para que, ao encerrar por falta de retorno, o cliente receba a pesquisa da conexão. A mensagem de encerramento vai depois da nota, ou quando o tempo de espera acabar. Nenhuma das mensagens automáticas leva o nome do atendente.",
         where: "Respostas › Encerramento › Encerramento por falta de retorno",
+        images: [{ src: "/notas-de-versao/encerramento-falta-retorno-pesquisa.webp", caption: "A marcação Enviar a pesquisa de satisfação, no fim do quadro" }],
       },
       {
         type: "melhoria",
@@ -59,6 +159,7 @@ export const DEFAULT_RELEASES: ReleaseContent[] = [
         title: "Mensagem agendada pausa o encerramento por falta de retorno",
         text: "Enquanto a conversa tem uma mensagem agendada, o lembrete e o encerramento automático não acontecem, e o botão \"Encerrar por falta de retorno\" fica bloqueado. A conversa mostra \"Pausado: mensagem agendada\". Quando a mensagem é enviada, ou o agendamento cancelado, a contagem recomeça do zero.",
         where: "Atendimento",
+        images: [{ src: "/notas-de-versao/atendimento-agendada-pausa.webp", caption: "Conversa com mensagem agendada: Agendada na lista, Pausado no topo e a mensagem esperando embaixo" }],
       },
       {
         type: "correcao",
@@ -81,6 +182,7 @@ export const DEFAULT_RELEASES: ReleaseContent[] = [
         title: "GIFs e figurinhas aparecem nas conversas e nos grupos",
         text: "O GIF enviado pelo cliente ou por um participante aparece rodando sozinho, em repetição e sem som, com a etiqueta GIF, como no WhatsApp. Figurinhas (inclusive as animadas) aparecem como imagem. Mensagens temporárias e de visualização única, que antes não chegavam, também passam a aparecer.",
         where: "Atendimento",
+        images: [{ src: "/notas-de-versao/grupo-gif-reacoes.webp", caption: "Um GIF no grupo, rodando sozinho, e embaixo das mensagens as reações dos participantes, com a lista de quem reagiu" }],
       },
       {
         type: "novo",
@@ -103,6 +205,7 @@ export const DEFAULT_RELEASES: ReleaseContent[] = [
         title: "Tag {{saudacao}}",
         text: "Nas mesmas telas da tag {{primeiro_nome}}, a tag {{saudacao}} vira Bom dia (das 5h às 12h), Boa tarde (das 12h01 às 17h59) ou Boa noite (das 18h às 4h59), pelo horário da empresa no momento do envio. Exemplo: \"{{saudacao}}, {{primeiro_nome}}!\" sai como \"Boa tarde, Maria!\".",
         where: "Respostas",
+        images: [{ src: "/notas-de-versao/respostas-tags-saudacao-primeiro-nome.webp", caption: "{{saudacao}} e {{primeiro_nome}} entre as tags clicáveis", size: "small" }],
       },
     ],
   },
@@ -118,6 +221,7 @@ export const DEFAULT_RELEASES: ReleaseContent[] = [
         title: "Tag {{primeiro_nome}} nas respostas",
         text: "Em Respostas rápidas, Encerramento, Transferência, Aceite, Pesquisa, Horário de expediente e Encerramento por falta de retorno, a tag {{primeiro_nome}} aparece entre as tags clicáveis: um clique e ela entra no texto onde está o cursor. Na hora do envio ela vira o primeiro nome do cliente (\"MARIA DA SILVA\" vira \"Maria\"). Nas respostas rápidas, {{cliente}} e {{primeiro_nome}} já entram preenchidas no campo de mensagem.",
         where: "Respostas",
+        images: [{ src: "/notas-de-versao/respostas-tags-saudacao-primeiro-nome.webp", caption: "As tags clicáveis acima do texto: um clique e a tag entra onde está o cursor", size: "small" }],
       },
       {
         type: "novo",
@@ -125,6 +229,7 @@ export const DEFAULT_RELEASES: ReleaseContent[] = [
         title: "Primeiro nome do cliente",
         text: "O painel do cliente mostra o Primeiro nome, com o lápis para corrigir (por exemplo, quando o cliente é chamado pelo segundo nome ou por um apelido). Em branco, vale a primeira palavra do nome, marcada como automático. A tag {{primeiro_nome}} usa o que estiver salvo.",
         where: "Atendimento › Painel do cliente",
+        images: [{ src: "/notas-de-versao/painel-primeiro-nome.webp", caption: "O Primeiro nome no painel do cliente, com o lápis para corrigir", size: "tiny" }],
       },
       {
         type: "novo",
@@ -198,6 +303,7 @@ export const DEFAULT_RELEASES: ReleaseContent[] = [
         area: "geral",
         title: "Aviso de nova versão do sistema",
         text: "Quando o sistema é atualizado com a página aberta, aparece o aviso \"Nova versão do sistema disponível\" com o botão Atualizar agora. Se você estiver escrevendo uma mensagem ou gravando um áudio, o aviso espera o envio. Dá para pedir para lembrar em 10 minutos; até atualizar, fica uma faixa no topo. Se não atualizar, pode ocorrer alguma falha inesperada.",
+        images: [{ src: "/notas-de-versao/aviso-nova-versao.webp", caption: "O aviso que aparece quando o sistema foi atualizado com a página aberta", size: "small" }],
       },
     ],
   },

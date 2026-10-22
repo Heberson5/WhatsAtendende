@@ -341,6 +341,7 @@ model WhatsAppConnection {
   autoMessages              AutoMessageTemplate[]      @relation("AutoMessageTemplateConnections")
   satisfactionSurveyConfigs SatisfactionSurveyConfig[] @relation("SatisfactionSurveyConnections")
   closingMessages           ClosingMessage[]           @relation("ClosingMessageConnections")
+  queueWaitMessages         QueueWaitMessage[]         @relation("QueueWaitMessageConnections")
   managerGrants             ManagerConnectionAccess[]
   messageTemplates          MessageTemplate[]
   flowConnections           FlowConnection[]
@@ -490,6 +491,28 @@ model ClosingMessage {
   mediaSizeBytes  Int?
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt
+}
+
+// Respostas › Espera na fila: while the customer waits in the queue, one message after another — each `delayMinutes`
+// after the previous one (the first, after entering the queue), counting only the Horário de expediente. Stops when
+// an agent accepts or after the last one. Never carries an agent's name.
+model QueueWaitMessage {
+  id              String               @id @default(uuid())
+  position        Int
+  delayMinutes    Int
+  text            String
+  active          Boolean              @default(true)
+  allConnections  Boolean              @default(true)
+  connections     WhatsAppConnection[] @relation("QueueWaitMessageConnections")
+  // The image, video or PDF sent with the text (the text is its caption) — see lib/reply-media.ts.
+  mediaStorageKey String?
+  mediaFileName   String?
+  mediaMimeType   String?
+  mediaSizeBytes  Int?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  @@index([position])
 }
 
 // ---------------------------------------------------------------------------
@@ -787,6 +810,11 @@ model Conversation {
   noReturnReminderAt   DateTime?
   noReturnCloseAt      DateTime?
   noReturnHold         Boolean   @default(false)
+  // Respostas › Espera na fila: how many wait messages went out in the queue stay that began at queueWaitQueueAt
+  // (a new stay — another enteredQueueAt — starts the sequence over), and when the last of them was sent.
+  queueWaitStep        Int       @default(0)
+  queueWaitQueueAt     DateTime?
+  queueWaitLastAt      DateTime?
   dataClientKey        String?
   dataSuspensionAckAt  DateTime?
 
@@ -1124,9 +1152,13 @@ model Holiday {
   // Santa etc.) get a new row every year, and this is what
   // HolidaySyncCursor and the once-per-city-per-year sync cap key off.
   year      Int
+  // "Repete todo ano": a manual holiday on the same day and month every year (monthDay, "MM-DD", is what matches).
+  recurringYearly Boolean @default(false)
+  monthDay        String?
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
 
+  @@index([recurringYearly, monthDay])
   // Lets an AUTO sync re-run safely (upsert instead of insert) without ever
   // duplicating a row it already wrote, while a MANUAL entry for the exact
   // same date/name/place is a distinct row (source is part of the key) —
@@ -1404,6 +1436,9 @@ model SatisfactionSurvey {
   closingSenderId   String?
   // The closing message's attachment, copied for this conversation when it was closed (see HeldClosingMessage).
   closingMedia      Json?
+  // Encerramento por falta de retorno: what goes out instead once the customer gives a score — they did come back, so
+  // not the "como não tivemos retorno" text but the agent's own closing message ({ text: null } = nothing more).
+  closingWhenAnswered Json?
   closingDueAt      DateTime?
   // Set once it was sent or dropped; closingOutcome says which (SENT, FAILED, CANCELED_*).
   closingResolvedAt DateTime?

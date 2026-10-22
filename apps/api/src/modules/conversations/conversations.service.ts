@@ -1068,6 +1068,8 @@ export interface OversightFilters {
   search?: string;
   /** Empty/undefined = all connections — see PROMPT: filtro podendo selecionar várias ou todas. */
   connectionIds?: string[];
+  /** Only these conversations — the Dashboard's "Conversas que chegam ao longo do dia" bar that was clicked. */
+  ids?: string[];
 }
 
 /**
@@ -1127,6 +1129,7 @@ function oversightWhere(filters: OversightFilters): Prisma.ConversationWhereInpu
         ],
       },
       ...(filters.from || filters.to ? [{ OR: [{ createdAt: inPeriod }, { lastMessageAt: inPeriod }, { closedAt: inPeriod }] }] : []),
+      ...(filters.ids ? [{ id: { in: filters.ids } }] : []),
     ],
     // The customer's name or number, or (from 3 letters) anything written in the conversation.
     OR: filters.search

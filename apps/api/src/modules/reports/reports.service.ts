@@ -4,7 +4,8 @@ import ExcelJS from "exceljs";
 import PDFDocument from "pdfkit";
 import { imageSize } from "image-size";
 import { prisma } from "../../lib/prisma";
-import { firstResponseDiffs, firstResponseMs } from "../../lib/conversation-timings";
+import { conversationSpanMs, firstResponseDiffs, firstResponseMs, SCHEDULE_SELECT, spanDiffs } from "../../lib/conversation-timings";
+import { cachedHolidayLookup } from "../../lib/business-time";
 import { getSatisfactionByAgent } from "../satisfaction/satisfaction.service";
 
 /** Same identity used across the app's other exports (PowerPoint) — see PROMPT: "o layout de exportação dos relatórios". */
@@ -74,20 +75,22 @@ export async function getAttendanceReport({ from, to, agentId, connectionIds, tz
     include: {
       contact: true,
       assignedAgent: true,
-      whatsappConnection: true,
-      metaConnection: true,
+      // The schedule too: the times count only the Horário de expediente.
+      whatsappConnection: { include: { workSchedule: true } },
+      metaConnection: { include: { workSchedule: true } },
       messages: { select: { direction: true } },
       transfers: true,
     },
     orderBy: { createdAt: "desc" },
   });
 
-  return conversations.map((c) => {
+  const isHoliday = cachedHolidayLookup();
+  return Promise.all(conversations.map(async (c) => {
     const received = c.messages.filter((m) => m.direction === "INBOUND").length;
     const sent = c.messages.filter((m) => m.direction === "OUTBOUND").length;
-    const acceptMs = c.acceptedAt ? c.acceptedAt.getTime() - c.enteredQueueAt.getTime() : null;
-    const firstResponse = firstResponseMs(c);
-    const totalMs = c.closedAt ? c.closedAt.getTime() - c.enteredQueueAt.getTime() : null;
+    const acceptMs = await conversationSpanMs(c, c.enteredQueueAt, c.acceptedAt, isHoliday);
+    const firstResponse = await firstResponseMs(c, isHoliday);
+    const totalMs = await conversationSpanMs(c, c.enteredQueueAt, c.closedAt, isHoliday);
 
     return {
       Data: formatDateTime(c.createdAt, tzOffsetMinutes),
@@ -107,7 +110,7 @@ export async function getAttendanceReport({ from, to, agentId, connectionIds, tz
       Transferências: c.transfers.length,
       Status: STATUS_LABEL[c.status] ?? c.status,
     };
-  });
+  }));
 }
 
 export async function getPerAgentReport({ from, to, connectionIds }: ReportParams) {
@@ -119,6 +122,7 @@ export async function getPerAgentReport({ from, to, connectionIds }: ReportParam
     agents.map(async (agent) => {
       const conversations = await prisma.conversation.findMany({
         where: { assignedAgentId: agent.id, createdAt: { gte: from, lte: to }, ...(connectionFilter ? { whatsappConnectionId: connectionFilter } : {}) },
+        include: SCHEDULE_SELECT,
       });
       const messagesSent = await prisma.message.count({
         where: {
@@ -134,8 +138,9 @@ export async function getPerAgentReport({ from, to, connectionIds }: ReportParam
         where: { fromAgentId: agent.id, createdAt: { gte: from, lte: to }, ...(connectionFilter ? { conversation: { whatsappConnectionId: connectionFilter } } : {}) },
       });
 
-      const acceptDiffs = conversations.filter((c) => c.acceptedAt).map((c) => c.acceptedAt!.getTime() - c.enteredQueueAt.getTime());
-      const handlingDiffs = conversations.filter((c) => c.acceptedAt && c.closedAt).map((c) => c.closedAt!.getTime() - c.acceptedAt!.getTime());
+      const acceptDiffs = await spanDiffs(conversations, (c) => [c.enteredQueueAt, c.acceptedAt]);
+      const handlingDiffs = await spanDiffs(conversations, (c) => [c.acceptedAt, c.closedAt]);
+      const firstResponses = await firstResponseDiffs(conversations);
 
       const avg = (arr: number[]): string => formatDuration(arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null);
 
@@ -145,7 +150,7 @@ export async function getPerAgentReport({ from, to, connectionIds }: ReportParam
         "Sem retorno do cliente": conversations.filter((c) => c.status === "CLOSED" && c.closeReason === NO_RETURN_CLOSE_REASON).length,
         "Mensagens enviadas": messagesSent,
         "Tempo médio até aceite": avg(acceptDiffs),
-        "Tempo médio até 1ª resposta": avg(firstResponseDiffs(conversations)),
+        "Tempo médio até 1ª resposta": avg(firstResponses),
         "Tempo médio de atendimento": avg(handlingDiffs),
         "Transferências recebidas": transfersReceived,
         "Transferências realizadas": transfersMade,

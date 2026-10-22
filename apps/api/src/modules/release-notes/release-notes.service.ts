@@ -7,6 +7,8 @@ import { DEFAULT_RELEASES } from "./default-releases";
 
 // The shipped versions already copied into the database (see syncDefaultReleaseNotes).
 const DEFAULTS_KEY = "releaseNotesDefaults";
+// "version|title" of the shipped notes whose screenshots were already filled in (see fillShippedNoteImages).
+const IMAGES_KEY = "releaseNotesImagesFilled";
 
 function toReleaseDTO(row: ReleaseNoteVersion): ReleaseDTO {
   return { id: row.id, version: row.version, date: row.date, name: row.name, summary: row.summary, notes: row.notes as unknown as ReleaseNoteDTO[] };
@@ -86,4 +88,42 @@ export async function syncDefaultReleaseNotes(defaults: ReleaseContent[] = DEFAU
   await prisma.systemSetting.upsert({ where: { key: DEFAULTS_KEY }, update: { value }, create: { key: DEFAULTS_KEY, value } });
   if (added > 0) logger.info({ added }, "release notes shipped with this version copied into the database");
   return added;
+}
+
+/**
+ * Screenshots shipped later for a version already copied in: a version is copied only once (then it is the
+ * administrator's), so a note that got its images afterwards would never show them. Each shipped note's images are
+ * filled in once, and only while the copy in the database has none — an image an administrator removed, or a note
+ * they rewrote with their own, stays as they left it.
+ */
+export async function fillShippedNoteImages(defaults: ReleaseContent[] = DEFAULT_RELEASES): Promise<number> {
+  const record = await prisma.systemSetting.findUnique({ where: { key: IMAGES_KEY } });
+  const done = new Set((record?.value as { notes?: string[] } | undefined)?.notes ?? []);
+  const pending = defaults.flatMap((release) =>
+    release.notes.filter((note) => note.images?.length && !done.has(`${release.version}|${note.title}`)).map((note) => ({ release, note }))
+  );
+  if (pending.length === 0) return 0;
+
+  let filled = 0;
+  for (const version of new Set(pending.map((p) => p.release.version))) {
+    const row = await prisma.releaseNoteVersion.findUnique({ where: { version } });
+    if (!row) continue;
+    const notes = row.notes as unknown as ReleaseNoteDTO[];
+    let changed = false;
+    for (const { note } of pending.filter((p) => p.release.version === version)) {
+      const stored = notes.find((n) => n.title === note.title);
+      if (stored && !stored.images?.length) {
+        stored.images = note.images;
+        changed = true;
+        filled++;
+      }
+      done.add(`${version}|${note.title}`);
+    }
+    if (changed) await prisma.releaseNoteVersion.update({ where: { version }, data: { notes: notes as unknown as Prisma.InputJsonValue } });
+  }
+  for (const { release, note } of pending) done.add(`${release.version}|${note.title}`);
+  const value = { notes: [...done] } as unknown as Prisma.InputJsonValue;
+  await prisma.systemSetting.upsert({ where: { key: IMAGES_KEY }, update: { value }, create: { key: IMAGES_KEY, value } });
+  if (filled > 0) logger.info({ filled }, "screenshots of shipped release notes filled in");
+  return filled;
 }

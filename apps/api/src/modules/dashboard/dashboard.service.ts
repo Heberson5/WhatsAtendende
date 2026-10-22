@@ -1,8 +1,9 @@
 import { prisma } from "../../lib/prisma";
 import { NO_RETURN_CLOSE_REASON } from "../conversations/conversations.service";
-import { firstResponseDiffs } from "../../lib/conversation-timings";
+import { firstResponseDiffs, SCHEDULE_SELECT, spanDiffs } from "../../lib/conversation-timings";
+import { cachedHolidayLookup } from "../../lib/business-time";
 import type { ArrivalsByHourDTO } from "@whatsatendende/types";
-import type { WorkSchedule } from "@prisma/client";
+import type { Prisma, WorkSchedule } from "@prisma/client";
 import { findApplicableHoliday } from "../holidays/holidays.service";
 import { isWorkScheduleOpen } from "../work-schedules/work-schedules.service";
 
@@ -47,6 +48,7 @@ export async function getDashboard({ from, to, agentId, connectionIds }: Dashboa
         closedAt: true,
         closeReason: true,
         assignedAgentId: true,
+        ...SCHEDULE_SELECT,
       },
     }),
     prisma.message.groupBy({
@@ -81,15 +83,14 @@ export async function getDashboard({ from, to, agentId, connectionIds }: Dashboa
     return acc;
   }, {});
 
-  const acceptDiffs = conversationsInPeriod
-    .filter((c) => c.acceptedAt)
-    .map((c) => c.acceptedAt!.getTime() - c.enteredQueueAt.getTime());
-  const handlingDiffs = conversationsInPeriod
-    .filter((c) => c.acceptedAt && c.closedAt)
-    .map((c) => c.closedAt!.getTime() - c.acceptedAt!.getTime());
-  const closingDiffs = conversationsInPeriod
-    .filter((c) => c.closedAt)
-    .map((c) => c.closedAt!.getTime() - c.enteredQueueAt.getTime());
+  // Only time inside the connection's Horário de expediente counts (business-time.ts).
+  const isHoliday = cachedHolidayLookup();
+  const [acceptDiffs, handlingDiffs, closingDiffs, firstResponses] = await Promise.all([
+    spanDiffs(conversationsInPeriod, (c) => [c.enteredQueueAt, c.acceptedAt], isHoliday),
+    spanDiffs(conversationsInPeriod, (c) => [c.acceptedAt, c.closedAt], isHoliday),
+    spanDiffs(conversationsInPeriod, (c) => [c.enteredQueueAt, c.closedAt], isHoliday),
+    firstResponseDiffs(conversationsInPeriod, isHoliday),
+  ]);
 
   const received = messages.find((m) => m.direction === "INBOUND")?._count ?? 0;
   const sent = messages.find((m) => m.direction === "OUTBOUND")?._count ?? 0;
@@ -118,7 +119,7 @@ export async function getDashboard({ from, to, agentId, connectionIds }: Dashboa
     messages: { received, sent, total: received + sent },
     timings: {
       avgAcceptMs: avgMs(acceptDiffs),
-      avgFirstResponseMs: avgMs(firstResponseDiffs(conversationsInPeriod)),
+      avgFirstResponseMs: avgMs(firstResponses),
       avgHandlingMs: avgMs(handlingDiffs),
       avgClosingMs: avgMs(closingDiffs),
     },
@@ -139,7 +140,7 @@ async function getPeriodTotals({ from, to, agentId, connectionIds }: DashboardPa
   const [conversations, messagesTotal] = await Promise.all([
     prisma.conversation.findMany({
       where: { createdAt: { gte: from, lte: to }, ...conversationScope },
-      select: { contactId: true, status: true, acceptedAt: true, firstResponseAt: true },
+      select: { contactId: true, status: true, acceptedAt: true, firstResponseAt: true, ...SCHEDULE_SELECT },
     }),
     prisma.message.count({ where: { createdAt: { gte: from, lte: to }, conversation: conversationScope } }),
   ]);
@@ -148,7 +149,7 @@ async function getPeriodTotals({ from, to, agentId, connectionIds }: DashboardPa
     unique: new Set(conversations.map((c) => c.contactId)).size,
     closed: conversations.filter((c) => c.status === "CLOSED").length,
     messagesTotal,
-    avgFirstResponseMs: avgMs(firstResponseDiffs(conversations)),
+    avgFirstResponseMs: avgMs(await firstResponseDiffs(conversations)),
   };
 }
 
@@ -248,7 +249,7 @@ async function getPerAgentBreakdown(from: Date, to: Date, connectionFilter?: { i
     agents.map(async (agent) => {
       const conversations = await prisma.conversation.findMany({
         where: { assignedAgentId: agent.id, createdAt: { gte: from, lte: to }, ...(connectionFilter ? { whatsappConnectionId: connectionFilter } : {}) },
-        select: { id: true, status: true, closeReason: true, acceptedAt: true, closedAt: true, enteredQueueAt: true },
+        select: { id: true, status: true, closeReason: true, acceptedAt: true, closedAt: true, enteredQueueAt: true, ...SCHEDULE_SELECT },
       });
       const sentCount = await prisma.message.count({
         where: {
@@ -269,9 +270,7 @@ async function getPerAgentBreakdown(from: Date, to: Date, connectionFilter?: { i
           conversation: { assignedAgentId: agent.id, ...(connectionFilter ? { whatsappConnectionId: connectionFilter } : {}) },
         },
       });
-      const handlingDiffs = conversations
-        .filter((c) => c.acceptedAt && c.closedAt)
-        .map((c) => c.closedAt!.getTime() - c.acceptedAt!.getTime());
+      const handlingDiffs = await spanDiffs(conversations, (c) => [c.acceptedAt, c.closedAt]);
 
       return {
         agentId: agent.id,
@@ -424,23 +423,51 @@ export async function getPresenceByHour({ from, to, agentId, tzOffsetMinutes }: 
  * customer's — not one an attendant started or the phone sent), counted at the hour of that message, split by the
  * connection's Horário de expediente; plus the attendants online in each hour, averaged over the period's days.
  */
+/** The conversations Gestão lists for the same filters — no groups, Instagram/Messenger whatever the connection filter. */
+function gestaoScope({ agentId, connectionIds }: Pick<DashboardParams, "agentId" | "connectionIds">): Prisma.ConversationWhereInput {
+  return {
+    status: { not: "GROUP" },
+    ...(agentId ? { assignedAgentId: agentId } : {}),
+    OR: [{ channel: "WHATSAPP", whatsappConnectionId: connectionIds === undefined ? undefined : { in: connectionIds } }, { channel: { not: "WHATSAPP" } }],
+  };
+}
+
+/** The conversations the customer opened in the period (their first message is the customer's), with when. */
+async function customerArrivals({ from, to, agentId, connectionIds }: Pick<DashboardParams, "from" | "to" | "agentId" | "connectionIds">) {
+  const conversations = await prisma.conversation.findMany({
+    where: { createdAt: { gte: from, lte: to }, ...gestaoScope({ agentId, connectionIds }) },
+    select: {
+      id: true,
+      whatsappConnection: { select: { workSchedule: true } },
+      metaConnection: { select: { workSchedule: true } },
+      messages: { orderBy: { createdAt: "asc" }, take: 1, select: { direction: true, createdAt: true } },
+    },
+  });
+  return conversations.flatMap((c) => {
+    const first = c.messages[0];
+    if (!first || first.direction !== "INBOUND") return [];
+    const schedule: WorkSchedule | null = c.whatsappConnection?.workSchedule ?? c.metaConnection?.workSchedule ?? null;
+    return [{ id: c.id, at: first.createdAt, schedule }];
+  });
+}
+
+const localHour = (at: Date, tzOffsetMinutes: number) => new Date(at.getTime() - tzOffsetMinutes * 60_000).getUTCHours();
+
+/** Gestão's list behind a bar of the chart: the conversations the customer opened in the period — at `hour`, when given. */
+export async function customerArrivalIds(params: Pick<DashboardParams, "from" | "to" | "agentId" | "connectionIds">, hour: number | undefined, tzOffsetMinutes: number): Promise<string[]> {
+  const arrivals = await customerArrivals(params);
+  return arrivals.filter((a) => hour === undefined || localHour(a.at, tzOffsetMinutes) === hour).map((a) => a.id);
+}
+
 export async function getArrivalsByHour({ from, to, agentId, connectionIds, tzOffsetMinutes }: DashboardParams & { tzOffsetMinutes: number }): Promise<ArrivalsByHourDTO> {
   const now = new Date();
-  const connectionFilter = connectionIds === undefined ? undefined : { in: connectionIds };
-  const [conversations, logs] = await Promise.all([
-    prisma.conversation.findMany({
-      where: {
-        createdAt: { gte: from, lte: to },
-        status: { not: "GROUP" as const },
-        ...(agentId ? { assignedAgentId: agentId } : {}),
-        ...(connectionFilter ? { whatsappConnectionId: connectionFilter } : {}),
-      },
-      select: {
-        whatsappConnection: { select: { workSchedule: true } },
-        metaConnection: { select: { workSchedule: true } },
-        messages: { orderBy: { createdAt: "asc" }, take: 1, select: { direction: true, createdAt: true } },
-      },
-    }),
+  const scope = gestaoScope({ agentId, connectionIds });
+  const inPeriod = { gte: from, lte: to };
+  const [arrivals, withActivity, createdInPeriod, logs] = await Promise.all([
+    customerArrivals({ from, to, agentId, connectionIds }),
+    // The same count as Gestão's list for the period: anything happened in it (opened, a message, closed).
+    prisma.conversation.count({ where: { AND: [scope, { OR: [{ createdAt: inPeriod }, { lastMessageAt: inPeriod }, { closedAt: inPeriod }] }] } }),
+    prisma.conversation.count({ where: { AND: [scope, { createdAt: inPeriod }] } }),
     prisma.agentStatusLog.findMany({
       where: {
         status: "ONLINE",
@@ -459,13 +486,9 @@ export async function getArrivalsByHour({ from, to, agentId, connectionIds, tzOf
     if (!holidays.has(key)) holidays.set(key, findApplicableHoliday(dateKey, state, city));
     return holidays.get(key)!;
   };
-  for (const conversation of conversations) {
-    const first = conversation.messages[0];
-    if (!first || first.direction !== "INBOUND") continue;
-    const hour = new Date(first.createdAt.getTime() - tzOffsetMinutes * 60_000).getUTCHours();
-    const schedule: WorkSchedule | null = conversation.whatsappConnection?.workSchedule ?? conversation.metaConnection?.workSchedule ?? null;
-    const inside = !schedule || (await isWorkScheduleOpen(schedule, first.createdAt, cachedHoliday));
-    hours[hour][inside ? "inside" : "outside"]++;
+  for (const arrival of arrivals) {
+    const inside = !arrival.schedule || (await isWorkScheduleOpen(arrival.schedule, arrival.at, cachedHoliday));
+    hours[localHour(arrival.at, tzOffsetMinutes)][inside ? "inside" : "outside"]++;
   }
 
   // Each attendant counts once per (day, hour) they were online in it — the same dedup as getPresenceByHour.
@@ -485,7 +508,14 @@ export async function getArrivalsByHour({ from, to, agentId, connectionIds, tzOf
   // How many of the period's days reach each hour ("Hoje" stops at now) — the average divides by these.
   for (const cell of iterateHourCells(from, new Date(Math.min(to.getTime(), now.getTime())), tzOffsetMinutes)) hours[cell.hour].days++;
   for (const h of hours) h.onlineAvg = h.days ? Math.round((onlineByHour[h.hour] / h.days) * 10) / 10 : 0;
-  return { hours };
+  // Why Gestão shows more: it also lists the conversations the team started and the ones from earlier days that moved.
+  const summary = {
+    withActivity,
+    openedByCustomer: arrivals.length,
+    startedByTeam: createdInPeriod - arrivals.length,
+    fromEarlierDays: withActivity - createdInPeriod,
+  };
+  return { hours, summary };
 }
 
 /** One row per hour for Relatórios' exports (CSV/PDF/Excel) — the same columns as the screen's table. */

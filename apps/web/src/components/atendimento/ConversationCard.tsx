@@ -12,6 +12,7 @@ import { draftKey, useDraftStore } from "../../store/draft-store";
 import { useTypingStore } from "../../store/typing-store";
 import { useAlertThresholds } from "../../hooks/useAlertThresholds";
 import { NoReturnBadge } from "./NoReturn";
+import { businessMinutesSince, businessWaitLabel, PAUSED_LABEL, waitPaused } from "../../lib/business-wait";
 
 
 function shortTime(iso: string) {
@@ -26,12 +27,9 @@ function shortReminderTime(iso: string) {
   return isToday(d) ? format(d, "HH:mm") : format(d, "dd/MM HH:mm");
 }
 
-function minutesSince(iso: string, now: number) {
-  return Math.floor((now - new Date(iso).getTime()) / 60_000);
-}
-
+/** How long the customer has waited for a reply — inside the Horário de expediente only. */
 export function minutesWaiting(conversation: ConversationListItemDTO, now: number) {
-  return conversation.awaitingReplySince ? Math.floor((now - new Date(conversation.awaitingReplySince).getTime()) / 60_000) : 0;
+  return conversation.awaitingReplySince ? businessMinutesSince(conversation.businessClock, conversation.awaitingReplySince, now) : 0;
 }
 
 // null = no icon, just the colored dot (WhatsApp's original look, unchanged).
@@ -96,7 +94,7 @@ export function ConversationCard({
   const connectionDisconnected = conversation.whatsappConnectionStatus !== "CONNECTED";
   const thresholds = useAlertThresholds();
   // Fila: how long it has waited to be accepted; Meus: how long the customer has waited for a reply.
-  const queueMinutes = onAccept ? minutesSince(conversation.enteredQueueAt, now) : 0;
+  const queueMinutes = onAccept ? businessMinutesSince(conversation.businessClock, conversation.enteredQueueAt, now) : 0;
   const queueWarning = Boolean(onAccept) && queueMinutes >= thresholds.queueWarningMinutes;
   const queueDanger = Boolean(onAccept) && queueMinutes >= thresholds.queueDangerMinutes;
   const waitingMinutes = transferredOutView ? 0 : minutesWaiting(conversation, now);
@@ -105,10 +103,12 @@ export function ConversationCard({
   const alertDanger = noReplyDanger || queueDanger;
   const alertWarning = !alertDanger && (noReply || queueWarning);
   const timeLabel = noReply
-    ? `há ${formatDistanceToNow(new Date(conversation.awaitingReplySince!), { locale: ptBR })}`
+    ? `há ${businessWaitLabel(conversation.businessClock, conversation.awaitingReplySince!, now)}`
     : onAccept
-      ? formatDistanceToNow(new Date(conversation.enteredQueueAt), { locale: ptBR })
+      ? businessWaitLabel(conversation.businessClock, conversation.enteredQueueAt, now)
       : shortTime(transferredOutView && conversation.transfer ? conversation.transfer.at : conversation.lastMessageAt);
+  // A queue or "sem resposta" wait stands still while the connection is closed — say so instead of letting it look stuck.
+  const paused = (Boolean(onAccept) || noReply) && waitPaused(conversation.businessClock, now);
 
   return (
     <div
@@ -157,6 +157,11 @@ export function ConversationCard({
         </div>
 
         {showPhoneSubtitle && <p className="truncate text-[11.5px] tabular-nums text-muted">{formatPhone(conversation.contact.phone!)}</p>}
+        {paused && (
+          <p className="truncate text-[11px] text-muted" title="O tempo de espera só conta dentro do Horário de expediente">
+            {PAUSED_LABEL}
+          </p>
+        )}
         {customerTyping ? (
           <p className="truncate text-xs font-medium italic text-primary">digitando…</p>
         ) : conversation.lastMessagePreview ? (

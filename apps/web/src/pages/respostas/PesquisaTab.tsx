@@ -69,7 +69,9 @@ export function PesquisaTab() {
   const activeCount = surveys?.filter((s) => s.active).length ?? 0;
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
+    // On a phone the explanation and the settings card alone fill the screen: the whole tab scrolls there (the table
+    // used to get no height, and nothing could be reached). From md up the table keeps scrolling on its own.
+    <div className="flex h-full flex-col overflow-y-auto md:overflow-hidden">
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div className="max-w-3xl space-y-2 text-sm text-muted">
           <p>
@@ -102,7 +104,7 @@ export function PesquisaTab() {
         </p>
       )}
 
-      <div className="shadow-soft flex-1 overflow-auto rounded-card border border-border bg-surface">
+      <div className="shadow-soft shrink-0 overflow-x-auto rounded-card border border-border bg-surface md:min-h-0 md:flex-1 md:overflow-auto">
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-surface-alt text-left text-xs uppercase tracking-wide text-muted">
             <tr>

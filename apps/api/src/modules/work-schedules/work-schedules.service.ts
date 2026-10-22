@@ -135,11 +135,20 @@ export async function listApplicableHolidays(state: string, city: string): Promi
   const today = new Date();
   const from = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
   const to = new Date(Date.UTC(today.getUTCFullYear() + 1, 11, 31));
-  const rows = await prisma.holiday.findMany({
-    where: { date: { gte: from, lte: to }, OR: [{ scope: "NATIONAL" }, { scope: "STATE", state }, { scope: "MUNICIPAL", state, city }] },
-    orderBy: [{ date: "asc" }, { name: "asc" }],
-  });
-  return rows.map((h) => ({ date: h.date.toISOString().slice(0, 10), name: h.name }));
+  const place = { OR: [{ scope: "NATIONAL" as const }, { scope: "STATE" as const, state }, { scope: "MUNICIPAL" as const, state, city }] };
+  const [rows, yearly] = await Promise.all([
+    prisma.holiday.findMany({ where: { date: { gte: from, lte: to }, recurringYearly: false, ...place }, orderBy: [{ date: "asc" }, { name: "asc" }] }),
+    prisma.holiday.findMany({ where: { recurringYearly: true, ...place } }),
+  ]);
+  const listed = rows.map((h) => ({ date: h.date.toISOString().slice(0, 10), name: h.name }));
+  // Repeating every year: this year's and next year's occurrence, when inside the window.
+  for (const h of yearly) {
+    for (const year of [from.getUTCFullYear(), from.getUTCFullYear() + 1]) {
+      const date = `${year}-${h.monthDay}`;
+      if (date >= from.toISOString().slice(0, 10) && date <= to.toISOString().slice(0, 10)) listed.push({ date, name: h.name });
+    }
+  }
+  return listed.sort((a, b) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name));
 }
 
 /**

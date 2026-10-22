@@ -18,6 +18,7 @@ import { GestaoTransferModal } from "../../components/gestao/GestaoTransferModal
 import { ChatPanel } from "../../components/atendimento/ChatPanel";
 import { useNow } from "../../hooks/useNow";
 import { formatActivity } from "../../lib/formatActivity";
+import { businessMinutesSince, businessWaitLabel, PAUSED_LABEL, waitPaused } from "../../lib/business-wait";
 import { STATUS_COLOR, STATUS_LABEL } from "../../lib/conversationStatus";
 import { toastWithUndo } from "../../lib/undoToast";
 import { ColumnViewMenu } from "../../components/common/ColumnViewMenu";
@@ -90,6 +91,9 @@ export default function GestaoPage() {
     return () => clearTimeout(timer);
   }, [search]);
   const [connectionIds, setConnectionIds] = useState<string[]>([]);
+  // From the Dashboard's "Conversas que chegam ao longo do dia": only the conversations the customer opened in the
+  // period — at this hour, when a bar was clicked. Shown as a chip that removes it.
+  const [arrival, setArrival] = useState<{ hour: number | null } | null>(null);
   const [selected, setSelected] = useState<ConversationListItemDTO | null>(null);
   const [merging, setMerging] = useState<ConversationListItemDTO | null>(null);
   const [transferring, setTransferring] = useState<ConversationListItemDTO[] | null>(null);
@@ -121,14 +125,22 @@ export default function GestaoPage() {
     const periodParam = searchParams.get("period");
     // ?open=<id> from the Ctrl+K palette: open that conversation read-only.
     const openParam = searchParams.get("open");
+    const openedByParam = searchParams.get("openedBy");
     if (openParam) {
       api
         .get<ConversationListItemDTO>(`/conversations/${openParam}`)
         .then((res) => setSelected(res.data))
         .catch((err) => toast.error(getApiErrorMessage(err)));
     }
-    if (!statusParam && !periodParam && !openParam) return;
+    if (!statusParam && !periodParam && !openParam && !openedByParam) return;
     if (statusParam) setStatus(statusParam);
+    if (openedByParam === "customer") {
+      const hour = searchParams.get("hour");
+      setArrival({ hour: hour === null ? null : Number(hour) });
+      setStatus("all");
+      setAgentId(searchParams.get("agentId") ?? "all");
+      setConnectionIds(searchParams.get("connectionId")?.split(",").filter(Boolean) ?? []);
+    }
     if (periodParam) {
       setPeriod({
         period: periodParam as PeriodValue["period"],
@@ -148,6 +160,7 @@ export default function GestaoPage() {
         next.delete("from");
         next.delete("to");
         next.delete("open");
+        for (const key of ["openedBy", "hour", "agentId", "connectionId"]) next.delete(key);
         return next;
       },
       { replace: true }
@@ -204,10 +217,10 @@ export default function GestaoPage() {
   // filtered here used to hide an open conversation older than the newest 200 that the Dashboard still counted.
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<OversightPageSize>(savedPageSize);
-  const filterKey = JSON.stringify([period, agentId, debouncedSearch, connectionIds, status, pageSize]);
+  const filterKey = JSON.stringify([period, agentId, debouncedSearch, connectionIds, status, pageSize, arrival]);
   useEffect(() => setPage(1), [filterKey]);
   const { data: pageData, isLoading } = useQuery({
-    queryKey: ["oversight", "page", period, agentId, debouncedSearch, connectionIds, status, page, pageSize],
+    queryKey: ["oversight", "page", period, agentId, debouncedSearch, connectionIds, status, page, pageSize, arrival],
     placeholderData: (previous) => previous,
     queryFn: async () =>
       (
@@ -226,6 +239,8 @@ export default function GestaoPage() {
             agentId: agentId === "all" ? undefined : agentId,
             q: debouncedSearch || undefined,
             connectionId: connectionIds.length ? connectionIds : undefined,
+            openedByCustomer: arrival ? "1" : undefined,
+            arrivalHour: arrival?.hour ?? undefined,
           },
         })
       ).data,
@@ -254,16 +269,18 @@ export default function GestaoPage() {
     });
   }
 
-  function waitInfo(c: ConversationListItemDTO): { label: string; minutes: number } | null {
+  // Counted inside the connection's Horário de expediente only, like the Atendimento cards.
+  function waitInfo(c: ConversationListItemDTO): { label: string; minutes: number; paused: boolean } | null {
+    const paused = waitPaused(c.businessClock, now);
     if (c.status === "NEW" || c.status === "WAITING") {
-      const minutes = (now - new Date(c.enteredQueueAt).getTime()) / 60_000;
-      return { label: formatDistanceToNow(new Date(c.enteredQueueAt), { locale: ptBR }), minutes };
+      const minutes = businessMinutesSince(c.businessClock, c.enteredQueueAt, now);
+      return { label: businessWaitLabel(c.businessClock, c.enteredQueueAt, now), minutes, paused };
     }
     // "Atendido pelo celular" too: the customer's new messages stay on that row and never reach the
     // queue, so this is how a manager sees someone has been left waiting on the phone.
     if (c.awaitingReplySince && (c.status === "IN_PROGRESS" || c.status === "TRANSFERRED" || c.status === "HANDLED_EXTERNALLY")) {
-      const minutes = (now - new Date(c.awaitingReplySince).getTime()) / 60_000;
-      return { label: `sem resposta há ${formatDistanceToNow(new Date(c.awaitingReplySince), { locale: ptBR })}`, minutes };
+      const minutes = businessMinutesSince(c.businessClock, c.awaitingReplySince, now);
+      return { label: `sem resposta há ${businessWaitLabel(c.businessClock, c.awaitingReplySince, now)}`, minutes, paused };
     }
     return null;
   }
@@ -319,6 +336,7 @@ export default function GestaoPage() {
             title={`Entrou na fila ${formatDistanceToNow(new Date(c.enteredQueueAt), { locale: ptBR, addSuffix: true })}${c.acceptedAt ? ` · aceita ${formatDistanceToNow(new Date(c.acceptedAt), { locale: ptBR, addSuffix: true })}` : ""}`}
           >
             {wait?.label ?? "—"}
+            {wait?.paused && <span className="ml-1 font-normal text-muted">{PAUSED_LABEL}</span>}
           </span>
         );
       case "lastActivity":
@@ -515,6 +533,17 @@ export default function GestaoPage() {
           <ConnectionFilter value={connectionIds} onChange={setConnectionIds} />
         </div>
       </div>
+
+      {arrival && (
+        <div className="mb-2 flex">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-primary bg-primary/10 py-1 pl-3 pr-1 text-xs font-medium text-primary">
+            Abertas pelo cliente{arrival.hour !== null ? ` às ${String(arrival.hour).padStart(2, "0")}h` : ""} (do Dashboard)
+            <button type="button" onClick={() => setArrival(null)} className="focus-ring rounded-full p-0.5 hover:bg-primary/20" aria-label="Remover filtro do Dashboard" title="Remover filtro">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </span>
+        </div>
+      )}
 
       <div className="-mx-3 mb-3 flex shrink-0 gap-1.5 overflow-x-auto px-3 md:mx-0 md:flex-wrap md:px-0" role="group" aria-label="Filtrar por status">
         {[{ key: "all", label: "Todas", statuses: [] as ConversationStatus[] }, ...STATUS_CHIPS].map((chip) => {

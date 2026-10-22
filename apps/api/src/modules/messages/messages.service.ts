@@ -306,7 +306,7 @@ export async function createInboundMessage(input: CreateInboundMessageInput) {
   const now = new Date();
   await prisma.conversation.update({
     where: { id: input.conversationId },
-    // The customer answered: no "falta de retorno" countdown, and "Aguardar cliente" has done its job.
+    // The customer answered: no "falta de retorno" countdown, and "Não encerrar automaticamente" has done its job.
     data: { lastMessageAt: now, lastMessageDirection: "INBOUND", noReturnReminderAt: null, noReturnCloseAt: null, noReturnHold: false },
   });
   // Only the first unanswered message starts the "sem resposta" clock.
