@@ -289,63 +289,66 @@ export default function EtiquetasPage() {
   });
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4 p-3 sm:p-6">
-      <p className="text-sm text-muted">
-        Etiquetas que os atendentes escolhem no painel do cliente durante o atendimento. Em <strong>Bloqueia</strong>, escolha as mensagens automáticas
-        que os clientes com a etiqueta não recebem — por exemplo, funcionários sem pesquisa de satisfação. O que for bloqueado fica registrado em
-        Relatórios › Mensagens bloqueadas. Em <strong>Atendida por</strong>, escolha quem atende esses clientes: na fila, só eles os veem enquanto
-        algum estiver online.
-      </p>
-      {canAdd && (
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (newName.trim()) create.mutate();
-          }}
-          className="flex flex-wrap items-center gap-2 rounded-card border border-border bg-surface p-3"
-        >
-          <input
-            type="color"
-            value={newColor}
-            onChange={(e) => setNewColor(e.target.value)}
-            aria-label="Cor da nova etiqueta"
-            className="h-9 w-9 shrink-0 cursor-pointer rounded-lg border border-border bg-transparent p-0.5"
-          />
-          <input
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            maxLength={40}
-            placeholder="Nova etiqueta"
-            className="focus-ring min-w-[10rem] flex-1 rounded-lg border border-border bg-transparent px-3 py-2 text-sm"
-          />
-          <button
-            type="submit"
-            disabled={!newName.trim() || create.isPending}
-            className="focus-ring flex shrink-0 items-center gap-1 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-fg disabled:opacity-50"
+    // The page scrolls on its own (the app's main area doesn't): on a phone, Bloqueia / Atendida por open need it.
+    <div className="h-full overflow-y-auto">
+      <div className="mx-auto max-w-3xl space-y-4 p-3 pb-8 sm:p-6">
+        <p className="text-sm text-muted">
+          Etiquetas que os atendentes escolhem no painel do cliente durante o atendimento. Em <strong>Bloqueia</strong>, escolha as mensagens automáticas
+          que os clientes com a etiqueta não recebem — por exemplo, funcionários sem pesquisa de satisfação. O que for bloqueado fica registrado em
+          Relatórios › Mensagens bloqueadas. Em <strong>Atendida por</strong>, escolha quem atende esses clientes: na fila, só eles os veem enquanto
+          algum estiver online.
+        </p>
+        {canAdd && (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (newName.trim()) create.mutate();
+            }}
+            className="flex flex-wrap items-center gap-2 rounded-card border border-border bg-surface p-3"
           >
-            <Plus className="h-4 w-4" /> Criar
-          </button>
-          {canBlock && <BlockedMessagesPicker value={newBlocked} onChange={setNewBlocked} />}
-          {canBlock && <QueueUsersPicker value={newQueueUsers} onChange={setNewQueueUsers} users={users} />}
-        </form>
-      )}
-
-      {tags?.length === 0 && <p className="text-center text-sm text-muted">Nenhuma etiqueta ainda.</p>}
-      {!!tags?.length && (
-        <ul className="divide-y divide-border rounded-card border border-border bg-surface">
-          {tags.map((t) => (
-            <TagRow
-              key={`${t.id}-${t.name}-${t.color}-${t.blockedAutoMessages.join()}-${t.queueUserIds.join()}`}
-              tag={t}
-              onChanged={refresh}
-              canEdit={canEdit}
-              canDelete={canDelete}
-              canBlock={canEdit && canBlock}
-              users={users}
+            <input
+              type="color"
+              value={newColor}
+              onChange={(e) => setNewColor(e.target.value)}
+              aria-label="Cor da nova etiqueta"
+              className="h-9 w-9 shrink-0 cursor-pointer rounded-lg border border-border bg-transparent p-0.5"
             />
-          ))}
-        </ul>
-      )}
+            <input
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              maxLength={40}
+              placeholder="Nova etiqueta"
+              className="focus-ring min-w-[10rem] flex-1 rounded-lg border border-border bg-transparent px-3 py-2 text-sm"
+            />
+            <button
+              type="submit"
+              disabled={!newName.trim() || create.isPending}
+              className="focus-ring flex shrink-0 items-center gap-1 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-fg disabled:opacity-50"
+            >
+              <Plus className="h-4 w-4" /> Criar
+            </button>
+            {canBlock && <BlockedMessagesPicker value={newBlocked} onChange={setNewBlocked} />}
+            {canBlock && <QueueUsersPicker value={newQueueUsers} onChange={setNewQueueUsers} users={users} />}
+          </form>
+        )}
+
+        {tags?.length === 0 && <p className="text-center text-sm text-muted">Nenhuma etiqueta ainda.</p>}
+        {!!tags?.length && (
+          <ul className="divide-y divide-border rounded-card border border-border bg-surface">
+            {tags.map((t) => (
+              <TagRow
+                key={`${t.id}-${t.name}-${t.color}-${t.blockedAutoMessages.join()}-${t.queueUserIds.join()}`}
+                tag={t}
+                onChanged={refresh}
+                canEdit={canEdit}
+                canDelete={canDelete}
+                canBlock={canEdit && canBlock}
+                users={users}
+              />
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }
