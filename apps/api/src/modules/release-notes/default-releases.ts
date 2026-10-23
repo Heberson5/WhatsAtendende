@@ -11,6 +11,21 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.26.1",
+    date: "23 out 2026",
+    name: "Rolagem na tela de Etiquetas",
+    summary: "A tela de Etiquetas passou a rolar, inclusive no celular com Bloqueia e Atendida por abertos.",
+    notes: [
+      {
+        type: "correcao",
+        area: "contatos",
+        title: "Etiquetas: a tela não rolava",
+        text: "Com Bloqueia ou Atendida por aberto — principalmente no celular — o que passava do tamanho da tela ficava escondido, sem barra de rolagem. Agora a tela rola até o fim.",
+        where: "Automação › Etiquetas",
+      },
+    ],
+  },
+  {
     version: "2.26.0",
     date: "23 out 2026",
     name: "Etiqueta escolhe quem atende e aparece no card",
