@@ -3,6 +3,7 @@ import {
   BOLETO_BANKS,
   BOLETO_LAYOUT_MODELS,
   BOLETO_MESSAGE_TAG,
+  BOLETO_PAYMENT_PLACES,
   DEFAULT_BOLETO_INSTRUCTION,
   DEFAULT_BOLETO_LAYOUT_SETTINGS,
   DEFAULT_BOLETO_SEND_MESSAGE,
@@ -19,6 +20,8 @@ import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
 
 const DEFAULTS_KEY = "boleto-defaults";
+// 2.25.0: Sicredi, Bradesco, Itaú and Caixa get their "Boleto F" — once, also on installs that already have the BB ones.
+const OTHER_BANKS_DEFAULTS_KEY = "boleto-defaults-other-banks";
 const SEND_MESSAGE_KEY = "boleto-send-message";
 // Where the instructions lived before Mensagens do boleto (one set for everything): becomes "Instruções padrão".
 const LEGACY_INSTRUCTIONS_KEY = "boleto-instructions";
@@ -38,6 +41,35 @@ const DEFAULT_BB_LAYOUTS: { name: string; model: BoletoLayoutModel; perPage: num
 
 /** First start (or a fresh database): "Instruções padrão" and the Banco do Brasil layouts. Runs once. */
 export async function ensureBoletoDefaults(): Promise<void> {
+  await ensureBankDefaults();
+  await ensureOtherBanksDefaults();
+}
+
+/** "Boleto F" (carnê) for each of the other banks, with the payment place its manual asks for. Runs once. */
+async function ensureOtherBanksDefaults(): Promise<void> {
+  if (await prisma.systemSetting.findUnique({ where: { key: OTHER_BANKS_DEFAULTS_KEY } })) return;
+  const carne = DEFAULT_BB_LAYOUTS[0];
+  await prisma.$transaction([
+    ...Object.keys(BOLETO_BANKS)
+      .filter((code) => code !== "001")
+      .map((bankCode) =>
+        prisma.boletoLayout.upsert({
+          where: { bankCode_name: { bankCode, name: carne.name } },
+          update: {},
+          create: {
+            name: carne.name,
+            bankCode,
+            model: carne.model,
+            perPage: carne.perPage,
+            settings: { ...DEFAULT_BOLETO_LAYOUT_SETTINGS, paymentPlace: BOLETO_PAYMENT_PLACES[bankCode] } as unknown as Prisma.InputJsonValue,
+          },
+        })
+      ),
+    prisma.systemSetting.upsert({ where: { key: OTHER_BANKS_DEFAULTS_KEY }, update: {}, create: { key: OTHER_BANKS_DEFAULTS_KEY, value: true } }),
+  ]);
+}
+
+async function ensureBankDefaults(): Promise<void> {
   if (await prisma.systemSetting.findUnique({ where: { key: DEFAULTS_KEY } })) return;
   const legacy = await prisma.systemSetting.findUnique({ where: { key: LEGACY_INSTRUCTIONS_KEY } });
   const instruction = { ...DEFAULT_BOLETO_INSTRUCTION, ...((legacy?.value as Omit<BoletoInstructionInput, "name"> | undefined) ?? {}) };

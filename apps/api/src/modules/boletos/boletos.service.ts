@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import type { DataSource, Prisma } from "@prisma/client";
 import { format } from "date-fns";
 import {
+  BOLETO_BANK_CODES,
   BOLETO_SAMPLES_REQUIRED,
   fillBoletoSendMessage,
   type BoletoBankValidationDTO,
@@ -17,13 +18,14 @@ import { Errors } from "../../lib/http-error";
 import { env } from "../../config/env";
 import { buildContracts, clientRows, parseBrDate, sourceStatus, usableSource, type ColumnMap, type ConversationForData, type Row } from "../data-sources/data-sources.service";
 import { barcodeFromLinha, buildBarcode, freeFieldBB, linhaFromBarcode } from "./boleto-code";
+import { BOLETO_BANK_RULES } from "./boleto-banks";
 import { renderBoletosPdf, type BoletoPdfData } from "./boleto-pdf";
 import { expandLayoutText, getSendMessage, layoutForBank, toLayoutInput } from "./boleto-layouts.service";
 
-// Only Banco do Brasil boletos are sent.
-export const BANKS: Record<string, { name: string }> = {
-  "001": { name: "Banco do Brasil" },
-};
+// The banks with their own boleto rule (boleto-banks.ts). Each one only sends after its validation with real boletos.
+export const BANKS: Record<string, { name: string; source: string }> = Object.fromEntries(
+  Object.entries(BOLETO_BANK_RULES).map(([code, bank]) => [code, { name: bank.name, source: bank.source }])
+);
 
 // Payment methods (forma_pagamento) that never get a boleto.
 const NO_BOLETO_METHODS = [/cart[aã]o recorrente/i, /sem boleto/i];
@@ -43,7 +45,8 @@ async function writeValidation(state: ValidationState) {
 
 export async function getValidation(): Promise<BoletoBankValidationDTO[]> {
   const state = await readValidation();
-  return Object.entries(BANKS).map(([code, bank]) => {
+  return BOLETO_BANK_CODES.filter((code) => BANKS[code]).map((code) => {
+    const bank = BANKS[code];
     const matched = state[code]?.matched.length ?? 0;
     return { code, name: bank.name, matched, required: BOLETO_SAMPLES_REQUIRED, enabled: matched >= BOLETO_SAMPLES_REQUIRED, lastFailure: state[code]?.lastFailure ?? null };
   });
@@ -73,6 +76,10 @@ interface BuiltBoleto {
   ourNumber: string;
   barcode: string;
   linha: string;
+  /** As each bank prints them (Sicredi "00/554364-1", "0804.22.00017"...); null = the source's own. */
+  ourNumberPrinted: string;
+  agencyCodePrinted: string | null;
+  walletPrinted: string | null;
 }
 
 /** The boleto of one source row — or the reason it can't be generated. Nothing typed by a person goes in. */
@@ -88,11 +95,18 @@ export function buildBoletoFromRow(data: Row, map: ColumnMap): BuiltBoleto {
   if (!cents) throw new Error("Parcela sem valor");
   const ourNumber = col("ourNumber") ?? "";
   if (!digits(ourNumber)) throw new Error("Parcela sem nosso número");
-  const free = freeFieldBB(col("agreement") ?? "", ourNumber, col("wallet") ?? "");
-  const barcode = buildBarcode(bank, due, cents, free);
+  const parts = BOLETO_BANK_RULES[bank].build({
+    agreement: col("agreement") ?? "",
+    ourNumber,
+    wallet: col("wallet") ?? "",
+    agency: col("agency") ?? "",
+    account: col("account") ?? "",
+    post: col("post") ?? "",
+  });
+  const barcode = buildBarcode(bank, due, cents, parts.freeField);
   const linha = linhaFromBarcode(barcode);
   if (barcodeFromLinha(linha) !== barcode) throw new Error("A linha digitável não passou na conferência dos dígitos");
-  return { bank, due, cents, ourNumber, barcode, linha };
+  return { bank, due, cents, ourNumber, barcode, linha, ourNumberPrinted: parts.ourNumberPrinted, agencyCodePrinted: parts.agencyCodePrinted, walletPrinted: parts.walletPrinted };
 }
 
 const withoutLeadingZeros = (value: string) => value.replace(/^0+/, "");
@@ -283,13 +297,13 @@ export async function prepareBoletos(
       due: items[i].due,
       value: items[i].value,
       issued,
-      ourNumber: p.boleto.ourNumber,
+      ourNumber: p.boleto.ourNumberPrinted,
       document: p.document,
       contract: p.contract,
-      wallet: col(p.data, "wallet") ?? "",
+      wallet: p.boleto.walletPrinted ?? col(p.data, "wallet") ?? "",
       payeeName: col(p.data, "payeeName") ?? "",
       payeeDocument: col(p.data, "payeeDocument"),
-      agencyAccount: [col(p.data, "agency"), col(p.data, "account")].filter(Boolean).join("/"),
+      agencyAccount: p.boleto.agencyCodePrinted ?? [col(p.data, "agency"), col(p.data, "account")].filter(Boolean).join("/"),
       payerName: col(p.data, "clientName") ?? conversation.contact.name ?? "",
       payerDocument: col(p.data, "cpf"),
       payerAddress: col(p.data, "payerAddress"),
@@ -310,14 +324,27 @@ export async function prepareBoletos(
 }
 
 
+/** Fictitious data of each bank for the layout preview — never a real convênio. */
+function previewFields(bank: string, n: number) {
+  const fields: Record<string, { agreement: string; ourNumber: string; wallet: string; agency: string; account: string; post: string }> = {
+    "001": { agreement: "1234567", ourNumber: `123456700000001${String(n).padStart(2, "0")}`, wallet: "17", agency: "1234-5", account: "99999-9", post: "" },
+    "748": { agreement: "12345", ourNumber: `2620000${n}`, wallet: "1", agency: "0101-1", account: "", post: "01" },
+    "237": { agreement: "", ourNumber: `000000000${String(n).padStart(2, "0")}`, wallet: "09", agency: "1234-5", account: "0099999-9", post: "" },
+    "341": { agreement: "", ourNumber: `000000${String(n).padStart(2, "0")}`, wallet: "109", agency: "1234", account: "99999-9", post: "" },
+    "104": { agreement: "123456", ourNumber: `1400000000000000${n}`, wallet: "RG", agency: "1234", account: "", post: "" },
+  };
+  return fields[bank] ?? fields["001"];
+}
+
 /** Dados › Layouts de boleto: the layout being edited, with fictitious boletos — a full page of them. */
 export async function previewLayoutPdf(layout: BoletoLayoutInput): Promise<Buffer> {
   const instructions = await prisma.boletoInstruction.findMany();
   const boletos = Array.from({ length: layout.perPage }, (_, i): BoletoPdfData => {
     const due = new Date(2026, 10 + i, 10);
     const cents = 12758;
-    const ourNumber = `1234567000000010${i + 1}`;
-    const barcode = buildBarcode(layout.bankCode, due, cents, freeFieldBB("1234567", ourNumber, "17"));
+    const parts = BOLETO_BANK_RULES[layout.bankCode].build(previewFields(layout.bankCode, i + 1));
+    const ourNumber = parts.ourNumberPrinted;
+    const barcode = buildBarcode(layout.bankCode, due, cents, parts.freeField);
     const dueText = format(due, "dd/MM/yyyy");
     const fill = { cents, contract: "C-10", document: `D-${i + 1}`, due: dueText };
     return {
@@ -330,10 +357,10 @@ export async function previewLayoutPdf(layout: BoletoLayoutInput): Promise<Buffe
       ourNumber,
       document: `D-${i + 1}`,
       contract: "C-10",
-      wallet: "17",
+      wallet: parts.walletPrinted ?? previewFields(layout.bankCode, 1).wallet,
       payeeName: "EMPRESA EXEMPLO LTDA",
       payeeDocument: "00.000.000/0001-00",
-      agencyAccount: "1234-5/99999-9",
+      agencyAccount: parts.agencyCodePrinted ?? "1234-5/99999-9",
       payerName: "CLIENTE DE EXEMPLO DA SILVA",
       payerDocument: "000.000.000-00",
       payerAddress: "RUA DOS EXEMPLOS, 100 - CENTRO",

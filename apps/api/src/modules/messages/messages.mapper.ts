@@ -1,4 +1,5 @@
-import type { Message, MessageAttachment, MessageReaction, User } from "@prisma/client";
+import type { Message, MessageAttachment, MessageReaction, PollVote, User } from "@prisma/client";
+import { pollResultsOf } from "./poll-votes.service";
 import type { MessageDTO } from "@whatsatendende/types";
 
 // Messages the system sent on its own show who "wrote" them instead of an agent name.
@@ -6,7 +7,7 @@ const AUTOMATED_SENDER_LABEL: Record<string, string> = { FLOW: "Fluxo automátic
 
 type MessageWithRelations = Message & {
   senderAgent: User | null;
-  attachments: MessageAttachment[];
+  attachments: (MessageAttachment & { pollVotes?: PollVote[] })[];
   reactions: (MessageReaction & { user: User | null })[];
 };
 
@@ -60,6 +61,10 @@ export function toMessageDTO(message: MessageWithRelations): MessageDTO {
       vcard: a.vcard ?? undefined,
       pollQuestion: a.pollQuestion ?? undefined,
       pollOptions: Array.isArray(a.pollOptions) ? (a.pollOptions as string[]) : undefined,
+      ...(a.kind === "POLL" && {
+        pollMultiple: a.pollSelectableCount !== null && a.pollSelectableCount !== 1,
+        pollResults: pollResultsOf(Array.isArray(a.pollOptions) ? (a.pollOptions as string[]) : [], a.pollVotes ?? [], Boolean(a.pollSecret)),
+      }),
       eventName: a.eventName ?? undefined,
       eventDescription: a.eventDescription ?? undefined,
       eventStartAt: a.eventStartAt ? a.eventStartAt.toISOString() : undefined,

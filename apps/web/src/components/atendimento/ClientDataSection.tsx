@@ -97,9 +97,9 @@ function ContractCard({
   }
 
   return (
-    <div className={clsx("overflow-hidden rounded-lg border text-xs", contract.suspended ? "border-danger" : "border-border")}>
+    <div className={clsx("overflow-hidden rounded-lg border text-xs", contract.suspended ? "border-warning" : "border-border")}>
       {contract.suspended && (
-        <p className="flex items-center gap-1 bg-danger px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-white">
+        <p className="flex items-center gap-1 bg-warning px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-white">
           <AlertTriangle className="h-3.5 w-3.5" /> Suspenso por inadimplência
         </p>
       )}
@@ -113,11 +113,17 @@ function ContractCard({
         >
           <span className="truncate font-semibold">Contrato {contract.number}</span>
           <span className="flex shrink-0 items-center gap-1.5">
+            {/* Green active, yellow suspended, red canceled — the same colors as Contatos › Contrato. */}
             {contract.suspended ? (
-              <span className="rounded-full bg-danger-soft px-2 py-px text-[11px] font-semibold text-danger">Suspenso</span>
+              <span className="rounded-full bg-warning-soft px-2 py-px text-[11px] font-semibold text-warning">Suspenso</span>
             ) : (
               contract.status && (
-                <span className={clsx("rounded-full px-2 py-px text-[11px] font-semibold", /^ativ/i.test(contract.status) ? "bg-success-soft text-success" : "bg-surface text-muted")}>
+                <span
+                  className={clsx(
+                    "rounded-full px-2 py-px text-[11px] font-semibold",
+                    /^ativ/i.test(contract.status) ? "bg-success-soft text-success" : /^cancel/i.test(contract.status) ? "bg-danger-soft text-danger" : "bg-surface text-muted"
+                  )}
+                >
                   {contract.status}
                 </span>
               )
@@ -130,6 +136,12 @@ function ContractCard({
       {open && (
         <div className="space-y-2.5 px-2.5 py-2">
           {contract.plan && <p className="text-muted">{contract.plan}</p>}
+          {(contract.canceledAt || contract.cancelReason) && (
+            <p className="rounded-md bg-danger-soft px-2 py-1 text-danger">
+              Cancelado{contract.canceledAt ? ` em ${contract.canceledAt}` : ""}
+              {contract.cancelReason ? ` · Motivo: ${contract.cancelReason}` : ""}
+            </p>
+          )}
           {fields.length > 0 && <div className="space-y-0.5">{fields.map(renderField)}</div>}
           {contract.overdueCount > 0 && (
             <p className="font-medium text-danger">

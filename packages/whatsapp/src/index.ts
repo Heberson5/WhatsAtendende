@@ -5,6 +5,8 @@ export type { BaileysProviderOptions } from "./BaileysWhatsAppProvider";
 export { deliveryEventFromBaileysUpdate } from "./delivery-status";
 export type { BaileysMessageUpdate } from "./delivery-status";
 export { reactionEventFromBaileys } from "./reaction-event";
+export { decryptPollVoteOptions, pollInfoOf, pollOptionHash, pollCreationOf } from "./poll-vote";
+export type { PollInfo, EncryptedPollVote } from "./poll-vote";
 export { groupSenderFromBaileys, isGroupChat } from "./group-message";
 export type { BaileysGroupMessageKey } from "./group-message";
 export type { BaileysReactionEntry } from "./reaction-event";

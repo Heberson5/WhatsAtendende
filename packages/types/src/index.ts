@@ -3,6 +3,8 @@
 
 export * from "./phone";
 export * from "./column-views";
+export * from "./contact-name";
+import { firstNameWithTitle, normalizeContactName } from "./contact-name";
 
 export const ROLE = {
   ADMIN: "ADMIN",
@@ -1099,8 +1101,12 @@ export interface MessageAttachmentDTO {
   vcard?: string;
   /** POLL only — the poll's question. */
   pollQuestion?: string;
-  /** POLL only — the poll's option labels (read-only: votes are end-to-end encrypted and not decoded here). */
+  /** POLL only — the poll's option labels. */
   pollOptions?: string[];
+  /** POLL only: several answers allowed (WhatsApp's "Selecionar uma ou mais opções"). */
+  pollMultiple?: boolean;
+  /** POLL only: the votes, as WhatsApp Web shows them — read-only here. */
+  pollResults?: PollResultsDTO;
   /** EVENT only. */
   eventName?: string;
   eventDescription?: string;
@@ -2244,6 +2250,47 @@ export interface ManagedTagDTO extends TagDTO {
   contactCount: number;
 }
 
+/** A group poll's votes. `readable` false = a poll from before the platform kept its key: no votes can be shown. */
+export interface PollResultsDTO {
+  readable: boolean;
+  /** People with a vote (a vote taken back doesn't count). */
+  voters: number;
+  options: { option: string; count: number; voters: { name: string; phone: string | null }[] }[];
+}
+
+/** A contract of the contact, from the Fonte de dados list (Contatos › Contrato and the client panel). */
+export interface ContactContractDTO {
+  number: string;
+  status: "ACTIVE" | "SUSPENDED" | "CANCELED" | null;
+  /** dd/mm/aaaa, as in the list. */
+  canceledAt: string | null;
+  cancelReason: string | null;
+}
+
+/** "Ativo" / "Suspenso" / "Cancelado" (the list's situacao_contrato) → the status; anything else → null. */
+export function contractStatusOf(situation: string | null | undefined): ContactContractDTO["status"] {
+  const s = (situation ?? "").trim().toLocaleLowerCase("pt-BR");
+  if (s.startsWith("ativ")) return "ACTIVE";
+  if (s.startsWith("suspens")) return "SUSPENDED";
+  if (s.startsWith("cancel")) return "CANCELED";
+  return null;
+}
+
+/** Contatos › Padronizar nomes: a contact whose name would change. */
+export interface NameStandardizationPreviewItemDTO {
+  contactId: string;
+  phone: string | null;
+  current: string;
+  proposed: string;
+}
+
+export interface NameStandardizationLastBatchDTO {
+  batchId: string;
+  count: number;
+  at: string;
+  undone: boolean;
+}
+
 export interface ContactListItemDTO {
   id: string;
   name: string | null;
@@ -2255,6 +2302,8 @@ export interface ContactListItemDTO {
   whatsappConnectionId: string | null;
   /** Contract number(s) — filled from the Fonte de dados, editable in the client panel. */
   contractNumber: string | null;
+  /** Every contract of this phone in the Fonte de dados (green active, yellow suspended, red canceled). */
+  contracts: ContactContractDTO[];
   /** How the customer is called ({{primeiro_nome}}); null = the first word of the name. */
   firstName: string | null;
   tags: TagDTO[];
@@ -2318,6 +2367,8 @@ export interface ContactPanelDTO {
   pinnedNote: { text: string; updatedAt: string; updatedByName: string | null } | null;
   /** The contact's contract number(s) (Contatos › Contrato), editable by the attendant. */
   contractNumber: string | null;
+  /** Every contract of this phone in the Fonte de dados (green active, yellow suspended, red canceled). */
+  contracts: ContactContractDTO[];
   /** Contatos › Primeiro nome, editable by the attendant; null = the first word of the name. */
   firstName: string | null;
 }
@@ -2512,6 +2563,8 @@ export const DATA_SOURCE_ROLES = {
   contract: { label: "Número do contrato", column: "numero_contrato" },
   plan: { label: "Plano", column: "plano" },
   contractStatus: { label: "Situação do contrato", column: "situacao_contrato" },
+  cancelDate: { label: "Data do cancelamento", column: "data_cancelamento" },
+  cancelReason: { label: "Motivo do cancelamento", column: "motivo_cancelamento" },
   beneficiaries: { label: "Beneficiários", column: "beneficiarios" },
   suspensionThreshold: { label: "Parcelas para suspender", column: "parcelas_suspensao" },
   document: { label: "Documento da parcela", column: "documento" },
@@ -2531,6 +2584,7 @@ export const DATA_SOURCE_ROLES = {
   agreement: { label: "Convênio", column: "convenio" },
   wallet: { label: "Carteira", column: "carteira" },
   walletVariation: { label: "Variação da carteira", column: "variacao_carteira" },
+  post: { label: "Posto do beneficiário (Sicredi)", column: "posto_beneficiario" },
   payeeName: { label: "Beneficiário (empresa)", column: "beneficiario_nome" },
   payeeDocument: { label: "CNPJ do beneficiário", column: "beneficiario_cnpj" },
   payerAddress: { label: "Endereço do cliente", column: "endereco" },
@@ -2639,6 +2693,9 @@ export interface ClientContractDTO {
   /** ≥ this many overdue parcels suspends the contract (ERP parameter); null when the source doesn't say. */
   suspensionThreshold: number | null;
   suspended: boolean;
+  /** Canceled contracts: when and why (dd/mm/aaaa, as in the list). */
+  canceledAt: string | null;
+  cancelReason: string | null;
   beneficiaries: ClientBeneficiaryDTO[];
   parcels: ClientParcelDTO[];
   /** This contract's own columns (data do contrato, dia do vencimento, valor em atraso...). */
@@ -2773,7 +2830,22 @@ export function fillBoletoInstructions(
 // --- Dados › Layouts de boleto ------------------------------------------------------------------------------------
 
 /** Banks a layout can be made for (the boleto code is only built for these). */
-export const BOLETO_BANKS: Record<string, string> = { "001": "Banco do Brasil" };
+export const BOLETO_BANKS: Record<string, string> = { "001": "Banco do Brasil", "748": "Sicredi", "237": "Bradesco", "341": "Itaú", "104": "Caixa" };
+/** The banks by name ("104" would otherwise come before "001": numeric keys go first in an object). */
+export const BOLETO_BANK_CODES = Object.keys(BOLETO_BANKS).sort((a, b) => BOLETO_BANKS[a].localeCompare(BOLETO_BANKS[b], "pt-BR"));
+
+/**
+ * "Local de Pagamento" as each bank's manual tells it to be printed (a new layout of that bank starts with it):
+ * Sicredi CNAB 400 item 10.7; Bradesco 4008.524.0121 v17, modelo do boleto; Itaú FEBRABAN 240, nota 25 (boleto com
+ * registro); Caixa SIGCB 67.119 v014, modelo do boleto. Banco do Brasil keeps the text in use.
+ */
+export const BOLETO_PAYMENT_PLACES: Record<string, string> = {
+  "001": "Pagável em qualquer banco até o vencimento",
+  "748": "PAGÁVEL PREFERENCIALMENTE NAS COOPERATIVAS DE CRÉDITO DO SICREDI",
+  "237": "Pagável Preferencialmente na Rede Bradesco ou no Bradesco Expresso",
+  "341": "ATÉ O VENCIMENTO, PAGUE EM QUALQUER BANCO OU CORRESPONDENTE NÃO BANCÁRIO. APÓS O VENCIMENTO, ACESSE ITAU.COM.BR/BOLETOS E PAGUE EM QUALQUER BANCO OU CORRESPONDENTE NÃO BANCÁRIO.",
+  "104": "EM TODA A REDE BANCÁRIA E SEUS CORRESPONDENTES ATÉ O VALOR LIMITE",
+};
 
 export const BOLETO_LAYOUT_MODELS = {
   CARNE: { label: "Carnê: recibo à esquerda e ficha", maxPerPage: 3 },
@@ -2852,10 +2924,11 @@ export interface BoletoSendMessageDTO {
  * "Maria". With no name saved the conversation shows the number, and a number stays whole.
  */
 export function firstNameOf(name: string | null | undefined): string {
-  const first = (name ?? "").trim().split(/\s+/)[0] ?? "";
-  if (!/\p{L}/u.test(first)) return first;
-  const allSameCase = first === first.toUpperCase() || first === first.toLowerCase();
-  return allSameCase ? first.charAt(0).toLocaleUpperCase("pt-BR") + first.slice(1).toLocaleLowerCase("pt-BR") : first;
+  const trimmed = (name ?? "").trim();
+  // Just the number: it stays whole.
+  if (!/\p{L}/u.test(trimmed)) return trimmed.split(/\s+/)[0] ?? "";
+  // "123 tgs maria" → "Maria"; "dr carlos mendes" → "Dr. Carlos" (see normalizeContactName).
+  return firstNameWithTitle(normalizeContactName(trimmed) ?? trimmed);
 }
 
 /**

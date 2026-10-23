@@ -1,7 +1,8 @@
+import { PollCard } from "./PollCard";
 import clsx from "clsx";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Calendar, Check, CheckCheck, Clock, ExternalLink, FileText, Forward, ListChecks, MapPin, MessageCircle, ReplyIcon, Smile, Trash2, User, X } from "lucide-react";
+import { Calendar, Check, CheckCheck, Clock, ExternalLink, FileText, Forward, MapPin, MessageCircle, ReplyIcon, Smile, Trash2, User, X } from "lucide-react";
 import type { MessageDTO, MessageAttachmentDTO } from "@whatsatendende/types";
 import { useState } from "react";
 import { firstUrl, renderWhatsAppFormatting } from "../../lib/whatsappFormatting";
@@ -118,26 +119,7 @@ function Attachment({
       </a>
     );
   }
-  if (att.kind === "POLL") {
-    return (
-      <div className="min-w-[220px] rounded border border-black/10 bg-black/5 px-3 py-2.5">
-        <div className="mb-2 flex items-center gap-1.5 text-xs font-medium opacity-75">
-          <ListChecks className="h-3.5 w-3.5" /> Enquete
-        </div>
-        <p className="text-sm font-medium">{att.pollQuestion}</p>
-        {/* Read-only: WhatsApp encrypts each vote against the poll's own key, so live
-            tallying isn't shown here — just the question/options as the poll was created. */}
-        <div className="mt-2 space-y-1.5">
-          {(att.pollOptions ?? []).map((option, i) => (
-            <div key={i} className="flex items-center gap-2 rounded border border-black/10 bg-[var(--color-surface)] px-2.5 py-1.5 text-xs">
-              <span className="h-3 w-3 shrink-0 rounded-full border border-current opacity-50" />
-              <span className="truncate">{option}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
+  if (att.kind === "POLL") return <PollCard att={att} />;
   if (att.kind === "EVENT") {
     return (
       <div className="min-w-[220px] rounded border border-black/10 bg-black/5 px-3 py-2.5">

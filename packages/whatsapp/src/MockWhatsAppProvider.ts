@@ -9,6 +9,7 @@ import type {
   HistorySyncEvent,
   InboundMessageEvent,
   OlderHistoryAnchor,
+  PollVoteEvent,
   ReactionEvent,
   TypingEvent,
   SendResult,
@@ -270,6 +271,15 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
 
   onReaction(listener: (event: ReactionEvent) => void): void {
     this.emitter.on("reaction", listener);
+  }
+
+  onPollVote(listener: (event: PollVoteEvent) => void): void {
+    this.emitter.on("pollVote", listener);
+  }
+
+  /** Tests: a poll vote arriving (already encrypted the way WhatsApp does). */
+  simulatePollVote(event: PollVoteEvent): void {
+    this.emitter.emit("pollVote", event);
   }
 
   /** Chats whose typing was asked for — tests read it. */

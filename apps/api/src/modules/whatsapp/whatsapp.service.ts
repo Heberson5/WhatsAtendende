@@ -1,3 +1,5 @@
+import { recordPollVote } from "../messages/poll-votes.service";
+import { normalizeContactName } from "@whatsatendende/types";
 import path from "node:path";
 import { fillSendTags } from "../../lib/customer-tags";
 import fs from "node:fs";
@@ -673,6 +675,9 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
         kind: "POLL",
         pollQuestion: event.pollQuestion ?? "",
         pollOptions: event.pollOptions ?? [],
+        pollSelectableCount: event.pollSelectableCount,
+        pollSecret: event.pollSecret ?? null,
+        pollCreatorJid: event.pollCreatorJid ?? null,
       });
     }
     if (event.type === "EVENT") {
@@ -875,6 +880,21 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
     } catch (err) {
       logger.warn({ err, connectionId }, "failed to relay that the customer is typing");
     }
+  });
+
+  // Enquetes nos grupos: each vote, decrypted with the poll's key and recorded (in arrival order per poll).
+  provider.onPollVote?.(async (event) => {
+    await runInOrder(reactionQueues, `poll:${event.pollMessageId}`, async () => {
+      try {
+        const recorded = await recordPollVote(event, (conversationId) => groupParticipantName(connectionId, conversationId, event.voterJid, event.voterPhone));
+        if (!recorded) return;
+        const conversation = await prisma.conversation.findUnique({ where: { id: recorded.conversationId }, select: { assignedAgentId: true, status: true } });
+        if (conversation?.status === "GROUP") await groupsService.announceGroupReaction(recorded.conversationId, connectionId);
+        else realtimeEvents.messageStatusChanged(recorded.conversationId, conversation?.assignedAgentId ?? null);
+      } catch (err) {
+        logger.error({ err, connectionId, pollMessageId: event.pollMessageId }, "failed to record a poll vote");
+      }
+    });
   });
 
   provider.onReaction(async (event) => {
@@ -1318,7 +1338,7 @@ async function saveAddressBookToContacts(connectionId: string, addressBook: Devi
     const variants = brazilianPhoneVariants(c.phone);
     if (variants.some((v) => known.has(v))) continue;
     variants.forEach((v) => known.add(v));
-    toCreate.push({ channel: "WHATSAPP", whatsappConnectionId: connectionId, phone: c.phone, name: c.name, photoUrl: c.photoUrl });
+    toCreate.push({ channel: "WHATSAPP", whatsappConnectionId: connectionId, phone: c.phone, name: normalizeContactName(c.name), photoUrl: c.photoUrl });
   }
   if (toCreate.length === 0) return 0;
   const { count } = await prisma.contact.createMany({ data: toCreate, skipDuplicates: true });

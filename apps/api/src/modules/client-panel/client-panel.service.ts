@@ -1,3 +1,4 @@
+import { contactContractsOf } from "../../lib/contact-contracts";
 import { AUTO_MESSAGE_KINDS, type AutoMessageKind, type ContactPanelDTO, type ConversationNoteDTO, type PreviousConversationDetailDTO, type TagDTO } from "@whatsatendende/types";
 import { toMessageDTO } from "../messages/messages.mapper";
 import { messageInclude } from "../messages/messages.service";
@@ -32,7 +33,7 @@ export async function listTags(): Promise<TagDTO[]> {
 
 export async function getContactPanel(conversationId: string, contactId: string, firstConversationAt: Date): Promise<ContactPanelDTO> {
   const [contact, tags, previous, previousCount] = await Promise.all([
-    prisma.contact.findUniqueOrThrow({ where: { id: contactId }, select: { pinnedNote: true, pinnedNoteUpdatedAt: true, pinnedNoteUpdatedBy: true, contractNumber: true, firstName: true } }),
+    prisma.contact.findUniqueOrThrow({ where: { id: contactId }, select: { pinnedNote: true, pinnedNoteUpdatedAt: true, pinnedNoteUpdatedBy: true, contractNumber: true, contracts: true, firstName: true } }),
     prisma.contactTag.findMany({ where: { contactId }, include: { tag: true }, orderBy: { createdAt: "asc" } }),
     listPreviousConversations(conversationId, contactId, 0, PREVIOUS_CONVERSATIONS_FIRST),
     prisma.conversation.count({ where: { contactId, id: { not: conversationId } } }),
@@ -47,6 +48,7 @@ export async function getContactPanel(conversationId: string, contactId: string,
       ? { text: contact.pinnedNote, updatedAt: contact.pinnedNoteUpdatedAt!.toISOString(), updatedByName: contact.pinnedNoteUpdatedBy }
       : null,
     contractNumber: contact.contractNumber,
+    contracts: contactContractsOf(contact.contracts),
     firstName: contact.firstName,
   };
 }

@@ -4,7 +4,8 @@ import type { MessageType } from "@prisma/client";
 
 const messageInclude = {
   senderAgent: true,
-  attachments: true,
+  // A poll's votes come with it (Enquetes nos grupos).
+  attachments: { include: { pollVotes: true } },
   reactions: { include: { user: true } },
 };
 
@@ -331,6 +332,9 @@ export async function addAttachment(
     vcard?: string;
     pollQuestion?: string;
     pollOptions?: string[];
+    pollSelectableCount?: number;
+    pollSecret?: string | null;
+    pollCreatorJid?: string | null;
     eventName?: string;
     eventDescription?: string;
     eventStartAt?: Date;

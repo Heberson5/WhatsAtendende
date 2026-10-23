@@ -1,6 +1,7 @@
 import PDFDocument from "pdfkit";
 import { BOLETO_BANKS, type BoletoLayoutModel, type BoletoLayoutSettings } from "@whatsatendende/types";
 import { BANK_LOGOS } from "./bank-logos";
+import { BOLETO_BANK_RULES } from "./boleto-banks";
 
 export interface BoletoPdfData {
   /** "001" — picks the logo, printed beside it. */
@@ -96,6 +97,8 @@ function text(
 
 interface CellOptions {
   bold?: boolean;
+  /** Up to two lines when it doesn't fit in one. */
+  wrap?: boolean;
   align?: "left" | "right";
   highlight?: boolean;
   /** Slip cells are boxed; stub cells only have a line under them. */
@@ -108,7 +111,17 @@ function cell(doc: PDFKit.PDFDocument, x: number, y: number, w: number, h: numbe
   if (options.boxed) doc.rect(x, y, w, h).stroke();
   else doc.moveTo(x, y + h).lineTo(x + w, y + h).stroke();
   text(doc, label, x + 2, y + 1.5, w - 4, 5, { color: LABEL });
-  if (value) text(doc, value, x + 3, y + h - 8.5, w - 6, 6.5, { bold: options.bold, align: options.align });
+  if (!value) return;
+  // A text too long for one line (Itaú's payment place) goes on two smaller ones.
+  doc.font(options.bold ? "Helvetica-Bold" : "Helvetica").fontSize(6.5);
+  if (options.wrap && doc.widthOfString(value) > w - 6) {
+    doc
+      .fillColor("#000")
+      .fontSize(5)
+      .text(value, x + 3, y + 7, { width: w - 6, height: 12, lineGap: -1 });
+    return;
+  }
+  text(doc, value, x + 3, y + h - 8.5, w - 6, 6.5, { bold: options.bold, align: options.align });
 }
 
 /** A row of boxed cells sharing `width` by their shares. */
@@ -124,7 +137,8 @@ function bankHeader(doc: PDFKit.PDFDocument, data: BoletoPdfData, settings: Bole
   if (settings.showLogo) doc.image(BANK_LOGOS[data.bankCode], x, y + 3.5, { width: 71, height: 8.6 });
   else text(doc, BOLETO_BANKS[data.bankCode].toUpperCase(), x, y + 5, 71, 7, { bold: true });
   doc.lineWidth(1).strokeColor(LINE).moveTo(x + 75, y + 1).lineTo(x + 75, y + 16).stroke();
-  text(doc, data.bankCode, x + 78, y + 4, 40, 9, { bold: true, color: "#666" });
+  // The code with its check digit, as each bank prints it ("748-X", "341-7"...).
+  text(doc, BOLETO_BANK_RULES[data.bankCode]?.codeWithDigit ?? data.bankCode, x + 78, y + 4, 40, 9, { bold: true, color: "#666" });
 }
 
 const documentDate = (data: BoletoPdfData, settings: BoletoLayoutSettings) => (settings.documentDate === "PRINT" ? data.issued : "");
@@ -215,7 +229,7 @@ function drawSlip(doc: PDFKit.PDFDocument, data: BoletoPdfData, settings: Boleto
   text(doc, data.linha, x + 150, top + 4, width - 150, 10, { bold: true, align: "right" });
   let y = top + 19;
 
-  cell(doc, x, y, main, ROW, "Local de Pagamento", settings.paymentPlace, { boxed: true });
+  cell(doc, x, y, main, ROW, "Local de Pagamento", settings.paymentPlace, { boxed: true, wrap: true });
   cell(doc, side, y, sideWidth, ROW, "Vencimento", data.due, { boxed: true, align: "right", highlight });
   y += ROW;
   cell(doc, x, y, main, ROW, "Cedente", data.payeeName, { boxed: true });
