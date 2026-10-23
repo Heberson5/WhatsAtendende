@@ -2,7 +2,7 @@ import clsx from "clsx";
 import { format, formatDistanceToNow, isToday, isYesterday } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { AlarmClock, Facebook, Instagram, PencilLine, Pin, Smartphone, type LucideIcon } from "lucide-react";
-import type { Channel, ConversationListItemDTO, ConversationReminderDTO } from "@whatsatendende/types";
+import type { CardTagDTO, Channel, ConversationListItemDTO, ConversationReminderDTO } from "@whatsatendende/types";
 import { contactDisplayName } from "../../lib/contact-display";
 import { formatPhone } from "../../lib/format-phone";
 import { useNow } from "../../hooks/useNow";
@@ -38,6 +38,30 @@ const CHANNEL_ICON: Record<Channel, LucideIcon | null> = {
   INSTAGRAM: Instagram,
   MESSENGER: Facebook,
 };
+
+const CARD_TAG_LIMIT = 3;
+
+/** The contact's tags beside the number, right-aligned — up to 3, the rest as "+N" (hover lists them). */
+function CardTags({ tags }: { tags: CardTagDTO[] }) {
+  if (tags.length === 0) return null;
+  const shown = tags.slice(0, CARD_TAG_LIMIT);
+  const rest = tags.slice(CARD_TAG_LIMIT);
+  return (
+    <span className="ms-auto flex flex-wrap justify-end gap-1" aria-label={`Etiquetas: ${tags.map((t) => t.name).join(", ")}`}>
+      {shown.map((tag) => (
+        <span key={tag.id} className="inline-flex max-w-[9rem] items-center gap-1 rounded-full border border-border bg-surface px-1.5 py-px text-[10.5px] text-[var(--color-text)]">
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: tag.color }} />
+          <span className="truncate">{tag.name}</span>
+        </span>
+      ))}
+      {rest.length > 0 && (
+        <span title={rest.map((t) => t.name).join(", ")} className="inline-flex items-center rounded-full border border-border bg-surface px-1.5 py-px text-[10.5px] text-muted">
+          +{rest.length}
+        </span>
+      )}
+    </span>
+  );
+}
 
 function initials(name: string) {
   return name
@@ -89,6 +113,7 @@ export function ConversationCard({
   // it as a subtitle too, since the phone number is what an agent actually
   // needs to confirm/dial/search by.
   const showPhoneSubtitle = Boolean(conversation.contact.name && conversation.contact.phone);
+  const cardTags = conversation.tags ?? [];
   // A disconnected connection can't actually deliver anything — accepting
   // from here would just leave the customer with no reply possible.
   const connectionDisconnected = conversation.whatsappConnectionStatus !== "CONNECTED";
@@ -156,7 +181,13 @@ export function ConversationCard({
           </span>
         </div>
 
-        {showPhoneSubtitle && <p className="truncate text-[11.5px] tabular-nums text-muted">{formatPhone(conversation.contact.phone!)}</p>}
+        {/* The number with the tags at its right; on a narrow screen the tags drop below it. */}
+        {(showPhoneSubtitle || cardTags.length > 0) && (
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+            {showPhoneSubtitle && <p className="min-w-0 truncate text-[11.5px] tabular-nums text-muted">{formatPhone(conversation.contact.phone!)}</p>}
+            <CardTags tags={cardTags} />
+          </div>
+        )}
         {paused && (
           <p className="truncate text-[11px] text-muted" title="O tempo de espera só conta dentro do Horário de expediente">
             {PAUSED_LABEL}

@@ -4,12 +4,19 @@ import { toMessageDTO } from "../messages/messages.mapper";
 import { messageInclude } from "../messages/messages.service";
 import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
+import { realtimeEvents } from "../../realtime/realtime";
 
 // The panel opens with the last few; "Mostrar mais" brings the next page (see listPreviousConversations).
 const PREVIOUS_CONVERSATIONS_FIRST = 3;
 
-export function toTagDTO(tag: { id: string; name: string; color: string; blockedAutoMessages: string[] }): TagDTO {
-  return { id: tag.id, name: tag.name, color: tag.color, blockedAutoMessages: tag.blockedAutoMessages.filter((k): k is AutoMessageKind => (AUTO_MESSAGE_KINDS as readonly string[]).includes(k)) };
+export function toTagDTO(tag: { id: string; name: string; color: string; blockedAutoMessages: string[]; queueUserIds?: string[] }): TagDTO {
+  return {
+    id: tag.id,
+    name: tag.name,
+    color: tag.color,
+    blockedAutoMessages: tag.blockedAutoMessages.filter((k): k is AutoMessageKind => (AUTO_MESSAGE_KINDS as readonly string[]).includes(k)),
+    queueUserIds: tag.queueUserIds ?? [],
+  };
 }
 
 // A note with no author was written by the system (e.g. why a conversation came from Abandonados).
@@ -126,10 +133,12 @@ export async function addContactTag(contactId: string, tagId: string, userId: st
     create: { contactId, tagId, addedById: userId },
     update: {},
   });
+  realtimeEvents.contactTagsChanged();
 }
 
 export async function removeContactTag(contactId: string, tagId: string) {
   await prisma.contactTag.deleteMany({ where: { contactId, tagId } });
+  realtimeEvents.contactTagsChanged();
 }
 
 export async function listNotes(conversationId: string): Promise<ConversationNoteDTO[]> {

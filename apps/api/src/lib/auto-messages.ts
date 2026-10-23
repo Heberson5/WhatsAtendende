@@ -60,6 +60,11 @@ export function autoMessageBlocksOf(tags: { tag: { name: string; blockedAutoMess
   return blocks;
 }
 
+/** Prisma include for a conversation's contact with all its tags: shown on the attendance card, and the ones that block something. */
+export const CONTACT_CARD_TAGS = {
+  tags: { orderBy: { tag: { name: "asc" } }, select: { tag: { select: { id: true, name: true, color: true, blockedAutoMessages: true } } } },
+} as const;
+
 /** Prisma include for a conversation's contact with the tags that block something. */
 export const CONTACT_BLOCKING_TAGS = {
   tags: { where: { tag: { blockedAutoMessages: { isEmpty: false } } }, select: { tag: { select: { name: true, blockedAutoMessages: true } } } },

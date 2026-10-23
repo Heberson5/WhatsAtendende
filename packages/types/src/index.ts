@@ -988,6 +988,8 @@ export interface ConversationListItemDTO {
   businessClock?: BusinessClockDTO | null;
   /** Automatic messages this customer does not get, because of a tag (Etiquetas › "Não enviar estas mensagens automáticas"). */
   autoMessageBlocks?: AutoMessageBlockDTO[];
+  /** The contact's tags, shown on the card beside the number (up to 3, then "+N"). */
+  tags?: CardTagDTO[];
   /** A scheduled message is still to go out: the "falta de retorno" close is paused, and the manual one blocked. */
   scheduledMessagePending?: boolean;
   /** Started or answered on the linked phone — accepting it sends no "Aceite" message. */
@@ -2201,6 +2203,15 @@ export interface TagDTO {
   color: string;
   /** Automatic messages contacts with this tag never get. */
   blockedAutoMessages: AutoMessageKind[];
+  /** "Atendida por": in the queue, only these users see customers with the tag while one of them is online. Empty = everyone. */
+  queueUserIds: string[];
+}
+
+/** A tag on the attendance card: name and color. */
+export interface CardTagDTO {
+  id: string;
+  name: string;
+  color: string;
 }
 
 export interface AutoMessageBlocksReportDTO {

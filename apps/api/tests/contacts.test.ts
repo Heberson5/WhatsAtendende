@@ -78,7 +78,7 @@ describe("Contatos e etiquetas", () => {
 
     await request(app).patch(`/api/contacts/tags/${tag.body.id}`).set("Authorization", `Bearer ${token}`).send({ name: "Recorrente", color: "#059669" });
     const tags = await request(app).get("/api/contacts/tags").set("Authorization", `Bearer ${token}`);
-    expect(tags.body).toEqual([{ id: tag.body.id, name: "Recorrente", color: "#059669", blockedAutoMessages: [], contactCount: 1 }]);
+    expect(tags.body).toEqual([{ id: tag.body.id, name: "Recorrente", color: "#059669", blockedAutoMessages: [], queueUserIds: [], contactCount: 1 }]);
 
     expect((await request(app).delete(`/api/contacts/tags/${tag.body.id}`).set("Authorization", `Bearer ${token}`)).status).toBe(204);
     expect(await prisma.contactTag.count()).toBe(0);

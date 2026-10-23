@@ -11,6 +11,40 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.26.0",
+    date: "23 out 2026",
+    name: "Etiqueta escolhe quem atende e aparece no card",
+    summary:
+      "Cada etiqueta pode ter os usuários que atendem os clientes com ela: na fila, só eles veem esses clientes enquanto algum estiver online. As etiquetas do contato aparecem no card do atendimento, ao lado do número. E os votos das enquetes passaram a ser lidos também nos casos que ficavam sem contagem.",
+    notes: [
+      {
+        type: "novo",
+        area: "contatos",
+        title: "Etiqueta com os usuários que atendem (Atendida por)",
+        text: "No cadastro da etiqueta, Atendida por marca um ou mais usuários. Na fila, os clientes com essa etiqueta aparecem só para eles — e só eles são avisados da nova conversa. Se nenhum deles estiver online (pausado também conta como fora), o cliente vai para todos; assim que um deles ficar online, volta a aparecer só para os marcados. Cliente com duas etiquetas: valem os usuários das duas. Gestor e administrador continuam vendo a fila inteira. Sem nenhum usuário marcado, tudo continua como antes. Só gestor e administrador mudam essa lista.",
+        steps: ["Abra Automação › Etiquetas.", "Na etiqueta, clique em Atendida por e marque os usuários.", "Clique em Salvar."],
+        where: "Automação › Etiquetas",
+        requires: [PERMISSION.ETIQUETAS_VISUALIZAR],
+        images: [{ src: "/notas-de-versao/etiqueta-atendida-por.webp", caption: "Atendida por: os usuários marcados, com quem está online" }],
+      },
+      {
+        type: "melhoria",
+        area: "atendimento",
+        title: "Etiquetas do contato no card do atendimento",
+        text: "Nos cards de Meus, Fila e Transferidas, as etiquetas do contato aparecem à direita do número, com a cor de cada uma — até 3; as outras ficam em \"+N\" (passe o mouse para ver quais). No celular, quando não cabem ao lado do número, descem para a linha de baixo. O card da fila continua sem a mensagem do cliente.",
+        where: "Atendimento",
+        images: [{ src: "/notas-de-versao/card-etiquetas.webp", caption: "As etiquetas à direita do número" }],
+      },
+      {
+        type: "correcao",
+        area: "atendimento",
+        title: "Enquetes: votos que não eram contados",
+        text: "Os votos passaram a ser lidos também quando a enquete chega pela sincronização do histórico do WhatsApp (ao conectar ou reconectar), quando o voto é entregue atrasado (feito enquanto o sistema reiniciava) e nos grupos em que o WhatsApp identifica as pessoas de outra forma (LID). Uma enquete antiga que estava sem a chave passa a contar os votos se o WhatsApp a enviar de novo pelo histórico; as que nunca chegarem de novo continuam sem a contagem.",
+        where: "Atendimento › Grupos",
+      },
+    ],
+  },
+  {
     version: "2.25.0",
     date: "23 out 2026",
     name: "Nomes padronizados, contratos coloridos e boletos de outros bancos",

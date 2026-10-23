@@ -150,13 +150,18 @@ const tagSchema = z.object({
   name: z.string().trim().min(1).max(40),
   color: z.string().regex(HEX_COLOR),
   blockedAutoMessages: z.array(z.enum(AUTO_MESSAGE_KINDS)).max(AUTO_MESSAGE_KINDS.length).optional(),
+  queueUserIds: z.array(z.string().uuid()).max(200).optional(),
 });
 
-// "Não enviar estas mensagens automáticas" is Gestor/Administrador only (ETIQUETAS_BLOQUEIOS) — on top of adding/editing.
-async function assertCanSetBlocks(req: Request, blocked: unknown) {
-  if (blocked === undefined) return;
+// "Não enviar estas mensagens automáticas" and "Atendida por" are Gestor/Administrador only (ETIQUETAS_BLOQUEIOS) — on top of adding/editing.
+async function assertCanSetBlocks(req: Request, blocked: unknown, queueUserIds?: unknown) {
+  if (blocked === undefined && queueUserIds === undefined) return;
   if (!(await isPermissionAllowed(req.auth!.role, PERMISSION.ETIQUETAS_BLOQUEIOS))) {
-    throw Errors.forbidden("Você não tem permissão para escolher as mensagens automáticas bloqueadas da etiqueta");
+    throw Errors.forbidden(
+      blocked === undefined
+        ? "Você não tem permissão para escolher quem atende os clientes da etiqueta"
+        : "Você não tem permissão para escolher as mensagens automáticas bloqueadas da etiqueta"
+    );
   }
 }
 
@@ -165,8 +170,12 @@ contactsRouter.post(
   requirePermission(PERMISSION.ETIQUETAS_ADICIONAR),
   asyncHandler(async (req, res) => {
     const input = tagSchema.parse(req.body);
-    await assertCanSetBlocks(req, input.blockedAutoMessages);
-    const tag = await service.createTag({ ...input, blockedAutoMessages: [...new Set(input.blockedAutoMessages ?? [])] });
+    await assertCanSetBlocks(req, input.blockedAutoMessages, input.queueUserIds);
+    const tag = await service.createTag({
+      ...input,
+      blockedAutoMessages: [...new Set(input.blockedAutoMessages ?? [])],
+      queueUserIds: [...new Set(input.queueUserIds ?? [])],
+    });
     await writeAudit({ userId: req.auth!.userId, action: "TAG_CREATED", entity: "Tag", entityId: tag.id, ipAddress: req.ip ?? null, metadata: input });
     res.status(201).json(tag);
   })
@@ -177,8 +186,12 @@ contactsRouter.patch(
   requirePermission(PERMISSION.ETIQUETAS_EDITAR),
   asyncHandler(async (req, res) => {
     const input = tagSchema.partial().parse(req.body);
-    await assertCanSetBlocks(req, input.blockedAutoMessages);
-    const tag = await service.updateTag(req.params.tagId, { ...input, ...(input.blockedAutoMessages && { blockedAutoMessages: [...new Set(input.blockedAutoMessages)] }) });
+    await assertCanSetBlocks(req, input.blockedAutoMessages, input.queueUserIds);
+    const tag = await service.updateTag(req.params.tagId, {
+      ...input,
+      ...(input.blockedAutoMessages && { blockedAutoMessages: [...new Set(input.blockedAutoMessages)] }),
+      ...(input.queueUserIds && { queueUserIds: [...new Set(input.queueUserIds)] }),
+    });
     await writeAudit({ userId: req.auth!.userId, action: "TAG_UPDATED", entity: "Tag", entityId: tag.id, ipAddress: req.ip ?? null, metadata: input });
     res.json(tag);
   })

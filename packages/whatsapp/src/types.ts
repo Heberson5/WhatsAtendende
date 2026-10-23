@@ -159,8 +159,14 @@ export interface PollVoteEvent {
   chatId: string;
   /** The poll's own provider message id. */
   pollMessageId: string;
-  /** The voter as the vote encryption names them. */
+  /** The voter as the vote encryption names them (also the key their vote is kept under). */
   voterJid: string;
+  /**
+   * Other ways WhatsApp may name the voter and the poll's creator (phone number or LID, in a LID group) — the vote is
+   * encrypted with one of them; the right one is the one that opens it.
+   */
+  voterJidCandidates?: string[];
+  creatorJidCandidates?: string[];
   voterName: string | null;
   voterPhone: string | null;
   fromMe: boolean;
@@ -233,6 +239,9 @@ export interface HistoryMessageEvent {
   pollQuestion?: string;
   pollOptions?: string[];
   pollSelectableCount?: number;
+  /** POLL only: the key its votes are encrypted with (base64) and its creator — kept so later votes can be read. */
+  pollSecret?: string | null;
+  pollCreatorJid?: string | null;
   eventName?: string;
   eventDescription?: string;
   eventStartAt?: Date;

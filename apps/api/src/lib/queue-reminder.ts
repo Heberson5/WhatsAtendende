@@ -3,6 +3,7 @@ import { getBusinessSettings } from "../modules/settings/settings.service";
 import { realtimeEvents } from "../realtime/realtime";
 import { conversationSpanMs, SCHEDULE_SELECT } from "./conversation-timings";
 import { cachedHolidayLookup } from "./business-time";
+import { queueAudiences } from "./queue-routing";
 
 const REMINDER_CADENCE_KEY = "queueReminderLastSentAt";
 
@@ -26,11 +27,16 @@ export async function sendQueueRemindersIfDue(): Promise<void> {
   // Scoped to WhatsApp only — Meta (Instagram/Messenger) channels have no
   // per-connection agent assignment on User to notify against. See PROMPT's
   // plan artifact, "Resumo do escopo".
-  const waiting = await prisma.conversation.groupBy({
-    by: ["whatsappConnectionId"],
+  const waitingConversations = await prisma.conversation.findMany({
     where: { status: { in: ["NEW", "WAITING"] }, channel: "WHATSAPP", whatsappConnectionId: { not: null } },
-    _count: true,
+    select: { id: true, contactId: true, channel: true, whatsappConnectionId: true },
   });
+  // Etiquetas › "Atendida por": a customer reserved for someone online only counts for them.
+  const audiences = await queueAudiences(waitingConversations);
+  const waiting = [...new Set(waitingConversations.map((c) => c.whatsappConnectionId!))].map((whatsappConnectionId) => ({
+    whatsappConnectionId,
+    conversations: waitingConversations.filter((c) => c.whatsappConnectionId === whatsappConnectionId),
+  }));
   // Nothing waiting — leave the marker untouched so a conversation arriving
   // a second later reminds right away instead of waiting out this cycle.
   if (waiting.length === 0) return;
@@ -41,7 +47,7 @@ export async function sendQueueRemindersIfDue(): Promise<void> {
   });
   const connectionNames = new Map(connections.map((c) => [c.id, c.name]));
 
-  for (const { whatsappConnectionId, _count } of waiting) {
+  for (const { whatsappConnectionId, conversations } of waiting) {
     const connectionId = whatsappConnectionId!;
     const connectionName = connectionNames.get(connectionId) ?? connectionId;
     // Only genuinely ONLINE agents — AWAY (any pause reason) and OFFLINE are
@@ -53,7 +59,11 @@ export async function sendQueueRemindersIfDue(): Promise<void> {
       select: { id: true },
     });
     for (const agent of agents) {
-      realtimeEvents.queueReminder(agent.id, connectionId, connectionName, _count);
+      const count = conversations.filter((c) => {
+        const audience = audiences.get(c.id);
+        return !audience || audience.has(agent.id);
+      }).length;
+      if (count > 0) realtimeEvents.queueReminder(agent.id, connectionId, connectionName, count);
     }
   }
 

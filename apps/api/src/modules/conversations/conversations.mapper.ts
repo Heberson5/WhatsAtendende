@@ -3,7 +3,7 @@ import type { ConversationListItemDTO } from "@whatsatendende/types";
 import { autoMessageBlocksOf } from "../../lib/auto-messages";
 
 type ConversationWithRelations = Conversation & {
-  contact: Contact & { tags?: { tag: { name: string; blockedAutoMessages: string[] } }[] };
+  contact: Contact & { tags?: { tag: { id?: string; name: string; color?: string; blockedAutoMessages: string[] } }[] };
   assignedAgent: User | null;
   interventionBy?: User | null;
   // Exactly one of these two is non-null, depending on `channel` — see
@@ -71,6 +71,7 @@ export function toConversationListItemDTO(
     noReturnCloseAt: conversation.noReturnCloseAt?.toISOString() ?? null,
     noReturnHold: conversation.noReturnHold,
     autoMessageBlocks: autoMessageBlocksOf(conversation.contact.tags),
+    tags: (conversation.contact.tags ?? []).flatMap(({ tag }) => (tag.id && tag.color ? [{ id: tag.id, name: tag.name, color: tag.color }] : [])),
     scheduledMessagePending: (conversation._count?.scheduledMessages ?? 0) > 0,
     unreadCount: conversation._unreadCount ?? 0,
     isNew: conversation.status === "NEW",

@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 import { CONVERSATION_UNDO_WINDOW_MS, brazilianPhoneVariants } from "@whatsatendende/types";
 import { prisma } from "../../lib/prisma";
 import { endFlowSession, flowIdsWithPerson, noteAbandonedReason } from "../flows/flow-engine.service";
-import { blockingTag, recordBlocked, CONTACT_BLOCKING_TAGS } from "../../lib/auto-messages";
+import { blockingTag, recordBlocked, CONTACT_CARD_TAGS } from "../../lib/auto-messages";
 import { getClosedMessageForConnection } from "../work-schedules/work-schedules.service";
 import { scheduleCloseFollowUp, type HeldClosingMessage } from "../satisfaction/satisfaction.service";
 import { Errors } from "../../lib/http-error";
@@ -18,8 +18,8 @@ export const NO_RETURN_CLOSE_REASON = "NO_RETURN";
 const TRANSFER_OFFLINE_GRACE_MS = 2 * 60 * 60 * 1000; // 2h — see PROMPT: transfer to an offline agent auto-reverts if they don't log in in time.
 
 const conversationInclude = {
-  // The tags that stop automatic messages — shown on the card and in the client panel.
-  contact: { include: CONTACT_BLOCKING_TAGS },
+  // The contact's tags — on the card (name and color), and the ones that stop automatic messages.
+  contact: { include: CONTACT_CARD_TAGS },
   assignedAgent: true,
   interventionBy: true,
   whatsappConnection: true,
@@ -224,6 +224,9 @@ export interface HistoricalMessageInput {
   vcard?: string;
   pollQuestion?: string;
   pollOptions?: string[];
+  pollSelectableCount?: number;
+  pollSecret?: string | null;
+  pollCreatorJid?: string | null;
   eventName?: string;
   eventDescription?: string;
   eventStartAt?: Date;
@@ -261,7 +264,11 @@ export async function importHistoricalMessages(
   for (const m of messages) {
     if (!m.providerMessageId) continue;
     const existing = await prisma.message.findUnique({ where: { providerMessageId: m.providerMessageId } });
-    if (existing) continue;
+    if (existing) {
+      // A poll saved without its key (e.g. before 2.25.0) gets it now, so the next votes can be read.
+      await fillPollKey(existing.id, m);
+      continue;
+    }
 
     const promoteToQueue = Boolean(m.chatId && unreadChatIds.has(m.chatId));
     const contact = await findOrCreateContact(connectionId, m.phone, null, m.chatId);
@@ -324,6 +331,15 @@ export async function importHistoricalMessages(
 }
 
 
+/** A history copy of a poll already saved without its key: the key is kept now. */
+export async function fillPollKey(messageId: string, m: Pick<HistoricalMessageInput, "type" | "pollSecret" | "pollCreatorJid">): Promise<void> {
+  if (m.type !== "POLL" || !m.pollSecret || !m.pollCreatorJid) return;
+  await prisma.messageAttachment.updateMany({
+    where: { messageId, kind: "POLL", pollSecret: null },
+    data: { pollSecret: m.pollSecret, pollCreatorJid: m.pollCreatorJid },
+  });
+}
+
 /**
  * The attachments a history message carries without a file to download —
  * location, contact card, poll, event. Media from history is never fetched
@@ -351,6 +367,9 @@ export async function addHistoricalAttachments(messageId: string, m: HistoricalM
         kind: "POLL",
         pollQuestion: m.pollQuestion ?? "",
         pollOptions: m.pollOptions ?? [],
+        pollSelectableCount: m.pollSelectableCount,
+        pollSecret: m.pollSecret ?? null,
+        pollCreatorJid: m.pollCreatorJid ?? null,
       },
     });
   }
