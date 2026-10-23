@@ -1,7 +1,9 @@
+import { ContractChips } from "../../components/common/ContractChips";
 import { useEffect, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Download, MessageSquarePlus, Search, Tags, Upload } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, CaseSensitive, ChevronLeft, ChevronRight, Download, MessageSquarePlus, Search, Tags, Upload } from "lucide-react";
+import { PadronizarNomesModal } from "./PadronizarNomesModal";
 import clsx from "clsx";
 import { toast } from "sonner";
 import { COLUMN_SCREENS, PERMISSION, firstNameOf, type ContactListItemDTO, type ContactSortField, type ConversationListItemDTO, type TagDTO } from "@whatsatendende/types";
@@ -51,7 +53,7 @@ const CONTACT_COLUMNS: Record<string, { sort?: Omit<SortColumn, "label">; classN
   contract: {
     sort: { field: "contract", firstDir: "asc", hint: { asc: "A a Z", desc: "Z a A" } },
     className: "whitespace-nowrap px-4 py-3 tabular-nums",
-    render: (c) => c.contractNumber ?? <span className="text-muted">-</span>,
+    render: (c) => (c.contracts?.length ? <ContractChips contracts={c.contracts} /> : (c.contractNumber ?? <span className="text-muted">-</span>)),
   },
   // Hidden until turned on in the ⋮ menu. Empty: the first word of the name is used, shown in grey.
   firstName: {
@@ -115,6 +117,8 @@ export default function ContatosPage() {
   const canImportExport = permissions?.[PERMISSION.CONTATOS_IMPORTAR_EXPORTAR];
   const canManageTags = permissions?.[PERMISSION.ETIQUETAS_VISUALIZAR];
   const canAttend = permissions?.[PERMISSION.ATENDIMENTO_ACESSAR];
+  const canEditContacts = permissions?.[PERMISSION.CONTATOS_EDITAR];
+  const [standardizeOpen, setStandardizeOpen] = useState(false);
   const isAgent = useAuthStore((s) => s.user?.role === "AGENT");
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -195,6 +199,15 @@ export default function ContatosPage() {
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted">Todos os clientes que já conversaram com a empresa, com etiquetas e histórico de atendimentos.</p>
         <div className="flex flex-wrap gap-2">
+          {canEditContacts && (
+            <button
+              type="button"
+              onClick={() => setStandardizeOpen(true)}
+              className="focus-ring flex items-center gap-1.5 rounded-card border border-border bg-surface px-3 py-2 text-sm font-medium hover:bg-surface-alt"
+            >
+              <CaseSensitive className="h-4 w-4" /> Padronizar nomes
+            </button>
+          )}
           {canManageTags && (
             <button
               type="button"
@@ -372,6 +385,7 @@ export default function ContatosPage() {
 
       {openContactId && <ContactDrawer contactId={openContactId} tags={tags ?? []} onClose={() => setOpenContactId(null)} />}
       {importOpen && <ImportContactsModal connections={connections ?? []} onClose={() => setImportOpen(false)} />}
+      {standardizeOpen && <PadronizarNomesModal onClose={() => setStandardizeOpen(false)} />}
     </div>
   );
 }

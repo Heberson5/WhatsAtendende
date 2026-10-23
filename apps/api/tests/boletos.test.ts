@@ -3,7 +3,7 @@ import request from "supertest";
 import { createApp } from "../src/app";
 import { prisma } from "../src/lib/prisma";
 import { __getProviderForTests } from "../src/modules/whatsapp/whatsapp.service";
-import { DEFAULT_BOLETO_INSTRUCTION, DEFAULT_BOLETO_SEND_MESSAGE, fillBoletoInstructions, fillBoletoSendMessage } from "@whatsatendende/types";
+import { BOLETO_PAYMENT_PLACES, DEFAULT_BOLETO_INSTRUCTION, DEFAULT_BOLETO_SEND_MESSAGE, fillBoletoInstructions, fillBoletoSendMessage } from "@whatsatendende/types";
 import { buildBoletoFromRow } from "../src/modules/boletos/boletos.service";
 import type { ColumnMap, Row } from "../src/modules/data-sources/data-sources.service";
 import type { MockWhatsAppProvider } from "@whatsatendende/whatsapp";
@@ -91,7 +91,9 @@ describe("Envio de boleto", () => {
     }
     const status = await request(app).get("/api/boletos/validation").set("Authorization", `Bearer ${adminToken}`);
     expect(status.body.find((b: { code: string }) => b.code === "001")).toMatchObject({ matched: 3, enabled: true });
-    expect(status.body.map((b: { code: string }) => b.code)).toEqual(["001"]);
+    // Banco do Brasil first; the other banks wait for their own 3 real boletos.
+    expect(status.body.map((b: { code: string }) => b.code)).toEqual(["001", "237", "104", "341", "748"]);
+    expect(status.body.filter((b: { enabled: boolean }) => b.enabled).map((b: { code: string }) => b.code)).toEqual(["001"]);
   });
 
   it("validação acha o nosso número escrito de outro jeito: só a sequência, sem zeros à esquerda, com espaços", async () => {
@@ -175,17 +177,23 @@ describe("Envio de boleto", () => {
     expect(fillBoletoSendMessage(DEFAULT_BOLETO_SEND_MESSAGE, { clientName: "", boletos: [{ due: "10/11/2026", cents: 100 }] })).toMatch(/^Olá! Segue/);
   });
 
-  it("layouts: os 4 do Banco do Brasil já vêm, com prévia em PDF; renomear a mensagem renomeia a tag no layout", async () => {
+  it("layouts: os 4 do Banco do Brasil e o Boleto F dos outros bancos já vêm, com prévia em PDF; renomear a mensagem renomeia a tag no layout", async () => {
     const auth = { Authorization: `Bearer ${adminToken}` };
     const layouts = (await request(app).get("/api/boletos/layouts").set(auth)).body;
-    expect(layouts.map((l: { name: string }) => l.name)).toEqual(["Boleto F", "Boleto padrão", "Boleto com demonstrativo", "Ficha de compensação"]);
+    const byBank = (code: string) => layouts.filter((l: { bankCode: string }) => l.bankCode === code);
+    expect(byBank("001").map((l: { name: string }) => l.name)).toEqual(["Boleto F", "Boleto padrão", "Boleto com demonstrativo", "Ficha de compensação"]);
+    for (const code of ["748", "237", "341", "104"]) {
+      expect(byBank(code).map((l: { name: string }) => l.name)).toEqual(["Boleto F"]);
+      expect(byBank(code)[0].settings.paymentPlace).toBe(BOLETO_PAYMENT_PLACES[code]);
+    }
+    expect(BOLETO_PAYMENT_PLACES["748"]).toBe("PAGÁVEL PREFERENCIALMENTE NAS COOPERATIVAS DE CRÉDITO DO SICREDI");
     for (const layout of layouts) {
       const pdf = await request(app).post("/api/boletos/layouts/preview").set(auth).send(layout).buffer(true);
       expect(pdf.status).toBe(200);
       expect(pdf.headers["content-type"]).toContain("application/pdf");
     }
     const [instruction] = (await request(app).get("/api/boletos/instructions").set(auth)).body;
-    expect(instruction.usedBy).toHaveLength(4);
+    expect(instruction.usedBy).toHaveLength(8);
     await request(app).put(`/api/boletos/instructions/${instruction.id}`).set(auth).send({ ...instruction, name: "Instruções BB" }).expect(200);
     const renamed = (await request(app).get("/api/boletos/layouts").set(auth)).body[0];
     expect(renamed.settings.instructions).toBe("{mensagem:Instruções BB}");

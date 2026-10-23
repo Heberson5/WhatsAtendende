@@ -689,6 +689,9 @@ model Contact {
   pinnedNoteUpdatedBy    String? // display name at the time, kept even if the user is later renamed/deleted
   // Contract number(s) of the client — filled from the active Fonte de dados when empty, editable in the client panel.
   contractNumber         String?
+  // Every contract of this phone in the active Fonte de dados, replaced at each upload:
+  // [{ number, status: "ACTIVE" | "SUSPENDED" | "CANCELED" | null, canceledAt, cancelReason }] — green/yellow/red.
+  contracts              Json?
   // How the customer is called — {{primeiro_nome}} in Respostas. Empty: the first word of the name.
   firstName              String?
   // WhatsApp's raw chat id (e.g. "<n>@lid" or "<n>@s.whatsapp.net") as first
@@ -711,6 +714,7 @@ model Contact {
   conversations Conversation[]
   flowSessions  FlowSession[]
   tags          ContactTag[]
+  nameChanges   ContactNameChange[]
 
   @@unique([phone, whatsappConnectionId])
   @@unique([providerChatId, whatsappConnectionId])
@@ -1006,6 +1010,13 @@ model MessageAttachment {
   // POLL only.
   pollQuestion     String?
   pollOptions      Json?
+  // 1 = single choice, otherwise several answers allowed.
+  pollSelectableCount Int?
+  // The key the votes are encrypted with (base64) and the poll's creator as that encryption names them — without
+  // them (old polls, polls from history) the votes can't be read.
+  pollSecret       String?
+  pollCreatorJid   String?
+  pollVotes        PollVote[]
   // EVENT only — location reuses latitude/longitude above (WhatsApp's
   // EventMessage carries an optional plain LocationMessage the same shape
   // as a standalone one).
@@ -1381,6 +1392,38 @@ model AutoMessageBlockLog {
 
   @@index([createdAt])
   @@index([conversationId, kind])
+}
+
+// Contatos › "Padronizar nomes": one apply (batch) changes many names; each row keeps the name it replaced, so the
+// whole batch can be undone.
+// One person's current vote in a group poll (WhatsApp sends a new vote when someone changes it: it replaces this).
+// Empty options = the vote was taken back.
+model PollVote {
+  id           String            @id @default(uuid())
+  attachment   MessageAttachment @relation(fields: [attachmentId], references: [id], onDelete: Cascade)
+  attachmentId String
+  voterJid     String
+  voterName    String?
+  voterPhone   String?
+  options      String[]
+  votedAt      DateTime
+  updatedAt    DateTime          @updatedAt
+
+  @@unique([attachmentId, voterJid])
+}
+
+model ContactNameChange {
+  id        String    @id @default(uuid())
+  batchId   String
+  contact   Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  contactId String
+  oldName   String?
+  newName   String
+  createdAt DateTime  @default(now())
+  undoneAt  DateTime?
+
+  @@index([batchId])
+  @@index([contactId])
 }
 
 model ContactTag {

@@ -51,9 +51,14 @@ export interface InboundMessageEvent {
   latitude?: number;
   longitude?: number;
   vcard?: string;
-  /** POLL only — sent in plaintext by WhatsApp; votes (a separate, later message) are end-to-end encrypted and not handled here. */
+  /** POLL only — the question and options come in plaintext; the votes (later messages) are read with pollSecret. */
   pollQuestion?: string;
   pollOptions?: string[];
+  /** POLL only: 1 = single choice, otherwise several answers allowed. */
+  pollSelectableCount?: number;
+  /** POLL only: base64 key the votes are encrypted with, and who created the poll as the encryption names them. */
+  pollSecret?: string | null;
+  pollCreatorJid?: string | null;
   /** EVENT only ("lembrete"/"evento" in WhatsApp's own Portuguese UI). */
   eventName?: string;
   eventDescription?: string;
@@ -146,6 +151,24 @@ export interface TypingEvent {
   typing: boolean;
 }
 
+/**
+ * Someone voted (or changed or took back their vote) in a poll — still encrypted: the poll's own key, kept with the
+ * poll message, reads it (decryptPollVoteOptions).
+ */
+export interface PollVoteEvent {
+  chatId: string;
+  /** The poll's own provider message id. */
+  pollMessageId: string;
+  /** The voter as the vote encryption names them. */
+  voterJid: string;
+  voterName: string | null;
+  voterPhone: string | null;
+  fromMe: boolean;
+  encPayload: string;
+  encIv: string;
+  timestamp: Date;
+}
+
 export interface ReactionEvent {
   providerMessageId: string;
   chatId: string;
@@ -209,6 +232,7 @@ export interface HistoryMessageEvent {
   vcard?: string;
   pollQuestion?: string;
   pollOptions?: string[];
+  pollSelectableCount?: number;
   eventName?: string;
   eventDescription?: string;
   eventStartAt?: Date;
@@ -368,6 +392,8 @@ export interface WhatsAppProvider {
   onMessage(listener: (event: InboundMessageEvent) => void): void;
   onDelivery(listener: (event: DeliveryEvent) => void): void;
   onReaction(listener: (event: ReactionEvent) => void): void;
+  /** Poll votes (QR Code connections). Optional: the Cloud API does not deliver group polls. */
+  onPollVote?(listener: (event: PollVoteEvent) => void): void;
   /**
    * Asks WhatsApp to report when the customer of this chat is typing (it only does so for chats someone asked
    * about, and for a while). A no-op where the channel has no such signal (the Cloud API).

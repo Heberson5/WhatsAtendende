@@ -104,6 +104,38 @@ contactsRouter.post(
   })
 );
 
+// --- Padronizar nomes (declared before /:id) ---
+
+contactsRouter.get(
+  "/name-standardization",
+  requirePermission(PERMISSION.CONTATOS_EDITAR),
+  asyncHandler(async (_req, res) => {
+    const [items, lastBatch] = await Promise.all([service.previewNameStandardization(), service.lastNameStandardization()]);
+    res.json({ items, lastBatch });
+  })
+);
+
+contactsRouter.post(
+  "/name-standardization",
+  requirePermission(PERMISSION.CONTATOS_EDITAR),
+  asyncHandler(async (req, res) => {
+    const { contactIds } = z.object({ contactIds: z.array(z.string().uuid()).min(1).max(50_000) }).parse(req.body);
+    const result = await service.applyNameStandardization(contactIds);
+    await writeAudit({ userId: req.auth!.userId, action: "CONTACT_NAMES_STANDARDIZED", entity: "Contact", entityId: result.batchId, ipAddress: req.ip ?? null, metadata: { count: result.count } });
+    res.json(result);
+  })
+);
+
+contactsRouter.post(
+  "/name-standardization/:batchId/undo",
+  requirePermission(PERMISSION.CONTATOS_EDITAR),
+  asyncHandler(async (req, res) => {
+    const result = await service.undoNameStandardization(req.params.batchId);
+    await writeAudit({ userId: req.auth!.userId, action: "CONTACT_NAMES_STANDARDIZATION_UNDONE", entity: "Contact", entityId: req.params.batchId, ipAddress: req.ip ?? null, metadata: result });
+    res.json(result);
+  })
+);
+
 // --- Etiquetas (declared before /:id so "tags" is never read as a contact id) ---
 
 contactsRouter.get(

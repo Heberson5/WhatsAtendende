@@ -1,6 +1,19 @@
+import { randomUUID } from "node:crypto";
+import { normalizeContactName } from "@whatsatendende/types";
+import { contactContractsOf } from "../../lib/contact-contracts";
 import type { Prisma } from "@prisma/client";
 import { COLUMN_SCREENS, DEFAULT_PHONE_SETTINGS, brazilianPhoneVariants, normalizeTypedPhone } from "@whatsatendende/types";
-import type { ContactDetailDTO, ContactImportResultDTO, ContactListItemDTO, ContactSortField, ManagedTagDTO, PhoneSettingsDTO, TagDTO } from "@whatsatendende/types";
+import type {
+  ContactDetailDTO,
+  ContactImportResultDTO,
+  ContactListItemDTO,
+  ContactSortField,
+  ManagedTagDTO,
+  NameStandardizationLastBatchDTO,
+  NameStandardizationPreviewItemDTO,
+  PhoneSettingsDTO,
+  TagDTO,
+} from "@whatsatendende/types";
 import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
 import { toTagDTO } from "../client-panel/client-panel.service";
@@ -39,6 +52,7 @@ function toListItem(row: ContactRow): ContactListItemDTO {
     connectionName: row.whatsappConnection?.name ?? row.metaConnection?.name ?? null,
     whatsappConnectionId: row.whatsappConnectionId,
     contractNumber: row.contractNumber,
+    contracts: contactContractsOf(row.contracts),
     firstName: row.firstName,
     tags: row.tags.map((t) => toTagDTO(t.tag)),
     conversationCount: row._count.conversations,
@@ -284,7 +298,7 @@ export async function importContactsCsv(csv: string, whatsappConnectionId: strin
       result.errors.push({ line: i + 1, reason: `Telefone inválido: "${cells[col.phone] ?? ""}"` });
       continue;
     }
-    const name = col.name === -1 ? "" : (cells[col.name] ?? "").slice(0, 120);
+    const name = col.name === -1 ? "" : (normalizeContactName(cells[col.name] ?? "") ?? "").slice(0, 120);
     const tagNames = col.tags === -1 ? [] : (cells[col.tags] ?? "").split(",").map((t) => t.trim().slice(0, 40)).filter(Boolean);
 
     // The same customer saved under the other form of a mobile (with/without the 9) is the same contact.
@@ -342,4 +356,58 @@ export async function deleteTag(id: string): Promise<void> {
   const tag = await prisma.tag.findUnique({ where: { id } });
   if (!tag) throw Errors.notFound("Etiqueta não encontrada");
   await prisma.tag.delete({ where: { id } });
+}
+
+// --- Contatos › Padronizar nomes ---
+
+/** The contacts whose name would change with the standard (normalizeContactName) — groups and Meta ids left out. */
+export async function previewNameStandardization(): Promise<NameStandardizationPreviewItemDTO[]> {
+  const contacts = await prisma.contact.findMany({ where: { isGroup: false, name: { not: null } }, select: { id: true, name: true, phone: true }, orderBy: { name: "asc" } });
+  return contacts.flatMap((c) => {
+    const proposed = normalizeContactName(c.name);
+    return proposed && proposed !== c.name ? [{ contactId: c.id, phone: c.phone, current: c.name!, proposed }] : [];
+  });
+}
+
+export async function lastNameStandardization(): Promise<NameStandardizationLastBatchDTO | null> {
+  const last = await prisma.contactNameChange.findFirst({ orderBy: { createdAt: "desc" }, select: { batchId: true, createdAt: true } });
+  if (!last) return null;
+  const [count, undone] = await Promise.all([
+    prisma.contactNameChange.count({ where: { batchId: last.batchId } }),
+    prisma.contactNameChange.count({ where: { batchId: last.batchId, undoneAt: { not: null } } }),
+  ]);
+  return { batchId: last.batchId, count, at: last.createdAt.toISOString(), undone: undone > 0 };
+}
+
+/** Applies the standard to the chosen contacts; each old name is kept so the whole apply can be undone. */
+export async function applyNameStandardization(contactIds: string[]): Promise<{ batchId: string; count: number }> {
+  const batchId = randomUUID();
+  const contacts = await prisma.contact.findMany({ where: { id: { in: contactIds }, isGroup: false }, select: { id: true, name: true } });
+  let count = 0;
+  for (const c of contacts) {
+    const proposed = normalizeContactName(c.name);
+    if (!proposed || proposed === c.name) continue;
+    await prisma.$transaction([
+      prisma.contact.update({ where: { id: c.id }, data: { name: proposed } }),
+      prisma.contactNameChange.create({ data: { batchId, contactId: c.id, oldName: c.name, newName: proposed } }),
+    ]);
+    count++;
+  }
+  return { batchId, count };
+}
+
+/** "Desfazer": puts back the names of an apply — except a name someone changed again since then. */
+export async function undoNameStandardization(batchId: string): Promise<{ count: number }> {
+  const changes = await prisma.contactNameChange.findMany({ where: { batchId, undoneAt: null }, include: { contact: { select: { name: true } } } });
+  if (changes.length === 0) throw Errors.notFound("Nada para desfazer");
+  let count = 0;
+  const now = new Date();
+  for (const change of changes) {
+    if (change.contact.name === change.newName) {
+      await prisma.contact.update({ where: { id: change.contactId }, data: { name: change.oldName } });
+      count++;
+    }
+    await prisma.contactNameChange.update({ where: { id: change.id }, data: { undoneAt: now } });
+  }
+  return { count };
 }

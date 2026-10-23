@@ -1,7 +1,10 @@
-import type { DataSource, Role } from "@prisma/client";
+import { normalizeContactName } from "@whatsatendende/types";
+import { Prisma, type DataSource, type Role } from "@prisma/client";
 import {
   DATA_SOURCE_ROLES,
   PERMISSION,
+  contractStatusOf,
+  type ContactContractDTO,
   type ClientBeneficiaryDTO,
   type ClientContractDTO,
   type ClientDataDTO,
@@ -281,29 +284,44 @@ function contractNumbersOf(contracts: { number: string }[]): string | null {
   return contracts.map((c) => c.number).filter((n) => n !== "Sem contrato").join(", ") || null;
 }
 
-/**
- * Contatos › Contrato from the source, for contacts that have none yet — what the attendant typed in the client
- * panel stays. Only a phone of a single client: with several, the attendant's choice in the panel fills it.
- */
 type StoredRow = { phoneKey: string; data: Row };
 
+/**
+ * Contatos › Contrato from the list, replaced at every upload: every contract of the phone (of every client on it),
+ * with its status — green active, yellow suspended, red canceled with date and reason. A contact no longer in the
+ * list loses the list's contracts; a number typed by hand in the client panel stays only while the list has none.
+ */
 async function fillContactContracts(rows: StoredRow[], columnMap: ColumnMap) {
-  const clientColumn = columnMap.clientKey ?? columnMap.clientName;
-  const byPhone = new Map<string, { clients: Set<string>; contracts: Set<string> }>();
+  const byPhone = new Map<string, Map<string, ContactContractDTO>>();
   for (const row of rows) {
     const data = row.data as Row;
-    const contract = data[columnMap.contract!];
-    if (!contract) continue;
-    if (!byPhone.has(row.phoneKey)) byPhone.set(row.phoneKey, { clients: new Set(), contracts: new Set() });
-    const entry = byPhone.get(row.phoneKey)!;
-    entry.clients.add(clientColumn ? data[clientColumn] ?? "" : "");
-    entry.contracts.add(contract);
+    const number = data[columnMap.contract!]?.trim();
+    if (!number) continue;
+    if (!byPhone.has(row.phoneKey)) byPhone.set(row.phoneKey, new Map());
+    const contracts = byPhone.get(row.phoneKey)!;
+    if (contracts.has(number)) continue;
+    const status = contractStatusOf(columnMap.contractStatus ? data[columnMap.contractStatus] : null);
+    contracts.set(number, {
+      number,
+      status,
+      canceledAt: status === "CANCELED" ? (columnMap.cancelDate ? data[columnMap.cancelDate]?.trim() || null : null) : null,
+      cancelReason: status === "CANCELED" ? (columnMap.cancelReason ? data[columnMap.cancelReason]?.trim() || null : null) : null,
+    });
   }
-  const contacts = await prisma.contact.findMany({ where: { phone: { not: null }, contractNumber: null, isGroup: false }, select: { id: true, phone: true } });
+  const contacts = await prisma.contact.findMany({ where: { phone: { not: null }, isGroup: false }, select: { id: true, phone: true, contracts: true, contractNumber: true } });
   for (const contact of contacts) {
-    const entry = byPhone.get(phoneKey(contact.phone) ?? "");
-    if (entry?.clients.size !== 1) continue;
-    await prisma.contact.update({ where: { id: contact.id }, data: { contractNumber: [...entry.contracts].join(", ") } });
+    // Active first, then suspended, then canceled.
+    const order = { ACTIVE: 0, SUSPENDED: 1, CANCELED: 2 } as const;
+    const list = [...(byPhone.get(phoneKey(contact.phone) ?? "")?.values() ?? [])].sort((a, b) => (order[a.status ?? "ACTIVE"] ?? 0) - (order[b.status ?? "ACTIVE"] ?? 0));
+    const contracts = list.length ? list : null;
+    if (JSON.stringify(contracts) === JSON.stringify(contact.contracts ?? null)) continue;
+    await prisma.contact.update({
+      where: { id: contact.id },
+      data: {
+        contracts: contracts ? (contracts as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+        ...(contracts && { contractNumber: contracts.map((c) => c.number).join(", ") }),
+      },
+    });
   }
 }
 
@@ -318,7 +336,7 @@ export async function rememberContractNumber(contact: { id: string; contractNumb
 async function overrideContactNames(rows: StoredRow[], columnMap: ColumnMap) {
   const namesByPhone = new Map<string, Set<string>>();
   for (const row of rows) {
-    const name = (row.data as Row)[columnMap.clientName!];
+    const name = normalizeContactName((row.data as Row)[columnMap.clientName!]);
     if (!name) continue;
     if (!namesByPhone.has(row.phoneKey)) namesByPhone.set(row.phoneKey, new Set());
     namesByPhone.get(row.phoneKey)!.add(name);
@@ -414,9 +432,9 @@ export async function usableSource(conversation: Pick<ConversationForData, "what
 // Shown in the panel some other way (the contract's header, its boletos and beneficiaries) or only a rule for the
 // system (parcelas para suspender): never as a plain line.
 const PANEL_ROLES_SHOWN_ELSEWHERE: DataSourceRole[] = [
-  "contract", "plan", "contractStatus", "beneficiaries", "suspensionThreshold", "document", "parcelDue", "daysLate", "parcelValue", "fine",
+  "contract", "plan", "contractStatus", "cancelDate", "cancelReason", "beneficiaries", "suspensionThreshold", "document", "parcelDue", "daysLate", "parcelValue", "fine",
   "interest", "updatedValue", "paymentMethod", "boletoDue", "boletoValue", "ourNumber", "bankCode", "agency", "account", "agreement",
-  "wallet", "walletVariation", "payeeName", "payeeDocument",
+  "wallet", "walletVariation", "post", "payeeName", "payeeDocument",
 ];
 // Bookkeeping columns of the spreadsheet script: the panel already shows the client chosen and the beneficiaries counted.
 const PANEL_HIDDEN_COLUMN = /^(clientes_neste_telefone|(quantidade|qtd|qtde)_(de_)?beneficiarios)$/;
@@ -529,13 +547,17 @@ export function buildContracts(rows: { id: string; data: Row }[], map: ColumnMap
     const overdueCount = parcels.filter((p) => p.overdue).length;
     const threshold = toInt(col(first, "suspensionThreshold")) || null;
     const status = col(first, "contractStatus") || null;
+    const canceled = contractStatusOf(status) === "CANCELED";
     return {
       number,
       plan: col(first, "plan") || null,
       status,
       overdueCount,
       suspensionThreshold: threshold,
-      suspended: threshold !== null && overdueCount >= threshold && status?.toLowerCase() !== "cancelado",
+      // The list says so ("Suspenso"), or the overdue parcels reached the ERP's limit.
+      suspended: !canceled && (contractStatusOf(status) === "SUSPENDED" || (threshold !== null && overdueCount >= threshold)),
+      canceledAt: canceled ? col(first, "cancelDate") || null : null,
+      cancelReason: canceled ? col(first, "cancelReason") || null : null,
       beneficiaries: uniqueBeneficiaries(parseBeneficiaries(col(first, "beneficiaries"))),
       parcels,
       fields: [],

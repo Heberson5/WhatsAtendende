@@ -18,6 +18,7 @@ const marina: ContactListItemDTO = {
   connectionName: "Suporte",
   whatsappConnectionId: "suporte",
   contractNumber: null,
+  contracts: [],
   firstName: null,
   tags: [],
   conversationCount: 3,

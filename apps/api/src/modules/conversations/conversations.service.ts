@@ -1,3 +1,4 @@
+import { normalizeContactName } from "@whatsatendende/types";
 import { Prisma } from "@prisma/client";
 import { CONVERSATION_UNDO_WINDOW_MS, brazilianPhoneVariants } from "@whatsatendende/types";
 import { prisma } from "../../lib/prisma";
@@ -106,6 +107,8 @@ export async function findOrCreateContact(
   opts?: { preferIncomingName?: boolean; createIfMissing?: boolean }
 ): Promise<Contact | null> {
   const createIfMissing = opts?.createIfMissing ?? true;
+  // Contatos › padrão de nomes: "MARIA DA SILVA" / "123 tgs maria" as WhatsApp brings them are saved standardized.
+  name = normalizeContactName(name);
   const resolveName = (existingName: string | null, incomingName: string | null) =>
     opts?.preferIncomingName && incomingName ? incomingName : (existingName ?? incomingName ?? undefined);
 

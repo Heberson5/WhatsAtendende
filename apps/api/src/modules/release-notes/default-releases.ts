@@ -11,6 +11,62 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.25.0",
+    date: "23 out 2026",
+    name: "Nomes padronizados, contratos coloridos e boletos de outros bancos",
+    summary:
+      "Os nomes dos contatos ganham um padrão (com prévia e Desfazer); a coluna Contrato mostra todos os contratos do cliente em verde, amarelo ou vermelho; as enquetes dos grupos aparecem com os votos; e o boleto passa a sair também pelo Sicredi, Bradesco, Itaú e Caixa, cada um com a sua logo.",
+    notes: [
+      {
+        type: "novo",
+        area: "contatos",
+        title: "Padronizar nomes dos contatos",
+        text: "O botão Padronizar nomes mostra, antes de mudar qualquer coisa, como cada nome vai ficar: cada palavra com a inicial maiúscula (da, de, do, das, dos e \"e\" em minúsculas), a sigla da cidade (TGS, CNP, BBG, DEN, NVO) em maiúsculas e levada para o fim junto com o número — \"456 Cnp ANA LIMA\" vira \"Ana Lima 456-CNP\" —, Dr. e Dra. com ponto e LTDA, ME e EPP em maiúsculas. Um nome que é só número fica como está. Você marca quais aplicar, e o botão Desfazer devolve os nomes anteriores (menos os que alguém trocou depois). Os contatos novos já entram no padrão, e as mensagens com {{primeiro_nome}} usam \"Dr. Carlos\" quando o nome tem o título.",
+        steps: ["Abra Contatos e clique em Padronizar nomes.", "Confira a lista: nome atual e como vai ficar. Desmarque o que não quiser mudar.", "Clique em Aplicar. Se precisar, use Desfazer."],
+        where: "Contatos › Padronizar nomes",
+        requires: [PERMISSION.CONTATOS_EDITAR],
+        images: [{ src: "/notas-de-versao/contatos-padronizar-nomes.webp", caption: "A prévia: o nome atual e como vai ficar" }],
+      },
+      {
+        type: "melhoria",
+        area: "contatos",
+        title: "Contrato com cores: ativo, suspenso e cancelado",
+        text: "Quando a lista de clientes é enviada, a coluna Contrato de Contatos passa a ter todos os contratos do telefone, substituindo o que havia: verde para ativo, amarelo para suspenso (4 parcelas em atraso, conforme o parâmetro do sistema) e vermelho para cancelado. No painel do cliente, o contrato cancelado mostra também a data e o motivo do cancelamento.",
+        where: "Contatos › Contrato e Atendimento › painel do cliente",
+        images: [{ src: "/notas-de-versao/contatos-contratos-cores.webp", caption: "Contratos ativos em verde, suspensos em amarelo e cancelados em vermelho" }],
+      },
+      {
+        type: "melhoria",
+        area: "dados",
+        title: "Script da lista de clientes traz os contratos cancelados",
+        text: "O script SQL que gera a lista (whatsatendente.sql) passou a trazer também os contratos cancelados, com as colunas data_cancelamento e motivo_cancelamento, e a coluna posto_beneficiario usada no boleto do Sicredi. Uma cópia do script anterior foi guardada. Depois de gerar o CSV novo, confira em Dados › Fontes de dados se as colunas novas foram reconhecidas.",
+        where: "Dados › Fontes de dados",
+        requires: [PERMISSION.FONTES_DADOS_EDITAR],
+      },
+      {
+        type: "novo",
+        area: "atendimento",
+        title: "Enquetes dos grupos com os votos, como no WhatsApp Web",
+        text: "A enquete enviada num grupo aparece com as opções, a barra de cada uma e a quantidade de votos, que se atualizam quando alguém vota, muda ou retira o voto. Ver votos mostra quem escolheu cada opção. Votar continua sendo só pelo celular. As enquetes recebidas antes desta versão aparecem sem os votos.",
+        where: "Atendimento › Grupos",
+        images: [{ src: "/notas-de-versao/enquete-grupo.webp", caption: "A enquete no grupo, com os votos e o Ver votos" }],
+      },
+      {
+        type: "novo",
+        area: "dados",
+        title: "Boleto pelo Sicredi, Bradesco, Itaú e Caixa",
+        text: "Além do Banco do Brasil, o boleto pode sair pelo Sicredi (748), Bradesco (237), Itaú (341) e Caixa (104), no mesmo layout e com a logo de cada banco. O código de barras, a linha digitável, o nosso número e a agência/código do beneficiário seguem o manual oficial de cada banco e foram conferidos com os exemplos desses manuais; no Sicredi, também com boletos reais. Cada banco já vem com o layout Boleto F e o Local de pagamento que o manual pede. Como no Banco do Brasil, um banco só envia boletos depois de conferir 3 boletos reais em Validação de boletos.",
+        steps: ["Abra Dados › Layouts de boleto e confira o Boleto F do banco (Prévia).", "Em Dados › Validação de boletos, confira 3 boletos reais do banco.", "Na fonte de dados, escolha o layout de cada banco."],
+        where: "Dados › Layouts de boleto / Validação de boletos",
+        requires: [PERMISSION.FONTES_DADOS_EDITAR],
+        images: [
+          { src: "/notas-de-versao/boletos-outros-bancos.webp", caption: "Sicredi, Bradesco, Itaú e Caixa: logo, código do banco e Local de pagamento de cada manual" },
+          { src: "/notas-de-versao/boleto-sicredi.webp", caption: "A prévia do Boleto F do Sicredi (dados fictícios)" },
+        ],
+      },
+    ],
+  },
+  {
     version: "2.24.0",
     date: "23 out 2026",
     name: "Etiquetas que bloqueiam mensagens automáticas",

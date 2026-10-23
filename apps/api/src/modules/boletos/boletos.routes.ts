@@ -109,7 +109,7 @@ const layoutSchema = z.object({
   model: z.enum(Object.keys(BOLETO_LAYOUT_MODELS) as [BoletoLayoutModel, ...BoletoLayoutModel[]]),
   perPage: z.number().int().min(1).max(3),
   settings: z.object({
-    paymentPlace: z.string().trim().max(120),
+    paymentPlace: z.string().trim().max(200),
     documentKind: z.string().trim().max(10),
     acceptance: z.string().trim().max(5),
     documentDate: dateSource,

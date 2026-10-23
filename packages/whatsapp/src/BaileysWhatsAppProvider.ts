@@ -9,11 +9,13 @@ import makeWASocket, {
   useMultiFileAuthState,
   downloadMediaMessage,
   normalizeMessageContent,
+  jidNormalizedUser,
   proto,
   type AuthenticationCreds,
   type WASocket,
   type WAMessage,
 } from "@whiskeysockets/baileys";
+import { pollInfoOf } from "./poll-vote";
 import type {
   ChatIdentityResolvedEvent,
   ChatReadEvent,
@@ -26,6 +28,7 @@ import type {
   HistorySyncEvent,
   InboundMessageEvent,
   OlderHistoryAnchor,
+  PollVoteEvent,
   ReactionEvent,
   TypingEvent,
   SendResult,
@@ -981,6 +984,24 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
     this.emitter.on("reaction", listener);
   }
 
+  onPollVote(listener: (event: PollVoteEvent) => void): void {
+    this.emitter.on("pollVote", listener);
+  }
+
+  /**
+   * Who wrote a message, as poll encryption names them: this account when fromMe (its LID in a LID-addressed group),
+   * else the group participant or the chat itself.
+   */
+  private authorJid(key: proto.IMessageKey & { addressingMode?: string | null }): string | null {
+    if (key.fromMe) {
+      const user = this.socket?.user as { id?: string; lid?: string } | undefined;
+      const own = key.addressingMode === "lid" && user?.lid ? user.lid : user?.id;
+      return own ? jidNormalizedUser(own) : null;
+    }
+    const author = key.participant || key.remoteJid;
+    return author ? jidNormalizedUser(author) : null;
+  }
+
   async subscribeTyping(chatId: string): Promise<void> {
     if (!this.socket || this.status.state !== "CONNECTED") return;
     await this.socket.presenceSubscribe(chatId);
@@ -1167,14 +1188,37 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
       return;
     }
 
-    if (content.pollCreationMessage) {
+    const poll = pollInfoOf(content, this.authorJid(message.key));
+    if (poll) {
       this.emitter.emit("message", {
         ...base,
         type: "POLL",
         body: null,
-        pollQuestion: content.pollCreationMessage.name ?? "",
-        pollOptions: (content.pollCreationMessage.options ?? []).map((o) => o.optionName ?? "").filter(Boolean),
+        pollQuestion: poll.question,
+        pollOptions: poll.options,
+        pollSelectableCount: poll.selectableCount,
+        pollSecret: poll.secret,
+        pollCreatorJid: poll.creatorJid,
       } satisfies InboundMessageEvent);
+      return;
+    }
+
+    // A vote in a poll: forwarded still encrypted — the app has the poll's key.
+    const vote = content.pollUpdateMessage;
+    if (vote?.pollCreationMessageKey?.id && vote.vote?.encPayload && vote.vote.encIv) {
+      const voterJid = this.authorJid(message.key);
+      if (!voterJid) return;
+      this.emitter.emit("pollVote", {
+        chatId,
+        pollMessageId: vote.pollCreationMessageKey.id,
+        voterJid,
+        voterName: message.key.fromMe ? null : (group?.participantName ?? message.pushName ?? null),
+        voterPhone: group?.participantPhone ?? (message.key.fromMe ? null : base.phone),
+        fromMe: Boolean(message.key.fromMe),
+        encPayload: Buffer.from(vote.vote.encPayload).toString("base64"),
+        encIv: Buffer.from(vote.vote.encIv).toString("base64"),
+        timestamp: vote.senderTimestampMs ? new Date(Number(vote.senderTimestampMs)) : base.timestamp,
+      } satisfies PollVoteEvent);
       return;
     }
 
@@ -1345,14 +1389,10 @@ function convertHistoryMessage(message: WAMessage, chatId: string): HistoryMessa
   if (content.contactMessage) {
     return { ...base, type: "CONTACT", body: null, vcard: content.contactMessage.vcard ?? undefined };
   }
-  if (content.pollCreationMessage) {
-    return {
-      ...base,
-      type: "POLL",
-      body: null,
-      pollQuestion: content.pollCreationMessage.name ?? "",
-      pollOptions: (content.pollCreationMessage.options ?? []).map((o) => o.optionName ?? "").filter(Boolean),
-    };
+  const poll = pollInfoOf(content, null);
+  if (poll) {
+    // From history: shown with its options; its creator isn't known here, so its votes can't be read.
+    return { ...base, type: "POLL", body: null, pollQuestion: poll.question, pollOptions: poll.options, pollSelectableCount: poll.selectableCount };
   }
   if (content.eventMessage) {
     const event = content.eventMessage;

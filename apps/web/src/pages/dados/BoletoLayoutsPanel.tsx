@@ -4,7 +4,9 @@ import { toast } from "sonner";
 import clsx from "clsx";
 import { Copy, Plus, Trash2 } from "lucide-react";
 import {
+  BOLETO_BANK_CODES,
   BOLETO_BANKS,
+  BOLETO_PAYMENT_PLACES,
   BOLETO_INSTRUCTION_TAGS,
   BOLETO_LAYOUT_MODELS,
   DEFAULT_BOLETO_LAYOUT_SETTINGS,
@@ -121,7 +123,7 @@ export function BoletoLayoutsPanel() {
             <Plus className="h-4 w-4" /> Novo layout
           </button>
         )}
-        {Object.entries(BOLETO_BANKS).map(([code, bankName]) => (
+        {BOLETO_BANK_CODES.map((code) => [code, BOLETO_BANKS[code]] as const).map(([code, bankName]) => (
           <div key={code}>
             <p className="px-1 pb-1 pt-2 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted">
               {bankName} ({code})
@@ -159,10 +161,15 @@ export function BoletoLayoutsPanel() {
               </label>
               <label className="block">
                 <span className="mb-1 block text-sm font-medium">Banco</span>
-                <select value={draft.bankCode} disabled={Boolean(draft.id)} onChange={(e) => setDraft({ ...draft, bankCode: e.target.value })} className={inputClass}>
-                  {Object.entries(BOLETO_BANKS).map(([code, name]) => (
+                <select value={draft.bankCode} disabled={Boolean(draft.id)} onChange={(e) => {
+                    // A new layout takes the payment place of its bank's manual, unless it was already changed.
+                    const bankCode = e.target.value;
+                    const keep = draft.settings.paymentPlace !== (BOLETO_PAYMENT_PLACES[draft.bankCode] ?? "");
+                    setDraft({ ...draft, bankCode, settings: keep ? draft.settings : { ...draft.settings, paymentPlace: BOLETO_PAYMENT_PLACES[bankCode] ?? "" } });
+                  }} className={inputClass}>
+                  {BOLETO_BANK_CODES.map((code) => (
                     <option key={code} value={code}>
-                      {name} ({code})
+                      {BOLETO_BANKS[code]} ({code})
                     </option>
                   ))}
                 </select>
@@ -197,7 +204,7 @@ export function BoletoLayoutsPanel() {
             </div>
             <label className="block">
               <span className="mb-1 block text-sm font-medium">Local de pagamento</span>
-              <input value={draft.settings.paymentPlace} onChange={(e) => setSettings({ paymentPlace: e.target.value })} maxLength={120} className={inputClass} />
+              <input value={draft.settings.paymentPlace} onChange={(e) => setSettings({ paymentPlace: e.target.value })} maxLength={200} className={inputClass} />
             </label>
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="block">

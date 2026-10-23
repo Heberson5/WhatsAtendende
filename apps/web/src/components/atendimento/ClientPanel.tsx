@@ -195,7 +195,7 @@ export function ClientPanel({
           <p className="mt-2 max-w-full truncate text-[15px] font-semibold">{name}</p>
           {conversation.contact.phone && <p className="text-xs tabular-nums text-muted">{formatPhone(conversation.contact.phone)}</p>}
           {panel && <ContactFirstNameField conversationId={conversation.id} firstName={panel.firstName} contactName={conversation.contact.name} readOnly={readOnly} />}
-          {panel && <ContactContractField conversationId={conversation.id} contractNumber={panel.contractNumber} readOnly={readOnly} />}
+          {panel && <ContactContractField conversationId={conversation.id} contractNumber={panel.contractNumber} contracts={panel.contracts} readOnly={readOnly} />}
         </div>
 
         {clientData && clientData.status !== "NO_SOURCE" && (

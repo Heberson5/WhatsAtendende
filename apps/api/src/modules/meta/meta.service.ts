@@ -1,3 +1,4 @@
+import { normalizeContactName } from "@whatsatendende/types";
 import { sendOutOfHoursNotice } from "../../lib/auto-messages";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { fillSendTags } from "../../lib/customer-tags";
@@ -28,7 +29,7 @@ export async function findOrCreateMetaContact(metaConnectionId: string, channel:
     if (name && !existing.name) return prisma.contact.update({ where: { id: existing.id }, data: { name, lastInteractionAt: new Date() } });
     return prisma.contact.update({ where: { id: existing.id }, data: { lastInteractionAt: new Date() } });
   }
-  return prisma.contact.create({ data: { channel, metaConnectionId, externalUserId, name } });
+  return prisma.contact.create({ data: { channel, metaConnectionId, externalUserId, name: normalizeContactName(name) } });
 }
 
 interface MetaMessagingEvent {

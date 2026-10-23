@@ -2,13 +2,25 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Check, Pencil, X } from "lucide-react";
-import type { ContactPanelDTO } from "@whatsatendende/types";
+import type { ContactContractDTO, ContactPanelDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
+import { ContractChips } from "../common/ContractChips";
 
 const MAX_CONTRACT_LENGTH = 200;
 
 /** Contatos › Contrato under the client's name: filled from the Fonte de dados, corrected or typed by the attendant. */
-export function ContactContractField({ conversationId, contractNumber, readOnly }: { conversationId: string; contractNumber: string | null; readOnly?: boolean }) {
+export function ContactContractField({
+  conversationId,
+  contractNumber,
+  contracts = [],
+  readOnly,
+}: {
+  conversationId: string;
+  contractNumber: string | null;
+  /** From the Fonte de dados list: shown in color and replaced at each upload, so not edited here. */
+  contracts?: ContactContractDTO[];
+  readOnly?: boolean;
+}) {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState("");
@@ -24,6 +36,15 @@ export function ContactContractField({ conversationId, contractNumber, readOnly 
     },
     onError: (err) => toast.error(getApiErrorMessage(err)),
   });
+
+  if (contracts.length > 0) {
+    return (
+      <div className="mt-1 flex max-w-full items-start gap-1 text-xs text-muted">
+        <span className="pt-0.5">Contrato:</span>
+        <ContractChips contracts={contracts} detailed />
+      </div>
+    );
+  }
 
   if (editing) {
     return (
