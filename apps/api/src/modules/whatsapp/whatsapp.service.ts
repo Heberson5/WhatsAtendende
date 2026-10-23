@@ -35,6 +35,7 @@ import { getManagerConnectionIds } from "../../lib/connection-access";
 import { createNotification } from "../notifications/notifications.service";
 import { toNotificationDTO } from "../notifications/notifications.mapper";
 import { encryptSecret, decryptSecret } from "../../lib/crypto";
+import { sendOutOfHoursNotice } from "../../lib/auto-messages";
 
 fs.mkdirSync(env.UPLOAD_DIR, { recursive: true });
 
@@ -522,7 +523,7 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
       await addAttachmentsFromEvent(message.id, event);
 
       // The connection is outside its Horário de expediente: the notice goes out once, with the conversation that just opened.
-      if (closedMessage) await sendClosedHoursNotice(conversation.id, connectionId, event.phone, contact.name, contact.firstName, closedMessage);
+      if (closedMessage) await sendClosedHoursNotice({ id: conversation.id, contactId: contact.id }, event.phone, contact.name, contact.firstName, closedMessage);
 
       // An active Fluxo is still talking to this customer — the engine
       // answers, and only hands the conversation to people when it's done.
@@ -1427,13 +1428,8 @@ export async function sendOutboundText(
 
 /** A message written by the system itself (Fluxo, pesquisa de satisfação) — sent as-is, without the "*Nome:*" agent prefix. */
 /** The out-of-hours notice of a connection's Horário de expediente — {{cliente}} is the customer's name (or number), {{primeiro_nome}} its first word. */
-async function sendClosedHoursNotice(conversationId: string, connectionId: string, phone: string, contactName: string | null, firstName: string | null, text: string): Promise<void> {
-  const body = fillSendTags(text, contactName ?? phone, firstName);
-  const message = await prisma.message.create({
-    data: { conversationId, direction: "OUTBOUND", type: "TEXT", status: "PENDING", body, automatedBy: "WORK_SCHEDULE" },
-  });
-  await sendAutomatedText(connectionId, message.id, phone, body);
-  realtimeEvents.newMessage(conversationId, null);
+async function sendClosedHoursNotice(conversation: { id: string; contactId: string }, phone: string, contactName: string | null, firstName: string | null, text: string): Promise<void> {
+  await sendOutOfHoursNotice(conversation, fillSendTags(text, contactName ?? phone, firstName));
 }
 
 export async function sendAutomatedText(connectionId: string, messageId: string, contactPhone: string, text: string) {

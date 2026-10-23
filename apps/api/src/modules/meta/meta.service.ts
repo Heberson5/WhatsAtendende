@@ -1,3 +1,4 @@
+import { sendOutOfHoursNotice } from "../../lib/auto-messages";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { fillSendTags } from "../../lib/customer-tags";
 import type { Channel } from "@prisma/client";
@@ -112,12 +113,7 @@ async function handleInboundEvent(channel: Channel, pageId: string, event: MetaM
   });
 
   // The connection is outside its Horário de expediente: the notice goes out once, with the conversation that just opened.
-  if (closedMessage) {
-    const text = fillSendTags(closedMessage, contact.name ?? "Contato", contact.firstName);
-    const notice = await prisma.message.create({ data: { conversationId: conversation.id, direction: "OUTBOUND", type: "TEXT", status: "PENDING", body: text, automatedBy: "WORK_SCHEDULE" } });
-    await sendMetaMessage(channel, notice.id, event.sender.id, text);
-    realtimeEvents.newMessage(conversation.id, null);
-  }
+  if (closedMessage) await sendOutOfHoursNotice({ id: conversation.id, contactId: contact.id }, fillSendTags(closedMessage, contact.name ?? "Contato", contact.firstName));
 
   const contactLabel = contact.name ?? "Contato";
   if (isNewConversation) {

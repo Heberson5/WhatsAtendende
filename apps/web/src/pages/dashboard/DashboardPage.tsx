@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { CheckCircle2, Clock, Inbox, MessageSquare, MessageSquareOff, Presentation, Timer, Users } from "lucide-react";
 import { toast } from "sonner";
-import { PERMISSION, type ArrivalsByHourDTO, type PresenceByHourDTO, type SatisfactionOverviewDTO, type SatisfactionReportDTO } from "@whatsatendende/types";
+import { PERMISSION, type ArrivalsByHourDTO, type AutoMessageBlocksReportDTO, type PresenceByHourDTO, type SatisfactionOverviewDTO, type SatisfactionReportDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
 import { PeriodFilter, type PeriodValue } from "../../components/common/PeriodFilter";
@@ -254,6 +254,23 @@ export default function DashboardPage() {
           satisfactionReport = null;
         }
       }
+      // What the tags stopped (Relatórios › Mensagens bloqueadas) — its slide is left out when it can't be read.
+      let autoMessageBlocks: AutoMessageBlocksReportDTO | null = null;
+      if (permissions?.[PERMISSION.RELATORIOS_ACESSAR]) {
+        autoMessageBlocks = await api
+          .get<AutoMessageBlocksReportDTO>("/reports/auto-message-blocks", {
+            params: {
+              period: period.period,
+              from: period.from,
+              to: period.to,
+              agentId: agentId === "all" ? undefined : agentId,
+              connectionId: connectionIds.length ? connectionIds : undefined,
+              tzOffsetMinutes: new Date().getTimezoneOffset(),
+            },
+          })
+          .then((res) => res.data)
+          .catch(() => null);
+      }
       const agentText = agentId === "all" ? "todos os atendentes" : `atendente: ${agents?.find((a) => a.id === agentId)?.displayName ?? "1 atendente"}`;
       await exportDashboardPptx({
         data,
@@ -268,6 +285,7 @@ export default function DashboardPage() {
         presenceHourRange: activeHourRange,
         arrivalsByHour: arrivalsByHour ?? null,
         arrivalsHourRange: activeArrivalsRange,
+        autoMessageBlocks,
       });
     } catch (err) {
       toast.error(`Não foi possível gerar a apresentação: ${getApiErrorMessage(err, "erro inesperado")}`);

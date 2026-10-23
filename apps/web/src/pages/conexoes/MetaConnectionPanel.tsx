@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { CheckCircle2, Plus, Trash2, XCircle } from "lucide-react";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { WorkScheduleSelect } from "./WorkScheduleSelect";
+import { MetaCredentialsGuideButton } from "./MetaCredentialsGuide";
 
 interface MetaSettings {
   appId: string;
@@ -113,7 +114,10 @@ export function MetaConnectionPanel({ channel }: { channel: "INSTAGRAM" | "MESSE
   return (
     <div className="max-w-2xl space-y-6">
       <div className="shadow-soft rounded-card border border-border bg-surface p-5">
-        <h2 className="mb-1 text-base font-semibold">Credenciais do App da Meta</h2>
+        <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-base font-semibold">Credenciais do App da Meta</h2>
+          <MetaCredentialsGuideButton webhookUrl={webhookUrl} />
+        </div>
         <p className="mb-4 text-xs text-muted">
           Criadas em developers.facebook.com — o mesmo App cobre Instagram e Messenger. Cole a URL abaixo na
           configuração de Webhooks desse App.

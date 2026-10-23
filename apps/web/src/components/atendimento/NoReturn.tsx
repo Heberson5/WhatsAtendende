@@ -35,7 +35,23 @@ function minutesLeft(closeAt: string) {
 }
 
 /** Card badge: "⏳ encerra em N min" after the reminder went out, or "Não encerrar". */
+/** The tag that stops falta de retorno for this customer (Etiquetas › Bloqueia), if any. */
+function noReturnBlockTag(conversation: ConversationListItemDTO) {
+  return conversation.autoMessageBlocks?.find((b) => b.kind === "NO_RETURN")?.tagName ?? null;
+}
+
 export function NoReturnBadge({ conversation }: { conversation: ConversationListItemDTO }) {
+  const blockTag = noReturnBlockTag(conversation);
+  if (blockTag) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 rounded-full bg-surface-alt px-2 py-0.5 text-[10.5px] font-semibold text-muted"
+        title={`Não é encerrada automaticamente por falta de retorno (etiqueta ${blockTag})`}
+      >
+        <PauseCircle className="h-3 w-3" /> Não encerra ({blockTag})
+      </span>
+    );
+  }
   if (conversation.scheduledMessagePending) {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-surface-alt px-2 py-0.5 text-[10.5px] font-semibold text-muted" title="Há mensagem agendada: não encerra por falta de retorno">
@@ -71,6 +87,19 @@ export function NoReturnStatus({
   /** The header's own rule for when button labels fit (icon-only while the client panel is open). */
   labelClassName: string;
 }) {
+  // A tag stops falta de retorno for this customer: nothing to pause or resume here.
+  const blockTag = noReturnBlockTag(conversation);
+  if (blockTag) {
+    return (
+      <span
+        title={`Este cliente não é encerrado automaticamente por falta de retorno (etiqueta ${blockTag}).`}
+        className="flex items-center gap-1.5 rounded-card border border-border px-2 py-1.5 text-xs font-medium text-muted sm:px-3"
+      >
+        <PauseCircle className="h-3.5 w-3.5" />
+        <span className={labelClassName}>Não encerra ({blockTag})</span>
+      </span>
+    );
+  }
   // A scheduled message pauses the automatic close until it goes out (or is canceled).
   if (conversation.scheduledMessagePending) {
     return (

@@ -326,12 +326,12 @@ async function assertTagNameFree(name: string, excludeId?: string) {
   if (clash) throw Errors.conflict(`Já existe a etiqueta "${clash.name}"`);
 }
 
-export async function createTag(input: { name: string; color: string; skipSurvey: boolean }): Promise<TagDTO> {
+export async function createTag(input: { name: string; color: string; blockedAutoMessages?: string[] }): Promise<TagDTO> {
   await assertTagNameFree(input.name);
   return toTagDTO(await prisma.tag.create({ data: input }));
 }
 
-export async function updateTag(id: string, input: { name?: string; color?: string; skipSurvey?: boolean }): Promise<TagDTO> {
+export async function updateTag(id: string, input: { name?: string; color?: string; blockedAutoMessages?: string[] }): Promise<TagDTO> {
   const tag = await prisma.tag.findUnique({ where: { id } });
   if (!tag) throw Errors.notFound("Etiqueta não encontrada");
   if (input.name) await assertTagNameFree(input.name, id);

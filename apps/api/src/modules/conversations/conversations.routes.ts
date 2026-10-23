@@ -15,6 +15,7 @@ import { optionalDateQueryParam, resolvePeriod } from "../../lib/period";
 import { resolveAllowedConnectionIds, canManagerAccessConnection } from "../../lib/connection-access";
 import { toConversationListItemDTO } from "./conversations.mapper";
 import { attachBusinessClocks } from "../../lib/business-clock";
+import { enqueueAutoMessage, isBlocked } from "../../lib/auto-messages";
 import { customerArrivalIds } from "../dashboard/dashboard.service";
 import * as service from "./conversations.service";
 import { realtimeEvents } from "../../realtime/realtime";
@@ -312,6 +313,19 @@ function connectionIdOf(conversation: { whatsappConnectionId: string | null; met
   return conversation.whatsappConnectionId ?? conversation.metaConnectionId!;
 }
 
+/** The closing message when no survey follows — queued once the conversation is closed (see lib/auto-messages.ts). */
+function queueClosingMessage(conversationId: string, closing: HeldClosingMessage) {
+  return enqueueAutoMessage({
+    conversationId,
+    kind: "CLOSING",
+    text: closing.text,
+    media: closing.media,
+    senderAgentId: closing.senderId,
+    senderDisplayName: closing.senderDisplayName,
+    condition: "CLOSED",
+  });
+}
+
 async function sendAutoMessage(
   trigger: "TRANSFER" | "ACCEPT",
   conversation: {
@@ -320,12 +334,15 @@ async function sendAutoMessage(
     whatsappConnectionId: string | null;
     assignedAgentId: string | null;
     assignedAgent: { displayName: string; fullName: string; role: Role } | null;
+    contactId: string;
     contact: { phone: string | null; externalUserId: string | null; name: string | null; firstName?: string | null };
   },
   sender: { id: string; name: string }
 ): Promise<void> {
   const template = await getActiveTemplateFor(trigger, conversation.whatsappConnectionId, conversation.assignedAgentId);
   if (!template) return;
+  // Aceite and Transferência never wait — but a tag may stop them.
+  if (await isBlocked(conversation, trigger)) return;
   const templateAgent = conversation.assignedAgent;
   const text = renderAutoMessageTemplate(template.text, {
     atendente: templateAgent?.displayName ?? "",
@@ -569,7 +586,8 @@ conversationsRouter.post(
     // not sent here: the survey keeps it and sends it after the customer's
     // score, or when the wait runs out (see scheduleCloseFollowUp).
     let heldClosingMessage: HeldClosingMessage | undefined;
-    if (sendClosingMessage && ["IN_PROGRESS", "TRANSFERRED"].includes(existing.status)) {
+    let closingNow: HeldClosingMessage | undefined;
+    if (sendClosingMessage && ["IN_PROGRESS", "TRANSFERRED"].includes(existing.status) && !(await isBlocked(existing, "CLOSING"))) {
       const closingMessage = await getActiveClosingMessageForAgent(req.auth!.userId, existing.whatsappConnectionId);
       if (closingMessage) {
         const closingAgent = await prisma.user.findUnique({ where: { id: req.auth!.userId }, select: { fullName: true } });
@@ -583,14 +601,8 @@ conversationsRouter.post(
         // Its attachment (WhatsApp only), copied for this conversation — the text goes as the caption.
         const media = existing.channel === "WHATSAPP" ? copyReplyMediaFile(closingMessage) : null;
         const senderName = closingMessage.showSenderName ? req.auth!.displayName : null;
-        if (await willSendSurveyOnClose(existing.id)) {
-          heldClosingMessage = { text, senderId: req.auth!.userId, senderDisplayName: senderName, media };
-        } else {
-          const outboundMessage = await createSystemOutboundMessage({ conversationId: existing.id, type: closingMessageType(media), body: text, agentId: req.auth!.userId });
-          if (media) await sendClosingMedia(existing.whatsappConnectionId!, outboundMessage.id, existing.contact.phone!, media, text, senderName);
-          else await sendOutboundTextViaChannel(existing, outboundMessage.id, text, senderName);
-          realtimeEvents.newMessage(existing.id, existing.assignedAgentId);
-        }
+        if (await willSendSurveyOnClose(existing.id)) heldClosingMessage = { text, senderId: req.auth!.userId, senderDisplayName: senderName, media };
+        else closingNow = { text, senderId: req.auth!.userId, senderDisplayName: senderName, media };
       }
     }
 
@@ -598,6 +610,8 @@ conversationsRouter.post(
     const { conversation, previousAgentId } = await service.closeConversationFromGestao(req.params.id, req.auth!.userId, heldClosingMessage, {
       silent: !sendClosingMessage,
     });
+    // Once closed: it waits its 3–10 seconds and is dropped if the close is undone meanwhile.
+    if (closingNow) await queueClosingMessage(existing.id, closingNow);
     await writeAudit({
       userId: req.auth!.userId,
       action: "CONVERSATION_CLOSED_BY_MANAGER",
@@ -678,7 +692,8 @@ conversationsRouter.post(
     // customer's score (or when the configured wait runs out), unless the
     // agent undoes the close — see scheduleCloseFollowUp.
     let heldClosingMessage: HeldClosingMessage | undefined;
-    const closingMessage = await getActiveClosingMessageForAgent(req.auth!.userId, existing.whatsappConnectionId);
+    let closingNow: HeldClosingMessage | undefined;
+    const closingMessage = (await isBlocked(existing, "CLOSING")) ? null : await getActiveClosingMessageForAgent(req.auth!.userId, existing.whatsappConnectionId);
     if (closingMessage) {
       const closingAgent = await prisma.user.findUnique({ where: { id: req.auth!.userId }, select: { fullName: true } });
       const text = renderAutoMessageTemplate(closingMessage.text, {
@@ -691,23 +706,13 @@ conversationsRouter.post(
       // Its attachment (WhatsApp only), copied for this conversation — the text goes as the caption.
       const media = existing.channel === "WHATSAPP" ? copyReplyMediaFile(closingMessage) : null;
         const senderName = closingMessage.showSenderName ? req.auth!.displayName : null;
-      if (await willSendSurveyOnClose(existing.id)) {
-        heldClosingMessage = { text, senderId: req.auth!.userId, senderDisplayName: senderName, media };
-      } else {
-        const outboundMessage = await createOutboundMessage({
-          conversationId: existing.id,
-          agentId: req.auth!.userId,
-          type: closingMessageType(media),
-          body: text,
-          automatic: true,
-        });
-        if (media) await sendClosingMedia(existing.whatsappConnectionId!, outboundMessage.id, existing.contact.phone!, media, text, senderName);
-        else await sendOutboundTextViaChannel(existing, outboundMessage.id, text, senderName);
-        realtimeEvents.newMessage(existing.id, req.auth!.userId);
-      }
+      if (await willSendSurveyOnClose(existing.id)) heldClosingMessage = { text, senderId: req.auth!.userId, senderDisplayName: senderName, media };
+      else closingNow = { text, senderId: req.auth!.userId, senderDisplayName: senderName, media };
     }
 
     const conversation = await service.closeConversation(req.params.id, req.auth!.userId, heldClosingMessage);
+    // Once closed: it waits its 3–10 seconds and is dropped if the agent clicks "Desfazer" meanwhile.
+    if (closingNow) await queueClosingMessage(existing.id, closingNow);
     await writeAudit({ userId: req.auth!.userId, action: "CONVERSATION_CLOSED", entity: "Conversation", entityId: conversation.id, ipAddress: req.ip ?? null });
     realtimeEvents.conversationClosed(conversation.id, req.auth!.userId);
     res.json(toConversationListItemDTO(conversation, true));

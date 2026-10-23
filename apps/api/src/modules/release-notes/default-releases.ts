@@ -11,6 +11,68 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.24.0",
+    date: "23 out 2026",
+    name: "Etiquetas que bloqueiam mensagens automáticas",
+    summary:
+      "Cada etiqueta pode bloquear as mensagens automáticas que quiser, com relatório do que foi bloqueado; as mensagens automáticas esperam alguns segundos antes de sair; e a apresentação do Dashboard ganhou os gráficos de quem não respondeu a pesquisa e das mensagens bloqueadas.",
+    notes: [
+      {
+        type: "novo",
+        area: "contatos",
+        title: "Etiqueta escolhe as mensagens automáticas que o cliente não recebe",
+        text: "No lugar de \"Não enviar pesquisa\", cada etiqueta tem agora a lista Bloqueia: espera na fila, aceite, transferência, encerramento, pesquisa de satisfação, falta de retorno, fora do expediente e Fluxo. Os clientes com a etiqueta não recebem as mensagens marcadas. Pesquisa bloqueada também deixa o cliente fora do NPS; falta de retorno bloqueada impede o encerramento automático; e Fluxo bloqueado manda o cliente direto para a fila. As etiquetas que já tinham \"Não enviar pesquisa\" continuam com a pesquisa bloqueada. Só gestor e administrador mudam essa lista.",
+        steps: [
+          "Abra Automação › Etiquetas.",
+          "Na etiqueta, clique em Bloqueia e marque as mensagens que não devem ser enviadas.",
+          "Clique em Salvar.",
+        ],
+        where: "Automação › Etiquetas",
+        requires: [PERMISSION.ETIQUETAS_VISUALIZAR],
+        images: [{ src: "/notas-de-versao/etiquetas-bloqueia.webp", caption: "A lista Bloqueia de uma etiqueta" }],
+      },
+      {
+        type: "melhoria",
+        area: "atendimento",
+        title: "O painel do cliente avisa o que ele não recebe",
+        text: "Quando uma etiqueta do cliente bloqueia mensagens automáticas, o painel do cliente mostra \"Este cliente não recebe: …\". Com falta de retorno bloqueada, o cartão e o topo da conversa mostram \"Não encerra (etiqueta)\".",
+        where: "Atendimento › painel do cliente",
+        images: [{ src: "/notas-de-versao/painel-nao-recebe.webp", caption: "O aviso no painel do cliente e o Não encerra no topo da conversa" }],
+      },
+      {
+        type: "novo",
+        area: "dashboard",
+        title: "Relatório de mensagens bloqueadas",
+        text: "Cada mensagem automática que uma etiqueta impediu fica registrada. Em Relatórios › Mensagens bloqueadas aparecem o total, a quantidade por mensagem e por etiqueta e, linha a linha, a data, o cliente, a conexão e o atendente — com exportação em CSV, PDF e Excel.",
+        where: "Relatórios › Mensagens bloqueadas",
+        requires: [PERMISSION.RELATORIOS_ACESSAR],
+        images: [{ src: "/notas-de-versao/relatorio-mensagens-bloqueadas.webp", caption: "O relatório: totais por mensagem e por etiqueta, e o detalhe" }],
+      },
+      {
+        type: "melhoria",
+        area: "dashboard",
+        title: "Apresentação: quem não respondeu a pesquisa e mensagens bloqueadas",
+        text: "A apresentação em PowerPoint do Dashboard ganhou dois slides com gráficos: quem não respondeu a pesquisa de satisfação (responderam, não responderam e ainda no prazo, no total e por atendente — só números, sem nomes de clientes) e as mensagens automáticas bloqueadas pelas etiquetas (por mensagem e por etiqueta).",
+        where: "Dashboard › Apresentação",
+        requires: [PERMISSION.RELATORIOS_ACESSAR],
+      },
+      {
+        type: "melhoria",
+        area: "respostas",
+        title: "Mensagens automáticas esperam alguns segundos",
+        text: "Espera na fila, encerramento, pesquisa de satisfação (pergunta, agradecimento e pedido da nota), falta de retorno e fora do expediente saem de 3 a 10 segundos depois, sempre na ordem certa. Se nesse tempo a situação mudar — o encerramento foi desfeito, o cliente respondeu, ou uma etiqueta passou a bloquear —, a mensagem não é enviada. O aviso de fora do expediente sai uma vez só, mesmo que o cliente mande várias mensagens. Aceite, transferência e Fluxo continuam saindo na hora.",
+      },
+      {
+        type: "novo",
+        area: "conexoes",
+        title: "Guia para conseguir as credenciais do Instagram e do Facebook",
+        text: "Em Conexões › Instagram e Conexões › Facebook, o botão Como obter as credenciais abre um passo a passo: criar o App da Meta, onde achar o App ID e o App Secret, gerar o token que não expira, configurar o webhook (com o endereço desta plataforma), encontrar os IDs da Página e da conta do Instagram e colocar no ar. O botão Baixar PDF salva o guia.",
+        where: "Conexões › Instagram / Facebook",
+        images: [{ src: "/notas-de-versao/conexoes-guia-meta.webp", caption: "O guia, aberto pelo botão Como obter as credenciais" }],
+      },
+    ],
+  },
+  {
     version: "2.23.0",
     date: "22 out 2026",
     name: "Mensagem de espera na fila e tempo só no expediente",

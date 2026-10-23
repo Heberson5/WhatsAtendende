@@ -984,6 +984,8 @@ export interface ConversationListItemDTO {
   noReturnHold: boolean;
   /** The connection's Horário de expediente: waits shown on screen count only while it is open. Null = 24 hours. */
   businessClock?: BusinessClockDTO | null;
+  /** Automatic messages this customer does not get, because of a tag (Etiquetas › "Não enviar estas mensagens automáticas"). */
+  autoMessageBlocks?: AutoMessageBlockDTO[];
   /** A scheduled message is still to go out: the "falta de retorno" close is paused, and the manual one blocked. */
   scheduledMessagePending?: boolean;
   /** Started or answered on the linked phone — accepting it sends no "Aceite" message. */
@@ -1232,6 +1234,7 @@ export const PERMISSION = {
   ETIQUETAS_ADICIONAR: "etiquetas.adicionar",
   ETIQUETAS_EDITAR: "etiquetas.editar",
   ETIQUETAS_EXCLUIR: "etiquetas.excluir",
+  ETIQUETAS_BLOQUEIOS: "etiquetas.mensagens_bloqueadas",
   CONTATOS_OBSERVACAO_EDITAR: "contatos.observacao_editar",
   RESPOSTAS_RAPIDAS_GERENCIAR: "respostas_rapidas.gerenciar",
   // Each layered ON TOP of RESPOSTAS_RAPIDAS_GERENCIAR (need both) — see
@@ -1626,7 +1629,7 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     key: PERMISSION.ETIQUETAS_EDITAR,
     group: "Etiquetas",
     label: "Etiquetas — editar",
-    description: "Renomear, mudar a cor e ligar ou desligar \"Não enviar pesquisa\".",
+    description: "Renomear e mudar a cor das etiquetas.",
     editableRoles: ["AGENT", "MANAGER"],
     defaultAllowed: { AGENT: false, MANAGER: true },
   },
@@ -1636,6 +1639,14 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     label: "Etiquetas — excluir",
     description: "Excluir etiquetas (a exclusão tira a etiqueta de todos os contatos).",
     editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.ETIQUETAS_BLOQUEIOS,
+    group: "Etiquetas",
+    label: "Etiquetas — mensagens automáticas bloqueadas",
+    description: "Marcar na etiqueta quais mensagens automáticas os clientes com ela não recebem (espera na fila, pesquisa, falta de retorno...).",
+    editableRoles: ["MANAGER"],
     defaultAllowed: { AGENT: false, MANAGER: true },
   },
   {
@@ -2143,12 +2154,66 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
 
 export type PermissionMap = Record<Permission, boolean>;
 
+/**
+ * The automatic messages a tag can stop (Etiquetas › "Não enviar estas mensagens automáticas"). SURVEY also leaves the
+ * contact out of the NPS; NO_RETURN also stops the automatic close; FLOW sends the customer straight to the queue.
+ */
+export const AUTO_MESSAGE_KINDS = ["QUEUE_WAIT", "ACCEPT", "TRANSFER", "CLOSING", "SURVEY", "NO_RETURN", "OUT_OF_HOURS", "FLOW"] as const;
+export type AutoMessageKind = (typeof AUTO_MESSAGE_KINDS)[number];
+
+export const AUTO_MESSAGE_KIND_LABEL: Record<AutoMessageKind, string> = {
+  QUEUE_WAIT: "Espera na fila",
+  ACCEPT: "Aceite",
+  TRANSFER: "Transferência",
+  CLOSING: "Encerramento",
+  SURVEY: "Pesquisa de satisfação",
+  NO_RETURN: "Falta de retorno",
+  OUT_OF_HOURS: "Fora do expediente",
+  FLOW: "Fluxo",
+};
+
+/** What each one means, for the tag form. */
+export const AUTO_MESSAGE_KIND_HINT: Record<AutoMessageKind, string> = {
+  QUEUE_WAIT: "Mensagens enviadas enquanto o cliente espera na fila.",
+  ACCEPT: "Mensagem enviada quando um atendente aceita a conversa.",
+  TRANSFER: "Mensagem enviada quando a conversa é transferida.",
+  CLOSING: "Mensagem de encerramento do atendente.",
+  SURVEY: "Pesquisa de satisfação — o cliente também sai do NPS.",
+  NO_RETURN: "Lembrete e encerramento por falta de retorno — a conversa não é encerrada automaticamente.",
+  OUT_OF_HOURS: "Aviso de fora do expediente.",
+  FLOW: "Robô do Fluxo — o cliente vai direto para a fila.",
+};
+
+export interface AutoMessageBlockDTO {
+  kind: AutoMessageKind;
+  tagName: string;
+}
+
 export interface TagDTO {
   id: string;
   name: string;
   color: string;
-  /** Contacts with this tag (e.g. staff) never get the satisfaction survey and are left out of the NPS. */
-  skipSurvey: boolean;
+  /** Automatic messages contacts with this tag never get. */
+  blockedAutoMessages: AutoMessageKind[];
+}
+
+export interface AutoMessageBlocksReportDTO {
+  total: number;
+  byKind: { kind: AutoMessageKind; count: number }[];
+  byTag: { tagName: string; count: number }[];
+  items: AutoMessageBlockLogDTO[];
+}
+
+/** Relatórios › Mensagens automáticas bloqueadas — one per message a tag stopped. */
+export interface AutoMessageBlockLogDTO {
+  id: string;
+  at: string;
+  kind: AutoMessageKind;
+  tagName: string;
+  conversationId: string;
+  contactName: string;
+  connectionName: string | null;
+  agentName: string | null;
 }
 
 /** Card shown under a link in a message — see GET /link-preview. */

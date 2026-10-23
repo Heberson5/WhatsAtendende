@@ -19,6 +19,16 @@ import { createApp } from "../src/app";
 import { sendQueueWaitMessages } from "../src/modules/queue-wait-messages/queue-wait.sweep";
 
 const app = createApp();
+
+/** What the customer was sent, as the conversation shows it (the wait messages). */
+async function sentNow() {
+  const rows = await prisma.message.findMany({
+    where: { direction: "OUTBOUND", automatedBy: "QUEUE_WAIT" },
+    orderBy: { createdAt: "asc" },
+    select: { body: true, conversation: { select: { contact: { select: { phone: true } } } } },
+  });
+  return rows.map((m) => ({ text: m.body, phone: m.conversation.contact.phone }));
+}
 const MINUTE = 60_000;
 const ALL = { allConnections: true, connectionIds: [] as string[] };
 
@@ -28,7 +38,6 @@ describe("Respostas › Espera na fila", () => {
 
   beforeEach(async () => {
     await resetDatabase();
-    sent.length = 0;
     connectionId = (await createTestConnection("Suporte")).id;
     await createTestUser({ email: "admin@test.dev", role: "ADMIN", displayName: "Admin" });
     adminToken = (await request(app).post("/api/auth/login").send({ email: "admin@test.dev", password: TEST_PASSWORD })).body.accessToken;
@@ -54,13 +63,13 @@ describe("Respostas › Espera na fila", () => {
     const now = Date.now();
 
     await sendQueueWaitMessages(new Date(now));
-    expect(sent.map((m) => m.text)).toEqual(["Joana, você está na fila."]);
+    expect((await sentNow()).map((m) => m.text)).toEqual(["Joana, você está na fila."]);
     await sendQueueWaitMessages(new Date(now + 5 * MINUTE));
-    expect(sent).toHaveLength(1);
+    expect(await sentNow()).toHaveLength(1);
     await sendQueueWaitMessages(new Date(now + 10 * MINUTE));
-    expect(sent.map((m) => m.text)).toEqual(["Joana, você está na fila.", "Ainda estamos aqui, Joana Silva!"]);
+    expect((await sentNow()).map((m) => m.text)).toEqual(["Joana, você está na fila.", "Ainda estamos aqui, Joana Silva!"]);
     await sendQueueWaitMessages(new Date(now + 60 * MINUTE));
-    expect(sent).toHaveLength(2);
+    expect(await sentNow()).toHaveLength(2);
 
     const messages = await prisma.message.findMany({ where: { conversationId: conversation.id }, orderBy: { createdAt: "asc" } });
     expect(messages.map((m) => [m.automatedBy, m.senderAgentId])).toEqual([
@@ -82,17 +91,17 @@ describe("Respostas › Espera na fila", () => {
 
     await sendQueueWaitMessages();
     // Only the queued conversation of an open connection (the scope was widened to all connections above).
-    expect(sent.map((m) => m.phone)).toEqual(["5511900000004"]);
+    expect((await sentNow()).map((m) => m.phone)).toEqual(["5511900000004"]);
   });
 
   it("recomeça a sequência quando a conversa volta para a fila", async () => {
     await add({ delayMinutes: 2, text: "Aguarde, por favor." });
     const conversation = await queued("5511900000006", 3);
     await sendQueueWaitMessages();
-    expect(sent).toHaveLength(1);
+    expect(await sentNow()).toHaveLength(1);
     await prisma.conversation.update({ where: { id: conversation.id }, data: { enteredQueueAt: new Date(Date.now() - 3 * MINUTE) } });
     await sendQueueWaitMessages();
-    expect(sent).toHaveLength(2);
+    expect(await sentNow()).toHaveLength(2);
   });
 
   it("lista em ordem e muda a ordem com Subir/Descer", async () => {

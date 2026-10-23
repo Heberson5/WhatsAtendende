@@ -1,4 +1,4 @@
-import type { ContactPanelDTO, ConversationNoteDTO, PreviousConversationDetailDTO, TagDTO } from "@whatsatendende/types";
+import { AUTO_MESSAGE_KINDS, type AutoMessageKind, type ContactPanelDTO, type ConversationNoteDTO, type PreviousConversationDetailDTO, type TagDTO } from "@whatsatendende/types";
 import { toMessageDTO } from "../messages/messages.mapper";
 import { messageInclude } from "../messages/messages.service";
 import { prisma } from "../../lib/prisma";
@@ -7,8 +7,8 @@ import { Errors } from "../../lib/http-error";
 // The panel opens with the last few; "Mostrar mais" brings the next page (see listPreviousConversations).
 const PREVIOUS_CONVERSATIONS_FIRST = 3;
 
-export function toTagDTO(tag: { id: string; name: string; color: string; skipSurvey: boolean }): TagDTO {
-  return { id: tag.id, name: tag.name, color: tag.color, skipSurvey: tag.skipSurvey };
+export function toTagDTO(tag: { id: string; name: string; color: string; blockedAutoMessages: string[] }): TagDTO {
+  return { id: tag.id, name: tag.name, color: tag.color, blockedAutoMessages: tag.blockedAutoMessages.filter((k): k is AutoMessageKind => (AUTO_MESSAGE_KINDS as readonly string[]).includes(k)) };
 }
 
 // A note with no author was written by the system (e.g. why a conversation came from Abandonados).
