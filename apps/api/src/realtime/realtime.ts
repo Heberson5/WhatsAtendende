@@ -1,5 +1,6 @@
 import type { Server as SocketIOServer } from "socket.io";
 import type { NotificationDTO } from "@whatsatendende/types";
+import { queueAnnouncementTargets } from "../lib/queue-routing";
 
 let ioInstance: SocketIOServer | null = null;
 
@@ -20,7 +21,32 @@ export const ROOMS = {
   oversight: () => "oversight", // managers/admins watching everything, across all connections
 };
 
+/**
+ * "Nova conversa na fila" for the attendants: the whole connection, or only those a tag's "Atendida por" names
+ * (lib/queue-routing.ts) — the others don't see that customer in their queue, so they aren't called for it.
+ */
+function announceToQueue(connectionId: string, conversationId: string, contactName: string) {
+  const io = getIO();
+  if (!io) return;
+  const toConnection = () => io.to(ROOMS.queue(connectionId)).emit("queue:new-conversation", { conversationId, contactName });
+  queueAnnouncementTargets(conversationId)
+    .then((userIds) => {
+      if (!userIds) return toConnection();
+      for (const userId of userIds) io.to(ROOMS.user(userId)).emit("queue:new-conversation", { conversationId, contactName });
+    })
+    .catch(toConnection);
+}
+
 export const realtimeEvents = {
+  /** Who may see a waiting customer changed (a tag's "Atendida por", a contact's tags, or a designated user's presence) — every queue refetches. */
+  queueAudienceChanged: () => {
+    getIO()?.emit("queue:updated");
+  },
+  /** A contact's tags (or a tag itself) changed — the attendance cards show them, and the queue may move. */
+  contactTagsChanged: () => {
+    getIO()?.emit("queue:updated");
+    getIO()?.emit("contact:tags");
+  },
   /** Identidade visual or Exportações changed — every open screen re-reads its colors/logo without a reload. */
   brandingChanged: () => {
     getIO()?.emit("branding:updated");
@@ -129,7 +155,7 @@ export const realtimeEvents = {
   },
   newQueueConversation: (connectionId: string, conversationId: string, contactName: string) => {
     getIO()?.to(ROOMS.queue(connectionId)).emit("queue:updated");
-    getIO()?.to(ROOMS.queue(connectionId)).emit("queue:new-conversation", { conversationId, contactName });
+    announceToQueue(connectionId, conversationId, contactName);
     getIO()?.to(ROOMS.oversight()).emit("queue:updated");
     getIO()?.to(ROOMS.oversight()).emit("queue:new-conversation", { conversationId, contactName });
     getIO()?.to(ROOMS.oversight()).emit("oversight:updated");
@@ -138,7 +164,7 @@ export const realtimeEvents = {
   conversationReturnedToQueue: (conversationId: string, connectionId: string, contactName: string, previousAgentId: string | null) => {
     if (previousAgentId) getIO()?.to(ROOMS.user(previousAgentId)).emit("conversation:removed", { conversationId });
     getIO()?.to(ROOMS.queue(connectionId)).emit("queue:updated");
-    getIO()?.to(ROOMS.queue(connectionId)).emit("queue:new-conversation", { conversationId, contactName });
+    announceToQueue(connectionId, conversationId, contactName);
     getIO()?.to(ROOMS.oversight()).emit("queue:updated");
     getIO()?.to(ROOMS.oversight()).emit("queue:new-conversation", { conversationId, contactName });
     getIO()?.to(ROOMS.oversight()).emit("oversight:updated");

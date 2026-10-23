@@ -4,6 +4,7 @@ import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
 import { sendTemplatedMail } from "../../lib/mail";
 import { env } from "../../config/env";
+import { queueMayMove } from "../../lib/presence-status";
 import type { Role } from "@prisma/client";
 import { Prisma } from "@prisma/client";
 import type { AccessSchedule, WeekdayKey } from "@whatsatendende/types";
@@ -203,6 +204,7 @@ export async function forceLogoutUser(id: string) {
     // Same as signing out: a pause ends here too (it would otherwise come back on the next login).
     prisma.user.update({ where: { id }, data: { presence: "OFFLINE", pauseReasonId: null, pausedAt: null } }),
   ]);
+  await queueMayMove(id);
 }
 
 /**

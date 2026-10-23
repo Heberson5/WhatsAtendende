@@ -43,7 +43,7 @@ export function PollCard({ att }: { att: MessageAttachmentDTO }) {
       </div>
       <div className="mt-2 border-t border-black/10 pt-1.5 text-center text-xs">
         {!results?.readable ? (
-          <span className="opacity-70">Votos não disponíveis para esta enquete (recebida antes da versão 2.25.0).</span>
+          <span className="opacity-70">Votos não disponíveis: a chave desta enquete não chegou ao sistema (enquete antiga).</span>
         ) : voters === 0 ? (
           <span className="opacity-70">Nenhum voto ainda</span>
         ) : (

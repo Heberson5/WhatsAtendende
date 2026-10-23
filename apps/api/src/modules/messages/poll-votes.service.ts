@@ -1,6 +1,7 @@
 import { decryptPollVoteOptions, type PollVoteEvent } from "@whatsatendende/whatsapp";
 import type { PollResultsDTO } from "@whatsatendende/types";
 import { prisma } from "../../lib/prisma";
+import { logger } from "../../lib/logger";
 
 /**
  * Enquetes nos grupos: a vote arrives encrypted; the poll's own key (kept on its attachment when it arrived) reads
@@ -14,10 +15,28 @@ export async function recordPollVote(event: PollVoteEvent, voterName: (conversat
     select: { conversationId: true, attachments: { where: { kind: "POLL" }, select: { id: true, pollOptions: true, pollSecret: true, pollCreatorJid: true } } },
   });
   const poll = message?.attachments[0];
-  if (!message || !poll?.pollSecret || !poll.pollCreatorJid) return null;
+  if (!message || !poll) return null;
+  if (!poll.pollSecret || !poll.pollCreatorJid) {
+    logger.info({ pollMessageId: event.pollMessageId }, "poll vote for a poll saved without its key");
+    return null;
+  }
   const options = Array.isArray(poll.pollOptions) ? (poll.pollOptions as string[]) : [];
-  const chosen = decryptPollVoteOptions(event, { secret: poll.pollSecret, creatorJid: poll.pollCreatorJid, messageId: event.pollMessageId, options }, event.voterJid);
-  if (chosen === null) return null;
+  // In a LID group the creator and the voter may each be named by their phone number or their LID; the vote opens
+  // only with the pair it was encrypted with.
+  const creators = [...new Set([poll.pollCreatorJid, ...(event.creatorJidCandidates ?? [])])];
+  const voters = [...new Set([event.voterJid, ...(event.voterJidCandidates ?? [])])];
+  let chosen: string[] | null = null;
+  for (const creatorJid of creators) {
+    for (const voterJid of voters) {
+      chosen = decryptPollVoteOptions(event, { secret: poll.pollSecret, creatorJid, messageId: event.pollMessageId, options }, voterJid);
+      if (chosen !== null) break;
+    }
+    if (chosen !== null) break;
+  }
+  if (chosen === null) {
+    logger.warn({ pollMessageId: event.pollMessageId, creators, voters }, "poll vote could not be decrypted");
+    return null;
+  }
   const name = event.fromMe ? "Você (esta conta)" : (event.voterName ?? (await voterName(message.conversationId)));
   await prisma.pollVote.upsert({
     where: { attachmentId_voterJid: { attachmentId: poll.id, voterJid: event.voterJid } },

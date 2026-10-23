@@ -13,6 +13,7 @@ import { env } from "../../config/env";
 import { parseListParam } from "../../lib/parse-list-param";
 import { optionalDateQueryParam, resolvePeriod } from "../../lib/period";
 import { resolveAllowedConnectionIds, canManagerAccessConnection } from "../../lib/connection-access";
+import { filterQueueForViewer } from "../../lib/queue-routing";
 import { toConversationListItemDTO } from "./conversations.mapper";
 import { attachBusinessClocks } from "../../lib/business-clock";
 import { enqueueAutoMessage, isBlocked } from "../../lib/auto-messages";
@@ -77,7 +78,8 @@ conversationsRouter.get(
     if (req.auth!.role === "MANAGER") {
       connectionIds = await resolveAllowedConnectionIds(req.auth!, connectionIds, "receive");
     }
-    const conversations = await service.listQueue(connectionIds);
+    // Etiquetas › "Atendida por": an attendant doesn't see a customer reserved for someone else who is online.
+    const conversations = await filterQueueForViewer(await service.listQueue(connectionIds), { userId: req.auth!.userId, role: req.auth!.role });
     res.json(await attachBusinessClocks(conversations.map((c) => toConversationListItemDTO(c, false))));
   })
 );
@@ -368,6 +370,12 @@ conversationsRouter.post(
       // check, so every MANAGER can receive it, same as any AGENT can.
       if (target?.whatsappConnectionId && !(await canManagerAccessConnection(req.auth!.userId, target.whatsappConnectionId, "receive"))) {
         throw Errors.forbidden("Voce nao tem permissao para receber conversas desta conexao");
+      }
+    }
+    if (req.auth!.role === "AGENT") {
+      const target = await prisma.conversation.findUnique({ where: { id: req.params.id }, select: { id: true, contactId: true, channel: true, whatsappConnectionId: true } });
+      if (target && (await filterQueueForViewer([target], { userId: req.auth!.userId, role: "AGENT" })).length === 0) {
+        throw Errors.forbidden("Este cliente está reservado para outro atendente (etiqueta)");
       }
     }
     const conversation = await service.acceptConversation(req.params.id, req.auth!.userId);

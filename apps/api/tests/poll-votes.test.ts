@@ -6,14 +6,15 @@ import { prisma } from "../src/lib/prisma";
 import { resetDatabase, createTestConnection } from "./helpers";
 import { recordPollVote } from "../src/modules/messages/poll-votes.service";
 import { toMessageDTO } from "../src/modules/messages/messages.mapper";
+import { fillPollKey } from "../src/modules/conversations/conversations.service";
 
 const POLL_ID = "3EB0POLL0001";
 const CREATOR = "556599990000@s.whatsapp.net";
 const OPTIONS = ["Segunda", "Terça", "Quarta"];
 
 /** Encrypts a vote the way WhatsApp does (the inverse of Baileys' decryptPollVote). */
-function encryptVote(secret: Buffer, voterJid: string, chosen: string[]) {
-  const sign = Buffer.concat([Buffer.from(POLL_ID), Buffer.from(CREATOR), Buffer.from(voterJid), Buffer.from("Poll Vote"), new Uint8Array([1])]);
+function encryptVote(secret: Buffer, voterJid: string, chosen: string[], creatorJid = CREATOR) {
+  const sign = Buffer.concat([Buffer.from(POLL_ID), Buffer.from(creatorJid), Buffer.from(voterJid), Buffer.from("Poll Vote"), new Uint8Array([1])]);
   const key0 = hmacSign(secret, new Uint8Array(32), "sha256");
   const encKey = hmacSign(sign, key0, "sha256");
   const iv = randomBytes(12);
@@ -95,6 +96,27 @@ describe("Enquetes nos grupos: votos", () => {
     r = await results();
     expect(r.voters).toBe(2);
     expect(r.options.map((o) => o.count)).toEqual([1, 0, 1]);
+  });
+
+  it("grupo com LID: o voto feito com o número de telefone abre pelos outros nomes de quem criou e de quem votou", async () => {
+    // The poll was saved naming its creator by LID; the voter's phone encrypted with the creator's phone number.
+    await prisma.messageAttachment.updateMany({ data: { pollCreatorJid: "99887766@lid" } });
+    const event: PollVoteEvent = {
+      ...vote("556511110009@s.whatsapp.net", "Fábio", ["Quarta"]),
+      voterJid: "11223344@lid",
+      voterJidCandidates: ["11223344@lid", "556511110009@s.whatsapp.net"],
+      creatorJidCandidates: ["99887766@lid", CREATOR],
+    };
+    expect(await recordPollVote(event, async () => null)).not.toBeNull();
+    expect((await results()).options.map((o) => o.count)).toEqual([0, 0, 1]);
+  });
+
+  it("enquete salva sem a chave recebe a chave pelo histórico e passa a contar os votos", async () => {
+    await prisma.messageAttachment.updateMany({ data: { pollSecret: null, pollCreatorJid: null } });
+    expect(await recordPollVote(vote("556511110006@s.whatsapp.net", "Gil", ["Terça"]), async () => null)).toBeNull();
+    await fillPollKey(messageId, { type: "POLL", pollSecret: secret.toString("base64"), pollCreatorJid: CREATOR });
+    expect(await recordPollVote(vote("556511110006@s.whatsapp.net", "Gil", ["Terça"]), async () => null)).not.toBeNull();
+    expect((await results())).toMatchObject({ readable: true, voters: 1 });
   });
 
   it("voto com a chave errada é ignorado; enquete antiga (sem chave) não mostra votos", async () => {

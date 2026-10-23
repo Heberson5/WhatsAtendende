@@ -1,5 +1,7 @@
 import type { AgentPresence } from "@prisma/client";
 import { prisma } from "./prisma";
+import { isQueueDesignated } from "./queue-routing";
+import { realtimeEvents } from "../realtime/realtime";
 
 /**
  * Closes whatever AgentStatusLog row is currently open for this user (if
@@ -18,4 +20,13 @@ export async function recordPresenceTransition(userId: string, status: AgentPres
     prisma.agentStatusLog.updateMany({ where: { userId, endedAt: null }, data: { endedAt: now } }),
     prisma.agentStatusLog.create({ data: { userId, status, pauseReasonId, startedAt: now } }),
   ]);
+  await queueMayMove(userId);
+}
+
+/**
+ * Etiquetas › "Atendida por": a designated user coming online, pausing or leaving moves their customers between their
+ * queue and everyone's — every open queue refetches.
+ */
+export async function queueMayMove(userId: string): Promise<void> {
+  if (await isQueueDesignated(userId).catch(() => false)) realtimeEvents.queueAudienceChanged();
 }

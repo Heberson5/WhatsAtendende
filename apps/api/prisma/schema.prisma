@@ -1353,6 +1353,9 @@ model Tag {
   // "Não enviar estas mensagens automáticas": AutoMessageKind values (packages/types) contacts with this tag never get.
   // SURVEY also keeps them out of the NPS; NO_RETURN also stops the automatic close; FLOW sends them straight to the queue.
   blockedAutoMessages String[]     @default([])
+  // "Atendida por": in the queue, only these users see customers with the tag — while at least one of them is ONLINE
+  // (lib/queue-routing.ts). Empty = everyone, as before.
+  queueUserIds        String[]     @default([])
   createdAt           DateTime     @default(now())
   contacts            ContactTag[]
   blockLogs           AutoMessageBlockLog[]

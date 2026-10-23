@@ -14,6 +14,7 @@ import makeWASocket, {
   type AuthenticationCreds,
   type WASocket,
   type WAMessage,
+  type WAMessageKey,
 } from "@whiskeysockets/baileys";
 import { pollInfoOf } from "./poll-vote";
 import type {
@@ -593,8 +594,10 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
       });
 
       socket.ev.on("messages.upsert", async ({ messages, type }) => {
-        if (type !== "notify") return;
         for (const message of messages) {
+          // "append" = delivered late (sent while this connection was off or restarting): only poll votes are taken
+          // from it — they would otherwise be lost, and a vote never makes a message of its own.
+          if (type !== "notify" && !normalizeMessageContent(message.message)?.pollUpdateMessage) continue;
           await this.handleIncomingMessage(message);
         }
       });
@@ -608,7 +611,7 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
         for (const message of messages) {
           const chatId = message.key.remoteJid ?? "";
           if (!chatId || isIgnoredChat(chatId)) continue;
-          const entry = convertHistoryMessage(message, chatId);
+          const entry = convertHistoryMessage(message, chatId, this.authorJid(message.key));
           if (!entry) continue;
           // A group's history keeps who wrote each message; the app only stores it for groups it already shows.
           const group = groupSenderFromBaileys(message.key, message.key.fromMe ? null : message.pushName);
@@ -1002,6 +1005,15 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
     return author ? jidNormalizedUser(author) : null;
   }
 
+  /** Every way WhatsApp may name a message's author — phone number and LID — the most likely first. */
+  private authorJidCandidates(key: WAMessageKey & { addressingMode?: string | null }): string[] {
+    const user = this.socket?.user as { id?: string; lid?: string } | undefined;
+    const raw = key.fromMe
+      ? [this.authorJid(key), user?.lid, user?.id]
+      : [key.participant, key.participantPn, key.participantLid, ...(key.participant ? [] : [key.remoteJid, key.senderPn, key.senderLid])];
+    return [...new Set(raw.filter((j): j is string => Boolean(j)).map((j) => jidNormalizedUser(j)))];
+  }
+
   async subscribeTyping(chatId: string): Promise<void> {
     if (!this.socket || this.status.state !== "CONNECTED") return;
     await this.socket.presenceSubscribe(chatId);
@@ -1212,6 +1224,8 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
         chatId,
         pollMessageId: vote.pollCreationMessageKey.id,
         voterJid,
+        voterJidCandidates: this.authorJidCandidates(message.key),
+        creatorJidCandidates: this.authorJidCandidates(vote.pollCreationMessageKey as WAMessageKey),
         voterName: message.key.fromMe ? null : (group?.participantName ?? message.pushName ?? null),
         voterPhone: group?.participantPhone ?? (message.key.fromMe ? null : base.phone),
         fromMe: Boolean(message.key.fromMe),
@@ -1361,7 +1375,7 @@ function phoneFromJid(jid: string, altPnJid?: string | null): string {
  * MessageBubble shows a "media from before this system tracked it" state
  * for those. Only TEXT/LOCATION/CONTACT (cheap, no binary) carry full content.
  */
-function convertHistoryMessage(message: WAMessage, chatId: string): HistoryMessageEvent | null {
+function convertHistoryMessage(message: WAMessage, chatId: string, authorJid: string | null): HistoryMessageEvent | null {
   const content = normalizeMessageContent(message.message);
   if (!content) return null;
 
@@ -1389,10 +1403,20 @@ function convertHistoryMessage(message: WAMessage, chatId: string): HistoryMessa
   if (content.contactMessage) {
     return { ...base, type: "CONTACT", body: null, vcard: content.contactMessage.vcard ?? undefined };
   }
-  const poll = pollInfoOf(content, null);
+  const poll = pollInfoOf(content, authorJid);
   if (poll) {
-    // From history: shown with its options; its creator isn't known here, so its votes can't be read.
-    return { ...base, type: "POLL", body: null, pollQuestion: poll.question, pollOptions: poll.options, pollSelectableCount: poll.selectableCount };
+    // From history (the connection starting or reconnecting, a group loaded): its key comes too, so the votes that
+    // arrive afterwards can be read.
+    return {
+      ...base,
+      type: "POLL",
+      body: null,
+      pollQuestion: poll.question,
+      pollOptions: poll.options,
+      pollSelectableCount: poll.selectableCount,
+      pollSecret: poll.secret,
+      pollCreatorJid: poll.creatorJid,
+    };
   }
   if (content.eventMessage) {
     const event = content.eventMessage;

@@ -11,6 +11,7 @@ import { findApplicableHoliday } from "../holidays/holidays.service";
 import { signAccessToken, signRefreshToken, verifyRefreshToken } from "./jwt";
 import { env } from "../../config/env";
 import { realtimeEvents } from "../../realtime/realtime";
+import { queueMayMove } from "../../lib/presence-status";
 import type { AccessSchedule } from "@whatsatendende/types";
 
 const REFRESH_TOKEN_DAYS = 7;
@@ -177,6 +178,7 @@ async function endIdleSession(session: { id: string; userId: string }) {
   const ended = await prisma.refreshToken.updateMany({ where: { id: session.id, revokedAt: null }, data: { revokedAt: new Date() } });
   if (ended.count === 0) return; // logged out (or ended) in the meantime
   await prisma.user.update({ where: { id: session.userId }, data: { presence: "OFFLINE", pauseReasonId: null, pausedAt: null } }).catch(() => undefined);
+  await queueMayMove(session.userId);
   await writeAudit({ userId: session.userId, action: "LOGOUT_INACTIVITY", entity: "User", entityId: session.userId });
   realtimeEvents.userForceLoggedOut(session.userId, "INACTIVITY");
 }
@@ -262,6 +264,7 @@ export async function logout(refreshToken: string | undefined, userId: string, i
     });
   }
   await prisma.user.update({ where: { id: userId }, data: { presence: "OFFLINE", pauseReasonId: null, pausedAt: null } }).catch(() => undefined);
+  await queueMayMove(userId);
   await writeAudit({ userId, action: "LOGOUT", entity: "User", entityId: userId, ipAddress: ip });
 }
 

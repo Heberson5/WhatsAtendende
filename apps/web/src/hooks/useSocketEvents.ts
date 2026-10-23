@@ -33,6 +33,12 @@ export function useSocketEvents(activeConversationId: string | null) {
       queryClient.invalidateQueries({ queryKey: ["export-branding"] });
     };
     const onQueueUpdated = () => queryClient.invalidateQueries({ queryKey: ["queue"] });
+    // A contact's tags changed: the cards show them (Meus, Fila and Transf.).
+    const onContactTags = () => {
+      queryClient.invalidateQueries({ queryKey: ["mine"] });
+      queryClient.invalidateQueries({ queryKey: ["transferred-out"] });
+      queryClient.invalidateQueries({ queryKey: ["queue"] });
+    };
     const onNewQueueConversation = (payload: { conversationId: string; contactName: string }) => {
       queryClient.invalidateQueries({ queryKey: ["queue"] });
       toast.info(`Nova conversa na fila: ${payload.contactName}`);
@@ -181,6 +187,7 @@ export function useSocketEvents(activeConversationId: string | null) {
     };
 
     socket.on("queue:updated", onQueueUpdated);
+    socket.on("contact:tags", onContactTags);
     socket.on("queue:new-conversation", onNewQueueConversation);
     socket.on("queue:reminder", onQueueReminder);
     socket.on("conversation:no-reply-reminder", onNoReplyReminder);
@@ -215,6 +222,7 @@ export function useSocketEvents(activeConversationId: string | null) {
 
     return () => {
       socket.off("queue:updated", onQueueUpdated);
+      socket.off("contact:tags", onContactTags);
       socket.off("queue:new-conversation", onNewQueueConversation);
       socket.off("queue:reminder", onQueueReminder);
       socket.off("conversation:no-reply-reminder", onNoReplyReminder);

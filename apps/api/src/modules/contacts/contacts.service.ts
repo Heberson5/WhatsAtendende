@@ -17,6 +17,7 @@ import type {
 import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
 import { toTagDTO } from "../client-panel/client-panel.service";
+import { realtimeEvents } from "../../realtime/realtime";
 import { getPhoneSettings } from "../phone-numbers/phone-settings.service";
 
 /**
@@ -194,6 +195,7 @@ export async function updateContact(id: string, input: { name?: string; firstNam
         ]
       : []),
   ]);
+  if (input.tagIds) realtimeEvents.contactTagsChanged();
 }
 
 // --- CSV ---
@@ -325,6 +327,7 @@ export async function importContactsCsv(csv: string, whatsappConnectionId: strin
       });
     }
   }
+  realtimeEvents.contactTagsChanged();
   return result;
 }
 
@@ -340,22 +343,36 @@ async function assertTagNameFree(name: string, excludeId?: string) {
   if (clash) throw Errors.conflict(`Já existe a etiqueta "${clash.name}"`);
 }
 
-export async function createTag(input: { name: string; color: string; blockedAutoMessages?: string[] }): Promise<TagDTO> {
+type TagInput = { name: string; color: string; blockedAutoMessages?: string[]; queueUserIds?: string[] };
+
+/** "Atendida por" only names users who attend (active or not — someone inactive just never counts as online). */
+async function assertQueueUsers(userIds: string[] | undefined) {
+  if (!userIds?.length) return;
+  const found = await prisma.user.count({ where: { id: { in: userIds }, role: { in: ["AGENT", "MANAGER", "ADMIN"] } } });
+  if (found !== userIds.length) throw Errors.badRequest("Usuário inválido em Atendida por");
+}
+
+export async function createTag(input: TagInput): Promise<TagDTO> {
   await assertTagNameFree(input.name);
+  await assertQueueUsers(input.queueUserIds);
   return toTagDTO(await prisma.tag.create({ data: input }));
 }
 
-export async function updateTag(id: string, input: { name?: string; color?: string; blockedAutoMessages?: string[] }): Promise<TagDTO> {
+export async function updateTag(id: string, input: Partial<TagInput>): Promise<TagDTO> {
   const tag = await prisma.tag.findUnique({ where: { id } });
   if (!tag) throw Errors.notFound("Etiqueta não encontrada");
   if (input.name) await assertTagNameFree(input.name, id);
-  return toTagDTO(await prisma.tag.update({ where: { id }, data: input }));
+  await assertQueueUsers(input.queueUserIds);
+  const updated = toTagDTO(await prisma.tag.update({ where: { id }, data: input }));
+  realtimeEvents.contactTagsChanged();
+  return updated;
 }
 
 export async function deleteTag(id: string): Promise<void> {
   const tag = await prisma.tag.findUnique({ where: { id } });
   if (!tag) throw Errors.notFound("Etiqueta não encontrada");
   await prisma.tag.delete({ where: { id } });
+  realtimeEvents.contactTagsChanged();
 }
 
 // --- Contatos › Padronizar nomes ---

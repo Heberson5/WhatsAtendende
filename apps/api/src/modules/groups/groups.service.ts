@@ -8,7 +8,7 @@ import { isPermissionAllowed } from "../../lib/permissions";
 import { getManagerConnectionIds } from "../../lib/connection-access";
 import { realtimeEvents } from "../../realtime/realtime";
 import { messageInclude } from "../messages/messages.service";
-import { addHistoricalAttachments } from "../conversations/conversations.service";
+import { addHistoricalAttachments, fillPollKey } from "../conversations/conversations.service";
 import { toNotificationDTO } from "../notifications/notifications.mapper";
 
 /**
@@ -496,7 +496,15 @@ export async function importGroupHistory(connectionId: string, messages: History
 
   for (const m of messages) {
     const group = groupByChat.get(m.chatId);
-    if (!group || known.has(m.providerMessageId)) continue;
+    if (!group) continue;
+    if (known.has(m.providerMessageId)) {
+      // A poll saved without its key gets it from this copy.
+      if (m.type === "POLL" && m.pollSecret) {
+        const saved = await prisma.message.findUnique({ where: { providerMessageId: m.providerMessageId }, select: { id: true } });
+        if (saved) await fillPollKey(saved.id, m);
+      }
+      continue;
+    }
     known.add(m.providerMessageId);
     const participantName = m.group?.participantName ?? (m.group?.participantPhone ? await savedContactName(connectionId, m.group.participantPhone) : null);
     const created = await prisma.message.create({

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BellOff, ChevronDown, Plus, Trash2 } from "lucide-react";
+import { BellOff, ChevronDown, Plus, Trash2, UserCheck } from "lucide-react";
 import { toast } from "sonner";
 import { AUTO_MESSAGE_KINDS, AUTO_MESSAGE_KIND_HINT, AUTO_MESSAGE_KIND_LABEL, PERMISSION, type AutoMessageKind, type ManagedTagDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
@@ -56,29 +56,97 @@ function BlockedMessagesPicker({ value, onChange, disabled }: { value: AutoMessa
   );
 }
 
+interface QueueUserOption {
+  id: string;
+  displayName: string;
+  presence: "ONLINE" | "AWAY" | "OFFLINE";
+}
+
+const PRESENCE_LABEL: Record<QueueUserOption["presence"], string> = { ONLINE: "online", AWAY: "pausado", OFFLINE: "offline" };
+const PRESENCE_DOT: Record<QueueUserOption["presence"], string> = { ONLINE: "bg-success", AWAY: "bg-warning", OFFLINE: "bg-muted" };
+
+const sameIds = (a: string[], b: string[]) => a.length === b.length && a.every((id) => b.includes(id));
+
+/**
+ * "Atendida por": in the queue, only the marked users see customers with this tag — while one of them is online; with
+ * nobody of them online (or all paused) the customer goes to everyone. Gestor/Administrador only, like Bloqueia.
+ */
+function QueueUsersPicker({ value, onChange, users, disabled }: { value: string[]; onChange: (v: string[]) => void; users: QueueUserOption[]; disabled?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const toggle = (id: string) => onChange(value.includes(id) ? value.filter((v) => v !== id) : [...value, id]);
+  const names = users.filter((u) => value.includes(u.id)).map((u) => u.displayName);
+  return (
+    <div className="w-full">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="focus-ring flex w-full items-center gap-1.5 rounded-lg px-1 py-0.5 text-start text-xs text-muted hover:text-[var(--color-text)]"
+      >
+        <UserCheck className="h-3.5 w-3.5 shrink-0" />
+        <span className="font-medium">Atendida por:</span>
+        <span className={names.length ? "text-[var(--color-text)]" : undefined}>{names.length ? names.join(", ") : "todos"}</span>
+        <ChevronDown className={`ms-auto h-3.5 w-3.5 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <fieldset disabled={disabled} className="mt-1.5 rounded-lg border border-border p-2.5">
+          <legend className="px-1 text-xs font-semibold">Quem atende os clientes com esta etiqueta</legend>
+          <p className="mb-1.5 text-[11px] text-muted">
+            Na fila, só os usuários marcados veem esses clientes. Se nenhum deles estiver online (pausado também conta como fora), o cliente vai para
+            todos. Nenhum marcado = todos atendem.
+          </p>
+          {disabled && <p className="mb-1.5 text-[11px] text-muted">Só gestor e administrador podem mudar esta lista.</p>}
+          <div className="grid gap-1 sm:grid-cols-2">
+            {users.map((user) => (
+              <label key={user.id} className="flex cursor-pointer items-center gap-2 rounded-md p-1 text-xs hover:bg-surface-alt">
+                <input type="checkbox" checked={value.includes(user.id)} onChange={() => toggle(user.id)} className="h-3.5 w-3.5 shrink-0 accent-primary" />
+                <span className="min-w-0 flex-1 truncate">{user.displayName}</span>
+                <span className="inline-flex shrink-0 items-center gap-1 text-[11px] text-muted">
+                  <span className={`h-1.5 w-1.5 rounded-full ${PRESENCE_DOT[user.presence]}`} />
+                  {PRESENCE_LABEL[user.presence]}
+                </span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      )}
+    </div>
+  );
+}
+
 function TagRow({
   tag,
   onChanged,
   canEdit,
   canDelete,
   canBlock,
+  users,
 }: {
   tag: ManagedTagDTO;
   onChanged: () => void;
   canEdit: boolean;
   canDelete: boolean;
   canBlock: boolean;
+  users: QueueUserOption[];
 }) {
   const [name, setName] = useState(tag.name);
   const [color, setColor] = useState(tag.color);
   const [blocked, setBlocked] = useState<AutoMessageKind[]>(tag.blockedAutoMessages);
+  const [queueUsers, setQueueUsers] = useState<string[]>(tag.queueUserIds);
   const [confirming, setConfirming] = useState(false);
   const blockedChanged = !sameKinds(blocked, tag.blockedAutoMessages);
-  const dirty = name.trim() !== tag.name || color.toLowerCase() !== tag.color.toLowerCase() || blockedChanged;
+  const queueUsersChanged = !sameIds(queueUsers, tag.queueUserIds);
+  const dirty = name.trim() !== tag.name || color.toLowerCase() !== tag.color.toLowerCase() || blockedChanged || queueUsersChanged;
 
   const save = useMutation({
     // The list goes only when it changed — and only someone allowed to change it can.
-    mutationFn: () => api.patch(`/contacts/tags/${tag.id}`, { name: name.trim(), color, ...(blockedChanged && { blockedAutoMessages: blocked }) }),
+    mutationFn: () =>
+      api.patch(`/contacts/tags/${tag.id}`, {
+        name: name.trim(),
+        color,
+        ...(blockedChanged && { blockedAutoMessages: blocked }),
+        ...(queueUsersChanged && { queueUserIds: queueUsers }),
+      }),
     onSuccess: () => {
       toast.success("Etiqueta salva.");
       onChanged();
@@ -128,6 +196,7 @@ function TagRow({
         )}
       </div>
       <BlockedMessagesPicker value={blocked} onChange={setBlocked} disabled={!canBlock} />
+      <QueueUsersPicker value={queueUsers} onChange={setQueueUsers} users={users} disabled={!canBlock} />
       {dirty && !confirming && (
         <div className="flex justify-end gap-2">
           <button
@@ -136,6 +205,7 @@ function TagRow({
               setName(tag.name);
               setColor(tag.color);
               setBlocked(tag.blockedAutoMessages);
+              setQueueUsers(tag.queueUserIds);
             }}
             className="focus-ring rounded-lg border border-border px-2.5 py-1 text-xs"
           >
@@ -188,6 +258,12 @@ export default function EtiquetasPage() {
   const [newName, setNewName] = useState("");
   const [newColor, setNewColor] = useState(NEW_TAG_COLOR);
   const [newBlocked, setNewBlocked] = useState<AutoMessageKind[]>([]);
+  const [newQueueUsers, setNewQueueUsers] = useState<string[]>([]);
+  // "Atendida por": everyone active who attends, with their presence now.
+  const { data: users = [] } = useQuery({
+    queryKey: ["tag-queue-users"],
+    queryFn: async () => (await api.get<QueueUserOption[]>("/agents/transfer-targets", { params: { excludeSelf: false } })).data,
+  });
 
   function refresh() {
     queryClient.invalidateQueries({ queryKey: ["managed-tags"] });
@@ -196,10 +272,17 @@ export default function EtiquetasPage() {
   }
 
   const create = useMutation({
-    mutationFn: () => api.post("/contacts/tags", { name: newName.trim(), color: newColor, ...(newBlocked.length && { blockedAutoMessages: newBlocked }) }),
+    mutationFn: () =>
+      api.post("/contacts/tags", {
+        name: newName.trim(),
+        color: newColor,
+        ...(newBlocked.length && { blockedAutoMessages: newBlocked }),
+        ...(newQueueUsers.length && { queueUserIds: newQueueUsers }),
+      }),
     onSuccess: () => {
       setNewName("");
       setNewBlocked([]);
+      setNewQueueUsers([]);
       refresh();
     },
     onError: (err) => toast.error(getApiErrorMessage(err)),
@@ -210,7 +293,8 @@ export default function EtiquetasPage() {
       <p className="text-sm text-muted">
         Etiquetas que os atendentes escolhem no painel do cliente durante o atendimento. Em <strong>Bloqueia</strong>, escolha as mensagens automáticas
         que os clientes com a etiqueta não recebem — por exemplo, funcionários sem pesquisa de satisfação. O que for bloqueado fica registrado em
-        Relatórios › Mensagens bloqueadas.
+        Relatórios › Mensagens bloqueadas. Em <strong>Atendida por</strong>, escolha quem atende esses clientes: na fila, só eles os veem enquanto
+        algum estiver online.
       </p>
       {canAdd && (
         <form
@@ -242,6 +326,7 @@ export default function EtiquetasPage() {
             <Plus className="h-4 w-4" /> Criar
           </button>
           {canBlock && <BlockedMessagesPicker value={newBlocked} onChange={setNewBlocked} />}
+          {canBlock && <QueueUsersPicker value={newQueueUsers} onChange={setNewQueueUsers} users={users} />}
         </form>
       )}
 
@@ -250,12 +335,13 @@ export default function EtiquetasPage() {
         <ul className="divide-y divide-border rounded-card border border-border bg-surface">
           {tags.map((t) => (
             <TagRow
-              key={`${t.id}-${t.name}-${t.color}-${t.blockedAutoMessages.join()}`}
+              key={`${t.id}-${t.name}-${t.color}-${t.blockedAutoMessages.join()}-${t.queueUserIds.join()}`}
               tag={t}
               onChanged={refresh}
               canEdit={canEdit}
               canDelete={canDelete}
               canBlock={canEdit && canBlock}
+              users={users}
             />
           ))}
         </ul>
