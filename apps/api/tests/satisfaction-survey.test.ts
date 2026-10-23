@@ -172,7 +172,7 @@ describe("Pesquisa de satisfação (NPS)", () => {
     const { contact } = await closeAndAnswer("5511900000001", "9");
     expect((await getSatisfactionSummary(PERIOD())).answered).toBe(1);
 
-    const tag = await prisma.tag.create({ data: { name: "Funcionário", color: "#000000", skipSurvey: true } });
+    const tag = await prisma.tag.create({ data: { name: "Funcionário", color: "#000000", blockedAutoMessages: ["SURVEY"] } });
     await prisma.contactTag.create({ data: { contactId: contact.id, tagId: tag.id } });
     expect(await getSatisfactionSummary(PERIOD())).toEqual({ sent: 0, answered: 0, questions: [] });
     expect((await getSatisfactionByAgent(PERIOD())).size).toBe(0);

@@ -16,6 +16,7 @@ import { getExportBranding } from "../settings/settings.service";
 import * as service from "./reports.service";
 import { agentsToRows, getSatisfactionReport, responsesToRows } from "../satisfaction/satisfaction-report.service";
 import { arrivalsToRows, getArrivalsByHour } from "../dashboard/dashboard.service";
+import { autoMessageBlocksToRows, getAutoMessageBlocks } from "./auto-message-blocks.service";
 
 /** The exports' own logo/cor/nome — configured in Configurações >
  * Exportações, independent from the app's Identidade visual. See PROMPT:
@@ -149,6 +150,27 @@ reportsRouter.get(
     });
     if (query.format === "json") return res.json(data);
     await respond(res, arrivalsToRows(data), query.format, "relatorio-chegadas-por-hora", "Chegadas de conversas por hora", query.tzOffsetMinutes, parseListParam(query.columns));
+  })
+);
+
+// Relatórios › Mensagens automáticas bloqueadas: what the tags (Etiquetas › "Não enviar estas mensagens automáticas")
+// stopped in the period. JSON for the screen, one row per message in the exports.
+reportsRouter.get(
+  "/auto-message-blocks",
+  asyncHandler(async (req, res) => {
+    const query = querySchema.parse(req.query);
+    const { from, to } = resolvePeriod(query.period, query.from, query.to, query.tzOffsetMinutes);
+    const report = await getAutoMessageBlocks({ from, to, agentId: query.agentId, connectionIds: await resolveAllowedConnectionIds(req.auth!, parseListParam(query.connectionId)) });
+    if (query.format === "json") return res.json(report);
+    await respond(
+      res,
+      autoMessageBlocksToRows(report, query.tzOffsetMinutes),
+      query.format,
+      "relatorio-mensagens-bloqueadas",
+      "Mensagens automáticas bloqueadas",
+      query.tzOffsetMinutes,
+      parseListParam(query.columns)
+    );
   })
 );
 

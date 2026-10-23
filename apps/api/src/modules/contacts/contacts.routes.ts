@@ -1,9 +1,9 @@
 import { Router, type Request } from "express";
 import { z } from "zod";
-import { COLUMN_SCREENS, CONTACT_SORT_FIELDS, PERMISSION, mergeColumnView } from "@whatsatendende/types";
+import { AUTO_MESSAGE_KINDS, COLUMN_SCREENS, CONTACT_SORT_FIELDS, PERMISSION, mergeColumnView } from "@whatsatendende/types";
 import { asyncHandler } from "../../lib/async-handler";
 import { requireAuth } from "../../middleware/auth";
-import { requirePermission } from "../../lib/permissions";
+import { isPermissionAllowed, requirePermission } from "../../lib/permissions";
 import { writeAudit } from "../../lib/audit";
 import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
@@ -114,14 +114,27 @@ contactsRouter.get(
   })
 );
 
-const tagSchema = z.object({ name: z.string().trim().min(1).max(40), color: z.string().regex(HEX_COLOR), skipSurvey: z.boolean().default(false) });
+const tagSchema = z.object({
+  name: z.string().trim().min(1).max(40),
+  color: z.string().regex(HEX_COLOR),
+  blockedAutoMessages: z.array(z.enum(AUTO_MESSAGE_KINDS)).max(AUTO_MESSAGE_KINDS.length).optional(),
+});
+
+// "Não enviar estas mensagens automáticas" is Gestor/Administrador only (ETIQUETAS_BLOQUEIOS) — on top of adding/editing.
+async function assertCanSetBlocks(req: Request, blocked: unknown) {
+  if (blocked === undefined) return;
+  if (!(await isPermissionAllowed(req.auth!.role, PERMISSION.ETIQUETAS_BLOQUEIOS))) {
+    throw Errors.forbidden("Você não tem permissão para escolher as mensagens automáticas bloqueadas da etiqueta");
+  }
+}
 
 contactsRouter.post(
   "/tags",
   requirePermission(PERMISSION.ETIQUETAS_ADICIONAR),
   asyncHandler(async (req, res) => {
     const input = tagSchema.parse(req.body);
-    const tag = await service.createTag(input);
+    await assertCanSetBlocks(req, input.blockedAutoMessages);
+    const tag = await service.createTag({ ...input, blockedAutoMessages: [...new Set(input.blockedAutoMessages ?? [])] });
     await writeAudit({ userId: req.auth!.userId, action: "TAG_CREATED", entity: "Tag", entityId: tag.id, ipAddress: req.ip ?? null, metadata: input });
     res.status(201).json(tag);
   })
@@ -132,7 +145,8 @@ contactsRouter.patch(
   requirePermission(PERMISSION.ETIQUETAS_EDITAR),
   asyncHandler(async (req, res) => {
     const input = tagSchema.partial().parse(req.body);
-    const tag = await service.updateTag(req.params.tagId, input);
+    await assertCanSetBlocks(req, input.blockedAutoMessages);
+    const tag = await service.updateTag(req.params.tagId, { ...input, ...(input.blockedAutoMessages && { blockedAutoMessages: [...new Set(input.blockedAutoMessages)] }) });
     await writeAudit({ userId: req.auth!.userId, action: "TAG_UPDATED", entity: "Tag", entityId: tag.id, ipAddress: req.ip ?? null, metadata: input });
     res.json(tag);
   })

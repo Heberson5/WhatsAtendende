@@ -26,6 +26,16 @@ import { CONVERSATION_UNDO_WINDOW_MS } from "@whatsatendende/types";
 import { cancelScheduledMessage, scheduleMessage } from "../src/modules/agent-tools/agent-tools.service";
 
 const app = createApp();
+
+/** What the customer was sent, as the conversation shows it (the agent's automatic texts — not the survey's). */
+async function sentNow() {
+  const rows = await prisma.message.findMany({
+    where: { direction: "OUTBOUND", automatedBy: null },
+    orderBy: { createdAt: "asc" },
+    select: { body: true, conversation: { select: { contact: { select: { phone: true } } } } },
+  });
+  return rows.map((m) => ({ text: m.body, phone: m.conversation.contact.phone }));
+}
 const MINUTE = 60_000;
 
 describe("Encerramento por falta de retorno", () => {
@@ -35,7 +45,6 @@ describe("Encerramento por falta de retorno", () => {
 
   beforeEach(async () => {
     await resetDatabase();
-    sent.length = 0;
     resetNoReturnClock();
     connectionId = (await createTestConnection("Suporte")).id;
     agentId = (await createTestUser({ email: "ana@test.dev", role: "AGENT", displayName: "Ana", presence: "ONLINE", whatsappConnectionId: connectionId })).id;
@@ -79,7 +88,7 @@ describe("Encerramento por falta de retorno", () => {
 
     const res = await request(app).post(`/api/conversations/${conversation.id}/close-no-return`).set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
-    expect(sent.map((m) => m.text)).toEqual([
+    expect((await sentNow()).map((m) => m.text)).toEqual([
       "Joana, como não tivemos retorno, estamos encerrando este atendimento por enquanto. Quando quiser continuar, é só mandar uma mensagem aqui que retomamos de onde paramos. Até logo! 👋",
     ]);
     const closed = await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } });
@@ -92,18 +101,18 @@ describe("Encerramento por falta de retorno", () => {
   it("automático: lembrete depois de X minutos, encerra Y minutos depois; desligado não faz nada", async () => {
     const conversation = await waitingOnCustomer("5511900000002", 11);
     await processNoReturnConversations();
-    expect(sent).toHaveLength(0); // off by default
+    expect(await sentNow()).toHaveLength(0); // off by default
 
     await enable();
     await processNoReturnConversations();
-    expect(sent.map((m) => m.text)).toEqual(["Oi, Joana! Ainda está por aí? 😊 Fico aguardando seu retorno para continuarmos o atendimento."]);
+    expect((await sentNow()).map((m) => m.text)).toEqual(["Oi, Joana! Ainda está por aí? 😊 Fico aguardando seu retorno para continuarmos o atendimento."]);
     const reminded = await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } });
     expect(reminded.noReturnCloseAt!.getTime()).toBeGreaterThan(Date.now() + 14 * MINUTE);
     expect(reminded.status).toBe("IN_PROGRESS");
 
     await processNoReturnConversations(new Date(Date.now() + 16 * MINUTE));
     expect(await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).toMatchObject({ status: "CLOSED", closeReason: "NO_RETURN" });
-    expect(sent).toHaveLength(2);
+    expect(await sentNow()).toHaveLength(2);
   });
 
   it("o cliente respondeu, há lembrete pendente ou o atendente marcou Aguardar cliente: não encerra", async () => {
@@ -119,9 +128,9 @@ describe("Encerramento por falta de retorno", () => {
     const hold = await request(app).post(`/api/conversations/${held.id}/no-return-hold`).set("Authorization", `Bearer ${token}`).send({ hold: true });
     expect(hold.body).toMatchObject({ noReturnHold: true });
 
-    sent.length = 0;
+    const before = (await sentNow()).length;
     await processNoReturnConversations(new Date(Date.now() + 60 * MINUTE));
-    expect(sent).toHaveLength(0);
+    expect((await sentNow()).length).toBe(before);
     expect(await prisma.conversation.count({ where: { status: "CLOSED" } })).toBe(0);
   });
 
@@ -137,7 +146,7 @@ describe("Encerramento por falta de retorno", () => {
     await processNoReturnConversations(new Date(start + 30 * MINUTE));
     const after = (await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).noReturnReminderAt!.getTime();
     expect(after - before).toBe(30 * MINUTE);
-    expect(sent).toHaveLength(0);
+    expect(await sentNow()).toHaveLength(0);
   });
 
   it("com \"Enviar a pesquisa de satisfação\" marcado, a pesquisa vai depois do encerramento e a mensagem espera a nota, sem o nome do atendente", async () => {
@@ -157,7 +166,7 @@ describe("Encerramento por falta de retorno", () => {
     try {
       await closeForNoReturn(conversation.id, null);
       // Held: nothing goes out at the close itself.
-      expect(sent).toHaveLength(0);
+      expect(await sentNow()).toHaveLength(0);
       await vi.advanceTimersByTimeAsync(CONVERSATION_UNDO_WINDOW_MS);
     } finally {
       vi.useRealTimers();
@@ -251,7 +260,7 @@ describe("Encerramento por falta de retorno", () => {
       vi.useRealTimers();
     }
     await new Promise((resolve) => setTimeout(resolve, 300)); // a survey that should not be there gets time to show up
-    expect(sent).toHaveLength(1);
+    expect(await sentNow()).toHaveLength(1);
     expect(await prisma.satisfactionSurvey.findUnique({ where: { conversationId: conversation.id } })).toBeNull();
   });
 
@@ -266,7 +275,7 @@ describe("Encerramento por falta de retorno", () => {
 
     await processNoReturnConversations();
     expect((await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).status).toBe("IN_PROGRESS");
-    expect(sent).toHaveLength(0);
+    expect(await sentNow()).toHaveLength(0);
 
     const manual = await request(app).post(`/api/conversations/${conversation.id}/close-no-return`).set("Authorization", `Bearer ${token}`);
     expect(manual.status).toBe(409);
@@ -282,7 +291,7 @@ describe("Encerramento por falta de retorno", () => {
     expect(after.noReturnReminderAt!.getTime()).toBeGreaterThan(Date.now() + 9 * MINUTE);
     await processNoReturnConversations();
     expect((await prisma.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).status).toBe("IN_PROGRESS");
-    expect(sent).toHaveLength(0);
+    expect(await sentNow()).toHaveLength(0);
   });
 
   it("o cliente volta depois do encerramento: vai para o mesmo atendente, se online, com a nota", async () => {

@@ -3,7 +3,7 @@ import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
 import { logger } from "../../lib/logger";
 import { realtimeEvents } from "../../realtime/realtime";
-import { createSystemOutboundMessage } from "../messages/messages.service";
+import { contactIdsBlocking, enqueueAutoMessage, isBlocked } from "../../lib/auto-messages";
 import { sendOutboundTextViaChannel } from "../messages/send-via-channel";
 import { getNoReturnSettings } from "../settings/settings.service";
 import { getConnectionSchedule, isWorkScheduleOpen } from "../work-schedules/work-schedules.service";
@@ -30,15 +30,19 @@ function renderNoReturnText(conversation: Conversation, template: string): strin
 }
 
 /**
- * Sends one of the "falta de retorno" texts, recorded as the assigned agent's but WITHOUT the "*Nome:*" on top — an
- * automatic message never carries the agent's name — and without restarting the countdown.
+ * Queues one of the "falta de retorno" texts, recorded as the assigned agent's but WITHOUT the "*Nome:*" on top — an
+ * automatic message never carries the agent's name. It waits its 3–10 seconds: the reminder is dropped if the customer
+ * answers meanwhile, the closing text if the conversation is taken up again.
  */
-async function sendNoReturnText(conversation: Conversation, template: string) {
-  const agent = conversation.assignedAgent!;
-  const text = renderNoReturnText(conversation, template);
-  const message = await createSystemOutboundMessage({ conversationId: conversation.id, type: "TEXT", body: text, agentId: agent.id });
-  await sendOutboundTextViaChannel(conversation, message.id, text, null);
-  realtimeEvents.newMessage(conversation.id, agent.id);
+async function sendNoReturnText(conversation: Conversation, template: string, condition: "OPEN_AWAITING_CUSTOMER" | "CLOSED") {
+  await enqueueAutoMessage({
+    conversationId: conversation.id,
+    kind: "NO_RETURN",
+    text: renderNoReturnText(conversation, template),
+    senderAgentId: conversation.assignedAgent!.id,
+    senderDisplayName: null,
+    condition,
+  });
 }
 
 /**
@@ -66,16 +70,22 @@ export async function closeForNoReturn(conversationId: string, byUserId: string 
   const agentId = conversation.assignedAgentId;
 
   const settings = await getNoReturnSettings();
+  // A tag that stops falta de retorno: the attendant may still close it by hand, but no message goes out.
+  const blocked = await isBlocked(conversation, "NO_RETURN");
   let heldClosingMessage: HeldClosingMessage | undefined;
-  if (settings.sendSurvey && conversation.channel === "WHATSAPP" && (await willSendSurveyOnClose(conversationId))) {
+  let sendCloseText = false;
+  if (blocked) {
+    // Nothing to send.
+  } else if (settings.sendSurvey && conversation.channel === "WHATSAPP" && (await willSendSurveyOnClose(conversationId))) {
     heldClosingMessage = {
+      kind: "NO_RETURN",
       text: renderNoReturnText(conversation, settings.closeText),
       senderId: agentId,
       senderDisplayName: null,
       whenAnswered: await agentClosingMessage(conversation),
     };
   } else {
-    await sendNoReturnText(conversation, settings.closeText);
+    sendCloseText = true;
   }
   await prisma.conversation.update({
     where: { id: conversationId },
@@ -102,6 +112,8 @@ export async function closeForNoReturn(conversationId: string, byUserId: string 
       body: byUserId ? "Encerrada por falta de retorno do cliente" : "Encerrada automaticamente por falta de retorno do cliente",
     },
   });
+  // Once closed, so the "still closed?" check before sending holds.
+  if (sendCloseText) await sendNoReturnText(conversation, settings.closeText, "CLOSED");
   realtimeEvents.conversationClosed(conversationId, agentId);
   if (conversation.interventionById) realtimeEvents.conversationClosed(conversationId, conversation.interventionById);
   if (heldClosingMessage) scheduleCloseFollowUp(conversationId, heldClosingMessage);
@@ -165,8 +177,10 @@ export async function processNoReturnConversations(now = new Date()): Promise<vo
       conversationReminders: { none: { firedAt: null } },
       scheduledMessages: { none: { sentAt: null, canceledAt: null, failedAt: null } },
     },
-    select: { id: true, channel: true, whatsappConnectionId: true, metaConnectionId: true, lastMessageAt: true, noReturnReminderAt: true, noReturnCloseAt: true },
+    select: { id: true, contactId: true, channel: true, whatsappConnectionId: true, metaConnectionId: true, lastMessageAt: true, noReturnReminderAt: true, noReturnCloseAt: true },
   });
+  // Customers with a tag that stops falta de retorno: never reminded nor closed automatically (recorded once per conversation).
+  const blockedContacts = new Set(await contactIdsBlocking("NO_RETURN"));
 
   const openByConnection = new Map<string, boolean>();
   const isOpen = async (channel: Channel, connectionId: string) => {
@@ -179,6 +193,11 @@ export async function processNoReturnConversations(now = new Date()): Promise<vo
 
   for (const c of conversations) {
     try {
+      if (blockedContacts.has(c.contactId)) {
+        await isBlocked(c, "NO_RETURN", { once: true });
+        if (c.noReturnReminderAt || c.noReturnCloseAt) await prisma.conversation.update({ where: { id: c.id }, data: { noReturnReminderAt: null, noReturnCloseAt: null } });
+        continue;
+      }
       let reminderAt = c.noReturnReminderAt ?? (c.noReturnCloseAt ? null : new Date(c.lastMessageAt.getTime() + settings.reminderMinutes * 60_000));
       let closeAt = c.noReturnCloseAt;
       if (!(await isOpen(c.channel, c.whatsappConnectionId ?? c.metaConnectionId!))) {
@@ -190,7 +209,7 @@ export async function processNoReturnConversations(now = new Date()): Promise<vo
       if (closeAt) {
         if (closeAt <= now) await closeForNoReturn(c.id, null);
       } else if (reminderAt && reminderAt <= now) {
-        await sendNoReturnText(await getConversationOrThrow(c.id), settings.reminderText);
+        await sendNoReturnText(await getConversationOrThrow(c.id), settings.reminderText, "OPEN_AWAITING_CUSTOMER");
         await prisma.conversation.update({
           where: { id: c.id },
           data: { noReturnReminderAt: null, noReturnCloseAt: new Date(now.getTime() + settings.closeMinutes * 60_000) },

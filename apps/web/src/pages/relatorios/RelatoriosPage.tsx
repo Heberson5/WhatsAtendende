@@ -1,11 +1,12 @@
 import { useCallback, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import type { ArrivalsByHourDTO } from "@whatsatendende/types";
+import type { ArrivalsByHourDTO, AutoMessageBlocksReportDTO } from "@whatsatendende/types";
 import { ChevronDown, Download, FileSpreadsheet, FileText } from "lucide-react";
 import { api } from "../../lib/api";
 import { PeriodFilter, type PeriodValue } from "../../components/common/PeriodFilter";
 import { ConnectionFilter } from "../../components/common/ConnectionFilter";
 import { SatisfactionReport } from "../../components/reports/SatisfactionReport";
+import { AutoMessageBlocksReport } from "../../components/reports/AutoMessageBlocksReport";
 import { ColumnViewMenu } from "../../components/common/ColumnViewMenu";
 import { useColumnView } from "../../hooks/useColumnView";
 import { ArrivalsByHourChart } from "../../components/dashboard/ArrivalsByHourChart";
@@ -13,7 +14,7 @@ import { formatHour, type HourRange } from "../../components/dashboard/HourRange
 import { useAuthStore } from "../../store/auth-store";
 import { useBranding } from "../../hooks/useBranding";
 
-type ReportKind = "attendance" | "per-agent" | "messages" | "arrivals" | "satisfaction";
+type ReportKind = "attendance" | "per-agent" | "messages" | "arrivals" | "satisfaction" | "auto-message-blocks";
 
 const TABS: { key: ReportKind; label: string }[] = [
   { key: "attendance", label: "Atendimentos" },
@@ -21,6 +22,7 @@ const TABS: { key: ReportKind; label: string }[] = [
   { key: "messages", label: "Mensagens" },
   { key: "arrivals", label: "Chegadas por hora" },
   { key: "satisfaction", label: "Pesquisa de satisfação" },
+  { key: "auto-message-blocks", label: "Mensagens bloqueadas" },
 ];
 
 const EXPORT_FORMATS: { key: "csv" | "pdf" | "xlsx"; label: string; icon: typeof Download }[] = [
@@ -103,7 +105,7 @@ export default function RelatoriosPage() {
         connectionId: connectionIds.length ? connectionIds : undefined,
         format,
         // Chegadas por hora exports every column of its table.
-        columns: tab === "arrivals"
+        columns: tab === "arrivals" || tab === "auto-message-blocks"
           ? undefined
           : satisfactionTable
           ? (satisfactionTable === "agents" ? satisfactionAgentsView : satisfactionResponsesView).visibleKeys
@@ -239,7 +241,9 @@ export default function RelatoriosPage() {
 
       {tab === "arrivals" && <ArrivalsReport data={data as ArrivalsByHourDTO | undefined} isLoading={isLoading} isToday={period.period === "today"} />}
 
-      {tab !== "messages" && tab !== "satisfaction" && tab !== "arrivals" && (
+      {tab === "auto-message-blocks" && <AutoMessageBlocksReport data={data as AutoMessageBlocksReportDTO | undefined} isLoading={isLoading} />}
+
+      {tab !== "messages" && tab !== "satisfaction" && tab !== "arrivals" && tab !== "auto-message-blocks" && (
         <div className="shadow-soft flex-1 overflow-auto rounded-card border border-border bg-surface">
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-surface-alt text-left text-xs uppercase tracking-wide text-muted">

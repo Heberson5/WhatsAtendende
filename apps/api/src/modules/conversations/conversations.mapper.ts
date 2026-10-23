@@ -1,8 +1,9 @@
 import type { Conversation, Contact, ConversationTransfer, User, WhatsAppConnection, MetaConnection } from "@prisma/client";
 import type { ConversationListItemDTO } from "@whatsatendende/types";
+import { autoMessageBlocksOf } from "../../lib/auto-messages";
 
 type ConversationWithRelations = Conversation & {
-  contact: Contact;
+  contact: Contact & { tags?: { tag: { name: string; blockedAutoMessages: string[] } }[] };
   assignedAgent: User | null;
   interventionBy?: User | null;
   // Exactly one of these two is non-null, depending on `channel` — see
@@ -69,6 +70,7 @@ export function toConversationListItemDTO(
     awaitingReplySince: revealPreview && conversation.awaitingReplySince ? conversation.awaitingReplySince.toISOString() : null,
     noReturnCloseAt: conversation.noReturnCloseAt?.toISOString() ?? null,
     noReturnHold: conversation.noReturnHold,
+    autoMessageBlocks: autoMessageBlocksOf(conversation.contact.tags),
     scheduledMessagePending: (conversation._count?.scheduledMessages ?? 0) > 0,
     unreadCount: conversation._unreadCount ?? 0,
     isNew: conversation.status === "NEW",

@@ -1,17 +1,10 @@
-import fs from "node:fs";
-import path from "node:path";
 import { prisma } from "../../lib/prisma";
-import { env } from "../../config/env";
 import { logger } from "../../lib/logger";
-import { realtimeEvents } from "../../realtime/realtime";
 import { businessMs, cachedHolidayLookup, conversationSchedule } from "../../lib/business-time";
 import { SCHEDULE_SELECT } from "../../lib/conversation-timings";
 import { copyReplyMediaFile } from "../../lib/reply-media";
 import { renderAutoMessageTemplate } from "../auto-message-templates/auto-message-templates.service";
-import { closingMessageType } from "../satisfaction/satisfaction.service";
-import { addAttachment } from "../messages/messages.service";
-import * as whatsappService from "../whatsapp/whatsapp.service";
-import { sendMetaMessage } from "../meta/meta.service";
+import { enqueueAutoMessage, isBlocked } from "../../lib/auto-messages";
 import { listQueueWaitMessages } from "./queue-wait-messages.service";
 
 type WaitMessage = Awaited<ReturnType<typeof listQueueWaitMessages>>[number];
@@ -41,6 +34,7 @@ export async function sendQueueWaitMessages(now = new Date()): Promise<void> {
     where: { status: { in: ["NEW", "WAITING"] }, contact: { isGroup: false } },
     select: {
       id: true,
+      contactId: true,
       channel: true,
       whatsappConnectionId: true,
       enteredQueueAt: true,
@@ -79,23 +73,18 @@ export async function sendQueueWaitMessages(now = new Date()): Promise<void> {
 }
 
 async function sendWaitMessage(
-  c: { id: string; channel: "WHATSAPP" | "INSTAGRAM" | "MESSENGER"; whatsappConnectionId: string | null; contact: { name: string | null; phone: string | null; firstName: string | null; externalUserId: string | null } },
+  c: { id: string; contactId: string; channel: "WHATSAPP" | "INSTAGRAM" | "MESSENGER"; contact: { name: string | null; phone: string | null; firstName: string | null } },
   message: WaitMessage
 ) {
-  const text = renderWaitText(message.text, c.contact);
-  // Instagram/Messenger: the text only.
-  const media = c.channel === "WHATSAPP" ? copyReplyMediaFile(message) : null;
-  const row = await prisma.message.create({
-    data: { conversationId: c.id, direction: "OUTBOUND", type: closingMessageType(media), status: "PENDING", body: text, automatedBy: "QUEUE_WAIT" },
+  // A tag that stops it: this step counts as done (the next ones are checked again), and the report records it.
+  if (await isBlocked(c, "QUEUE_WAIT")) return;
+  await enqueueAutoMessage({
+    conversationId: c.id,
+    kind: "QUEUE_WAIT",
+    text: renderWaitText(message.text, c.contact),
+    // Instagram/Messenger: the text only.
+    media: c.channel === "WHATSAPP" ? copyReplyMediaFile(message) : null,
+    automatedBy: "QUEUE_WAIT",
+    condition: "IN_QUEUE",
   });
-  if (c.channel !== "WHATSAPP") {
-    await sendMetaMessage(c.channel, row.id, c.contact.externalUserId!, text);
-  } else if (media) {
-    await addAttachment(row.id, { fileName: media.fileName, mimeType: media.mimeType, sizeBytes: media.sizeBytes, storageKey: media.storageKey, kind: closingMessageType(media) });
-    const buffer = fs.readFileSync(path.join(env.UPLOAD_DIR, media.storageKey));
-    await whatsappService.sendOutboundFile(c.whatsappConnectionId!, row.id, c.contact.phone!, buffer, media.fileName, media.mimeType, null, text);
-  } else {
-    await whatsappService.sendAutomatedText(c.whatsappConnectionId!, row.id, c.contact.phone!, text);
-  }
-  realtimeEvents.newMessage(c.id, null);
 }

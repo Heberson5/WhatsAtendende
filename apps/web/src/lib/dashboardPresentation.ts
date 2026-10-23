@@ -1,6 +1,14 @@
 import type PptxGenJS from "pptxgenjs";
 import { NPS_SMALL_SAMPLE } from "@whatsatendende/types";
-import type { ArrivalsByHourDTO, PresenceByHourDTO, SatisfactionOverviewDTO, SatisfactionReportDTO, SatisfactionResponseDTO } from "@whatsatendende/types";
+import {
+  AUTO_MESSAGE_KIND_LABEL,
+  type ArrivalsByHourDTO,
+  type AutoMessageBlocksReportDTO,
+  type PresenceByHourDTO,
+  type SatisfactionOverviewDTO,
+  type SatisfactionReportDTO,
+  type SatisfactionResponseDTO,
+} from "@whatsatendende/types";
 import type { TeamData } from "../components/dashboard/TeamCards";
 import type { HourRange } from "../components/dashboard/PresenceByHourChart";
 import { arrivalsSummary } from "../components/dashboard/ArrivalsByHourChart";
@@ -62,6 +70,8 @@ export interface PresentationInput {
   presenceHourRange: HourRange | null;
   arrivalsByHour?: ArrivalsByHourDTO | null;
   arrivalsHourRange?: HourRange | null;
+  /** Relatórios › Mensagens bloqueadas for the same period — what the tags stopped (Gestor/Administrador). */
+  autoMessageBlocks?: AutoMessageBlocksReportDTO | null;
   now: Date;
 }
 
@@ -882,6 +892,96 @@ export function buildDashboardPresentation(PptxGen: typeof PptxGenJS, input: Pre
       slide.addNotes("Uma linha por número de WhatsApp, do NPS mais alto para o mais baixo.");
     }
 
+    // 6d2. Quem não respondeu a pesquisa — no total (respondidas × sem resposta × ainda no prazo) e por atendente. Só números.
+    const surveyTotals = report?.totals ?? input.satisfaction?.totals ?? null;
+    if (surveyTotals && surveyTotals.sent > 0) {
+      const slide = contentSlide("Satisfação", "Satisfação dos clientes", "Quem não respondeu a pesquisa");
+      const leftW = 4.3;
+      const cardH = CONTENT_BOTTOM - CONTENT_TOP;
+      card(slide, M, CONTENT_TOP, leftW, cardH, "Respostas da pesquisa");
+      text(slide, "Pesquisas enviadas", { x: M + 0.4, y: CONTENT_TOP + 0.3, w: leftW - 0.8, h: 0.4, fontSize: 18, bold: true, color: INK });
+      const parts = [
+        { label: "Responderam", value: surveyTotals.answered, color: GREEN },
+        { label: "Não responderam", value: surveyTotals.unanswered, color: RED },
+        { label: "Ainda no prazo", value: surveyTotals.awaiting, color: SLATE },
+      ];
+      slide.addChart(pptx.ChartType.doughnut, [{ name: "Pesquisas", labels: parts.map((p) => p.label), values: parts.map((p) => p.value) }], {
+        x: M + 0.55,
+        y: CONTENT_TOP + 0.85,
+        w: 3.2,
+        h: 3.2,
+        holeSize: 62,
+        chartColors: parts.map((p) => p.color),
+        showLegend: false,
+        showValue: false,
+        showPercent: false,
+        showTitle: false,
+        dataBorder: { pt: 1.5, color: WHITE },
+        objectName: "Gráfico de respostas da pesquisa",
+        ...chartText,
+      });
+      text(
+        slide,
+        [
+          { text: formatNumber(surveyTotals.sent), options: { fontSize: 26, bold: true, color: INK, breakLine: true } },
+          { text: "enviadas", options: { fontSize: 12, color: MUTED } },
+        ],
+        { x: M + 0.55, y: CONTENT_TOP + 2.05, w: 3.2, h: 0.8, align: "center", valign: "middle" }
+      );
+      parts.forEach((p, i) => {
+        const y = CONTENT_TOP + 4.25 + i * 0.27;
+        slide.addShape(pptx.ShapeType.ellipse, { x: M + 0.45, y: y + 0.07, w: 0.13, h: 0.13, fill: { color: p.color }, line: { type: "none" }, objectName: `Legenda ${p.label}` });
+        text(slide, `${p.label}: ${formatNumber(p.value)} (${percentOf(p.value, surveyTotals.sent)}%)`, { x: M + 0.68, y, w: leftW - 1.0, h: 0.27, fontSize: 12, color: BODY });
+      });
+
+      const rightX = M + leftW + 0.3;
+      const rightW = CONTENT_W - leftW - 0.3;
+      card(slide, rightX, CONTENT_TOP, rightW, cardH, "Sem resposta por atendente");
+      text(slide, "Por atendente", { x: rightX + 0.4, y: CONTENT_TOP + 0.3, w: rightW - 0.8, h: 0.4, fontSize: 18, bold: true, color: INK });
+      const agents = [...(report?.byAgent ?? [])].filter((a) => a.sent > 0).sort((a, b) => b.unanswered - a.unanswered || b.sent - a.sent).slice(0, MAX_AGENTS_IN_CHART);
+      if (agents.length > 0) {
+        const bottomUp = [...agents].reverse();
+        const box = fitBars(agents.length, CONTENT_TOP + 0.8, cardH - 1.0, 0.5, 0.5);
+        slide.addChart(
+          pptx.ChartType.bar,
+          [
+            { name: "Responderam", labels: bottomUp.map((a) => a.agentName), values: bottomUp.map((a) => a.answered) },
+            { name: "Não responderam", labels: bottomUp.map((a) => a.agentName), values: bottomUp.map((a) => a.unanswered) },
+          ],
+          {
+            x: rightX + 0.25,
+            y: box.start,
+            w: rightW - 0.5,
+            h: box.size,
+            barDir: "bar",
+            barGrouping: "stacked",
+            barGapWidthPct: 55,
+            chartColors: [GREEN, RED],
+            showLegend: true,
+            legendPos: "b",
+            legendFontSize: 12,
+            showValue: true,
+            dataLabelFormatCode: "#,##0;;",
+            ...chartText,
+            ...quietAxes,
+            dataLabelColor: WHITE,
+            dataLabelFontSize: 11,
+            catAxisLabelFontSize: 12,
+            objectName: "Gráfico de respostas por atendente",
+          }
+        );
+      } else {
+        text(slide, "Sem o detalhe por atendente neste período.", { x: rightX + 0.4, y: CONTENT_TOP + 1.0, w: rightW - 0.8, h: 0.4, fontSize: 14, color: MUTED, italic: true });
+      }
+      slide.addNotes(
+        [
+          `${formatNumber(surveyTotals.sent)} pesquisas enviadas: ${formatNumber(surveyTotals.answered)} responderam, ${formatNumber(surveyTotals.unanswered)} não responderam no prazo e ${formatNumber(surveyTotals.awaiting)} ainda estão no prazo.`,
+          ...agents.map((a) => `${a.agentName}: ${formatNumber(a.unanswered)} sem resposta de ${formatNumber(a.sent)} (${percentOf(a.unanswered, a.sent)}%)`),
+          "A lista com os nomes dos clientes está em Relatórios › Pesquisa de satisfação.",
+        ].join("\n")
+      );
+    }
+
     // 6e. As últimas 5 de cada grupo — detratores, neutros e promotores, com o cliente e o atendente.
     const latestOf = (category: SatisfactionResponseDTO["category"]) =>
       input.satisfaction?.latest?.[category!] ??
@@ -1265,6 +1365,62 @@ export function buildDashboardPresentation(PptxGen: typeof PptxGenJS, input: Pre
       valign: "bottom",
     });
     slide.addNotes(words.map((w) => `${w.word}: ${formatNumber(w.count)}`).join("\n"));
+  }
+
+  // ---- 11b. Mensagens automáticas bloqueadas pelas etiquetas ----
+  const blocks = input.autoMessageBlocks;
+  if (blocks && blocks.total > 0) {
+    pptx.addSection({ title: "Mensagens automáticas" });
+    const slide = contentSlide("Mensagens automáticas", "Mensagens automáticas", "Mensagens bloqueadas pelas etiquetas");
+    const cardH = CONTENT_BOTTOM - CONTENT_TOP;
+    const leftW = CONTENT_W * 0.6;
+    card(slide, M, CONTENT_TOP, leftW, cardH, "Bloqueadas por mensagem");
+    text(slide, `${formatNumber(blocks.total)} ${blocks.total === 1 ? "mensagem não enviada" : "mensagens não enviadas"}`, {
+      x: M + 0.4,
+      y: CONTENT_TOP + 0.3,
+      w: leftW - 0.8,
+      h: 0.4,
+      fontSize: 18,
+      bold: true,
+      color: INK,
+    });
+    const byKind = [...blocks.byKind].reverse();
+    const box = fitBars(byKind.length, CONTENT_TOP + 0.85, cardH - 1.05, 0.55, 0.4);
+    slide.addChart(pptx.ChartType.bar, [{ name: "Bloqueadas", labels: byKind.map((k) => AUTO_MESSAGE_KIND_LABEL[k.kind] ?? k.kind), values: byKind.map((k) => k.count) }], {
+      x: M + 0.25,
+      y: box.start,
+      w: leftW - 0.5,
+      h: box.size,
+      barDir: "bar",
+      barGapWidthPct: 55,
+      chartColors: [C.brand],
+      showLegend: false,
+      showValue: true,
+      dataLabelPosition: "outEnd",
+      dataLabelFormatCode: "#,##0",
+      ...chartText,
+      ...quietAxes,
+      catAxisLabelFontSize: 13,
+      dataLabelFontSize: 13,
+      dataLabelColor: INK,
+      objectName: "Gráfico de mensagens bloqueadas por tipo",
+    });
+    const rightX = M + leftW + 0.3;
+    const rightW = CONTENT_W - leftW - 0.3;
+    card(slide, rightX, CONTENT_TOP, rightW, cardH, "Etiquetas que mais bloquearam");
+    text(slide, "Etiquetas que mais bloquearam", { x: rightX + 0.4, y: CONTENT_TOP + 0.3, w: rightW - 0.8, h: 0.4, fontSize: 18, bold: true, color: INK });
+    blocks.byTag.slice(0, 8).forEach((t, i) => {
+      const y = CONTENT_TOP + 0.95 + i * 0.5;
+      text(slide, t.tagName, { x: rightX + 0.4, y, w: rightW - 1.8, h: 0.4, fontSize: 14, color: BODY, valign: "middle" });
+      text(slide, formatNumber(t.count), { x: rightX + rightW - 1.4, y, w: 1.0, h: 0.4, fontSize: 14, bold: true, color: C.deep, align: "right", valign: "middle" });
+    });
+    slide.addNotes(
+      [
+        "Mensagens automáticas que não foram enviadas porque o cliente tem uma etiqueta que as bloqueia (Etiquetas › Bloqueia).",
+        ...blocks.byKind.map((k) => `${AUTO_MESSAGE_KIND_LABEL[k.kind] ?? k.kind}: ${formatNumber(k.count)}`),
+        "O detalhe, conversa por conversa, está em Relatórios › Mensagens bloqueadas.",
+      ].join("\n")
+    );
   }
 
   // ---- 12. Como ler os indicadores ----

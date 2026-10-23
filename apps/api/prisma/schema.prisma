@@ -836,6 +836,8 @@ model Conversation {
   conversationPins      ConversationPin[]
   conversationReminders ConversationReminder[]
   scheduledMessages     ScheduledMessage[]
+  pendingAutoMessages   PendingAutoMessage[]
+  autoMessageBlockLogs  AutoMessageBlockLog[]
 
   @@index([status])
   @@index([assignedAgentId])
@@ -1337,10 +1339,48 @@ model Tag {
   id         String       @id @default(uuid())
   name       String       @unique
   color      String       @default("#0097B4")
-  // "Não enviar pesquisa": contacts with it (e.g. staff) get only the closing message and stay out of the NPS.
-  skipSurvey Boolean      @default(false)
-  createdAt DateTime     @default(now())
-  contacts  ContactTag[]
+  // "Não enviar estas mensagens automáticas": AutoMessageKind values (packages/types) contacts with this tag never get.
+  // SURVEY also keeps them out of the NPS; NO_RETURN also stops the automatic close; FLOW sends them straight to the queue.
+  blockedAutoMessages String[]     @default([])
+  createdAt           DateTime     @default(now())
+  contacts            ContactTag[]
+  blockLogs           AutoMessageBlockLog[]
+}
+
+// An automatic message waiting its 3–10 seconds (lib/auto-messages.ts) — kept here, not in a timer, so a restart
+// neither loses nor repeats it. They go out per conversation in dueAt order; each is checked again right before
+// sending (still closed? the customer answered? a tag now blocks it?) and dropped when it no longer fits.
+model PendingAutoMessage {
+  id             String       @id @default(uuid())
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversationId String
+  kind           String
+  // { text, media?, senderAgentId?, senderDisplayName?, automatedBy?, condition }
+  payload        Json
+  dueAt          DateTime
+  createdAt      DateTime     @default(now())
+  // Set once it was sent or dropped; outcome says which (SENT, FAILED, BLOCKED, CANCELED_*).
+  resolvedAt     DateTime?
+  outcome        String?
+
+  @@index([resolvedAt, dueAt])
+  @@index([conversationId])
+}
+
+// Relatórios › Mensagens automáticas bloqueadas: each automatic message a tag stopped.
+model AutoMessageBlockLog {
+  id                   String              @id @default(uuid())
+  conversation         Conversation        @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversationId       String
+  kind                 String
+  tag                  Tag?                @relation(fields: [tagId], references: [id], onDelete: SetNull)
+  tagId                String?
+  // Kept as it was, so the report still reads after the tag is renamed or deleted.
+  tagName              String
+  createdAt            DateTime            @default(now())
+
+  @@index([createdAt])
+  @@index([conversationId, kind])
 }
 
 model ContactTag {

@@ -10,6 +10,7 @@ import { runHolidaySyncIfDue } from "./modules/holidays/holidays.service";
 import { sendNoReplyRemindersIfDue, sendQueueRemindersIfDue } from "./lib/queue-reminder";
 import { processNoReturnConversations } from "./modules/conversations/no-return.service";
 import { sendQueueWaitMessages } from "./modules/queue-wait-messages/queue-wait.sweep";
+import { processDueAutoMessages } from "./lib/auto-messages";
 import { endIdleSessions } from "./modules/auth/auth.service";
 import { fillShippedNoteImages, syncDefaultReleaseNotes } from "./modules/release-notes/release-notes.service";
 import { ensureBoletoDefaults } from "./modules/boletos/boleto-layouts.service";
@@ -131,6 +132,19 @@ async function main() {
   }, CLOSING_MESSAGE_SWEEP_INTERVAL_MS);
   closingMessageTimer.unref();
 
+  // Automatic messages waiting their 3–10 seconds (lib/auto-messages.ts) — kept in the database, so a restart loses nothing.
+  let autoMessagesSweepRunning = false;
+  const autoMessagesTimer = setInterval(() => {
+    if (autoMessagesSweepRunning) return;
+    autoMessagesSweepRunning = true;
+    processDueAutoMessages()
+      .catch((err) => logger.error({ err }, "failed to send the automatic messages that were due"))
+      .finally(() => {
+        autoMessagesSweepRunning = false;
+      });
+  }, 1_000);
+  autoMessagesTimer.unref();
+
   // "Lembrar de retornar" and "Agendar envio" — both kept in the database, so a restart loses nothing.
   let agentToolsSweepRunning = false;
   const agentToolsTimer = setInterval(() => {
@@ -159,6 +173,7 @@ async function main() {
     clearInterval(idleSessionTimer);
     clearInterval(contactsSyncTimer);
     clearInterval(closingMessageTimer);
+    clearInterval(autoMessagesTimer);
     clearInterval(agentToolsTimer);
     httpServer.close();
     // Every deploy sends this signal to the outgoing container — ending

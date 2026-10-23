@@ -3,9 +3,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format, formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import clsx from "clsx";
-import { ChevronsLeft, ChevronsRight, Clock, Plus, Tag as TagIcon, User, X } from "lucide-react";
+import { BellOff, ChevronsLeft, ChevronsRight, Clock, Plus, Tag as TagIcon, User, X } from "lucide-react";
 import { toast } from "sonner";
-import type { ContactPanelDTO, ConversationListItemDTO, TagDTO } from "@whatsatendende/types";
+import { AUTO_MESSAGE_KINDS, AUTO_MESSAGE_KIND_LABEL, type ContactPanelDTO, type ConversationListItemDTO, type TagDTO } from "@whatsatendende/types";
 import { PreviousConversationDrawer } from "./PreviousConversationDrawer";
 import { ClientDataSection } from "./ClientDataSection";
 import { ContactContractField } from "./ContactContractField";
@@ -252,6 +252,7 @@ export function ClientPanel({
             )}
             {readOnly && panel?.tags.length === 0 && <span className="text-xs text-muted">Nenhuma etiqueta.</span>}
           </div>
+          <BlockedMessagesNotice tags={panel?.tags ?? []} />
           {addingTag && (
             <div className="mt-2 rounded-lg border border-border bg-surface-alt p-2">
               <input
@@ -328,5 +329,21 @@ export function ClientPanel({
         {openPrevious && <PreviousConversationDrawer conversationId={conversation.id} previousId={openPrevious} onClose={() => setOpenPrevious(null)} />}
       </div>
     </aside>
+  );
+}
+
+/** "Este cliente não recebe: …" — the automatic messages its tags stop (Etiquetas › Bloqueia), so nobody wonders why. */
+function BlockedMessagesNotice({ tags }: { tags: TagDTO[] }) {
+  const kinds = AUTO_MESSAGE_KINDS.filter((kind) => tags.some((t) => t.blockedAutoMessages.includes(kind)));
+  if (kinds.length === 0) return null;
+  const tagNames = tags.filter((t) => t.blockedAutoMessages.length > 0).map((t) => t.name);
+  return (
+    <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-warning-soft px-2 py-1.5 text-[11px] text-warning" title={`Pela etiqueta: ${tagNames.join(", ")}`}>
+      <BellOff className="mt-px h-3.5 w-3.5 shrink-0" />
+      <span>
+        <strong>Este cliente não recebe:</strong> {kinds.map((k) => AUTO_MESSAGE_KIND_LABEL[k]).join(", ")}
+        {kinds.includes("NO_RETURN") && " — não é encerrado automaticamente"}.
+      </span>
+    </p>
   );
 }

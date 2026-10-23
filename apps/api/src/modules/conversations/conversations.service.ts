@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { CONVERSATION_UNDO_WINDOW_MS, brazilianPhoneVariants } from "@whatsatendende/types";
 import { prisma } from "../../lib/prisma";
 import { endFlowSession, flowIdsWithPerson, noteAbandonedReason } from "../flows/flow-engine.service";
+import { blockingTag, recordBlocked, CONTACT_BLOCKING_TAGS } from "../../lib/auto-messages";
 import { getClosedMessageForConnection } from "../work-schedules/work-schedules.service";
 import { scheduleCloseFollowUp, type HeldClosingMessage } from "../satisfaction/satisfaction.service";
 import { Errors } from "../../lib/http-error";
@@ -16,7 +17,8 @@ export const NO_RETURN_CLOSE_REASON = "NO_RETURN";
 const TRANSFER_OFFLINE_GRACE_MS = 2 * 60 * 60 * 1000; // 2h — see PROMPT: transfer to an offline agent auto-reverts if they don't log in in time.
 
 const conversationInclude = {
-  contact: true,
+  // The tags that stop automatic messages — shown on the card and in the client panel.
+  contact: { include: CONTACT_BLOCKING_TAGS },
   assignedAgent: true,
   interventionBy: true,
   whatsappConnection: true,
@@ -688,13 +690,16 @@ export async function findOrOpenConversationForInboundMessage(
 
   // An active Fluxo on this connection talks to the customer first (see
   // flow-engine.service.ts) — unless they asked for an online agent by name.
-  const activeFlow =
+  const connectionFlow =
     !mentionedAgent && channel === "WHATSAPP"
       ? await prisma.flowConnection.findFirst({
           where: { whatsappConnectionId: connectionId, flow: { active: true } },
           select: { flowId: true, flow: { select: { nodes: { where: { type: "START" }, select: { data: true } } } } },
         })
       : null;
+  // A tag that stops the Fluxo (Etiquetas): the customer goes straight to the queue — recorded below, once the conversation exists.
+  const flowBlock = connectionFlow ? await blockingTag(contactId, "FLOW") : null;
+  const activeFlow = flowBlock ? null : connectionFlow;
   // A flow that tells the hours itself (Início › avisar fora do horário) replaces the schedule's notice.
   const flowTellsHours = Boolean((activeFlow?.flow.nodes[0]?.data as { outOfHoursPrompt?: boolean } | null)?.outOfHoursPrompt);
 
@@ -740,6 +745,7 @@ export async function findOrOpenConversationForInboundMessage(
   if (returnedAfterNoReturn) {
     await prisma.conversationNote.create({ data: { conversationId: conversation.id, body: "Cliente voltou após encerramento por falta de retorno" } });
   }
+  if (flowBlock) await recordBlocked(conversation.id, "FLOW", flowBlock);
 
   return { conversation, isNewConversation: true, autoAssignedAgentId: mentionedAgent?.id ?? null, flowId, closedMessage };
 }
