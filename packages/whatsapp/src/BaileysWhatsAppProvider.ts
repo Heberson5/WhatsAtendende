@@ -31,6 +31,7 @@ import type {
   OlderHistoryAnchor,
   PollVoteEvent,
   ReactionEvent,
+  OutgoingPresence,
   TypingEvent,
   SendResult,
   SendTextOptions,
@@ -664,9 +665,25 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
       });
 
       socket.ev.on("presence.update", ({ id, presences }) => {
-        if (isGroupChat(id)) return;
-        const typing = Object.values(presences).some((p) => p.lastKnownPresence === "composing" || p.lastKnownPresence === "recording");
-        this.emitter.emit("typing", { chatId: id, typing } satisfies TypingEvent);
+        const active = (p: { lastKnownPresence?: string }) => p.lastKnownPresence === "composing" || p.lastKnownPresence === "recording";
+        if (isGroupChat(id)) {
+          // Each participant on their own: "Marta está digitando…", "Carlos está gravando áudio…".
+          for (const [participant, p] of Object.entries(presences)) {
+            const phone = participant.endsWith("@s.whatsapp.net") ? participant.split("@")[0].split(":")[0] : null;
+            this.emitter.emit("typing", {
+              chatId: id,
+              typing: active(p),
+              kind: p.lastKnownPresence === "recording" ? "recording" : "typing",
+              participantJid: participant,
+              participantPhone: phone,
+            } satisfies TypingEvent);
+          }
+          return;
+        }
+        const list = Object.values(presences);
+        const typing = list.some(active);
+        const kind = list.some((p) => p.lastKnownPresence === "recording") ? "recording" : "typing";
+        this.emitter.emit("typing", { chatId: id, typing, kind } satisfies TypingEvent);
       });
 
       socket.ev.on("messages.reaction", (reactions) => {
@@ -1017,6 +1034,11 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
   async subscribeTyping(chatId: string): Promise<void> {
     if (!this.socket || this.status.state !== "CONNECTED") return;
     await this.socket.presenceSubscribe(chatId);
+  }
+
+  async sendPresence(chatId: string, presence: OutgoingPresence): Promise<void> {
+    if (!this.socket || this.status.state !== "CONNECTED") return;
+    await this.socket.sendPresenceUpdate(presence, chatId);
   }
 
   onTyping(listener: (event: TypingEvent) => void): void {

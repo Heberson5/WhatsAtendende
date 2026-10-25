@@ -7,6 +7,7 @@ import { PERMISSION, type GroupListItemDTO, type GroupParticipantDTO, type Messa
 import { api, getApiErrorMessage } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
 import { getSocket } from "../../lib/socket";
+import { customerTypingLabel, useTypingStore } from "../../store/typing-store";
 import { initials, seenByLabel, upToDateReaders } from "../../lib/groups";
 import { MessageBubble } from "./MessageBubble";
 import { Composer, type ComposerMentions } from "./Composer";
@@ -196,8 +197,10 @@ export function GroupChatPanel({
 
   const seenBy = seenByLabel(group.readers);
   const upToDate = upToDateReaders(group.readers);
+  const typingEntries = useTypingStore((s) => s.typing[group.id]);
   const participants = group.participantsCount ? `${group.participantsCount} participantes` : "participantes";
   const disconnected = group.whatsappConnectionStatus !== "CONNECTED";
+  const typing = customerTypingLabel(typingEntries);
 
   return (
     <div className="relative flex h-full flex-col">
@@ -214,9 +217,13 @@ export function GroupChatPanel({
           </div>
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold">{group.name}</p>
-            <p className="truncate text-xs text-muted">
-              Grupo · {participants} · {group.whatsappConnectionName}
-            </p>
+            {typing ? (
+              <p className={clsx("truncate text-xs font-semibold italic", typing.kind === "recording" ? "text-danger" : "text-success")}>{typing.text}</p>
+            ) : (
+              <p className="truncate text-xs text-muted">
+                Grupo · {participants} · {group.whatsappConnectionName}
+              </p>
+            )}
           </div>
         </div>
         <div className="ms-auto flex shrink-0 items-center gap-2">

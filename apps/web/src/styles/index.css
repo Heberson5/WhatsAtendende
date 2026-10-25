@@ -374,3 +374,42 @@ button.shadow-soft:not(:disabled):hover {
     animation: none;
   }
 }
+
+/* Chat interno ----------------------------------------------------------- */
+@keyframes chat-shake {
+  10%, 90% { transform: translateX(-2px); }
+  20%, 80% { transform: translateX(4px); }
+  30%, 50%, 70% { transform: translateX(-9px) rotate(-0.6deg); }
+  40%, 60% { transform: translateX(9px) rotate(0.6deg); }
+}
+/* "Chamar a atenção": the whole app shakes, like MSN's nudge. */
+.chat-nudge-shake { animation: chat-shake 0.6s cubic-bezier(0.36, 0.07, 0.19, 0.97) both 2; }
+@keyframes chat-flash { 50% { box-shadow: inset 0 0 0 6px var(--color-warning); } }
+.chat-nudge-flash { animation: chat-flash 0.5s ease-in-out 3; }
+@keyframes chat-dot { 0%, 60%, 100% { transform: translateY(0); opacity: 0.45; } 30% { transform: translateY(-4px); opacity: 1; } }
+.chat-typing-dot { animation: chat-dot 1.2s infinite ease-in-out; }
+.chat-typing-dot:nth-child(2) { animation-delay: 0.15s; }
+.chat-typing-dot:nth-child(3) { animation-delay: 0.3s; }
+@keyframes chat-pop { from { opacity: 0; transform: translateY(6px) scale(0.98); } to { opacity: 1; transform: none; } }
+.chat-pop { animation: chat-pop 0.18s ease-out; }
+@keyframes chat-pulse { 50% { opacity: 0.35; } }
+.chat-pulse { animation: chat-pulse 1s infinite; }
+/* The dotted wallpaper behind messages (chat interno and the customer conversation). */
+.chat-wallpaper {
+  background-color: var(--color-surface-alt);
+  background-image: radial-gradient(color-mix(in srgb, var(--color-primary) 9%, transparent) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-nudge-shake, .chat-typing-dot, .chat-pop, .chat-pulse { animation: none; }
+}
+
+/* Aniversário do cliente ------------------------------------------------- */
+@keyframes bday-fall { to { transform: translateY(260px) rotate(540deg); opacity: 0; } }
+.bday-confetti i { position: absolute; top: -14px; display: block; width: 7px; height: 12px; border-radius: 2px; animation: bday-fall 3.4s linear 2; opacity: 0.9; }
+@keyframes bday-bob { 50% { transform: translateY(-4px) rotate(-3deg); } }
+.bday-cake { animation: bday-bob 3s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .bday-confetti i { display: none; }
+  .bday-cake { animation: none; }
+}

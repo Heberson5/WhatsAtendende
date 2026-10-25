@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { AlarmClock, ArrowLeft, ArrowRightLeft, CalendarClock, CheckCircle2, ChevronDown, ChevronUp, FileText, Lock, MessageSquareOff, PanelRight, Paperclip, Phone, Pin, PinOff, Search, Smartphone, StickyNote, X as CloseIcon } from "lucide-react";
+import { AlarmClock, ArrowLeft, ArrowRightLeft, CalendarClock, CheckCircle2, ChevronDown, ChevronUp, FileText, Lock, MessageSquareOff, Mic, PanelRight, Paperclip, Phone, Pin, PinOff, Search, Smartphone, StickyNote, X as CloseIcon } from "lucide-react";
 import { format } from "date-fns";
 import clsx from "clsx";
 import { PERMISSION, type ConversationListItemDTO, type ConversationNoteDTO, type MessageDTO, type PaginatedResult, type QuickReplyDTO, type TemplateContextDTO } from "@whatsatendende/types";
@@ -18,12 +18,13 @@ import { TransferModal } from "./TransferModal";
 import { ForwardModal } from "./ForwardModal";
 import { PinnedContactNote } from "./PinnedContactNote";
 import { SuspensionWarningModal } from "./SuspensionWarningModal";
+import { BirthdayModal } from "./BirthdayModal";
 import { SendTemplateModal } from "./SendTemplateModal";
 import { TransferNoteCard } from "./TransferNoteCard";
 import { TimelineByDay, type TimelineEntry } from "./TimelineByDay";
 import { ContactPhoto } from "../common/ContactPhoto";
 import { useAgentExtras } from "../../hooks/useAgentExtras";
-import { useTypingStore } from "../../store/typing-store";
+import { useCustomerTyping } from "../../store/typing-store";
 import { WhenPicker } from "./WhenPicker";
 import { NoReturnStatus, useNoReturnHold, useNoReturnSettings } from "./NoReturn";
 
@@ -468,7 +469,7 @@ export function ChatPanel({
   const agentTools = !headerActions;
   // With the client panel open the chat column is narrow — the header's buttons go icon-only until there's room.
   const actionLabelClass = clientPanelOpen ? "hidden 2xl:inline" : "hidden sm:inline";
-  const customerTyping = useTypingStore((s) => Boolean(s.typing[conversation.id]));
+  const customerTyping = useCustomerTyping(conversation.id);
   const extras = useAgentExtras().data;
   const pinned = Boolean(extras?.pinnedConversationIds.includes(conversation.id));
   const reminder = extras?.reminders.find((r) => r.conversationId === conversation.id) ?? null;
@@ -679,7 +680,10 @@ export function ChatPanel({
               {pinned && <Pin className="h-3 w-3 shrink-0 text-primary" aria-label="Fixada" />}
             </p>
             {customerTyping ? (
-              <p className="text-xs font-medium italic text-primary">digitando…</p>
+              <p className={clsx("flex items-center gap-1 text-xs font-semibold italic", customerTyping.kind === "recording" ? "text-danger" : "text-success")}>
+                {customerTyping.kind === "recording" && <Mic className="chat-pulse h-3 w-3 shrink-0" />}
+                {customerTyping.text}
+              </p>
             ) : conversation.contact.phone && (
               <p className="flex items-center gap-1 text-xs text-muted">
                 <Phone className="h-3 w-3 shrink-0" /> <span className="truncate">{formatPhone(conversation.contact.phone)}</span>
@@ -847,7 +851,7 @@ export function ChatPanel({
 
       <PinnedContactNote conversationId={conversation.id} />
 
-      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-4 py-4">
+      <div ref={scrollContainerRef} className="chat-wallpaper flex-1 overflow-y-auto px-4 py-4">
         {cursor && (
           <div className="text-center">
             <p className="text-xs text-muted">Carregando histórico...</p>
@@ -869,6 +873,20 @@ export function ChatPanel({
         )}
         <div ref={contentRef} className="space-y-3">
           <TimelineByDay entries={timeline} />
+          {/* Like WhatsApp: the customer's "digitando…" / "gravando áudio…" as a bubble at the end of the conversation. */}
+          {customerTyping && (
+            <div className="flex justify-start" aria-live="polite">
+              <span className={clsx("chat-pop inline-flex items-center gap-1.5 rounded-2xl rounded-bl-md bg-surface px-3 py-2.5 shadow-sm", customerTyping.kind === "recording" && "text-xs font-bold text-danger")}>
+                {customerTyping.kind === "recording" ? (
+                  <>
+                    <Mic className="chat-pulse h-3.5 w-3.5" /> gravando áudio
+                  </>
+                ) : (
+                  [0, 1, 2].map((d) => <span key={d} className="chat-typing-dot block h-1.5 w-1.5 rounded-full bg-muted" />)
+                )}
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1037,6 +1055,7 @@ export function ChatPanel({
         quickReplies={quickRepliesQuery.data}
         replyTo={replyTo}
         onCancelReply={() => setReplyTo(null)}
+        onPresence={(presence) => void api.post(`/conversations/${conversation.id}/presence`, { presence }).catch(() => undefined)}
         onSendText={async (text, replyToMessageId) => {
           await sendTextMutation.mutateAsync({ body: text, replyToMessageId });
         }}
@@ -1066,6 +1085,19 @@ export function ChatPanel({
 
       {/* The attendant's warning — someone only watching (Gestão) must not use up their once-per-conversation popup. */}
       {conversation.assignedAgentId === userId && <SuspensionWarningModal conversationId={conversation.id} />}
+      {conversation.assignedAgentId === userId && (
+        <BirthdayModal
+          conversationId={conversation.id}
+          onSend={async (text, file) => {
+            if (file) await sendFileMutation.mutateAsync({ file, caption: text });
+            else await sendTextMutation.mutateAsync({ body: text });
+          }}
+          onEdit={(text, file) => {
+            if (file) composerRef.current?.addFiles([file]);
+            composerRef.current?.applyQuickReply({ id: "", name: "Aniversário", shortcut: "", text });
+          }}
+        />
+      )}
 
       {forwarding && <ForwardModal message={forwarding} currentConversationId={conversation.id} onClose={() => setForwarding(null)} />}
 

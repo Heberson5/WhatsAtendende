@@ -694,6 +694,9 @@ model Contact {
   contracts              Json?
   // How the customer is called — {{primeiro_nome}} in Respostas. Empty: the first word of the name.
   firstName              String?
+  // Everyone of the phone's contracts (not canceled) with a birth date in the active Fonte de dados, replaced at each
+  // upload: [{ name, relation, birth: "dd/mm/aaaa", holder, contract }] — the 🎂 on the card and the birthday pop-up.
+  birthdays              Json?
   // WhatsApp's raw chat id (e.g. "<n>@lid" or "<n>@s.whatsapp.net") as first
   // learned for this contact — WhatsApp's @lid privacy migration means the
   // SAME chat can report this id in either form across different events
@@ -821,6 +824,8 @@ model Conversation {
   queueWaitLastAt      DateTime?
   dataClientKey        String?
   dataSuspensionAckAt  DateTime?
+  // The birthday pop-up was already shown (sent or "Agora não") in this conversation.
+  birthdayAckAt        DateTime?
 
   // optimistic-lock version, used together with a conditional UPDATE to
   // guarantee only one agent can accept a conversation (see conversations
@@ -1727,9 +1732,19 @@ model ChatRoom {
   name      String?
   // GROUP only: who manages it. When the owner leaves it passes to the oldest admin, else the oldest member.
   ownerId   String?
+  // GROUP only: a line under the name and the emoji drawn as its picture.
+  description String?
+  icon        String?
+  // GROUP deleted by its owner: everyone left at that moment and it's gone for them — Gestão keeps it as "finalizado".
+  deletedAt   DateTime?
+  deletedById String?
+  // DIRECT only: "mensagens autoexplosivas" — each new message disappears this many seconds after the other person
+  // reads it. Null: off. Either of the two can change it.
+  autoDeleteSeconds Int?
   createdAt DateTime      @default(now())
   members   ChatMember[]
   messages  ChatMessage[]
+  pins      ChatPin[]
 }
 
 model ChatMember {
@@ -1743,17 +1758,51 @@ model ChatMember {
   historyFrom DateTime?
   // Left the group: it disappears for them.
   leftAt      DateTime?
+  // Taken out by the owner or an admin (leftAt is set too), or by the group being deleted.
+  removedById String?
   lastReadAt  DateTime?
+  // "Silenciar": no sound or Windows notification until then (an @mention still comes through).
+  mutedUntil  DateTime?
+  // "Fixar conversa": on top of the list, newest pin first.
+  pinnedAt    DateTime?
 
   @@unique([roomId, userId])
   @@index([userId])
 }
 
-// Kept forever.
+/// Every time someone opened a room (lastReadAt only keeps the latest): when each message was read — "Lida por".
+model ChatReadMark {
+  id     String   @id @default(uuid())
+  roomId String
+  userId String
+  readAt DateTime @default(now())
+
+  @@index([roomId, readAt])
+}
+
+/// Every time someone's app received new messages: when each message was delivered — "Entregue a" and ✓✓.
+model ChatDeliveryMark {
+  id          String   @id @default(uuid())
+  userId      String
+  deliveredAt DateTime @default(now())
+
+  @@index([userId, deliveredAt])
+}
+
+enum ChatMessageKind {
+  TEXT
+  AUDIO
+  POLL
+  // "Chamar a atenção": the receiver's screen shakes.
+  NUDGE
+}
+
+// Kept forever — also what disappeared for the people talking (temporary, deleted, edited): Gestão sees it all.
 model ChatMessage {
-  id                 String   @id @default(uuid())
-  room               ChatRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  id                 String          @id @default(uuid())
+  room               ChatRoom        @relation(fields: [roomId], references: [id], onDelete: Cascade)
   roomId             String
+  kind               ChatMessageKind @default(TEXT)
   // Null for the system's own lines ("X saiu do grupo").
   authorId           String?
   body               String?
@@ -1763,9 +1812,111 @@ model ChatMessage {
   attachmentName     String?
   attachmentMimeType String?
   attachmentSize     Int?
-  createdAt          DateTime @default(now())
+  // AUDIO: length and the bars drawn in the bubble (0-100 each).
+  audioDurationMs    Int?
+  audioWaveform      Int[]           @default([])
+  // Answering another message of the same room.
+  replyToId          String?
+  // People marked with @ (user ids); "ALL" for @todos.
+  mentions           String[]        @default([])
+  // NUDGE in a group: who was called.
+  nudgeTargetId      String?
+  // Temporary message: gone for the people talking ttlSeconds after it was sent — or, with ttlFromRead (the
+  // direct conversation's autoexplosivas), after the other person read it. expiresAt is set once the clock starts.
+  ttlSeconds         Int?
+  ttlFromRead        Boolean         @default(false)
+  expiresAt          DateTime?
+  // File that opens once per person ("visualização única").
+  viewOnce           Boolean         @default(false)
+  editedAt           DateTime?
+  // "Apagar para todos": the people talking see "Mensagem apagada".
+  deletedAt          DateTime?
+  createdAt          DateTime        @default(now())
+  edits              ChatMessageEdit[]
+  reactions          ChatReaction[]
+  poll               ChatPoll?
+  views              ChatMessageView[]
 
   @@index([roomId, createdAt])
+}
+
+/// The text a message had before each edit.
+model ChatMessageEdit {
+  id        String      @id @default(uuid())
+  message   ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  messageId String
+  body      String?
+  editedAt  DateTime    @default(now())
+
+  @@index([messageId])
+}
+
+/// One reaction per person per message, like WhatsApp.
+model ChatReaction {
+  id        String      @id @default(uuid())
+  message   ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  messageId String
+  userId    String
+  emoji     String
+  createdAt DateTime    @default(now())
+
+  @@unique([messageId, userId])
+}
+
+model ChatPoll {
+  id        String           @id @default(uuid())
+  message   ChatMessage      @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  messageId String           @unique
+  question  String
+  multiple  Boolean          @default(false)
+  options   ChatPollOption[]
+  votes     ChatPollVote[]
+}
+
+model ChatPollOption {
+  id       String         @id @default(uuid())
+  poll     ChatPoll       @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  pollId   String
+  text     String
+  position Int
+  votes    ChatPollVote[]
+}
+
+model ChatPollVote {
+  id        String         @id @default(uuid())
+  poll      ChatPoll       @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  pollId    String
+  option    ChatPollOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  optionId  String
+  userId    String
+  createdAt DateTime       @default(now())
+
+  @@unique([optionId, userId])
+  @@index([pollId, userId])
+}
+
+/// "Fixar mensagem": up to 3 per room, each until a date or until taken off.
+model ChatPin {
+  id         String    @id @default(uuid())
+  room       ChatRoom  @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId     String
+  messageId  String
+  pinnedById String
+  pinnedAt   DateTime  @default(now())
+  until      DateTime?
+
+  @@unique([roomId, messageId])
+}
+
+/// Who opened a "visualização única" file, and when.
+model ChatMessageView {
+  id        String      @id @default(uuid())
+  message   ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  messageId String
+  userId    String
+  viewedAt  DateTime    @default(now())
+
+  @@unique([messageId, userId])
 }
 
 /// Dados › Layouts de boleto: how a bank's boleto PDF looks. `settings` holds BoletoLayoutSettings (see types).
@@ -1792,4 +1943,39 @@ model BoletoInstruction {
   lines                String[] @default([])
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
+}
+
+enum BirthdayKind {
+  HOLDER      // the client (titular) has a birthday
+  BENEFICIARY // someone else of the contract
+}
+
+/// Respostas › Aniversários: the message suggested in the birthday pop-up, one per kind (created with the defaults).
+model BirthdayMessage {
+  id              String       @id @default(uuid())
+  kind            BirthdayKind @unique
+  text            String
+  active          Boolean      @default(true)
+  // The card (image) sent with it — see lib/reply-media.ts.
+  mediaStorageKey String?
+  mediaFileName   String?
+  mediaMimeType   String?
+  mediaSizeBytes  Int?
+  updatedById     String?
+  updatedAt       DateTime     @updatedAt
+}
+
+/// Who was congratulated, by whom and when — each person once a year, whatever the conversation.
+model BirthdayGreeting {
+  id             String       @id @default(uuid())
+  contactId      String
+  personKey      String
+  personName     String
+  kind           BirthdayKind
+  year           Int
+  conversationId String
+  sentById       String
+  sentAt         DateTime     @default(now())
+
+  @@unique([contactId, personKey, year])
 }

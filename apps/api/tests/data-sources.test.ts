@@ -178,10 +178,11 @@ describe("Fontes de dados", () => {
 
   it("lê titular e beneficiários com idade e agregado", () => {
     const list = parseBeneficiaries("Maria;Titular;01/02/1980;Não | João;Filho;15/06/2010;Sim", new Date(2026, 9, 19));
-    expect(list).toEqual([
-      { name: "Maria", relation: "Titular", age: 46, aggregated: false, holder: true },
-      { name: "João", relation: "Filho", age: 16, aggregated: true, holder: false },
+    expect(list).toMatchObject([
+      { name: "Maria", relation: "Titular", age: 46, aggregated: false, holder: true, birthday: "01/02" },
+      { name: "João", relation: "Filho", age: 16, aggregated: true, holder: false, birthday: "15/06" },
     ]);
+    expect(list.every((b) => typeof b.daysUntilBirthday === "number")).toBe(true);
   });
 
   it("sem fonte ativa: nada aparece e a tag não deixa enviar", async () => {

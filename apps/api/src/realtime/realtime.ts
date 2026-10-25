@@ -138,9 +138,13 @@ export const realtimeEvents = {
     getIO()?.to(ROOMS.user(userId)).emit("agent:extras");
   },
   /** The customer is typing (or stopped) — the open conversation and the agent's list show "digitando…". */
-  customerTyping: (conversationId: string, agentId: string | null, typing: boolean) => {
-    getIO()?.to(ROOMS.conversation(conversationId)).emit("conversation:typing", { conversationId, typing });
-    if (agentId) getIO()?.to(ROOMS.user(agentId)).emit("conversation:typing", { conversationId, typing });
+  customerTyping: (conversationId: string, agentId: string | null, typing: boolean, kind: "typing" | "recording" = "typing") => {
+    getIO()?.to(ROOMS.conversation(conversationId)).emit("conversation:typing", { conversationId, typing, kind });
+    if (agentId) getIO()?.to(ROOMS.user(agentId)).emit("conversation:typing", { conversationId, typing, kind });
+  },
+  /** A participant of a WhatsApp group is typing or recording (or stopped) — "Marta está digitando…". */
+  groupTyping: (userIds: string[], conversationId: string, who: { typing: boolean; kind: "typing" | "recording"; participant: string; name: string }) => {
+    for (const userId of userIds) getIO()?.to(ROOMS.user(userId)).emit("conversation:typing", { conversationId, ...who });
   },
   newMessage: (conversationId: string, agentId: string | null) => {
     getIO()?.to(ROOMS.conversation(conversationId)).emit("message:new", { conversationId });

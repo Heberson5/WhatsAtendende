@@ -13,6 +13,8 @@ import {
 } from "../conversations/conversations.service";
 import * as service from "./client-panel.service";
 import * as dataSources from "../data-sources/data-sources.service";
+import * as birthdays from "../birthdays/birthdays.service";
+import * as whatsappService from "../whatsapp/whatsapp.service";
 
 // Mounted next to conversationsRouter (/api/conversations/:id/...): the
 // client panel beside the chat (tags, earlier conversations) and internal notes.
@@ -171,6 +173,49 @@ clientPanelRouter.post(
     const conversation = await conversationForRead(req);
     await dataSources.acknowledgeSuspension(conversation.id);
     await writeAudit({ userId: req.auth!.userId, action: "CLIENT_SUSPENSION_WARNING_SEEN", entity: "Conversation", entityId: conversation.id, ipAddress: req.ip ?? null });
+    res.status(204).end();
+  })
+);
+
+// The attendant started or stopped typing / recording: the customer's WhatsApp shows "digitando…" / "gravando áudio…".
+clientPanelRouter.post(
+  "/:id/presence",
+  asyncHandler(async (req, res) => {
+    const conversation = await conversationForWrite(req);
+    const { presence } = z.object({ presence: z.enum(["composing", "recording", "paused"]) }).parse(req.body);
+    await whatsappService.sendAgentPresence(conversation.id, presence).catch(() => undefined);
+    res.status(204).end();
+  })
+);
+
+// Aniversário do cliente: who of the client's contracts has a birthday today, the message ready, and whether the
+// pop-up is still to be shown in this conversation.
+clientPanelRouter.get(
+  "/:id/birthday",
+  asyncHandler(async (req, res) => {
+    const conversation = await conversationForRead(req);
+    res.json(await birthdays.conversationBirthday(conversation, req.auth!));
+  })
+);
+
+// Called after the congratulations went out through the normal send — remembered for the year.
+clientPanelRouter.post(
+  "/:id/birthday/greeted",
+  asyncHandler(async (req, res) => {
+    const conversation = await conversationForWrite(req);
+    const { personKey } = z.object({ personKey: z.string().min(1).max(200) }).parse(req.body);
+    await birthdays.markGreeted(conversation, personKey, req.auth!.userId);
+    await writeAudit({ userId: req.auth!.userId, action: "BIRTHDAY_GREETING_SENT", entity: "Conversation", entityId: conversation.id, ipAddress: req.ip ?? null, metadata: { personKey } });
+    res.status(204).end();
+  })
+);
+
+// "Agora não": the pop-up doesn't come back in this conversation.
+clientPanelRouter.post(
+  "/:id/birthday/ack",
+  asyncHandler(async (req, res) => {
+    const conversation = await conversationForRead(req);
+    await birthdays.acknowledge(conversation.id);
     res.status(204).end();
   })
 );

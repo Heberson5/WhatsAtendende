@@ -992,6 +992,8 @@ export interface ConversationListItemDTO {
   tags?: CardTagDTO[];
   /** A scheduled message is still to go out: the "falta de retorno" close is paused, and the manual one blocked. */
   scheduledMessagePending?: boolean;
+  /** People of the contact's contracts with a birthday today — the 🎂 on the card. */
+  birthdaysToday?: BirthdayTodayDTO[];
   /** Started or answered on the linked phone — accepting it sends no "Aceite" message. */
   startedOnDevice: boolean;
   unreadCount: number;
@@ -1297,6 +1299,8 @@ export const PERMISSION = {
   RESPOSTAS_ESPERA_ADICIONAR: "respostas_espera.adicionar",
   RESPOSTAS_ESPERA_EDITAR: "respostas_espera.editar",
   RESPOSTAS_ESPERA_EXCLUIR: "respostas_espera.excluir",
+  RESPOSTAS_ANIVERSARIO_VISUALIZAR: "respostas_aniversario.visualizar",
+  RESPOSTAS_ANIVERSARIO_EDITAR: "respostas_aniversario.editar",
   // Standalone top-level menu (not nested under CONFIGURACOES_GERENCIAR) —
   // see PROMPT: "planeje um novo menu chamado landing page". Single record
   // to edit (no list), so only visualizar/editar.
@@ -1718,9 +1722,10 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     group: "Chat interno",
     label: "Chat interno — acompanhar conversas da equipe",
     description:
-      "Ler todas as conversas do chat interno em Gestão › Chat interno, sem aviso para quem conversa. Cada leitura fica registrada na auditoria (só o administrador vê). Use conforme a política interna e a LGPD.",
-    editableRoles: ["AGENT", "MANAGER"],
-    defaultAllowed: { AGENT: false, MANAGER: true },
+      "Só o administrador: ler todas as conversas do chat interno em Gestão › Chat interno — inclusive grupos finalizados, mensagens temporárias, apagadas e editadas — sem aviso para quem conversa. Cada leitura fica registrada na auditoria. Use conforme a política interna e a LGPD.",
+    // Administrador only — never offered to Gestor or Atendente.
+    editableRoles: [],
+    defaultAllowed: { AGENT: false, MANAGER: false },
   },
   {
     key: PERMISSION.AUDITORIA_ACESSAR,
@@ -2042,6 +2047,22 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     group: "Respostas",
     label: "Respostas — Espera na fila (excluir)",
     description: "Excluir uma mensagem de espera.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.RESPOSTAS_ANIVERSARIO_VISUALIZAR,
+    group: "Respostas",
+    label: "Respostas — Aniversários (visualizar)",
+    description: "Ver as mensagens de aniversário do cliente e do beneficiário (aba Aniversários).",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.RESPOSTAS_ANIVERSARIO_EDITAR,
+    group: "Respostas",
+    label: "Respostas — Aniversários (editar)",
+    description: "Mudar o texto, a imagem e ligar ou desligar as mensagens de aniversário.",
     editableRoles: ["AGENT", "MANAGER"],
     defaultAllowed: { AGENT: false, MANAGER: true },
   },
@@ -2679,6 +2700,10 @@ export interface ClientBeneficiaryDTO {
   age: number | null;
   aggregated: boolean;
   holder: boolean;
+  /** "dd/mm" of the birth date; null when the source has none. */
+  birthday?: string | null;
+  /** Days until the next birthday (0 = today). */
+  daysUntilBirthday?: number | null;
 }
 
 export interface ClientParcelDTO {
@@ -3022,35 +3047,180 @@ export interface ChatMemberDTO {
   isAdmin: boolean;
 }
 
+/** Gestão › Chat interno: someone who is no longer in the group, and how they left. */
+export interface ChatFormerMemberDTO {
+  userId: string;
+  name: string;
+  leftAt: string;
+  /** Who took them out (an owner/admin, or the owner deleting the group); null when they left by themselves. */
+  removedByName: string | null;
+}
+
+export interface ChatPinDTO {
+  messageId: string;
+  preview: string;
+  authorName: string | null;
+  pinnedByName: string;
+  until: string | null;
+}
+
+/** Mensagens autoexplosivas da conversa individual: the choices offered (seconds); any other value is "Personalizado". */
+export const CHAT_AUTO_DELETE_PRESETS = [5, 10, 30, 60, 300, 3600, 86400] as const;
+/** "Enviar como temporária": gone this long after sending. */
+export const CHAT_TEMPORARY_PRESETS = [60, 3600, 86400, 604800] as const;
+/** Editing and deleting one's own message is possible for this long after sending. */
+export const CHAT_EDIT_WINDOW_MINUTES = 15;
+/** Up to this many pinned messages per conversation. */
+export const CHAT_MAX_PINS = 3;
+/** Up to this many conversations pinned to the top of one's list. */
+export const CHAT_MAX_FAVORITES = 3;
+/** "Chamar a atenção" again only after this long, per person. */
+export const CHAT_NUDGE_COOLDOWN_SECONDS = 30;
+/** Audio messages up to this long. */
+export const CHAT_MAX_AUDIO_SECONDS = 300;
+
+/** "30 segundos", "5 minutos", "1 hora", "1 dia", "2 horas"... */
+export function chatDurationLabel(seconds: number): string {
+  const units: [number, string, string][] = [
+    [604800, "semana", "semanas"],
+    [86400, "dia", "dias"],
+    [3600, "hora", "horas"],
+    [60, "minuto", "minutos"],
+    [1, "segundo", "segundos"],
+  ];
+  for (const [size, one, many] of units) {
+    if (seconds >= size && seconds % size === 0) {
+      const n = seconds / size;
+      return `${n} ${n === 1 ? one : many}`;
+    }
+  }
+  return `${seconds} segundos`;
+}
+
 export interface ChatRoomDTO {
   id: string;
   kind: ChatRoomKind;
   /** "#Geral", the group's name, or the other person's name in a direct conversation. */
   name: string;
+  description: string | null;
+  /** GROUP: the emoji drawn as its picture. */
+  icon: string | null;
   /** Direct conversation: the other person (for photo and online status). */
   peer: ChatMemberDTO | null;
   members: ChatMemberDTO[];
   lastMessage: { body: string; authorName: string | null; createdAt: string } | null;
   unreadCount: number;
+  /** Unread messages that mention the logged-in person (or @todos). */
+  unreadMentions: number;
+  mutedUntil: string | null;
+  /** Pinned to the top of the logged-in person's list. */
+  favorite: boolean;
+  /** DIRECT: mensagens autoexplosivas, in seconds after being read; null = off. */
+  autoDeleteSeconds: number | null;
+  pins: ChatPinDTO[];
   /** What the logged-in person can do here. */
   canManageMembers: boolean;
   canManageAdmins: boolean;
   canLeave: boolean;
+  canDelete: boolean;
+  canPin: boolean;
+  canNudge: boolean;
+}
+
+export type ChatMessageKind = "TEXT" | "AUDIO" | "POLL" | "NUDGE";
+/** The sender's ticks, like WhatsApp: ✓ sent, ✓✓ delivered to everyone, ✓✓ colored once everyone read it. */
+export type ChatMessageStatus = "SENT" | "DELIVERED" | "READ";
+
+export interface ChatPollDTO {
+  id: string;
+  question: string;
+  multiple: boolean;
+  /** People who voted at least once. */
+  voters: number;
+  options: { id: string; text: string; votes: number; voterNames: string[]; mine: boolean }[];
+}
+
+export interface ChatReactionDTO {
+  emoji: string;
+  count: number;
+  names: string[];
+  mine: boolean;
 }
 
 export interface ChatMessageDTO {
   id: string;
   roomId: string;
+  kind: ChatMessageKind;
   /** Null for the system's lines ("Ana saiu do grupo"). */
   authorId: string | null;
   authorName: string | null;
   body: string | null;
   attachment: { name: string; mimeType: string; size: number; url: string } | null;
+  audio: { durationMs: number; waveform: number[] } | null;
   /** A customer conversation mentioned in the message. */
   conversation: { id: string; contactName: string } | null;
+  replyTo: { id: string; authorName: string | null; preview: string } | null;
+  /** User ids marked with @ ("ALL" for @todos). */
+  mentions: string[];
+  poll: ChatPollDTO | null;
+  reactions: ChatReactionDTO[];
+  /** NUDGE: who was called. */
+  nudgeTargetId: string | null;
+  nudgeTargetName: string | null;
+  /** Temporary message: how long it lives, whether the clock starts on reading, and when it disappears (once started). */
+  ttlSeconds: number | null;
+  ttlFromRead: boolean;
+  expiresAt: string | null;
+  viewOnce: boolean;
+  /** "Visualização única": the logged-in person already opened it (the file is no longer offered). */
+  viewedByMe: boolean;
+  editedAt: string | null;
+  /** "Apagada": body, file and poll are gone for the people talking. */
+  deletedAt: string | null;
   createdAt: string;
   /** Own messages: every other current member has read it (✓✓). */
   readByAll: boolean;
+  status: ChatMessageStatus;
+  /** Gestão › Chat interno only: what the people talking no longer see. */
+  oversight?: {
+    /** The temporary message already disappeared for them. */
+    expired: boolean;
+    edits: { body: string | null; editedAt: string }[];
+    viewedBy: { name: string; at: string }[];
+  };
+}
+
+/** "Dados da mensagem": who read it and who only received it, each with the time. */
+export interface ChatMessageInfoDTO {
+  readBy: { userId: string; name: string; photoUrl: string | null; at: string }[];
+  deliveredTo: { userId: string; name: string; photoUrl: string | null; at: string }[];
+  pending: { userId: string; name: string; photoUrl: string | null }[];
+}
+
+/** Gestão › Chat interno: every room, the finished ones included. */
+export interface ChatOversightRoomDTO {
+  id: string;
+  kind: ChatRoomKind;
+  name: string;
+  icon: string | null;
+  members: ChatMemberDTO[];
+  formerMembers: ChatFormerMemberDTO[];
+  lastMessageAt: string | null;
+  autoDeleteSeconds: number | null;
+  pins: ChatPinDTO[];
+  /** Deleted by its owner ("finalizado"). */
+  deletedAt: string | null;
+  deletedByName: string | null;
+  createdAt: string;
+}
+
+export interface ChatSearchResultDTO {
+  roomId: string;
+  roomName: string;
+  messageId: string;
+  authorName: string | null;
+  body: string;
+  createdAt: string;
 }
 
 export interface ChatUserDTO {
@@ -3058,4 +3228,132 @@ export interface ChatUserDTO {
   name: string;
   photoUrl: string | null;
   presence: AgentPresence;
+}
+
+// ---------------------------------------------------------------------------
+// Aniversário do cliente: the holder's and the beneficiaries' birth dates come from the Fonte de dados
+// (column "beneficiarios": "Nome;Parentesco;dd/mm/aaaa;Sim|Não", the titular first).
+// ---------------------------------------------------------------------------
+
+export type BirthdayKind = "HOLDER" | "BENEFICIARY";
+
+/** One person of a contact's contracts with a birth date — kept on the contact at every upload of the list. */
+export interface ContactBirthdayEntry {
+  name: string;
+  relation: string | null;
+  /** dd/mm/aaaa */
+  birth: string;
+  holder: boolean;
+  contract: string | null;
+}
+
+/** Someone of the contact's contracts who has a birthday today. */
+export interface BirthdayTodayDTO {
+  /** Stable key of the person within the contact (their name, normalized). */
+  key: string;
+  name: string;
+  firstName: string;
+  relation: string | null;
+  holder: boolean;
+  /** The age they turn today. */
+  age: number;
+  contract: string | null;
+}
+
+export interface BirthdayPersonDTO extends BirthdayTodayDTO {
+  kind: BirthdayKind;
+  /** Already congratulated this year (by anyone, in any conversation). */
+  greeted: { byName: string; at: string } | null;
+  /** The message of Respostas › Aniversários with the tags filled; null when that message is switched off. */
+  text: string | null;
+  /** The card (image) that goes with it, when one was chosen. */
+  media: { fileName: string; mimeType: string; url: string } | null;
+}
+
+export interface ConversationBirthdayDTO {
+  /** Show the pop-up now: someone has a birthday today and the conversation hasn't shown it yet. */
+  pending: boolean;
+  people: BirthdayPersonDTO[];
+}
+
+export interface BirthdayMessageDTO {
+  kind: BirthdayKind;
+  text: string;
+  active: boolean;
+  media: ReplyMediaDTO | null;
+  updatedAt: string;
+  updatedByName: string | null;
+}
+
+/** The tags a birthday message may carry, besides the usual ones ({{saudacao}}, {{primeiro_nome}}, {{cliente}}, {{atendente}}). */
+export const BIRTHDAY_TAGS = ["{{aniversariante}}", "{{aniversariante_primeiro_nome}}", "{{parentesco}}", "{{idade}}"] as const;
+
+export const DEFAULT_BIRTHDAY_MESSAGES: Record<BirthdayKind, string> = {
+  HOLDER:
+    "{{saudacao}}, {{primeiro_nome}}! 🎉\n\nHoje o dia é seu, e a gente não podia deixar passar! Toda a nossa equipe deseja um feliz aniversário, com muita saúde, paz e alegria ao lado de quem você ama. 🎂🎈\n\nObrigado por fazer parte da nossa história. Conte sempre com a gente! 💙",
+  BENEFICIARY:
+    "{{saudacao}}, {{primeiro_nome}}! 🎉\n\nHoje é aniversário de {{aniversariante}} ({{parentesco}}), e a gente quer fazer parte dessa alegria! Mande para {{aniversariante_primeiro_nome}} um abraço carinhoso de toda a nossa equipe, com votos de muita saúde, paz e felicidade. 🎂💐",
+};
+
+/** The business' calendar day right now (BUSINESS_TZ_OFFSET_MINUTES: minutes behind UTC, 240 = UTC-4). */
+export function businessDay(now: Date, utcOffsetMinutes: number): { year: number; month: number; day: number } {
+  const local = new Date(now.getTime() - utcOffsetMinutes * 60_000);
+  return { year: local.getUTCFullYear(), month: local.getUTCMonth() + 1, day: local.getUTCDate() };
+}
+
+const isLeapYear = (y: number) => (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+
+/** dd/mm/aaaa → its parts, or null. */
+export function parseBirthDate(value: string | null | undefined): { day: number; month: number; year: number } | null {
+  const m = value?.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (!m) return null;
+  const [day, month, year] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  if (month < 1 || month > 12 || day < 1 || day > 31 || year < 1900) return null;
+  return { day, month, year };
+}
+
+/** Born on 29/02: in a year without it, the birthday is on 28/02. */
+export function isBirthdayOn(birth: string, today: { year: number; month: number; day: number }): boolean {
+  const b = parseBirthDate(birth);
+  if (!b) return false;
+  if (b.month === 2 && b.day === 29 && !isLeapYear(today.year)) return today.month === 2 && today.day === 28;
+  return b.month === today.month && b.day === today.day;
+}
+
+/** Days from `today` to the next birthday (0 = today). */
+export function daysUntilBirthday(birth: string, today: { year: number; month: number; day: number }): number | null {
+  const b = parseBirthDate(birth);
+  if (!b) return null;
+  const at = (year: number) => {
+    const day = b.month === 2 && b.day === 29 && !isLeapYear(year) ? 28 : b.day;
+    return Date.UTC(year, b.month - 1, day);
+  };
+  const t = Date.UTC(today.year, today.month - 1, today.day);
+  const next = at(today.year) >= t ? at(today.year) : at(today.year + 1);
+  return Math.round((next - t) / 86_400_000);
+}
+
+export const birthdayPersonKey = (name: string) =>
+  name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+
+/** Who of these entries has a birthday today, each person once (the holder first). */
+export function birthdaysToday(entries: ContactBirthdayEntry[] | null | undefined, today: { year: number; month: number; day: number }): BirthdayTodayDTO[] {
+  const seen = new Set<string>();
+  const result: BirthdayTodayDTO[] = [];
+  for (const e of [...(entries ?? [])].sort((a, b) => Number(b.holder) - Number(a.holder))) {
+    const key = birthdayPersonKey(e.name);
+    if (!key || seen.has(key) || !isBirthdayOn(e.birth, today)) continue;
+    seen.add(key);
+    result.push({ key, name: e.name, firstName: e.name.trim().split(/\s+/)[0], relation: e.holder ? "Titular" : e.relation, holder: e.holder, age: today.year - parseBirthDate(e.birth)!.year, contract: e.contract });
+  }
+  return result;
+}
+
+/** Fills the birthday tags; the usual ones are filled afterwards by whoever sends it. */
+export function fillBirthdayTags(text: string, person: Pick<BirthdayTodayDTO, "name" | "firstName" | "relation" | "age">): string {
+  return text
+    .replace(/\{\{\s*aniversariante_primeiro_nome\s*\}\}/gi, person.firstName)
+    .replace(/\{\{\s*aniversariante\s*\}\}/gi, person.name)
+    .replace(/\{\{\s*parentesco\s*\}\}/gi, (person.relation ?? "beneficiário").toLowerCase())
+    .replace(/\{\{\s*idade\s*\}\}/gi, String(person.age));
 }
