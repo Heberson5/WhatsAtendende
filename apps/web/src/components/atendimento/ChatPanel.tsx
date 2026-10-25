@@ -18,6 +18,7 @@ import { TransferModal } from "./TransferModal";
 import { ForwardModal } from "./ForwardModal";
 import { PinnedContactNote } from "./PinnedContactNote";
 import { SuspensionWarningModal } from "./SuspensionWarningModal";
+import { BirthdayModal } from "./BirthdayModal";
 import { SendTemplateModal } from "./SendTemplateModal";
 import { TransferNoteCard } from "./TransferNoteCard";
 import { TimelineByDay, type TimelineEntry } from "./TimelineByDay";
@@ -1066,6 +1067,19 @@ export function ChatPanel({
 
       {/* The attendant's warning — someone only watching (Gestão) must not use up their once-per-conversation popup. */}
       {conversation.assignedAgentId === userId && <SuspensionWarningModal conversationId={conversation.id} />}
+      {conversation.assignedAgentId === userId && (
+        <BirthdayModal
+          conversationId={conversation.id}
+          onSend={async (text, file) => {
+            if (file) await sendFileMutation.mutateAsync({ file, caption: text });
+            else await sendTextMutation.mutateAsync({ body: text });
+          }}
+          onEdit={(text, file) => {
+            if (file) composerRef.current?.addFiles([file]);
+            composerRef.current?.applyQuickReply({ id: "", name: "Aniversário", shortcut: "", text });
+          }}
+        />
+      )}
 
       {forwarding && <ForwardModal message={forwarding} currentConversationId={conversation.id} onClose={() => setForwarding(null)} />}
 

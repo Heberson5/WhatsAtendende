@@ -200,12 +200,15 @@ function ContractCard({
               </p>
               <ul className="space-y-0.5">
                 {holderFirst.map((b, i) => (
-                  <li key={`${b.name}-${i}`} className="flex flex-wrap items-center gap-x-1">
+                  <li key={`${b.name}-${i}`} className={clsx("flex flex-wrap items-center gap-x-1", b.daysUntilBirthday === 0 && "-mx-1 rounded-md bg-secondary/30 px-1")}>
+                    {b.daysUntilBirthday === 0 && <span aria-hidden>🎂</span>}
                     <span className={clsx(b.holder && "font-semibold")}>{b.name}</span>
                     <span className="text-muted">
                       · {b.relation ?? "—"}
                       {b.age !== null && ` · ${b.age} anos`}
+                      {b.daysUntilBirthday !== null && b.daysUntilBirthday !== undefined && b.daysUntilBirthday > 0 && b.daysUntilBirthday <= 7 && ` · faz aniversário em ${b.daysUntilBirthday} dia${b.daysUntilBirthday > 1 ? "s" : ""}`}
                     </span>
+                    {b.daysUntilBirthday === 0 && <span className="rounded bg-secondary px-1 text-[10px] font-bold text-secondary-fg">aniversário hoje</span>}
                     {b.aggregated && <span className="rounded bg-surface-alt px-1 text-[10px] font-semibold">agregado</span>}
                   </li>
                 ))}

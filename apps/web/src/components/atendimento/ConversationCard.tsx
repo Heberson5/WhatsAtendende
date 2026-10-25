@@ -114,6 +114,7 @@ export function ConversationCard({
   // needs to confirm/dial/search by.
   const showPhoneSubtitle = Boolean(conversation.contact.name && conversation.contact.phone);
   const cardTags = conversation.tags ?? [];
+  const birthdays = conversation.birthdaysToday ?? [];
   // A disconnected connection can't actually deliver anything — accepting
   // from here would just leave the customer with no reply possible.
   const connectionDisconnected = conversation.whatsappConnectionStatus !== "CONNECTED";
@@ -170,6 +171,14 @@ export function ConversationCard({
           <p className={clsx("flex min-w-0 items-center gap-1 text-[13.5px]", conversation.unreadCount > 0 ? "font-bold" : "font-semibold")}>
             {pinned && <Pin className="h-3 w-3 shrink-0 text-primary" aria-label="Fixada" />}
             <span className="truncate">{displayName}</span>
+            {birthdays.length > 0 && (
+              <span
+                className="shrink-0 rounded-full bg-secondary/60 px-1.5 text-[10.5px] font-bold text-secondary-fg"
+                title={birthdays.map((b) => `${b.name} (${b.holder ? "titular" : (b.relation ?? "beneficiário")}) faz ${b.age} anos hoje`).join("\n")}
+              >
+                🎂 {birthdays.length > 1 ? `${birthdays.length} aniversários` : birthdays[0].holder ? "Aniversário hoje" : `${birthdays[0].relation ?? "Beneficiário"} faz ${birthdays[0].age}`}
+              </span>
+            )}
           </p>
           <span
             className={clsx(

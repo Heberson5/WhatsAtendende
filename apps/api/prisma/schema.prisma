@@ -694,6 +694,9 @@ model Contact {
   contracts              Json?
   // How the customer is called — {{primeiro_nome}} in Respostas. Empty: the first word of the name.
   firstName              String?
+  // Everyone of the phone's contracts (not canceled) with a birth date in the active Fonte de dados, replaced at each
+  // upload: [{ name, relation, birth: "dd/mm/aaaa", holder, contract }] — the 🎂 on the card and the birthday pop-up.
+  birthdays              Json?
   // WhatsApp's raw chat id (e.g. "<n>@lid" or "<n>@s.whatsapp.net") as first
   // learned for this contact — WhatsApp's @lid privacy migration means the
   // SAME chat can report this id in either form across different events
@@ -821,6 +824,8 @@ model Conversation {
   queueWaitLastAt      DateTime?
   dataClientKey        String?
   dataSuspensionAckAt  DateTime?
+  // The birthday pop-up was already shown (sent or "Agora não") in this conversation.
+  birthdayAckAt        DateTime?
 
   // optimistic-lock version, used together with a conditional UPDATE to
   // guarantee only one agent can accept a conversation (see conversations
@@ -1938,4 +1943,39 @@ model BoletoInstruction {
   lines                String[] @default([])
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
+}
+
+enum BirthdayKind {
+  HOLDER      // the client (titular) has a birthday
+  BENEFICIARY // someone else of the contract
+}
+
+/// Respostas › Aniversários: the message suggested in the birthday pop-up, one per kind (created with the defaults).
+model BirthdayMessage {
+  id              String       @id @default(uuid())
+  kind            BirthdayKind @unique
+  text            String
+  active          Boolean      @default(true)
+  // The card (image) sent with it — see lib/reply-media.ts.
+  mediaStorageKey String?
+  mediaFileName   String?
+  mediaMimeType   String?
+  mediaSizeBytes  Int?
+  updatedById     String?
+  updatedAt       DateTime     @updatedAt
+}
+
+/// Who was congratulated, by whom and when — each person once a year, whatever the conversation.
+model BirthdayGreeting {
+  id             String       @id @default(uuid())
+  contactId      String
+  personKey      String
+  personName     String
+  kind           BirthdayKind
+  year           Int
+  conversationId String
+  sentById       String
+  sentAt         DateTime     @default(now())
+
+  @@unique([contactId, personKey, year])
 }
