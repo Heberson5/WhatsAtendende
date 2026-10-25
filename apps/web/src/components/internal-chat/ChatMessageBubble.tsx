@@ -190,7 +190,14 @@ export function ChatMessageBubble({
     );
   }
   if (message.kind === "NUDGE") {
-    const text = message.nudgeTargetId === meId ? `${message.authorName} chamou sua atenção!` : mine ? `Você chamou a atenção de ${message.nudgeTargetName}` : `${message.authorName} chamou a atenção de ${message.nudgeTargetName}`;
+    // Gestão reads it with the names, whoever it is "seen as".
+    const text = oversight
+      ? `${message.authorName} chamou a atenção de ${message.nudgeTargetName}`
+      : message.nudgeTargetId === meId
+        ? `${message.authorName} chamou sua atenção!`
+        : mine
+          ? `Você chamou a atenção de ${message.nudgeTargetName}`
+          : `${message.authorName} chamou a atenção de ${message.nudgeTargetName}`;
     return (
       <SystemLine tone="warning">
         <Zap className="h-3.5 w-3.5" />
