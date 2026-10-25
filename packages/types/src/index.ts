@@ -992,6 +992,8 @@ export interface ConversationListItemDTO {
   tags?: CardTagDTO[];
   /** A scheduled message is still to go out: the "falta de retorno" close is paused, and the manual one blocked. */
   scheduledMessagePending?: boolean;
+  /** People of the contact's contracts with a birthday today — the 🎂 on the card. */
+  birthdaysToday?: BirthdayTodayDTO[];
   /** Started or answered on the linked phone — accepting it sends no "Aceite" message. */
   startedOnDevice: boolean;
   unreadCount: number;
@@ -1297,6 +1299,8 @@ export const PERMISSION = {
   RESPOSTAS_ESPERA_ADICIONAR: "respostas_espera.adicionar",
   RESPOSTAS_ESPERA_EDITAR: "respostas_espera.editar",
   RESPOSTAS_ESPERA_EXCLUIR: "respostas_espera.excluir",
+  RESPOSTAS_ANIVERSARIO_VISUALIZAR: "respostas_aniversario.visualizar",
+  RESPOSTAS_ANIVERSARIO_EDITAR: "respostas_aniversario.editar",
   // Standalone top-level menu (not nested under CONFIGURACOES_GERENCIAR) —
   // see PROMPT: "planeje um novo menu chamado landing page". Single record
   // to edit (no list), so only visualizar/editar.
@@ -2047,6 +2051,22 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     defaultAllowed: { AGENT: false, MANAGER: true },
   },
   {
+    key: PERMISSION.RESPOSTAS_ANIVERSARIO_VISUALIZAR,
+    group: "Respostas",
+    label: "Respostas — Aniversários (visualizar)",
+    description: "Ver as mensagens de aniversário do cliente e do beneficiário (aba Aniversários).",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
+    key: PERMISSION.RESPOSTAS_ANIVERSARIO_EDITAR,
+    group: "Respostas",
+    label: "Respostas — Aniversários (editar)",
+    description: "Mudar o texto, a imagem e ligar ou desligar as mensagens de aniversário.",
+    editableRoles: ["AGENT", "MANAGER"],
+    defaultAllowed: { AGENT: false, MANAGER: true },
+  },
+  {
     key: PERMISSION.LANDING_PAGE_VISUALIZAR,
     group: "Landing Page",
     label: "Landing Page — visualizar",
@@ -2680,6 +2700,10 @@ export interface ClientBeneficiaryDTO {
   age: number | null;
   aggregated: boolean;
   holder: boolean;
+  /** "dd/mm" of the birth date; null when the source has none. */
+  birthday?: string | null;
+  /** Days until the next birthday (0 = today). */
+  daysUntilBirthday?: number | null;
 }
 
 export interface ClientParcelDTO {
@@ -3204,4 +3228,132 @@ export interface ChatUserDTO {
   name: string;
   photoUrl: string | null;
   presence: AgentPresence;
+}
+
+// ---------------------------------------------------------------------------
+// Aniversário do cliente: the holder's and the beneficiaries' birth dates come from the Fonte de dados
+// (column "beneficiarios": "Nome;Parentesco;dd/mm/aaaa;Sim|Não", the titular first).
+// ---------------------------------------------------------------------------
+
+export type BirthdayKind = "HOLDER" | "BENEFICIARY";
+
+/** One person of a contact's contracts with a birth date — kept on the contact at every upload of the list. */
+export interface ContactBirthdayEntry {
+  name: string;
+  relation: string | null;
+  /** dd/mm/aaaa */
+  birth: string;
+  holder: boolean;
+  contract: string | null;
+}
+
+/** Someone of the contact's contracts who has a birthday today. */
+export interface BirthdayTodayDTO {
+  /** Stable key of the person within the contact (their name, normalized). */
+  key: string;
+  name: string;
+  firstName: string;
+  relation: string | null;
+  holder: boolean;
+  /** The age they turn today. */
+  age: number;
+  contract: string | null;
+}
+
+export interface BirthdayPersonDTO extends BirthdayTodayDTO {
+  kind: BirthdayKind;
+  /** Already congratulated this year (by anyone, in any conversation). */
+  greeted: { byName: string; at: string } | null;
+  /** The message of Respostas › Aniversários with the tags filled; null when that message is switched off. */
+  text: string | null;
+  /** The card (image) that goes with it, when one was chosen. */
+  media: { fileName: string; mimeType: string; url: string } | null;
+}
+
+export interface ConversationBirthdayDTO {
+  /** Show the pop-up now: someone has a birthday today and the conversation hasn't shown it yet. */
+  pending: boolean;
+  people: BirthdayPersonDTO[];
+}
+
+export interface BirthdayMessageDTO {
+  kind: BirthdayKind;
+  text: string;
+  active: boolean;
+  media: ReplyMediaDTO | null;
+  updatedAt: string;
+  updatedByName: string | null;
+}
+
+/** The tags a birthday message may carry, besides the usual ones ({{saudacao}}, {{primeiro_nome}}, {{cliente}}, {{atendente}}). */
+export const BIRTHDAY_TAGS = ["{{aniversariante}}", "{{aniversariante_primeiro_nome}}", "{{parentesco}}", "{{idade}}"] as const;
+
+export const DEFAULT_BIRTHDAY_MESSAGES: Record<BirthdayKind, string> = {
+  HOLDER:
+    "{{saudacao}}, {{primeiro_nome}}! 🎉\n\nHoje o dia é seu, e a gente não podia deixar passar! Toda a nossa equipe deseja um feliz aniversário, com muita saúde, paz e alegria ao lado de quem você ama. 🎂🎈\n\nObrigado por fazer parte da nossa história. Conte sempre com a gente! 💙",
+  BENEFICIARY:
+    "{{saudacao}}, {{primeiro_nome}}! 🎉\n\nHoje é aniversário de {{aniversariante}} ({{parentesco}}), e a gente quer fazer parte dessa alegria! Mande para {{aniversariante_primeiro_nome}} um abraço carinhoso de toda a nossa equipe, com votos de muita saúde, paz e felicidade. 🎂💐",
+};
+
+/** The business' calendar day right now (BUSINESS_TZ_OFFSET_MINUTES: minutes behind UTC, 240 = UTC-4). */
+export function businessDay(now: Date, utcOffsetMinutes: number): { year: number; month: number; day: number } {
+  const local = new Date(now.getTime() - utcOffsetMinutes * 60_000);
+  return { year: local.getUTCFullYear(), month: local.getUTCMonth() + 1, day: local.getUTCDate() };
+}
+
+const isLeapYear = (y: number) => (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+
+/** dd/mm/aaaa → its parts, or null. */
+export function parseBirthDate(value: string | null | undefined): { day: number; month: number; year: number } | null {
+  const m = value?.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (!m) return null;
+  const [day, month, year] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  if (month < 1 || month > 12 || day < 1 || day > 31 || year < 1900) return null;
+  return { day, month, year };
+}
+
+/** Born on 29/02: in a year without it, the birthday is on 28/02. */
+export function isBirthdayOn(birth: string, today: { year: number; month: number; day: number }): boolean {
+  const b = parseBirthDate(birth);
+  if (!b) return false;
+  if (b.month === 2 && b.day === 29 && !isLeapYear(today.year)) return today.month === 2 && today.day === 28;
+  return b.month === today.month && b.day === today.day;
+}
+
+/** Days from `today` to the next birthday (0 = today). */
+export function daysUntilBirthday(birth: string, today: { year: number; month: number; day: number }): number | null {
+  const b = parseBirthDate(birth);
+  if (!b) return null;
+  const at = (year: number) => {
+    const day = b.month === 2 && b.day === 29 && !isLeapYear(year) ? 28 : b.day;
+    return Date.UTC(year, b.month - 1, day);
+  };
+  const t = Date.UTC(today.year, today.month - 1, today.day);
+  const next = at(today.year) >= t ? at(today.year) : at(today.year + 1);
+  return Math.round((next - t) / 86_400_000);
+}
+
+export const birthdayPersonKey = (name: string) =>
+  name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+
+/** Who of these entries has a birthday today, each person once (the holder first). */
+export function birthdaysToday(entries: ContactBirthdayEntry[] | null | undefined, today: { year: number; month: number; day: number }): BirthdayTodayDTO[] {
+  const seen = new Set<string>();
+  const result: BirthdayTodayDTO[] = [];
+  for (const e of [...(entries ?? [])].sort((a, b) => Number(b.holder) - Number(a.holder))) {
+    const key = birthdayPersonKey(e.name);
+    if (!key || seen.has(key) || !isBirthdayOn(e.birth, today)) continue;
+    seen.add(key);
+    result.push({ key, name: e.name, firstName: e.name.trim().split(/\s+/)[0], relation: e.holder ? "Titular" : e.relation, holder: e.holder, age: today.year - parseBirthDate(e.birth)!.year, contract: e.contract });
+  }
+  return result;
+}
+
+/** Fills the birthday tags; the usual ones are filled afterwards by whoever sends it. */
+export function fillBirthdayTags(text: string, person: Pick<BirthdayTodayDTO, "name" | "firstName" | "relation" | "age">): string {
+  return text
+    .replace(/\{\{\s*aniversariante_primeiro_nome\s*\}\}/gi, person.firstName)
+    .replace(/\{\{\s*aniversariante\s*\}\}/gi, person.name)
+    .replace(/\{\{\s*parentesco\s*\}\}/gi, (person.relation ?? "beneficiário").toLowerCase())
+    .replace(/\{\{\s*idade\s*\}\}/gi, String(person.age));
 }

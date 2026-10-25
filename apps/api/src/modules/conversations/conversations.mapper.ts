@@ -1,6 +1,7 @@
 import type { Conversation, Contact, ConversationTransfer, User, WhatsAppConnection, MetaConnection } from "@prisma/client";
-import type { ConversationListItemDTO } from "@whatsatendende/types";
+import { birthdaysToday, businessDay, type ContactBirthdayEntry, type ConversationListItemDTO } from "@whatsatendende/types";
 import { autoMessageBlocksOf } from "../../lib/auto-messages";
+import { env } from "../../config/env";
 
 type ConversationWithRelations = Conversation & {
   contact: Contact & { tags?: { tag: { id?: string; name: string; color?: string; blockedAutoMessages: string[] } }[] };
@@ -73,6 +74,7 @@ export function toConversationListItemDTO(
     autoMessageBlocks: autoMessageBlocksOf(conversation.contact.tags),
     tags: (conversation.contact.tags ?? []).flatMap(({ tag }) => (tag.id && tag.color ? [{ id: tag.id, name: tag.name, color: tag.color }] : [])),
     scheduledMessagePending: (conversation._count?.scheduledMessages ?? 0) > 0,
+    birthdaysToday: birthdaysToday(conversation.contact.birthdays as ContactBirthdayEntry[] | null, businessDay(new Date(), env.BUSINESS_TZ_OFFSET_MINUTES)),
     unreadCount: conversation._unreadCount ?? 0,
     isNew: conversation.status === "NEW",
     pendingTransferDeadline: revealPreview && conversation.pendingTransferDeadline ? conversation.pendingTransferDeadline.toISOString() : null,

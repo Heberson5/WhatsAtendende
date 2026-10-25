@@ -403,3 +403,13 @@ button.shadow-soft:not(:disabled):hover {
 @media (prefers-reduced-motion: reduce) {
   .chat-nudge-shake, .chat-typing-dot, .chat-pop, .chat-pulse { animation: none; }
 }
+
+/* Aniversário do cliente ------------------------------------------------- */
+@keyframes bday-fall { to { transform: translateY(260px) rotate(540deg); opacity: 0; } }
+.bday-confetti i { position: absolute; top: -14px; display: block; width: 7px; height: 12px; border-radius: 2px; animation: bday-fall 3.4s linear 2; opacity: 0.9; }
+@keyframes bday-bob { 50% { transform: translateY(-4px) rotate(-3deg); } }
+.bday-cake { animation: bday-bob 3s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .bday-confetti i { display: none; }
+  .bday-cake { animation: none; }
+}

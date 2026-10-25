@@ -4,6 +4,11 @@ import {
   DATA_SOURCE_ROLES,
   PERMISSION,
   contractStatusOf,
+  birthdayPersonKey,
+  businessDay,
+  daysUntilBirthday,
+  parseBirthDate,
+  type ContactBirthdayEntry,
   type ContactContractDTO,
   type ClientBeneficiaryDTO,
   type ClientContractDTO,
@@ -277,6 +282,7 @@ async function storeTable(source: DataSource, table: FetchedTable) {
   // From the rows just read, not read back from the database: a big sheet would sit in memory twice.
   if (source.overrideContactName && columnMap.clientName) await overrideContactNames(rows, columnMap);
   if (columnMap.contract) await fillContactContracts(rows, columnMap);
+  if (columnMap.beneficiaries) await fillContactBirthdays(rows, columnMap);
 }
 
 /** Contract numbers of a client as Contatos › Contrato keeps them. */
@@ -322,6 +328,34 @@ async function fillContactContracts(rows: StoredRow[], columnMap: ColumnMap) {
         ...(contracts && { contractNumber: contracts.map((c) => c.number).join(", ") }),
       },
     });
+  }
+}
+
+/**
+ * Aniversário do cliente: everyone of the phone's contracts with a birth date (the titular and the beneficiaries of the
+ * "beneficiarios" column), replaced at every upload. Canceled contracts are left out — nobody is congratulated for them.
+ */
+async function fillContactBirthdays(rows: StoredRow[], columnMap: ColumnMap) {
+  const byPhone = new Map<string, Map<string, ContactBirthdayEntry>>();
+  for (const row of rows) {
+    const data = row.data as Row;
+    if (columnMap.contractStatus && contractStatusOf(data[columnMap.contractStatus]) === "CANCELED") continue;
+    const contract = columnMap.contract ? data[columnMap.contract]?.trim() || null : null;
+    for (const entry of (data[columnMap.beneficiaries!] ?? "").split(" | ")) {
+      const [name, relation, birth] = entry.split(";").map((p) => p.trim());
+      if (!name || !parseBirthDate(birth)) continue;
+      if (!byPhone.has(row.phoneKey)) byPhone.set(row.phoneKey, new Map());
+      const people = byPhone.get(row.phoneKey)!;
+      const key = birthdayPersonKey(name);
+      if (!people.has(key)) people.set(key, { name, relation: relation || null, birth, holder: relation?.toLowerCase() === "titular", contract });
+    }
+  }
+  const contacts = await prisma.contact.findMany({ where: { phone: { not: null }, isGroup: false }, select: { id: true, phone: true, birthdays: true } });
+  for (const contact of contacts) {
+    const list = [...(byPhone.get(phoneKey(contact.phone) ?? "")?.values() ?? [])];
+    const birthdays = list.length ? list : null;
+    if (JSON.stringify(birthdays) === JSON.stringify(contact.birthdays ?? null)) continue;
+    await prisma.contact.update({ where: { id: contact.id }, data: { birthdays: birthdays ? (birthdays as unknown as Prisma.InputJsonValue) : Prisma.DbNull } });
   }
 }
 
@@ -484,12 +518,15 @@ export function parseBeneficiaries(value: string | undefined, today = new Date()
   return value.split(" | ").map((entry) => {
     const [name, relation, birth, aggregated] = entry.split(";").map((p) => p.trim());
     const birthDate = parseBrDate(birth);
+    const day = businessDay(today, env.BUSINESS_TZ_OFFSET_MINUTES);
     return {
       name,
       relation: relation || null,
       age: birthDate ? ageOn(birthDate, today) : null,
       aggregated: /^s(im)?$/i.test(aggregated ?? ""),
       holder: relation?.toLowerCase() === "titular",
+      birthday: birthDate ? birth.slice(0, 5) : null,
+      daysUntilBirthday: birthDate ? daysUntilBirthday(birth, day) : null,
     };
   });
 }
