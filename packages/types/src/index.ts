@@ -1718,9 +1718,10 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     group: "Chat interno",
     label: "Chat interno — acompanhar conversas da equipe",
     description:
-      "Ler todas as conversas do chat interno em Gestão › Chat interno, sem aviso para quem conversa. Cada leitura fica registrada na auditoria (só o administrador vê). Use conforme a política interna e a LGPD.",
-    editableRoles: ["AGENT", "MANAGER"],
-    defaultAllowed: { AGENT: false, MANAGER: true },
+      "Só o administrador: ler todas as conversas do chat interno em Gestão › Chat interno — inclusive grupos finalizados, mensagens temporárias, apagadas e editadas — sem aviso para quem conversa. Cada leitura fica registrada na auditoria. Use conforme a política interna e a LGPD.",
+    // Administrador only — never offered to Gestor or Atendente.
+    editableRoles: [],
+    defaultAllowed: { AGENT: false, MANAGER: false },
   },
   {
     key: PERMISSION.AUDITORIA_ACESSAR,
@@ -3022,35 +3023,180 @@ export interface ChatMemberDTO {
   isAdmin: boolean;
 }
 
+/** Gestão › Chat interno: someone who is no longer in the group, and how they left. */
+export interface ChatFormerMemberDTO {
+  userId: string;
+  name: string;
+  leftAt: string;
+  /** Who took them out (an owner/admin, or the owner deleting the group); null when they left by themselves. */
+  removedByName: string | null;
+}
+
+export interface ChatPinDTO {
+  messageId: string;
+  preview: string;
+  authorName: string | null;
+  pinnedByName: string;
+  until: string | null;
+}
+
+/** Mensagens autoexplosivas da conversa individual: the choices offered (seconds); any other value is "Personalizado". */
+export const CHAT_AUTO_DELETE_PRESETS = [5, 10, 30, 60, 300, 3600, 86400] as const;
+/** "Enviar como temporária": gone this long after sending. */
+export const CHAT_TEMPORARY_PRESETS = [60, 3600, 86400, 604800] as const;
+/** Editing and deleting one's own message is possible for this long after sending. */
+export const CHAT_EDIT_WINDOW_MINUTES = 15;
+/** Up to this many pinned messages per conversation. */
+export const CHAT_MAX_PINS = 3;
+/** Up to this many conversations pinned to the top of one's list. */
+export const CHAT_MAX_FAVORITES = 3;
+/** "Chamar a atenção" again only after this long, per person. */
+export const CHAT_NUDGE_COOLDOWN_SECONDS = 30;
+/** Audio messages up to this long. */
+export const CHAT_MAX_AUDIO_SECONDS = 300;
+
+/** "30 segundos", "5 minutos", "1 hora", "1 dia", "2 horas"... */
+export function chatDurationLabel(seconds: number): string {
+  const units: [number, string, string][] = [
+    [604800, "semana", "semanas"],
+    [86400, "dia", "dias"],
+    [3600, "hora", "horas"],
+    [60, "minuto", "minutos"],
+    [1, "segundo", "segundos"],
+  ];
+  for (const [size, one, many] of units) {
+    if (seconds >= size && seconds % size === 0) {
+      const n = seconds / size;
+      return `${n} ${n === 1 ? one : many}`;
+    }
+  }
+  return `${seconds} segundos`;
+}
+
 export interface ChatRoomDTO {
   id: string;
   kind: ChatRoomKind;
   /** "#Geral", the group's name, or the other person's name in a direct conversation. */
   name: string;
+  description: string | null;
+  /** GROUP: the emoji drawn as its picture. */
+  icon: string | null;
   /** Direct conversation: the other person (for photo and online status). */
   peer: ChatMemberDTO | null;
   members: ChatMemberDTO[];
   lastMessage: { body: string; authorName: string | null; createdAt: string } | null;
   unreadCount: number;
+  /** Unread messages that mention the logged-in person (or @todos). */
+  unreadMentions: number;
+  mutedUntil: string | null;
+  /** Pinned to the top of the logged-in person's list. */
+  favorite: boolean;
+  /** DIRECT: mensagens autoexplosivas, in seconds after being read; null = off. */
+  autoDeleteSeconds: number | null;
+  pins: ChatPinDTO[];
   /** What the logged-in person can do here. */
   canManageMembers: boolean;
   canManageAdmins: boolean;
   canLeave: boolean;
+  canDelete: boolean;
+  canPin: boolean;
+  canNudge: boolean;
+}
+
+export type ChatMessageKind = "TEXT" | "AUDIO" | "POLL" | "NUDGE";
+/** The sender's ticks, like WhatsApp: ✓ sent, ✓✓ delivered to everyone, ✓✓ colored once everyone read it. */
+export type ChatMessageStatus = "SENT" | "DELIVERED" | "READ";
+
+export interface ChatPollDTO {
+  id: string;
+  question: string;
+  multiple: boolean;
+  /** People who voted at least once. */
+  voters: number;
+  options: { id: string; text: string; votes: number; voterNames: string[]; mine: boolean }[];
+}
+
+export interface ChatReactionDTO {
+  emoji: string;
+  count: number;
+  names: string[];
+  mine: boolean;
 }
 
 export interface ChatMessageDTO {
   id: string;
   roomId: string;
+  kind: ChatMessageKind;
   /** Null for the system's lines ("Ana saiu do grupo"). */
   authorId: string | null;
   authorName: string | null;
   body: string | null;
   attachment: { name: string; mimeType: string; size: number; url: string } | null;
+  audio: { durationMs: number; waveform: number[] } | null;
   /** A customer conversation mentioned in the message. */
   conversation: { id: string; contactName: string } | null;
+  replyTo: { id: string; authorName: string | null; preview: string } | null;
+  /** User ids marked with @ ("ALL" for @todos). */
+  mentions: string[];
+  poll: ChatPollDTO | null;
+  reactions: ChatReactionDTO[];
+  /** NUDGE: who was called. */
+  nudgeTargetId: string | null;
+  nudgeTargetName: string | null;
+  /** Temporary message: how long it lives, whether the clock starts on reading, and when it disappears (once started). */
+  ttlSeconds: number | null;
+  ttlFromRead: boolean;
+  expiresAt: string | null;
+  viewOnce: boolean;
+  /** "Visualização única": the logged-in person already opened it (the file is no longer offered). */
+  viewedByMe: boolean;
+  editedAt: string | null;
+  /** "Apagada": body, file and poll are gone for the people talking. */
+  deletedAt: string | null;
   createdAt: string;
   /** Own messages: every other current member has read it (✓✓). */
   readByAll: boolean;
+  status: ChatMessageStatus;
+  /** Gestão › Chat interno only: what the people talking no longer see. */
+  oversight?: {
+    /** The temporary message already disappeared for them. */
+    expired: boolean;
+    edits: { body: string | null; editedAt: string }[];
+    viewedBy: { name: string; at: string }[];
+  };
+}
+
+/** "Dados da mensagem": who read it and who only received it, each with the time. */
+export interface ChatMessageInfoDTO {
+  readBy: { userId: string; name: string; photoUrl: string | null; at: string }[];
+  deliveredTo: { userId: string; name: string; photoUrl: string | null; at: string }[];
+  pending: { userId: string; name: string; photoUrl: string | null }[];
+}
+
+/** Gestão › Chat interno: every room, the finished ones included. */
+export interface ChatOversightRoomDTO {
+  id: string;
+  kind: ChatRoomKind;
+  name: string;
+  icon: string | null;
+  members: ChatMemberDTO[];
+  formerMembers: ChatFormerMemberDTO[];
+  lastMessageAt: string | null;
+  autoDeleteSeconds: number | null;
+  pins: ChatPinDTO[];
+  /** Deleted by its owner ("finalizado"). */
+  deletedAt: string | null;
+  deletedByName: string | null;
+  createdAt: string;
+}
+
+export interface ChatSearchResultDTO {
+  roomId: string;
+  roomName: string;
+  messageId: string;
+  authorName: string | null;
+  body: string;
+  createdAt: string;
 }
 
 export interface ChatUserDTO {
