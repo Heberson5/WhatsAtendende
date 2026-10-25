@@ -149,7 +149,15 @@ export interface DeliveryEvent {
 export interface TypingEvent {
   chatId: string;
   typing: boolean;
+  /** Typing or recording audio — WhatsApp tells them apart ("composing" / "recording"). */
+  kind?: "typing" | "recording";
+  /** Groups: who of the participants it is. */
+  participantJid?: string | null;
+  participantPhone?: string | null;
 }
+
+/** What the customer's WhatsApp shows of the attendant: "digitando…", "gravando áudio…", or nothing. */
+export type OutgoingPresence = "composing" | "recording" | "paused";
 
 /**
  * Someone voted (or changed or took back their vote) in a poll — still encrypted: the poll's own key, kept with the
@@ -409,6 +417,8 @@ export interface WhatsAppProvider {
    */
   subscribeTyping(chatId: string): Promise<void>;
   onTyping(listener: (event: TypingEvent) => void): void;
+  /** Shows the customer "digitando…" / "gravando áudio…" while the attendant writes or records (a no-op where the channel can't). */
+  sendPresence(chatId: string, presence: OutgoingPresence): Promise<void>;
   /** Fired when the linked phone hands over its address book and/or recent chat history — see BaileysWhatsAppProvider for when/why this fires. */
   onHistorySync(listener: (event: HistorySyncEvent) => void): void;
   /** Fired when a chat's unread count drops to zero from outside this app (e.g. read on the linked phone) — see ChatReadEvent. */

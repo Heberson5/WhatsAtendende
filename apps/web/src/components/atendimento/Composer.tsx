@@ -47,6 +47,9 @@ const EMOJI_GROUPS: { label: string; emojis: string[] }[] = [
 ];
 
 const MAX_TEXTAREA_LINES = 10;
+// The customer's "digitando…" is told again this often while it lasts, and ends after this long without typing.
+const PRESENCE_REPEAT_MS = 8_000;
+const PRESENCE_IDLE_MS = 5_000;
 
 // Mirrors the textarea's own text box in an invisible off-screen div so we
 // can measure where a given character offset actually lands on screen —
@@ -167,9 +170,11 @@ export const Composer = forwardRef<
     conversationId?: string;
     /** "Agendar envio": the text goes out at that time, as this attendant. */
     onScheduleText?: (text: string, sendAt: Date) => Promise<void>;
+    /** What the customer's WhatsApp shows of the attendant: "digitando…" while writing, "gravando áudio…" while recording. */
+    onPresence?: (presence: "composing" | "recording" | "paused") => void;
   }
 >(function Composer(
-  { onSendText, onSendFile, onSendAudio, onSendLocation, quickReplies = [], replyTo, onCancelReply, disabled, conversationId, onScheduleText, loadMentionCandidates },
+  { onSendText, onSendFile, onSendAudio, onSendLocation, quickReplies = [], replyTo, onCancelReply, disabled, conversationId, onScheduleText, loadMentionCandidates, onPresence },
   ref
 ) {
   const userId = useAuthStore((s) => s.user?.id);
@@ -513,6 +518,42 @@ export const Composer = forwardRef<
       setSendingFileProgress(null);
     }
   }
+
+  // "digitando…" / "gravando áudio…" on the customer's phone: repeated while it lasts (WhatsApp drops it after a few
+  // seconds), "paused" when the attendant stops, clears the box, sends, or leaves the conversation.
+  const presenceRef = useRef<{ state: "composing" | "recording" | "paused"; at: number }>({ state: "paused", at: 0 });
+  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onPresenceRef = useRef(onPresence);
+  onPresenceRef.current = onPresence;
+  function announce(state: "composing" | "recording" | "paused") {
+    const last = presenceRef.current;
+    if (last.state === state && (state === "paused" || Date.now() - last.at < PRESENCE_REPEAT_MS)) return;
+    presenceRef.current = { state, at: Date.now() };
+    onPresenceRef.current?.(state);
+  }
+  useEffect(() => {
+    if (recordingState === "recording") {
+      announce("recording");
+      const repeat = setInterval(() => announce("recording"), PRESENCE_REPEAT_MS);
+      return () => clearInterval(repeat);
+    }
+    if (presenceRef.current.state === "recording") announce("paused");
+  }, [recordingState]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (recordingState === "recording") return;
+    if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+    if (!text.trim()) return announce("paused");
+    announce("composing");
+    idleTimerRef.current = setTimeout(() => announce("paused"), PRESENCE_IDLE_MS);
+  }, [text]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(
+    () => () => {
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+      if (presenceRef.current.state !== "paused") onPresenceRef.current?.("paused");
+      presenceRef.current = { state: "paused", at: 0 };
+    },
+    [conversationId]
+  );
 
   useImperativeHandle(ref, () => ({
     addFiles,

@@ -47,6 +47,8 @@ groupsRouter.get(
   asyncHandler(async (req, res) => {
     const group = await service.getGroupForUser(req.params.id, req.auth!);
     const { cursor, limit } = querySchema.parse(req.query);
+    // Opening the group: ask WhatsApp to tell who of the participants is typing (best-effort).
+    if (!cursor) whatsappService.watchCustomerTyping(group.id).catch(() => undefined);
     const result = await service.listGroupMessages(group.id, cursor, limit);
     res.json({ items: result.items.map(toMessageDTO), nextCursor: result.nextCursor });
   })
