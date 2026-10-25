@@ -228,6 +228,10 @@ const DEFAULT_BUSINESS_SETTINGS = {
   noReturnSendSurvey: false,
   noReturnCloseText:
     "{{cliente}}, como não tivemos retorno, estamos encerrando este atendimento por enquanto. Quando quiser continuar, é só mandar uma mensagem aqui que retomamos de onde paramos. Até logo! 👋",
+  // Avisos de digitação (Configurações › Fila), QR Code connections: the customer sees "digitando…"/"gravando áudio…"
+  // while the attendant writes or records, and the attendant sees the customer's.
+  typingToCustomer: true,
+  typingFromCustomer: true,
 };
 
 export async function getNoReturnSettings(): Promise<NoReturnSettingsDTO> {

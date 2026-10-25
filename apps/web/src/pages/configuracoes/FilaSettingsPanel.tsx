@@ -10,6 +10,13 @@ import { DEFAULT_ALERT_THRESHOLDS, type AlertThresholds } from "../../hooks/useA
 
 interface BusinessSettings extends Partial<AlertThresholds> {
   queueReminderIntervalMinutes?: number;
+  typingToCustomer?: boolean;
+  typingFromCustomer?: boolean;
+}
+
+interface TypingSettings {
+  typingToCustomer: boolean;
+  typingFromCustomer: boolean;
 }
 
 const MAX_ALERT_MINUTES = 240;
@@ -37,6 +44,12 @@ export function FilaSettingsPanel() {
   const [minutes, setMinutes] = useState(1);
   const savedAlerts = Object.fromEntries(ALERT_FIELDS.map(({ key }) => [key, data?.[key] ?? DEFAULT_ALERT_THRESHOLDS[key]])) as unknown as AlertThresholds;
   const [alerts, setAlerts] = useState<AlertThresholds>(DEFAULT_ALERT_THRESHOLDS);
+  const savedTyping: TypingSettings = { typingToCustomer: data?.typingToCustomer !== false, typingFromCustomer: data?.typingFromCustomer !== false };
+  const [typing, setTyping] = useState<TypingSettings>(savedTyping);
+  const typingDirty = typing.typingToCustomer !== savedTyping.typingToCustomer || typing.typingFromCustomer !== savedTyping.typingFromCustomer;
+  useEffect(() => {
+    setTyping({ typingToCustomer: data?.typingToCustomer !== false, typingFromCustomer: data?.typingFromCustomer !== false });
+  }, [data?.typingToCustomer, data?.typingFromCustomer]);
   useEffect(() => {
     if (data?.queueReminderIntervalMinutes) setMinutes(data.queueReminderIntervalMinutes);
     setAlerts(Object.fromEntries(ALERT_FIELDS.map(({ key }) => [key, data?.[key] ?? DEFAULT_ALERT_THRESHOLDS[key]])) as unknown as AlertThresholds);
@@ -49,7 +62,7 @@ export function FilaSettingsPanel() {
   const canSave = minutes >= MIN_MINUTES && minutes <= MAX_MINUTES && alertsValid;
 
   const saveMutation = useMutation({
-    mutationFn: () => api.patch("/settings/queue", { queueReminderIntervalMinutes: minutes, ...alerts }),
+    mutationFn: () => api.patch("/settings/queue", { queueReminderIntervalMinutes: minutes, ...alerts, ...typing }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["business-settings"] });
       toast.success("Configurações da fila salvas.");
@@ -107,6 +120,33 @@ export function FilaSettingsPanel() {
         {!alertsValid && <p className="mt-2 text-xs text-danger">O vermelho precisa vir depois do amarelo (entre 1 e {MAX_ALERT_MINUTES} minutos).</p>}
       </div>
 
+      <div className="border-t border-border pt-5">
+        <h2 className="text-base font-semibold">Avisos de digitação</h2>
+        <p className="mt-1 text-sm text-muted">Como no WhatsApp, enquanto alguém escreve ou grava um áudio. Funciona nas conexões por QR Code.</p>
+        <div className="mt-3 space-y-2">
+          {(
+            [
+              ["typingToCustomer", "Mostrar ao cliente quando o atendente está digitando ou gravando", "O WhatsApp do cliente mostra “digitando…” e “gravando áudio…”."],
+              ["typingFromCustomer", "Mostrar ao atendente quando o cliente está digitando ou gravando", "No card e na conversa, inclusive quem está digitando nos grupos."],
+            ] as const
+          ).map(([key, label, hint]) => (
+            <label key={key} className="flex items-start gap-3 rounded-card border border-border px-3 py-2">
+              <input
+                type="checkbox"
+                checked={typing[key]}
+                disabled={!canEditar}
+                onChange={(e) => setTyping((prev) => ({ ...prev, [key]: e.target.checked }))}
+                className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--color-primary)]"
+              />
+              <span>
+                <span className="block text-sm font-medium">{label}</span>
+                <span className="block text-xs text-muted">{hint}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+      </div>
+
       {canEditar && (
         <button
           onClick={() => saveMutation.mutate()}
@@ -120,13 +160,14 @@ export function FilaSettingsPanel() {
       <GoalsPanel />
       {canEditar && data && (
         <UnsavedChangesBar
-          dirty={(data.queueReminderIntervalMinutes !== undefined && minutes !== data.queueReminderIntervalMinutes) || alertsDirty}
+          dirty={(data.queueReminderIntervalMinutes !== undefined && minutes !== data.queueReminderIntervalMinutes) || alertsDirty || typingDirty}
           saving={saveMutation.isPending}
           canSave={canSave}
           onSave={() => saveMutation.mutate()}
           onDiscard={() => {
             setMinutes(data.queueReminderIntervalMinutes ?? 1);
             setAlerts(savedAlerts);
+            setTyping(savedTyping);
           }}
         />
       )}

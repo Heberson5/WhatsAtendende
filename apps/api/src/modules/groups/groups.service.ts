@@ -453,6 +453,16 @@ export async function announceGroupMessage(groupId: string, connectionId: string
   realtimeEvents.groupsChanged();
 }
 
+/** Someone of the group is typing or recording (or stopped): everybody who sees the group shows it. */
+export async function announceGroupTyping(groupId: string, connectionId: string, who: { typing: boolean; kind: "typing" | "recording"; participant: string; name: string }) {
+  const team = await groupTeam(connectionId, groupId);
+  realtimeEvents.groupTyping(
+    team.map((m) => m.id),
+    groupId,
+    who
+  );
+}
+
 /** The oldest message stored for a group — older history is asked for from before it (null: nothing to start from yet). */
 export async function getOldestGroupAnchor(groupId: string) {
   const message = await prisma.message.findFirst({

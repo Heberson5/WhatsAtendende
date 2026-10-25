@@ -1,7 +1,7 @@
 import clsx from "clsx";
 import { format, formatDistanceToNow, isToday, isYesterday } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { AlarmClock, Facebook, Instagram, PencilLine, Pin, Smartphone, type LucideIcon } from "lucide-react";
+import { AlarmClock, Facebook, Instagram, Mic, PencilLine, Pin, Smartphone, type LucideIcon } from "lucide-react";
 import type { CardTagDTO, Channel, ConversationListItemDTO, ConversationReminderDTO } from "@whatsatendende/types";
 import { contactDisplayName } from "../../lib/contact-display";
 import { formatPhone } from "../../lib/format-phone";
@@ -9,7 +9,7 @@ import { useNow } from "../../hooks/useNow";
 import { ContactPhoto } from "../common/ContactPhoto";
 import { useAuthStore } from "../../store/auth-store";
 import { draftKey, useDraftStore } from "../../store/draft-store";
-import { useTypingStore } from "../../store/typing-store";
+import { useCustomerTyping } from "../../store/typing-store";
 import { useAlertThresholds } from "../../hooks/useAlertThresholds";
 import { NoReturnBadge } from "./NoReturn";
 import { businessMinutesSince, businessWaitLabel, PAUSED_LABEL, waitPaused } from "../../lib/business-wait";
@@ -104,7 +104,7 @@ export function ConversationCard({
 }) {
   const now = useNow();
   const userId = useAuthStore((s) => s.user?.id);
-  const customerTyping = useTypingStore((s) => Boolean(s.typing[conversation.id]));
+  const customerTyping = useCustomerTyping(conversation.id);
   // Only the attendant's own conversations can hold a draft (queue/transferred cards have no composer).
   const hasDraft = useDraftStore((s) => Boolean(!onAccept && !transferredOutView && userId && s.drafts[draftKey(userId, conversation.id)]?.trim()));
   const displayName = contactDisplayName(conversation.contact, conversation.channel);
@@ -203,7 +203,10 @@ export function ConversationCard({
           </p>
         )}
         {customerTyping ? (
-          <p className="truncate text-xs font-medium italic text-primary">digitando…</p>
+          <p className={clsx("flex items-center gap-1 truncate text-xs font-semibold italic", customerTyping.kind === "recording" ? "text-danger" : "text-success")}>
+            {customerTyping.kind === "recording" && <Mic className="chat-pulse h-3 w-3 shrink-0" />}
+            {customerTyping.text}
+          </p>
         ) : conversation.lastMessagePreview ? (
           <p className={clsx("truncate text-xs", conversation.unreadCount > 0 ? "font-medium text-[var(--color-text)]" : "text-muted")}>
             {conversation.lastMessagePreview}

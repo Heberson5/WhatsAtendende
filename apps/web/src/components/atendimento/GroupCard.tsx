@@ -3,6 +3,7 @@ import { format, isToday, isYesterday } from "date-fns";
 import { BellOff, Users } from "lucide-react";
 import type { GroupListItemDTO } from "@whatsatendende/types";
 import { initials, seenByLabel, upToDateReaders } from "../../lib/groups";
+import { useCustomerTyping } from "../../store/typing-store";
 
 function shortTime(iso: string) {
   const d = new Date(iso);
@@ -16,6 +17,7 @@ export function GroupCard({ group, selected, onSelect }: { group: GroupListItemD
   const seenBy = seenByLabel(group.readers);
   const upToDate = upToDateReaders(group.readers);
   const unread = group.unreadCount > 0;
+  const typing = useCustomerTyping(group.id);
   return (
     <div
       role="button"
@@ -45,8 +47,10 @@ export function GroupCard({ group, selected, onSelect }: { group: GroupListItemD
             <span className={clsx("shrink-0 text-[11px]", unread ? "font-semibold text-primary" : "text-muted")}>{shortTime(group.lastMessageAt)}</span>
           )}
         </div>
-        <p className={clsx("truncate text-xs", unread ? "font-medium text-[var(--color-text)]" : "text-muted")}>
-          {group.lastMessagePreview ? (
+        <p className={clsx("truncate text-xs", typing ? (typing.kind === "recording" ? "font-semibold italic text-danger" : "font-semibold italic text-success") : unread ? "font-medium text-[var(--color-text)]" : "text-muted")}>
+          {typing ? (
+            typing.text
+          ) : group.lastMessagePreview ? (
             <>
               <span className="font-semibold">{group.lastMessagePreview.senderName}:</span> {group.lastMessagePreview.text}
             </>

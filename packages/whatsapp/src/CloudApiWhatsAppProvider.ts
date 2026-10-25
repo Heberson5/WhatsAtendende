@@ -377,6 +377,9 @@ export class CloudApiWhatsAppProvider implements WhatsAppProvider {
 
   onTyping(): void {}
 
+  // The Cloud API's typing indicator needs the id of the customer's last message and has no "recording" — not used.
+  async sendPresence(): Promise<void> {}
+
   // No linked-phone/companion-device concept on a Cloud API connection, so
   // none of these three ever fire — same no-op precedent as
   // MockWhatsAppProvider.onChatRead.

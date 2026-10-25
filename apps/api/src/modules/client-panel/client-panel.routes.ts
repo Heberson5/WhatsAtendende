@@ -14,6 +14,7 @@ import {
 import * as service from "./client-panel.service";
 import * as dataSources from "../data-sources/data-sources.service";
 import * as birthdays from "../birthdays/birthdays.service";
+import * as whatsappService from "../whatsapp/whatsapp.service";
 
 // Mounted next to conversationsRouter (/api/conversations/:id/...): the
 // client panel beside the chat (tags, earlier conversations) and internal notes.
@@ -172,6 +173,17 @@ clientPanelRouter.post(
     const conversation = await conversationForRead(req);
     await dataSources.acknowledgeSuspension(conversation.id);
     await writeAudit({ userId: req.auth!.userId, action: "CLIENT_SUSPENSION_WARNING_SEEN", entity: "Conversation", entityId: conversation.id, ipAddress: req.ip ?? null });
+    res.status(204).end();
+  })
+);
+
+// The attendant started or stopped typing / recording: the customer's WhatsApp shows "digitando…" / "gravando áudio…".
+clientPanelRouter.post(
+  "/:id/presence",
+  asyncHandler(async (req, res) => {
+    const conversation = await conversationForWrite(req);
+    const { presence } = z.object({ presence: z.enum(["composing", "recording", "paused"]) }).parse(req.body);
+    await whatsappService.sendAgentPresence(conversation.id, presence).catch(() => undefined);
     res.status(204).end();
   })
 );

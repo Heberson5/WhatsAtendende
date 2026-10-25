@@ -11,6 +11,7 @@ import type {
   OlderHistoryAnchor,
   PollVoteEvent,
   ReactionEvent,
+  OutgoingPresence,
   TypingEvent,
   SendResult,
   SendTextOptions,
@@ -287,6 +288,13 @@ export class MockWhatsAppProvider implements WhatsAppProvider {
 
   async subscribeTyping(chatId: string): Promise<void> {
     this.typingSubscriptions.push(chatId);
+  }
+
+  /** What the customer was shown of the attendant ("composing", "recording", "paused") — tests read it. */
+  sentPresences: { chatId: string; presence: OutgoingPresence }[] = [];
+
+  async sendPresence(chatId: string, presence: OutgoingPresence): Promise<void> {
+    this.sentPresences.push({ chatId, presence });
   }
 
   onTyping(listener: (event: TypingEvent) => void): void {

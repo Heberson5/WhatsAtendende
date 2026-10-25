@@ -177,7 +177,28 @@ describe("Atendimento: fixar, lembrar de retornar, agendar envio, Meu dia e digi
     const typing = vi.spyOn(realtimeEvents, "customerTyping");
     provider.simulateTyping({ chatId: `${contact.phone}@s.whatsapp.net`, typing: true });
     await wait(200);
-    expect(typing).toHaveBeenCalledWith(conversation.id, agentId, true);
+    expect(typing).toHaveBeenCalledWith(conversation.id, agentId, true, "typing");
+    provider.simulateTyping({ chatId: `${contact.phone}@s.whatsapp.net`, typing: true, kind: "recording" });
+    await wait(200);
+    expect(typing).toHaveBeenLastCalledWith(conversation.id, agentId, true, "recording");
     typing.mockRestore();
+  });
+
+  it("mostra ao cliente quando o atendente digita ou grava — e para de mostrar se desligado em Configurações", async () => {
+    const { conversation, contact } = await acceptedConversation();
+    provider.sentPresences.length = 0;
+    await request(app).post(`/api/conversations/${conversation.id}/presence`).set(as(agentToken)).send({ presence: "composing" }).expect(204);
+    await request(app).post(`/api/conversations/${conversation.id}/presence`).set(as(agentToken)).send({ presence: "recording" }).expect(204);
+    await request(app).post(`/api/conversations/${conversation.id}/presence`).set(as(agentToken)).send({ presence: "paused" }).expect(204);
+    expect(provider.sentPresences.map((p) => p.presence)).toEqual(["composing", "recording", "paused"]);
+    expect(provider.sentPresences[0].chatId).toContain(contact.phone!);
+
+    await request(app).patch("/api/settings/queue").set(as(adminToken)).send({ typingToCustomer: false }).expect(200);
+    try {
+      await request(app).post(`/api/conversations/${conversation.id}/presence`).set(as(agentToken)).send({ presence: "composing" }).expect(204);
+      expect(provider.sentPresences).toHaveLength(3);
+    } finally {
+      await request(app).patch("/api/settings/queue").set(as(adminToken)).send({ typingToCustomer: true }).expect(200);
+    }
   });
 });

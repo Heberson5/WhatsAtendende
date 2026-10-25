@@ -11,6 +11,7 @@ import {
   type CloudApiWebhookValue,
   type InboundMessageEvent,
   type OutboundMenu,
+  type OutgoingPresence,
   type SendResult,
   type TemplateSendInput,
   type WhatsAppProvider,
@@ -32,6 +33,8 @@ import * as satisfaction from "../satisfaction/satisfaction.service";
 import * as flowEngine from "../flows/flow-engine.service";
 import { assertWorkScheduleExists } from "../work-schedules/work-schedules.service";
 import * as groupsService from "../groups/groups.service";
+import { announceGroupTyping } from "../groups/groups.service";
+import { getBusinessSettings } from "../settings/settings.service";
 import { toMessageDTO } from "../messages/messages.mapper";
 import { getManagerConnectionIds } from "../../lib/connection-access";
 import { createNotification } from "../notifications/notifications.service";
@@ -123,6 +126,23 @@ export async function watchCustomerTyping(conversationId: string): Promise<void>
   const provider = providers.get(conversation.whatsappConnectionId);
   const chatId = conversation.contact.providerChatId ?? (conversation.contact.phone ? toChatId(conversation.contact.phone) : null);
   if (provider && chatId) await provider.subscribeTyping(chatId);
+}
+
+/**
+ * The attendant is typing or recording in this conversation (or stopped): the customer's WhatsApp shows it, like any
+ * chat — unless Configurações › Fila turned that off. Best-effort: a failure never reaches the attendant.
+ */
+export async function sendAgentPresence(conversationId: string, presence: OutgoingPresence): Promise<void> {
+  const settings = await getBusinessSettings();
+  if (settings.typingToCustomer === false) return;
+  const conversation = await prisma.conversation.findUnique({
+    where: { id: conversationId },
+    select: { whatsappConnectionId: true, channel: true, contact: { select: { providerChatId: true, phone: true } } },
+  });
+  if (!conversation?.whatsappConnectionId || conversation.channel !== "WHATSAPP") return;
+  const provider = providers.get(conversation.whatsappConnectionId);
+  const chatId = conversation.contact.providerChatId ?? (conversation.contact.phone ? toChatId(conversation.contact.phone) : null);
+  if (provider && chatId) await provider.sendPresence(chatId, presence);
 }
 
 /** Test-only escape hatch to reach the live provider instance (e.g. to inspect MockWhatsAppProvider.sentTexts) — never used by application code. */
@@ -865,6 +885,22 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
 
   provider.onTyping(async (event) => {
     try {
+      if ((await getBusinessSettings()).typingFromCustomer === false) return;
+      const kind = event.kind ?? "typing";
+      if (event.participantJid !== undefined) {
+        // A WhatsApp group: everyone who sees it learns who of the participants is typing or recording.
+        const group = await prisma.conversation.findFirst({
+          where: { status: "GROUP", whatsappConnectionId: connectionId, contact: { providerChatId: event.chatId } },
+          select: { id: true },
+        });
+        if (!group) return;
+        const name = event.participantPhone
+          ? ((await prisma.contact.findFirst({ where: { whatsappConnectionId: connectionId, phone: event.participantPhone, isGroup: false }, select: { name: true } }))?.name ??
+            event.participantPhone)
+          : "Alguém";
+        await announceGroupTyping(group.id, connectionId, { typing: event.typing, kind, participant: event.participantJid ?? name, name });
+        return;
+      }
       const phone = event.chatId.endsWith("@s.whatsapp.net") ? event.chatId.split("@")[0] : null;
       const contact = await prisma.contact.findFirst({
         where: { whatsappConnectionId: connectionId, OR: [{ providerChatId: event.chatId }, ...(phone ? [{ phone }] : [])] },
@@ -876,7 +912,7 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
         orderBy: { lastMessageAt: "desc" },
         select: { id: true, assignedAgentId: true },
       });
-      if (conversation) realtimeEvents.customerTyping(conversation.id, conversation.assignedAgentId, event.typing);
+      if (conversation) realtimeEvents.customerTyping(conversation.id, conversation.assignedAgentId, event.typing, kind);
     } catch (err) {
       logger.warn({ err, connectionId }, "failed to relay that the customer is typing");
     }

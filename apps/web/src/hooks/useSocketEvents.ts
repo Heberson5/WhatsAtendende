@@ -215,7 +215,8 @@ export function useSocketEvents(activeConversationId: string | null) {
     const onGroupsUpdated = () => queryClient.invalidateQueries({ queryKey: ["groups"] });
     // A participant reacted: only the open group's messages change.
     const onGroupReaction = (payload: { conversationId: string }) => queryClient.invalidateQueries({ queryKey: ["group-messages", payload.conversationId] });
-    const onTyping = (payload: { conversationId: string; typing: boolean }) => useTypingStore.getState().setTyping(payload.conversationId, payload.typing);
+    const onTyping = (payload: { conversationId: string; typing: boolean; kind?: "typing" | "recording"; participant?: string; name?: string }) =>
+      useTypingStore.getState().setTyping(payload.conversationId, payload.typing, payload.kind, payload.participant, payload.name);
     const onAgentExtras = () => queryClient.invalidateQueries({ queryKey: ["agent-extras"] });
     const onAbandoned = () => queryClient.invalidateQueries({ queryKey: ["abandoned"] });
     const onReminderDue = (reminder: ConversationReminderDTO & { contactName: string }) => {

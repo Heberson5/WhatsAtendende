@@ -234,8 +234,9 @@ export function MessageBubble({
   const bubble = (
     <div
       className={clsx(
-        "relative max-w-[70%] rounded-card px-3 py-2 text-sm shadow-sm transition-shadow",
-        isOutbound ? "bg-primary text-primary-fg" : "bg-surface-alt",
+        // Same bubbles as the chat interno: rounder, the corner toward the sender squarer, on the dotted wallpaper.
+        "chat-pop relative max-w-[70%] rounded-2xl px-3 py-2 text-sm shadow-sm transition-shadow",
+        isOutbound ? "rounded-br-md bg-primary text-primary-fg" : "rounded-bl-md bg-surface",
         highlighted && "ring-2 ring-yellow-400 ring-offset-2 ring-offset-[var(--color-bg)]"
       )}
     >
@@ -387,7 +388,7 @@ export function MessageBubble({
   // real flex siblings here instead of absolute-positioning over the bubble,
   // ordered so they land on the correct side for each direction.
   const actions = (
-    <div className="flex shrink-0 items-center gap-0.5 self-center opacity-0 transition-opacity group-hover:opacity-100">
+    <div className="flex shrink-0 items-center gap-0.5 self-center rounded-full border border-border bg-surface px-0.5 opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
       <button onClick={() => onReply(message)} className="focus-ring rounded-full p-1.5 text-muted hover:bg-surface-alt hover:text-[var(--color-text)]" aria-label="Responder">
         <ReplyIcon className="h-3.5 w-3.5" />
       </button>
