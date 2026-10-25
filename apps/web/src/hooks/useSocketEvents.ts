@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import type { AgentPresence, ConversationReminderDTO, NotificationDTO, WhatsAppConnectionStatus } from "@whatsatendende/types";
+import type { AgentPresence, ChatRoomDTO, ConversationReminderDTO, NotificationDTO, WhatsAppConnectionStatus } from "@whatsatendende/types";
 import { showReminderToast } from "../components/atendimento/ReminderToast";
 import { getSocket } from "../lib/socket";
 import { useTypingStore } from "../store/typing-store";
@@ -106,17 +106,54 @@ export function useSocketEvents(activeConversationId: string | null) {
     // sync) — refresh so the unread badge here matches what's already read
     // on the phone, without waiting for the 20s poll.
     const onConversationRead = () => queryClient.invalidateQueries({ queryKey: ["mine"] });
-    // Chat interno: sound and Windows notification unless that very room is on screen.
-    const onInternalChatMessage = (payload: { roomId: string; authorName?: string; preview?: string; roomName?: string | null }) => {
+    // Chat interno: sound and Windows notification unless that very room is on screen, or the room is muted
+    // (an @mention of this person still comes through). Gestão's copies of the events (oversight) only refresh.
+    const onInternalChatMessage = (payload: { roomId: string; authorName?: string; preview?: string; roomName?: string | null; mentions?: string[]; authorId?: string; oversight?: boolean }) => {
+      if (payload.oversight) return void queryClient.invalidateQueries({ queryKey: ["internal-chat-oversight"] });
       queryClient.invalidateQueries({ queryKey: ["internal-chat"] });
       const chat = useInternalChatStore.getState();
-      if (!payload.authorName || (chat.open && chat.activeRoomId === payload.roomId)) return;
-      playUserAlertSound("newMessage");
-      notifyDesktop(payload.roomName ?? "Chat interno", `${payload.authorName}: ${payload.preview ?? ""}`, `wa-internal-chat-${payload.roomId}`);
+      if (!payload.authorName) return;
+      // The message arrived: whoever was typing it is done.
+      if (payload.authorId) chat.clearTyping(payload.roomId, payload.authorId);
+      if (chat.open && chat.activeRoomId === payload.roomId) return;
+      const me = useAuthStore.getState().user?.id;
+      const mentioned = Boolean(me && payload.mentions?.some((m) => m === me || m === "ALL"));
+      const room = queryClient.getQueryData<ChatRoomDTO[]>(["internal-chat", "rooms"])?.find((r) => r.id === payload.roomId);
+      if (room?.mutedUntil && new Date(room.mutedUntil) > new Date() && !mentioned) return;
+      playUserAlertSound("internalChat");
+      notifyDesktop(mentioned ? `${payload.authorName} mencionou você` : (payload.roomName ?? "Chat interno"), `${payload.authorName}: ${payload.preview ?? ""}`, `wa-internal-chat-${payload.roomId}`);
     };
-    const onInternalChatRead = (payload: { roomId: string }) => queryClient.invalidateQueries({ queryKey: ["internal-chat", "messages", payload.roomId] });
-    const onInternalChatTyping = (payload: { roomId: string; name: string }) => useInternalChatStore.getState().setTyping(payload.roomId, payload.name);
-    const onInternalChatRooms = () => queryClient.invalidateQueries({ queryKey: ["internal-chat"] });
+    const onInternalChatRead = (payload: { roomId: string; oversight?: boolean }) =>
+      queryClient.invalidateQueries({ queryKey: payload.oversight ? ["internal-chat-oversight"] : ["internal-chat", "messages", payload.roomId] });
+    const onInternalChatTyping = (payload: { roomId: string; userId: string; name: string; kind?: "typing" | "recording" }) =>
+      useInternalChatStore.getState().setTyping(payload.roomId, payload.userId, payload.name, payload.kind ?? "typing");
+    const onInternalChatRooms = (payload: { deletedRoomId?: string; oversight?: boolean }) => {
+      if (payload?.oversight) return void queryClient.invalidateQueries({ queryKey: ["internal-chat-oversight"] });
+      queryClient.invalidateQueries({ queryKey: ["internal-chat"] });
+      const chat = useInternalChatStore.getState();
+      if (payload?.deletedRoomId && chat.activeRoomId === payload.deletedRoomId) {
+        chat.setActiveRoom(null);
+        toast.info("O grupo foi excluído por quem o criou.");
+      }
+    };
+    // "Chamar a atenção": the whole app shakes (or flashes, for whoever asked the computer for less motion), the
+    // buzz sounds and the chat opens on that conversation.
+    const onInternalChatNudge = (payload: { roomId: string; fromName: string }) => {
+      const target = document.getElementById("root") ?? document.body;
+      const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+      const cls = reduce ? "chat-nudge-flash" : "chat-nudge-shake";
+      target.classList.remove("chat-nudge-shake", "chat-nudge-flash");
+      void target.offsetWidth;
+      target.classList.add(cls);
+      setTimeout(() => target.classList.remove(cls), 1600);
+      playUserAlertSound("nudge");
+      if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
+      toast.warning(`${payload.fromName} chamou sua atenção!`);
+      notifyDesktop("Chat interno", `${payload.fromName} chamou sua atenção!`, `wa-internal-nudge-${payload.roomId}`);
+      const chat = useInternalChatStore.getState();
+      chat.setOpen(true);
+      chat.setActiveRoom(payload.roomId);
+    };
     const onGoalsChanged = () => queryClient.invalidateQueries({ queryKey: ["my-day"] });
     // A data source started or stopped working: tags, quick replies with tags and Dados do cliente follow at once.
     const onDataSourceStatus = () => {
@@ -203,6 +240,7 @@ export function useSocketEvents(activeConversationId: string | null) {
     socket.on("internal-chat:read", onInternalChatRead);
     socket.on("internal-chat:typing", onInternalChatTyping);
     socket.on("internal-chat:rooms", onInternalChatRooms);
+    socket.on("internal-chat:nudge", onInternalChatNudge);
     socket.on("data-source:status", onDataSourceStatus);
     socket.on("oversight:updated", onOversightUpdated);
     socket.on("conversation:intervention", onIntervention);
@@ -238,6 +276,7 @@ export function useSocketEvents(activeConversationId: string | null) {
       socket.off("internal-chat:read", onInternalChatRead);
       socket.off("internal-chat:typing", onInternalChatTyping);
       socket.off("internal-chat:rooms", onInternalChatRooms);
+      socket.off("internal-chat:nudge", onInternalChatNudge);
       socket.off("data-source:status", onDataSourceStatus);
       socket.off("oversight:updated", onOversightUpdated);
       socket.off("conversation:intervention", onIntervention);

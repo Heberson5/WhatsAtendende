@@ -1,6 +1,6 @@
 import { useAuthStore } from "../store/auth-store";
 
-export type AlertSound = "newMessage" | "newQueue";
+export type AlertSound = "newMessage" | "newQueue" | "internalChat" | "nudge";
 
 // Two short synthesized tones (no audio files to ship): a single soft "blip"
 // for a customer message, a rising two-note chime for a new queue conversation.
@@ -9,6 +9,17 @@ const TONES: Record<AlertSound, { frequency: number; start: number; duration: nu
   newQueue: [
     { frequency: 660, start: 0, duration: 0.14 },
     { frequency: 990, start: 0.16, duration: 0.2 },
+  ],
+  // Chat interno: two quick, lower notes — unlike a customer's, so the attendant knows where it came from without looking.
+  internalChat: [
+    { frequency: 523, start: 0, duration: 0.09 },
+    { frequency: 784, start: 0.1, duration: 0.12 },
+  ],
+  // "Chamar a atenção": a short buzz, like MSN's.
+  nudge: [
+    { frequency: 220, start: 0, duration: 0.12 },
+    { frequency: 196, start: 0.14, duration: 0.12 },
+    { frequency: 220, start: 0.28, duration: 0.16 },
   ],
 };
 
@@ -36,6 +47,7 @@ export function playAlertSound(sound: AlertSound, volume: number): void {
 export function playUserAlertSound(sound: AlertSound): void {
   const user = useAuthStore.getState().user;
   if (!user) return;
-  const enabled = sound === "newMessage" ? user.soundNewMessage : user.soundNewQueue;
+  // The nudge always sounds (it exists to be noticed); the chat's own tone follows the "new message" switch.
+  const enabled = sound === "nudge" ? true : sound === "newQueue" ? user.soundNewQueue : user.soundNewMessage;
   if (enabled) playAlertSound(sound, user.soundVolume);
 }

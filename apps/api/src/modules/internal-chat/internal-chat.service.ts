@@ -388,6 +388,7 @@ async function afterSend(room: RoomWithMembers, userId: string, message: ChatMes
   const authorName = await displayName(userId);
   const payload = {
     roomId: room.id,
+    authorId: userId,
     authorName,
     preview: messagePreview(message),
     roomName: room.kind === "DIRECT" ? authorName : room.name,
