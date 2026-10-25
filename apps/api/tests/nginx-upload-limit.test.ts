@@ -57,6 +57,14 @@ describe("nginx.conf body limit for /api", () => {
     expect(bodyLimitMb(locationBlock(conf, "/api"))).toBeGreaterThanOrEqual(300);
   });
 
+  it("Configurações › Backup: no body limit and streamed both ways (a backup can be gigabytes)", () => {
+    const block = locationBlock(conf, "/api/settings/backup");
+    expect(block).toMatch(/client_max_body_size\s+0\s*;/);
+    expect(block).toMatch(/proxy_request_buffering\s+off\s*;/);
+    expect(block).toMatch(/proxy_buffering\s+off\s*;/);
+    expect(block).toMatch(/proxy_pass\s+http:\/\/api:4000\s*;/);
+  });
+
   it("is what the parser would call 1 MB if the directive were missing", () => {
     expect(bodyLimitMb("proxy_pass http://api:4000;")).toBe(1);
     expect(bodyLimitMb("# client_max_body_size 100m;\nproxy_pass http://api:4000;")).toBe(1);

@@ -1,6 +1,6 @@
 import { useSearchParams } from "react-router-dom";
 import clsx from "clsx";
-import { Clock3, Columns3, FileDown, KeyRound, Mail, MailPlus, Palette, Phone, ShieldCheck, CalendarDays, Sparkles, type LucideIcon } from "lucide-react";
+import { Clock3, Columns3, DatabaseBackup, FileDown, KeyRound, Mail, MailPlus, Palette, Phone, ShieldCheck, CalendarDays, Sparkles, type LucideIcon } from "lucide-react";
 import { PERMISSION, type Permission } from "@whatsatendende/types";
 import { BrandingPanel } from "./BrandingPanel";
 import { AppInstallPanel } from "./AppInstallPanel";
@@ -14,9 +14,10 @@ import { NotasDeVersaoAdminPanel } from "./NotasDeVersaoAdminPanel";
 import { PermissionsPanel } from "./PermissionsPanel";
 import { SecuritySettingsPanel } from "./SecuritySettingsPanel";
 import { VisoesColunasPanel } from "./VisoesColunasPanel";
+import { BackupPanel } from "./BackupPanel";
 import { useAuthStore } from "../../store/auth-store";
 
-type Tab = "branding" | "exportacoes" | "email" | "email-templates" | "feriados" | "fila" | "telefone" | "seguranca" | "permissoes" | "notas-de-versao" | "visoes";
+type Tab = "branding" | "exportacoes" | "email" | "email-templates" | "feriados" | "fila" | "telefone" | "seguranca" | "permissoes" | "notas-de-versao" | "visoes" | "backup";
 
 // Grouped by subject in the left-hand section menu.
 const TABS: { key: Tab; label: string; group: string; icon: LucideIcon }[] = [
@@ -31,6 +32,7 @@ const TABS: { key: Tab; label: string; group: string; icon: LucideIcon }[] = [
   { key: "seguranca", label: "Segurança", group: "Segurança", icon: ShieldCheck },
   { key: "permissoes", label: "Permissões", group: "Segurança", icon: KeyRound },
   { key: "notas-de-versao", label: "Notas de versão", group: "Sistema", icon: Sparkles },
+  { key: "backup", label: "Backup", group: "Sistema", icon: DatabaseBackup },
 ];
 
 // Each sits behind its own finer permission on top of the CONFIGURACOES_GERENCIAR
@@ -76,7 +78,7 @@ export default function ConfiguracoesPage() {
   // tabs — this is a UI-only restriction, not a backend one.)
   const visibleTabs = TABS.filter((t) => {
     // Notas de versão is edited by administrators only (enforced by the API too — release-notes.routes.ts).
-    if (t.key === "permissoes" || t.key === "seguranca" || t.key === "notas-de-versao") return role === "ADMIN";
+    if (t.key === "permissoes" || t.key === "seguranca" || t.key === "notas-de-versao" || t.key === "backup") return role === "ADMIN";
     const permission = TAB_PERMISSION[t.key];
     return !permission || permissions?.[permission];
   });
@@ -133,6 +135,7 @@ export default function ConfiguracoesPage() {
         {activeTab === "seguranca" && role === "ADMIN" && <SecuritySettingsPanel />}
         {activeTab === "permissoes" && role === "ADMIN" && <PermissionsPanel />}
         {activeTab === "notas-de-versao" && role === "ADMIN" && <NotasDeVersaoAdminPanel />}
+        {activeTab === "backup" && role === "ADMIN" && <BackupPanel />}
       </div>
     </div>
   );
