@@ -8,6 +8,15 @@ datasource db {
 }
 
 // ---------------------------------------------------------------------------
+// IDs: every model keeps its UUID `id` as the primary key (used by the API,
+// URLs and every foreign key — not guessable, so one record's id can't be
+// incremented to reach another's) PLUS a human-friendly `seq` column
+// (1, 2, 3...) per table, for looking rows up by hand in SQL, e.g.
+//   SELECT * FROM "Conversation" WHERE seq = 152;
+// `seq` is never used as a relation key — it is a lookup convenience only.
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
 // Identity / RBAC
 // ---------------------------------------------------------------------------
 
@@ -30,6 +39,7 @@ enum AgentPresence {
 
 model User {
   id            String        @id @default(uuid())
+  seq           Int           @unique @default(autoincrement())
   fullName      String
   displayName   String
   email         String        @unique
@@ -96,6 +106,7 @@ model User {
 
 model PasswordResetToken {
   id        String   @id @default(uuid())
+  seq       Int      @unique @default(autoincrement())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId    String
   tokenHash String   @unique
@@ -108,6 +119,7 @@ model PasswordResetToken {
 
 model RefreshToken {
   id         String    @id @default(uuid())
+  seq        Int       @unique @default(autoincrement())
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId     String
   tokenHash  String    @unique
@@ -137,6 +149,7 @@ enum WhatsAppConnectionStatus {
 // disconnect, and hold their own QR code independently of one another.
 model WhatsAppConnection {
   id              String                   @id @default(uuid())
+  seq             Int                      @unique @default(autoincrement())
   name            String                   @unique
   // Distinguishes this connection's conversations at a glance — every
   // conversation card is tinted with its originating connection's color, so
@@ -183,6 +196,7 @@ model WhatsAppConnection {
 // not the DB, same precedent as User.whatsappConnectionId being AGENT-only.
 model ManagerConnectionAccess {
   id                      String             @id @default(uuid())
+  seq                     Int                @unique @default(autoincrement())
   manager                 User               @relation(fields: [managerId], references: [id], onDelete: Cascade)
   managerId               String
   whatsappConnection      WhatsAppConnection @relation(fields: [whatsappConnectionId], references: [id], onDelete: Cascade)
@@ -204,6 +218,7 @@ model ManagerConnectionAccess {
 // their own set without stepping on each other's shortcuts.
 model QuickReply {
   id                    String             @id @default(uuid())
+  seq                   Int                @unique @default(autoincrement())
   name                  String
   // Stored without the leading "/" (e.g. "boasvindas", not "/boasvindas") —
   // the slash is purely a UI trigger, added back only when displayed.
@@ -223,6 +238,7 @@ model QuickReply {
 
 model Contact {
   id                   String   @id @default(uuid())
+  seq                  Int      @unique @default(autoincrement())
   // Scoped per connection, not globally: the same phone number talking to
   // two different connected WhatsApp numbers is two separate customer
   // relationships (different business/department), so it's two Contact rows.
@@ -270,6 +286,7 @@ enum ConversationStatus {
 
 model Conversation {
   id               String              @id @default(uuid())
+  seq              Int                 @unique @default(autoincrement())
   // Denormalized from contact.whatsappConnectionId at creation time — kept
   // directly on the conversation (rather than only reachable via a join)
   // so the queue, oversight, dashboard, and report filters can filter by
@@ -324,6 +341,7 @@ model Conversation {
 
 model ConversationAssignment {
   id              String   @id @default(uuid())
+  seq             Int      @unique @default(autoincrement())
   conversation    Conversation @relation(fields: [conversationId], references: [id])
   conversationId  String
   fromAgent       User?    @relation("AssignmentFromAgent", fields: [fromAgentId], references: [id])
@@ -338,6 +356,7 @@ model ConversationAssignment {
 
 model ConversationTransfer {
   id              String   @id @default(uuid())
+  seq             Int      @unique @default(autoincrement())
   conversation    Conversation @relation(fields: [conversationId], references: [id])
   conversationId  String
   fromAgent       User     @relation("TransferFromAgent", fields: [fromAgentId], references: [id])
@@ -354,6 +373,7 @@ model ConversationTransfer {
 
 model ConversationEvent {
   id              String   @id @default(uuid())
+  seq             Int      @unique @default(autoincrement())
   conversation    Conversation @relation(fields: [conversationId], references: [id])
   conversationId  String
   type            String   // CREATED | ACCEPTED | TRANSFERRED | CLOSED | REOPENED | ACCEPT_CONFLICT | HANDLED_EXTERNALLY
@@ -401,6 +421,7 @@ enum MessageStatus {
 
 model Message {
   id                    String            @id @default(uuid())
+  seq                   Int               @unique @default(autoincrement())
   conversation          Conversation      @relation(fields: [conversationId], references: [id])
   conversationId        String
   direction             MessageDirection
@@ -457,6 +478,7 @@ model Message {
 
 model MessageAttachment {
   id         String      @id @default(uuid())
+  seq        Int         @unique @default(autoincrement())
   message    Message     @relation(fields: [messageId], references: [id])
   messageId  String
   fileName   String
@@ -484,6 +506,7 @@ model MessageAttachment {
 
 model MessageReaction {
   id         String   @id @default(uuid())
+  seq        Int      @unique @default(autoincrement())
   message    Message  @relation(fields: [messageId], references: [id])
   messageId  String
   user       User?    @relation(fields: [userId], references: [id])
@@ -502,6 +525,7 @@ model MessageReaction {
 
 model AuditLog {
   id         String   @id @default(uuid())
+  seq        Int      @unique @default(autoincrement())
   user       User?    @relation(fields: [userId], references: [id])
   userId     String?
   action     String
@@ -524,6 +548,7 @@ model SystemSetting {
 
 model Notification {
   id         String   @id @default(uuid())
+  seq        Int      @unique @default(autoincrement())
   user       User     @relation(fields: [userId], references: [id])
   userId     String
   type       String
@@ -545,6 +570,7 @@ model Notification {
 // screen that controls this table.
 model RolePermission {
   id         String   @id @default(uuid())
+  seq        Int      @unique @default(autoincrement())
   role       Role
   permission String
   allowed    Boolean
@@ -584,6 +610,7 @@ enum HolidaySource {
 // sync naturally writes one row per city it fetched anyway.
 model Holiday {
   id         String        @id @default(uuid())
+  seq        Int           @unique @default(autoincrement())
   date       DateTime      @db.Date
   name       String
   scope      HolidayScope
@@ -618,6 +645,7 @@ model Holiday {
 // every month.
 model HolidaySyncCursor {
   id        String       @id @default(uuid())
+  seq       Int          @unique @default(autoincrement())
   scope     HolidayScope
   state     String?
   city      String?
