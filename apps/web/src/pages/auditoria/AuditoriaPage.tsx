@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import type { AuditLogDTO, PaginatedResult } from "@whatsatendende/types";
 import { api } from "../../lib/api";
+import { SkeletonRows } from "../../components/common/Skeleton";
 
 // Every distinct `entity` string ever passed to writeAudit() across the API
 // — see e.g. auth.service.ts, users.routes.ts, conversations.routes.ts. The
@@ -163,11 +164,7 @@ export default function AuditoriaPage() {
           </thead>
           <tbody>
             {query.isLoading && (
-              <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-muted">
-                  Carregando...
-                </td>
-              </tr>
+              <SkeletonRows columns={7} />
             )}
             {!query.isLoading && logs.length === 0 && (
               <tr>

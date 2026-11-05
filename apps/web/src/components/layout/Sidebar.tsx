@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import clsx from "clsx";
 import {
   MessagesSquare,
@@ -13,10 +13,12 @@ import {
   ChevronRight,
   X,
   Slash,
+  Star,
 } from "lucide-react";
 import { PERMISSION, type Permission } from "@whatsatendende/types";
 import { useAuthStore } from "../../store/auth-store";
 import { useBranding } from "../../hooks/useBranding";
+import { useEscapeKey } from "../../hooks/useEscapeKey";
 
 export interface MenuItem {
   to: string;
@@ -48,11 +50,52 @@ export function useVisibleMenuItems(): MenuItem[] {
   return MENU_ITEMS.filter((item) => user && permissions?.[item.permission]);
 }
 
+const FAVORITES_KEY = "sidebar-favorites";
+// Below this many menu items there's nothing to shortcut — an attendant with only Atendimento sees no stars.
+const FAVORITES_MIN_ITEMS = 6;
+
+/** The screens this person starred, remembered per user in this browser. */
+function useFavoriteMenuItems(userId: string | undefined) {
+  const key = `${FAVORITES_KEY}:${userId ?? "anon"}`;
+  const [favorites, setFavorites] = useState<string[]>([]);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(key);
+      setFavorites(raw ? (JSON.parse(raw) as string[]).filter((v) => typeof v === "string") : []);
+    } catch {
+      setFavorites([]);
+    }
+  }, [key]);
+  function toggle(to: string) {
+    setFavorites((current) => {
+      const next = current.includes(to) ? current.filter((f) => f !== to) : [...current, to];
+      try {
+        localStorage.setItem(key, JSON.stringify(next));
+      } catch {
+        // storage blocked: the star just won't survive a reload
+      }
+      return next;
+    });
+  }
+  return { favorites, toggle };
+}
+
 export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: boolean; onMobileClose?: () => void }) {
+  useEscapeKey(() => onMobileClose?.(), mobileOpen);
   const [collapsed, setCollapsed] = useState(false);
   const { data: branding } = useBranding();
 
   const visibleItems = useVisibleMenuItems();
+  const userId = useAuthStore((s) => s.user?.id);
+  const { favorites, toggle: toggleFavorite } = useFavoriteMenuItems(userId);
+  const canFavorite = visibleItems.length >= FAVORITES_MIN_ITEMS;
+  const favoriteItems = canFavorite ? favorites.map((to) => visibleItems.find((i) => i.to === to)).filter((i): i is MenuItem => Boolean(i)) : [];
+  const sections: { title: string | null; items: MenuItem[] }[] = favoriteItems.length
+    ? [
+        { title: "Favoritos", items: favoriteItems },
+        { title: "Menu", items: visibleItems },
+      ]
+    : [{ title: null, items: visibleItems }];
 
   return (
     <>
@@ -100,23 +143,52 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
         </button>
       </div>
 
-      <nav className="flex-1 space-y-1 overflow-y-auto p-3" aria-label="Menu principal">
-        {visibleItems.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            onClick={onMobileClose}
-            className={({ isActive }) =>
-              clsx(
-                "focus-ring flex items-center gap-3 rounded-card px-3 py-2.5 text-sm font-medium transition-colors",
-                isActive ? "bg-primary text-primary-fg shadow-soft" : "text-muted hover:bg-surface-alt hover:text-[var(--color-text)]"
-              )
-            }
-            title={collapsed ? item.label : undefined}
-          >
-            <item.icon className="h-5 w-5 shrink-0" aria-hidden />
-            {!collapsed && <span>{item.label}</span>}
-          </NavLink>
+      <nav className="flex-1 overflow-y-auto p-3" aria-label="Menu principal">
+        {sections.map((section, sectionIndex) => (
+          <div key={section.title ?? "menu"} role={section.title ? "group" : undefined} aria-label={section.title ?? undefined}>
+            {section.title &&
+              (collapsed ? (
+                sectionIndex > 0 && <div className="mx-auto my-2 h-px w-6 bg-border" aria-hidden />
+              ) : (
+                <p className={clsx("px-3 pb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted", sectionIndex === 0 ? "pt-0.5" : "pt-4")}>{section.title}</p>
+              ))}
+            <div className="space-y-1">
+              {section.items.map((item) => {
+                const starred = favorites.includes(item.to);
+                return (
+                  <div key={`${section.title}-${item.to}`} className="group/item relative">
+                    <NavLink
+                      to={item.to}
+                      onClick={onMobileClose}
+                      className={({ isActive }) =>
+                        clsx(
+                          "focus-ring flex items-center gap-3 rounded-card px-3 py-2.5 text-sm font-medium transition-colors",
+                          canFavorite && !collapsed && "pr-9",
+                          isActive ? "bg-primary text-primary-fg shadow-soft" : "text-muted hover:bg-surface-alt hover:text-[var(--color-text)]"
+                        )
+                      }
+                      title={collapsed ? item.label : undefined}
+                    >
+                      <item.icon className="h-5 w-5 shrink-0" aria-hidden />
+                      {!collapsed && <span className="truncate">{item.label}</span>}
+                    </NavLink>
+                    {canFavorite && !collapsed && (
+                      <button
+                        type="button"
+                        onClick={() => toggleFavorite(item.to)}
+                        aria-pressed={starred}
+                        aria-label={starred ? `Tirar ${item.label} dos favoritos` : `Fixar ${item.label} nos favoritos`}
+                        title={starred ? "Tirar dos favoritos" : "Fixar nos favoritos"}
+                        className="focus-ring absolute right-2 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-muted opacity-0 transition-opacity hover:text-[var(--color-text)] focus-visible:opacity-100 group-hover/item:opacity-100"
+                      >
+                        <Star className={clsx("h-3.5 w-3.5", starred && "fill-current text-secondary")} />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         ))}
       </nav>
       </aside>

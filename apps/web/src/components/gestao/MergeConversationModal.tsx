@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { GitMerge, X } from "lucide-react";
 import type { ConversationListItemDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
+import { useEscapeKey } from "../../hooks/useEscapeKey";
 
 /**
  * ADMIN-only cleanup tool for the @lid duplicate-conversation bug (see
@@ -21,6 +22,7 @@ export function MergeConversationModal({
   onClose: () => void;
   onMerged: () => void;
 }) {
+  useEscapeKey(onClose);
   const [search, setSearch] = useState("");
   const queryClient = useQueryClient();
 

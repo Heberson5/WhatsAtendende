@@ -5,6 +5,7 @@ import { api, getApiErrorMessage } from "../../lib/api";
 import { PeriodFilter, type PeriodValue } from "../../components/common/PeriodFilter";
 import { ConnectionFilter } from "../../components/common/ConnectionFilter";
 import { StatCard, formatMinutes } from "../../components/common/StatCard";
+import { SkeletonTiles } from "../../components/common/Skeleton";
 import { DistributionChartCard } from "../../components/dashboard/DistributionChartCard";
 import { SeriesChartCard } from "../../components/dashboard/SeriesChartCard";
 import { useBranding } from "../../hooks/useBranding";
@@ -107,7 +108,7 @@ export default function DashboardPage() {
         </button>
       </div>
 
-      {isLoading && <p className="text-sm text-muted">Carregando indicadores...</p>}
+      {isLoading && <SkeletonTiles count={4} className="xl:grid-cols-4" />}
 
       {isError && (
         <p className="text-sm text-red-600">

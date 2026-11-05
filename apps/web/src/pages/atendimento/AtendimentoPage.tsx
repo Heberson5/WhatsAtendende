@@ -25,6 +25,9 @@ export default function AtendimentoPage() {
   // connection's queue combined by default, get the filter UI at all.
   const canFilterByConnection = user?.role === "MANAGER" || user?.role === "ADMIN";
   const hasFixedConnection = Boolean(user?.whatsappConnectionName);
+  // The connection the top banner is already warning about — its cards skip their own "Conexão desconectada" badge.
+  const bannerConnectionId = hasFixedConnection && user?.whatsappConnectionStatus !== "CONNECTED" ? (user?.whatsappConnectionId ?? null) : null;
+  const [connectionDetailsOpen, setConnectionDetailsOpen] = useState(false);
 
   // Realtime listening itself (toasts, desktop notifications, the socket
   // room join that keeps an open chat live) now lives in AppLayout so it
@@ -80,9 +83,25 @@ export default function AtendimentoPage() {
           selectedConversation ? "hidden" : "flex"
         )}
       >
-        {hasFixedConnection && user?.whatsappConnectionStatus !== "CONNECTED" && (
-          <div className="border-b border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
-            Sua conexão de WhatsApp está desconectada — não é possível enviar mensagens nem aceitar conversas até que ela seja reconectada. Avise um administrador.
+        {bannerConnectionId && (
+          <div className="border-b border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300" role="status">
+            <div className="flex items-center gap-2">
+              <span className="h-2 w-2 shrink-0 rounded-full bg-red-600" aria-hidden />
+              <strong className="min-w-0 truncate font-semibold">WhatsApp desconectado</strong>
+              <button
+                type="button"
+                onClick={() => setConnectionDetailsOpen((open) => !open)}
+                aria-expanded={connectionDetailsOpen}
+                className="focus-ring ml-auto shrink-0 rounded font-semibold underline underline-offset-2"
+              >
+                {connectionDetailsOpen ? "Ocultar" : "Detalhes"}
+              </button>
+            </div>
+            {connectionDetailsOpen && (
+              <p className="mt-1.5 font-medium">
+                Sua conexão de WhatsApp está desconectada — não é possível enviar mensagens nem aceitar conversas até que ela seja reconectada. Avise um administrador.
+              </p>
+            )}
           </div>
         )}
         <div className="flex items-center gap-1.5 border-b border-border bg-surface-alt px-3 py-2">
@@ -125,6 +144,7 @@ export default function AtendimentoPage() {
                 <ConversationCard
                   key={c.id}
                   conversation={c}
+                  connectionWarningShown={c.whatsappConnectionId === bannerConnectionId}
                   selected={c.id === selectedId}
                   onSelect={() => setSelectedId((current) => (current === c.id ? null : c.id))}
                 />
@@ -139,6 +159,7 @@ export default function AtendimentoPage() {
                 <ConversationCard
                   key={c.id}
                   conversation={c}
+                  connectionWarningShown={c.whatsappConnectionId === bannerConnectionId}
                   onAccept={() => acceptMutation.mutate(c.id)}
                   accepting={acceptMutation.isPending && acceptMutation.variables === c.id}
                 />

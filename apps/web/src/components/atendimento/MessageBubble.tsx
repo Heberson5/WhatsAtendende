@@ -7,6 +7,7 @@ import { useState } from "react";
 import { renderWhatsAppFormatting } from "../../lib/whatsappFormatting";
 import { withAuthToken } from "../../lib/api";
 import { MediaLightbox, type LightboxMedia } from "./MediaLightbox";
+import { useEscapeKey } from "../../hooks/useEscapeKey";
 
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
@@ -237,6 +238,7 @@ export function MessageBubble({
   const [showReactions, setShowReactions] = useState(false);
   const [openMedia, setOpenMedia] = useState<LightboxMedia | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  useEscapeKey(() => setConfirmDelete(false), confirmDelete);
   const isOutbound = message.direction === "OUTBOUND";
 
   const bubble = (

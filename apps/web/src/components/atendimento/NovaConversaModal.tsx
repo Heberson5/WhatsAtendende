@@ -4,6 +4,7 @@ import { Search, UserPlus, X } from "lucide-react";
 import { toast } from "sonner";
 import type { ConversationListItemDTO, WhatsAppDeviceContactDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
+import { useEscapeKey } from "../../hooks/useEscapeKey";
 
 interface ConnectionOption {
   id: string;
@@ -21,6 +22,7 @@ export function NovaConversaModal({
   onClose: () => void;
   onStarted: (conversation: ConversationListItemDTO) => void;
 }) {
+  useEscapeKey(onClose);
   const [connectionId, setConnectionId] = useState<string | null>(fixedConnectionId ?? null);
   const [search, setSearch] = useState("");
   const [manualPhone, setManualPhone] = useState("");

@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import type { QuickReplyDTO } from "@whatsatendende/types";
 import { api } from "../../lib/api";
+import { useEscapeKey } from "../../hooks/useEscapeKey";
 
 export interface QuickReplyFormValues {
   name: string;
@@ -25,6 +26,7 @@ export function QuickReplyFormModal({
   onClose: () => void;
   onSubmit: (values: QuickReplyFormValues) => Promise<void>;
 }) {
+  useEscapeKey(onClose);
   const { data: connections } = useQuery({
     queryKey: ["whatsapp-connections"],
     queryFn: async () => (await api.get<ConnectionOption[]>("/whatsapp/connections")).data,

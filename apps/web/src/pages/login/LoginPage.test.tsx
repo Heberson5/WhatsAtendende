@@ -58,7 +58,7 @@ describe("LoginPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /entrar/i }));
 
     await waitFor(() => expect(useAuthStore.getState().accessToken).toBe("token-123"));
-    expect(api.post).toHaveBeenCalledWith("/auth/login", { email: "admin@test.dev", password: "Test@1234" });
+    expect(api.post).toHaveBeenCalledWith("/auth/login", { email: "admin@test.dev", password: "Test@1234", tzOffsetMinutes: expect.any(Number) });
   });
 
   it("shows an error message when login fails", async () => {

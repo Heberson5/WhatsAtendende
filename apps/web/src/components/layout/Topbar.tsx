@@ -6,6 +6,7 @@ import { useAuthStore } from "../../store/auth-store";
 import { useTheme } from "../../hooks/useTheme";
 import { disconnectSocket } from "../../lib/socket";
 import { InstallAppButton } from "./InstallAppButton";
+import { useEscapeKey } from "../../hooks/useEscapeKey";
 
 const PRESENCE_LABEL: Record<string, string> = { ONLINE: "Online", AWAY: "Ausente", OFFLINE: "Offline" };
 
@@ -15,6 +16,7 @@ export function Topbar({ title, onMenuClick }: { title: string; onMenuClick?: ()
   const navigate = useNavigate();
   const { preference, setTheme } = useTheme();
   const [menuOpen, setMenuOpen] = useState(false);
+  useEscapeKey(() => setMenuOpen(false), menuOpen);
 
   async function handleLogout() {
     await api.post("/auth/logout").catch(() => undefined);
@@ -34,11 +36,14 @@ export function Topbar({ title, onMenuClick }: { title: string; onMenuClick?: ()
         >
           <Menu className="h-5 w-5" />
         </button>
-        <h1 className="truncate text-lg font-semibold">{title}</h1>
+        <h1 className="min-w-0 truncate text-lg font-semibold">{title}</h1>
       </div>
       <div className="flex shrink-0 items-center gap-2 sm:gap-4">
-        <InstallAppButton />
-        <div className="flex items-center gap-0.5 rounded-full border border-border p-1 sm:gap-1">
+        {/* On a phone the top bar keeps only the title and the avatar; install and theme move into the avatar menu. */}
+        <span className="hidden sm:contents">
+          <InstallAppButton />
+        </span>
+        <div className="hidden items-center gap-0.5 rounded-full border border-border p-1 sm:flex sm:gap-1">
           <button
             className={`focus-ring rounded-full p-1.5 ${preference === "LIGHT" ? "bg-secondary text-secondary-fg" : "text-muted"}`}
             onClick={() => setTheme("LIGHT")}
@@ -66,6 +71,9 @@ export function Topbar({ title, onMenuClick }: { title: string; onMenuClick?: ()
           <button
             className="focus-ring flex items-center gap-2 rounded-card px-1.5 py-1.5 hover:bg-surface-alt sm:px-2"
             onClick={() => setMenuOpen((o) => !o)}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            aria-label="Menu do usuário"
           >
             <div className="h-8 w-8 shrink-0 overflow-hidden rounded-full bg-primary text-sm font-semibold text-primary-fg">
               {user?.photoUrl ? (
@@ -80,7 +88,7 @@ export function Topbar({ title, onMenuClick }: { title: string; onMenuClick?: ()
             </div>
           </button>
           {menuOpen && (
-            <div className="absolute right-0 top-12 z-20 w-44 rounded-card border border-border bg-surface py-1 shadow-lg">
+            <div role="menu" className="absolute right-0 top-12 z-20 w-56 rounded-card border border-border bg-surface py-1 shadow-lg">
               <button
                 onClick={() => {
                   setMenuOpen(false);
@@ -90,6 +98,28 @@ export function Topbar({ title, onMenuClick }: { title: string; onMenuClick?: ()
               >
                 <UserCircle className="h-4 w-4" /> Meu Perfil
               </button>
+              <div className="sm:hidden">
+                <InstallAppButton variant="menuitem" onDone={() => setMenuOpen(false)} />
+                <div className="flex items-center gap-1 px-3 py-1.5">
+                  <span className="flex-1 text-sm">Tema</span>
+                  {(
+                    [
+                      { value: "LIGHT", icon: Sun, label: "Tema claro" },
+                      { value: "DARK", icon: Moon, label: "Tema escuro" },
+                      { value: "AUTO", icon: Monitor, label: "Tema automático" },
+                    ] as const
+                  ).map((opt) => (
+                    <button
+                      key={opt.value}
+                      className={`focus-ring rounded-full p-1.5 ${preference === opt.value ? "bg-secondary text-secondary-fg" : "text-muted"}`}
+                      onClick={() => setTheme(opt.value)}
+                      aria-label={opt.label}
+                    >
+                      <opt.icon className="h-4 w-4" />
+                    </button>
+                  ))}
+                </div>
+              </div>
               <button
                 onClick={handleLogout}
                 className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-surface-alt"

@@ -1,5 +1,6 @@
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { PageSkeleton } from "../common/Skeleton";
 import { toast } from "sonner";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
@@ -100,7 +101,9 @@ export function AppLayout() {
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-card border border-border bg-surface shadow-soft">
         <Topbar title={title} onMenuClick={() => setMobileNavOpen(true)} />
         <main className="flex-1 overflow-hidden">
-          <Outlet />
+          <Suspense fallback={<PageSkeleton />}>
+            <Outlet />
+          </Suspense>
         </main>
         {/* Hidden while a conversation is open on mobile (Atendimento swaps
             its list for the chat panel in place, not a route change) — the

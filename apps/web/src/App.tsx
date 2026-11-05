@@ -1,3 +1,4 @@
+import { lazy } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { PERMISSION } from "@whatsatendende/types";
 import { useBootstrapSession } from "./hooks/useBootstrapSession";
@@ -7,14 +8,17 @@ import { AppLayout } from "./components/layout/AppLayout";
 import LoginPage from "./pages/login/LoginPage";
 import ResetPasswordPage from "./pages/login/ResetPasswordPage";
 import AtendimentoPage from "./pages/atendimento/AtendimentoPage";
-import GestaoPage from "./pages/gestao/GestaoPage";
-import DashboardPage from "./pages/dashboard/DashboardPage";
-import RelatoriosPage from "./pages/relatorios/RelatoriosPage";
-import UsuariosPage from "./pages/usuarios/UsuariosPage";
-import RespostasRapidasPage from "./pages/respostas-rapidas/RespostasRapidasPage";
-import ConfiguracoesPage from "./pages/configuracoes/ConfiguracoesPage";
-import AuditoriaPage from "./pages/auditoria/AuditoriaPage";
-import MeuPerfilPage from "./pages/perfil/MeuPerfilPage";
+
+// Each screen is its own download, fetched the first time it opens — an attendant no longer downloads every
+// report and settings screen just to use Atendimento (the screen most people land on, kept in the main file).
+const GestaoPage = lazy(() => import("./pages/gestao/GestaoPage"));
+const DashboardPage = lazy(() => import("./pages/dashboard/DashboardPage"));
+const RelatoriosPage = lazy(() => import("./pages/relatorios/RelatoriosPage"));
+const UsuariosPage = lazy(() => import("./pages/usuarios/UsuariosPage"));
+const RespostasRapidasPage = lazy(() => import("./pages/respostas-rapidas/RespostasRapidasPage"));
+const ConfiguracoesPage = lazy(() => import("./pages/configuracoes/ConfiguracoesPage"));
+const AuditoriaPage = lazy(() => import("./pages/auditoria/AuditoriaPage"));
+const MeuPerfilPage = lazy(() => import("./pages/perfil/MeuPerfilPage"));
 
 // Where "/" lands depends on what this user's role can actually reach —
 // picks the first permitted destination in this priority order rather than

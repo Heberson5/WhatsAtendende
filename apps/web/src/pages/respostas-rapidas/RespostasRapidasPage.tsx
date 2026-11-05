@@ -5,11 +5,14 @@ import { toast } from "sonner";
 import type { QuickReplyDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { QuickReplyFormModal, type QuickReplyFormValues } from "./QuickReplyFormModal";
+import { useEscapeKey } from "../../hooks/useEscapeKey";
+import { SkeletonRows } from "../../components/common/Skeleton";
 
 export default function RespostasRapidasPage() {
   const queryClient = useQueryClient();
   const [modalQuickReply, setModalQuickReply] = useState<QuickReplyDTO | null | "new">(null);
   const [deleteTarget, setDeleteTarget] = useState<QuickReplyDTO | null>(null);
+  useEscapeKey(() => setDeleteTarget(null), Boolean(deleteTarget));
 
   const { data: quickReplies, isLoading } = useQuery({
     queryKey: ["quick-replies"],
@@ -81,11 +84,7 @@ export default function RespostasRapidasPage() {
           </thead>
           <tbody>
             {isLoading && (
-              <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-muted">
-                  Carregando...
-                </td>
-              </tr>
+              <SkeletonRows columns={5} />
             )}
             {!isLoading && quickReplies?.length === 0 && (
               <tr>

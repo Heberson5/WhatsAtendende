@@ -7,6 +7,9 @@ import type { UserDTO } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
 import { UserFormModal, type UserFormValues } from "./UserFormModal";
+import { useEscapeKey } from "../../hooks/useEscapeKey";
+import { RowActionsMenu } from "../../components/common/RowActionsMenu";
+import { SkeletonRows } from "../../components/common/Skeleton";
 
 const ROLE_LABEL: Record<string, string> = { ADMIN: "Administrador", MANAGER: "Gestor", AGENT: "Atendente" };
 const PRESENCE_LABEL: Record<string, string> = { ONLINE: "Online", AWAY: "Ausente", OFFLINE: "Offline" };
@@ -17,6 +20,7 @@ export default function UsuariosPage() {
   const currentUserRole = useAuthStore((s) => s.user?.role);
   const [modalUser, setModalUser] = useState<UserDTO | null | "new">(null);
   const [deletingUser, setDeletingUser] = useState<UserDTO | null>(null);
+  useEscapeKey(() => setDeletingUser(null), Boolean(deletingUser));
 
   const { data: users, isLoading } = useQuery({
     queryKey: ["users"],
@@ -110,19 +114,13 @@ export default function UsuariosPage() {
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3">Presença</th>
               <th className="px-4 py-3">Último acesso</th>
-              <th className="px-4 py-3 text-right">Ações</th>
+              <th className="sticky right-0 bg-surface-alt px-3 py-3 text-right shadow-[-10px_0_12px_-10px_rgba(15,23,42,0.25)]">Ações</th>
             </tr>
           </thead>
           <tbody>
-            {isLoading && (
-              <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-muted">
-                  Carregando...
-                </td>
-              </tr>
-            )}
+            {isLoading && <SkeletonRows columns={8} />}
             {users?.map((u) => (
-              <tr key={u.id} className="border-t border-border hover:bg-surface-alt">
+              <tr key={u.id} className="group border-t border-border hover:bg-surface-alt">
                 <td className="px-4 py-3">
                   <div className="font-medium">{u.fullName}</div>
                   <div className="text-xs text-muted">{u.displayName}</div>
@@ -135,7 +133,6 @@ export default function UsuariosPage() {
                     {u.status === "ACTIVE" ? "Ativo" : "Inativo"}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-muted">{u.lastAccessAt ? format(new Date(u.lastAccessAt), "dd/MM/yyyy HH:mm") : "Nunca acessou"}</td>
                 <td className="px-4 py-3">
                   <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted">
                     <span
@@ -144,48 +141,35 @@ export default function UsuariosPage() {
                     {PRESENCE_LABEL[u.presence]}
                   </span>
                 </td>
-                <td className="px-4 py-3">
-                  <div className="flex justify-end gap-1">
-                    <button onClick={() => setModalUser(u)} className="focus-ring rounded-card p-1.5 text-muted hover:bg-surface-alt" aria-label="Editar" title="Editar">
-                      <Pencil className="h-4 w-4" />
+                <td className="px-4 py-3 text-muted">{u.lastAccessAt ? format(new Date(u.lastAccessAt), "dd/MM/yyyy HH:mm") : "Nunca acessou"}</td>
+                <td className="sticky right-0 bg-surface px-3 py-2.5 shadow-[-10px_0_12px_-10px_rgba(15,23,42,0.25)] group-hover:bg-surface-alt">
+                  {/* Fixed to the right edge: the actions never end up cut off by a narrow screen, and each has its name. */}
+                  <div className="flex items-center justify-end gap-1.5">
+                    <button onClick={() => setModalUser(u)} className="focus-ring inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-semibold hover:bg-surface-alt">
+                      <Pencil className="h-3.5 w-3.5" /> Editar
                     </button>
-                    <button
-                      onClick={() => statusMutation.mutate({ id: u.id, activate: u.status !== "ACTIVE" })}
-                      className="focus-ring rounded-card p-1.5 text-muted hover:bg-surface-alt"
-                      aria-label={u.status === "ACTIVE" ? "Inativar" : "Ativar"}
-                      title={u.status === "ACTIVE" ? "Inativar" : "Ativar"}
-                    >
-                      {u.status === "ACTIVE" ? <UserX className="h-4 w-4" /> : <UserCheck className="h-4 w-4" />}
-                    </button>
-                    {u.presence === "ONLINE" && u.id !== currentUserId && (
-                      <button
-                        onClick={() => forceLogoutMutation.mutate(u.id)}
-                        disabled={forceLogoutMutation.isPending && forceLogoutMutation.variables === u.id}
-                        className="focus-ring rounded-card p-1.5 text-muted hover:bg-surface-alt disabled:opacity-60"
-                        aria-label="Desconectar agora"
-                        title="Desconectar agora"
-                      >
-                        <LogOut className="h-4 w-4" />
-                      </button>
-                    )}
-                    <button
-                      onClick={() => resetPasswordMutation.mutate(u.id)}
-                      className="focus-ring rounded-card p-1.5 text-muted hover:bg-surface-alt"
-                      aria-label="Redefinir senha"
-                      title="Redefinir senha"
-                    >
-                      <KeyRound className="h-4 w-4" />
-                    </button>
-                    {currentUserRole === "ADMIN" && u.id !== currentUserId && (
-                      <button
-                        onClick={() => setDeletingUser(u)}
-                        className="focus-ring rounded-card p-1.5 text-muted hover:bg-red-50 hover:text-red-600"
-                        aria-label="Excluir"
-                        title="Excluir"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    )}
+                    <RowActionsMenu
+                      label={`Mais ações para ${u.fullName}`}
+                      actions={[
+                        {
+                          label: u.status === "ACTIVE" ? "Inativar usuário" : "Ativar usuário",
+                          icon: u.status === "ACTIVE" ? UserX : UserCheck,
+                          onSelect: () => statusMutation.mutate({ id: u.id, activate: u.status !== "ACTIVE" }),
+                        },
+                        ...(u.presence === "ONLINE" && u.id !== currentUserId
+                          ? [
+                              {
+                                label: "Desconectar agora",
+                                icon: LogOut,
+                                disabled: forceLogoutMutation.isPending && forceLogoutMutation.variables === u.id,
+                                onSelect: () => forceLogoutMutation.mutate(u.id),
+                              },
+                            ]
+                          : []),
+                        { label: "Redefinir senha", icon: KeyRound, onSelect: () => resetPasswordMutation.mutate(u.id) },
+                        ...(currentUserRole === "ADMIN" && u.id !== currentUserId ? [{ label: "Excluir usuário", icon: Trash2, danger: true, onSelect: () => setDeletingUser(u) }] : []),
+                      ]}
+                    />
                   </div>
                 </td>
               </tr>

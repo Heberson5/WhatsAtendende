@@ -9,6 +9,8 @@ import { useAuthStore } from "../../store/auth-store";
 import { MessageBubble } from "./MessageBubble";
 import { Composer, type ComposerHandle } from "./Composer";
 import { TransferModal } from "./TransferModal";
+import { useEscapeKey } from "../../hooks/useEscapeKey";
+import { formatPhone } from "../../lib/format-phone";
 
 async function fetchMessages(conversationId: string, cursor?: string) {
   // 100 (the API's own max) rather than a smaller page, since every page
@@ -45,6 +47,7 @@ export function ChatPanel({
   const [replyTo, setReplyTo] = useState<MessageDTO | null>(null);
   const [transferOpen, setTransferOpen] = useState(false);
   const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
+  useEscapeKey(() => setCloseConfirmOpen(false), closeConfirmOpen);
   const composerRef = useRef<ComposerHandle>(null);
   // Whether a file is currently being dragged over this conversation, to
   // show the "solte para anexar" overlay — see PROMPT: "podendo também
@@ -366,7 +369,7 @@ export function ChatPanel({
     onError: (err) => toast.error(getApiErrorMessage(err)),
   });
 
-  const displayName = conversation.contact.name || conversation.contact.phone;
+  const displayName = conversation.contact.name || formatPhone(conversation.contact.phone);
   const messageById = new Map(messages.map((m) => [m.id, m]));
 
   // A dragged file (or several) can be dropped anywhere over the
@@ -441,7 +444,7 @@ export function ChatPanel({
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold">{displayName}</p>
             <p className="flex items-center gap-1 text-xs text-muted">
-              <Phone className="h-3 w-3" /> {conversation.contact.phone}
+              <Phone className="h-3 w-3" /> {formatPhone(conversation.contact.phone)}
             </p>
           </div>
           {conversation.transfer && (

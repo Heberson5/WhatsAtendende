@@ -4,6 +4,7 @@ import { X, Phone } from "lucide-react";
 import type { ConversationListItemDTO, MessageDTO, PaginatedResult } from "@whatsatendende/types";
 import { api } from "../../lib/api";
 import { MessageBubble } from "../atendimento/MessageBubble";
+import { useEscapeKey } from "../../hooks/useEscapeKey";
 
 async function fetchMessages(conversationId: string, cursor?: string) {
   const res = await api.get<PaginatedResult<MessageDTO>>(`/messages/conversations/${conversationId}`, {
@@ -19,6 +20,7 @@ export function ReadOnlyConversationDrawer({
   conversation: ConversationListItemDTO;
   onClose: () => void;
 }) {
+  useEscapeKey(onClose);
   const [messages, setMessages] = useState<MessageDTO[]>([]);
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const scrollContainerRef = useRef<HTMLDivElement>(null);

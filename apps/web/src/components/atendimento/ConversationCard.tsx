@@ -2,6 +2,7 @@ import clsx from "clsx";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import type { ConversationListItemDTO } from "@whatsatendende/types";
+import { formatPhone } from "../../lib/format-phone";
 
 function initials(name: string) {
   return name
@@ -18,14 +19,17 @@ export function ConversationCard({
   onSelect,
   onAccept,
   accepting,
+  connectionWarningShown,
 }: {
   conversation: ConversationListItemDTO;
   selected?: boolean;
   onSelect?: () => void;
   onAccept?: () => void;
   accepting?: boolean;
+  /** The page already shows a "your connection is disconnected" banner for this conversation's connection — don't repeat it on every card. */
+  connectionWarningShown?: boolean;
 }) {
-  const displayName = conversation.contact.name || conversation.contact.phone;
+  const displayName = conversation.contact.name || formatPhone(conversation.contact.phone);
   // When there's a saved name, displayName hides the phone entirely — show
   // it as a subtitle too, since the phone number is what an agent actually
   // needs to confirm/dial/search by, not just a name that could be wrong
@@ -43,10 +47,12 @@ export function ConversationCard({
       onClick={onSelect}
       onKeyDown={(e) => onSelect && e.key === "Enter" && onSelect()}
       className={clsx(
-        "focus-ring shadow-soft flex cursor-pointer items-start gap-3 rounded-card border p-3 pl-2.5 transition-colors",
+        // 8px corners: the connection-colored LEFT border (a real border on a rounded box) curves into the corners
+        // and tapers down to the thin top/bottom edge, like a quoted message in WhatsApp.
+        "focus-ring shadow-soft flex cursor-pointer items-start gap-3 rounded-lg border p-3 pl-2.5 transition-colors",
         selected ? "border-primary bg-primary/5" : "border-border hover:bg-surface-alt"
       )}
-      style={{ borderLeft: `4px solid ${conversation.whatsappConnectionColor}` }}
+      style={{ borderLeft: `5px solid ${conversation.whatsappConnectionColor}` }}
     >
       <div className="relative shrink-0">
         {conversation.contact.photoUrl ? (
@@ -74,7 +80,7 @@ export function ConversationCard({
           </span>
         </div>
 
-        {showPhoneSubtitle && <p className="truncate text-xs text-muted">{conversation.contact.phone}</p>}
+        {showPhoneSubtitle && <p className="truncate text-xs tabular-nums text-muted">{formatPhone(conversation.contact.phone)}</p>}
 
         <div className="mt-1 flex flex-wrap items-center gap-1.5">
           <span
@@ -89,7 +95,7 @@ export function ConversationCard({
               Transferido de {conversation.transfer.fromAgentName}
             </span>
           )}
-          {connectionDisconnected && (
+          {connectionDisconnected && !connectionWarningShown && (
             <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-medium text-red-700">
               Conexão desconectada
             </span>

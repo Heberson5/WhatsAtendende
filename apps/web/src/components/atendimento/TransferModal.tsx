@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, ChevronDown, X } from "lucide-react";
 import { api } from "../../lib/api";
+import { useEscapeKey } from "../../hooks/useEscapeKey";
 
 interface AgentOption {
   id: string;
@@ -31,6 +32,7 @@ export function TransferModal({
   onClose: () => void;
   onConfirm: (agentId: string, note: string) => Promise<void>;
 }) {
+  useEscapeKey(onClose);
   const { data: agents } = useQuery({
     queryKey: ["transfer-targets"],
     queryFn: async () => (await api.get<AgentOption[]>("/agents/transfer-targets")).data,

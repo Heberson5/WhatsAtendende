@@ -6,6 +6,7 @@ import type { UserDTO, Role, ManagerConnectionAccessDTO, AccessSchedule, Weekday
 import { WEEKDAY_KEYS } from "@whatsatendende/types";
 import { api, getApiErrorMessage } from "../../lib/api";
 import { StateCitySelect } from "../../components/common/StateCitySelect";
+import { useEscapeKey } from "../../hooks/useEscapeKey";
 
 const WEEKDAY_LABELS: Record<WeekdayKey, string> = {
   MON: "Segunda",
@@ -44,6 +45,7 @@ export function UserFormModal({
   onClose: () => void;
   onSubmit: (values: UserFormValues) => Promise<void>;
 }) {
+  useEscapeKey(onClose);
   const { data: connections } = useQuery({
     queryKey: ["whatsapp-connections"],
     queryFn: async () => (await api.get<ConnectionOption[]>("/whatsapp/connections")).data,

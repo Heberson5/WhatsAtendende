@@ -4,6 +4,10 @@ import { ChevronDown, Columns3, Download, FileSpreadsheet, FileText } from "luci
 import { api } from "../../lib/api";
 import { PeriodFilter, type PeriodValue } from "../../components/common/PeriodFilter";
 import { ConnectionFilter } from "../../components/common/ConnectionFilter";
+import { useEscapeKey } from "../../hooks/useEscapeKey";
+import { HorizontalScrollArea } from "../../components/common/HorizontalScrollArea";
+import { SkeletonRows } from "../../components/common/Skeleton";
+import { formatPhone } from "../../lib/format-phone";
 
 type ReportKind = "attendance" | "per-agent" | "messages";
 
@@ -24,6 +28,7 @@ export default function RelatoriosPage() {
   const [period, setPeriod] = useState<PeriodValue>({ period: "month" });
   const [connectionIds, setConnectionIds] = useState<string[]>([]);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  useEscapeKey(() => setExportMenuOpen(false), exportMenuOpen);
   const [columnsMenuOpen, setColumnsMenuOpen] = useState(false);
   // Hidden columns, kept per report tab (each has a different column set) —
   // see PROMPT: "poder remover algumas colunas, para que o relatório fique
@@ -172,17 +177,13 @@ export default function RelatoriosPage() {
       )}
 
       {tab !== "messages" && (
-        <div className="shadow-soft flex-1 overflow-auto rounded-card border border-border bg-surface">
+        <HorizontalScrollArea className="shadow-soft flex-1 rounded-card border border-border bg-surface">
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-surface-alt text-left text-xs uppercase tracking-wide text-muted">
               <tr>{visibleColumns.map((key) => <th key={key} className="whitespace-nowrap px-4 py-3">{key}</th>)}</tr>
             </thead>
             <tbody>
-              {isLoading && (
-                <tr>
-                  <td className="px-4 py-8 text-center text-muted">Carregando...</td>
-                </tr>
-              )}
+              {isLoading && <SkeletonRows columns={visibleColumns.length || 6} />}
               {!isLoading && rows.length === 0 && (
                 <tr>
                   <td className="px-4 py-8 text-center text-muted">Nenhum dado para o período selecionado.</td>
@@ -192,15 +193,22 @@ export default function RelatoriosPage() {
                 <tr key={i} className="border-t border-border hover:bg-surface-alt">
                   {visibleColumns.map((key) => (
                     <td key={key} className="whitespace-nowrap px-4 py-2.5">
-                      {String(row[key] ?? "-")}
+                      {cellText(key, row[key])}
                     </td>
                   ))}
                 </tr>
               ))}
             </tbody>
           </table>
-        </div>
+        </HorizontalScrollArea>
       )}
     </div>
   );
+}
+
+/** A report cell as it reads on screen — phones the same way as in Atendimento (+55 65 99911-0201). Exports keep the raw value. */
+function cellText(column: string, value: unknown): string {
+  if (value === null || value === undefined || value === "") return "-";
+  if (/telefone/i.test(column) && typeof value === "string" && /^\d{10,15}$/.test(value)) return formatPhone(value);
+  return String(value);
 }
