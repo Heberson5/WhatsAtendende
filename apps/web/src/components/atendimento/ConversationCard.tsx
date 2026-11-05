@@ -3,6 +3,7 @@ import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import type { ConversationListItemDTO } from "@whatsatendende/types";
 import { formatPhone } from "../../lib/format-phone";
+import { DraftChip } from "./DraftChip";
 
 function initials(name: string) {
   return name
@@ -42,6 +43,7 @@ export function ConversationCard({
 
   return (
     <div
+      data-card-id={conversation.id}
       role={onSelect ? "button" : undefined}
       tabIndex={onSelect ? 0 : undefined}
       onClick={onSelect}
@@ -100,6 +102,7 @@ export function ConversationCard({
               Conexão desconectada
             </span>
           )}
+          {!onAccept && <DraftChip draftOwner={conversation.id} />}
         </div>
 
         {conversation.lastMessagePreview ? (

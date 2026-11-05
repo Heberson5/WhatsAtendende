@@ -490,7 +490,10 @@ export function ChatPanel({
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") goToMatch(e.shiftKey ? -1 : 1);
-              if (e.key === "Escape") closeSearch();
+              if (e.key === "Escape") {
+                e.preventDefault();
+                closeSearch();
+              }
             }}
             placeholder="Pesquisar nesta conversa"
             className="flex-1 min-w-0 bg-transparent text-sm focus:outline-none"
@@ -558,6 +561,7 @@ export function ChatPanel({
 
       <Composer
         ref={composerRef}
+        conversationId={conversation.id}
         disabled={sendTextMutation.isPending || connectionDisconnected}
         quickReplies={quickRepliesQuery.data}
         replyTo={replyTo}

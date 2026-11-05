@@ -11,6 +11,7 @@ import { env } from "../../config/env";
 import { Errors } from "../../lib/http-error";
 import { toUserDTO } from "../users/users.mapper";
 import * as service from "./profile.service";
+import { createUpload } from "../../lib/upload";
 
 export const profileRouter = Router();
 
@@ -27,7 +28,7 @@ const ALLOWED_PHOTO_MIME_TO_EXT: Record<string, string> = {
   "image/webp": ".webp",
 };
 
-const upload = multer({
+const upload = createUpload({
   storage: multer.memoryStorage(),
   // A raw, un-resized phone camera photo is routinely 3-8MB — 2MB used to
   // reject exactly that (the most common source for a profile photo) with

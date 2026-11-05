@@ -3,6 +3,11 @@ import clsx from "clsx";
 import { Mic, Paperclip, Pause, Play, Plus, Send, Trash2, X, MapPin, Bold, Italic, Strikethrough, Code } from "lucide-react";
 import type { MessageDTO } from "@whatsatendende/types";
 import { toast } from "sonner";
+import { useAuthStore } from "../../store/auth-store";
+import { draftKey, useDraftStore } from "../../store/draft-store";
+import { useMediaDraftStore, type MediaDraft } from "../../store/media-draft-store";
+import { mergeAudioBlobs } from "../../lib/audio-merge";
+import { useEscapeKey } from "../../hooks/useEscapeKey";
 
 // How many bars the live/frozen waveform keeps — older samples scroll off
 // the left, matching WhatsApp Web's own recording indicator.
@@ -118,13 +123,23 @@ export const Composer = forwardRef<
     replyTo: MessageDTO | null;
     onCancelReply: () => void;
     disabled?: boolean;
+    /** The conversation this box writes in — what's typed, recorded or attached and not sent stays as its draft. */
+    conversationId?: string;
   }
 >(function Composer(
-  { onSendText, onSendFile, onSendAudio, onSendLocation, quickReplies = [], replyTo, onCancelReply, disabled },
+  { onSendText, onSendFile, onSendAudio, onSendLocation, quickReplies = [], replyTo, onCancelReply, disabled, conversationId },
   ref
 ) {
-  const [text, setText] = useState("");
+  const userId = useAuthStore((s) => s.user?.id);
+  const currentDraftKey = userId && conversationId ? draftKey(userId, conversationId) : null;
+  // What's typed and not sent is kept per conversation (store/draft-store): closing it (Esc, its card) or opening
+  // another one no longer throws the text away.
+  const [text, setText] = useState(() => (currentDraftKey ? (useDraftStore.getState().drafts[currentDraftKey] ?? "") : ""));
+  // Which conversation the text in the box belongs to — saved under that key, even in the render right after switching.
+  const textDraftKeyRef = useRef(currentDraftKey);
   const [showEmoji, setShowEmoji] = useState(false);
+  // The emoji panel takes Esc before the conversation does (hooks/useEscapeKey).
+  useEscapeKey(() => setShowEmoji(false), showEmoji);
   const [sending, setSending] = useState(false);
   // "recording": actively capturing, mic live, waveform animating.
   // "paused": MediaRecorder.pause() — mic stream stays open (instant resume,
@@ -152,6 +167,10 @@ export const Composer = forwardRef<
   const emojiPanelRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  // A recording continued from a draft (or resumed after one) is several recorder outputs: the finished ones live here,
+  // the one being recorded now in chunksRef. Joined into one file only when sent or previewed (lib/audio-merge).
+  const audioPiecesRef = useRef<Blob[]>([]);
+  const audioMimeRef = useRef("audio/webm");
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -219,19 +238,99 @@ export const Composer = forwardRef<
   // if the agent navigates away or closes this conversation mid-recording —
   // switching to a different conversation unmounts this Composer instance
   // entirely, so nothing else would ever call cancelRecording() otherwise.
+  // Leaving this conversation with something unsent (closing it with Esc or its card, or opening another one) keeps it
+  // as a draft, WhatsApp-style: a recording is paused — the mic released — and comes back ready to listen to, continue,
+  // discard or send; files and a location come back in their preview. See store/media-draft-store.
+  const latestRef = useRef({ recordingState, recordSeconds, waveformLevels, pendingFiles, activeFileIndex, pendingLocation, caption });
+  latestRef.current = { recordingState, recordSeconds, waveformLevels, pendingFiles, activeFileIndex, pendingLocation, caption };
+
+  function stashMediaDraft(key: string | null) {
+    const latest = latestRef.current;
+    const draft: MediaDraft = {};
+    if (latest.pendingFiles.length) draft.files = latest.pendingFiles;
+    if (latest.pendingFiles.length) draft.activeFileIndex = latest.activeFileIndex;
+    if (latest.pendingLocation) draft.location = { ...latest.pendingLocation, caption: latest.caption };
+    const recorder = mediaRecorderRef.current;
+    const earlier = audioPiecesRef.current;
+    const base = { mimeType: audioMimeRef.current, seconds: latest.recordSeconds, waveform: latest.waveformLevels };
+    const recording = latest.recordingState !== "idle" && recorder && recorder.state !== "inactive" ? recorder : null;
+    if (latest.recordingState !== "idle" && !recording && earlier.length) draft.audio = { ...base, pieces: earlier };
+    if (key) useMediaDraftStore.getState().put(key, draft);
+    if (recording) {
+      // The last piece only exists once the recorder stops — it's added to the draft stored just above.
+      const chunks = chunksRef.current;
+      const mimeType = recording.mimeType || audioMimeRef.current;
+      recording.onstop = () => {
+        const pieces = [...earlier, new Blob(chunks, { type: mimeType })];
+        if (key) useMediaDraftStore.getState().putAudio(key, { ...base, mimeType, pieces });
+      };
+      recording.stream.getTracks().forEach((t) => t.stop());
+      recording.stop();
+    }
+    mediaRecorderRef.current = null;
+    audioPiecesRef.current = [];
+    if (waveformTimerRef.current) clearInterval(waveformTimerRef.current);
+    if (timerRef.current) clearInterval(timerRef.current);
+    waveformTimerRef.current = null;
+    timerRef.current = null;
+    audioContextRef.current?.close().catch(() => undefined);
+    audioContextRef.current = null;
+    analyserRef.current = null;
+  }
+
+  function restoreMediaDraft(key: string | null) {
+    setPreviewUrl((old) => {
+      if (old) URL.revokeObjectURL(old);
+      return null;
+    });
+    setPreviewPlaying(false);
+    setPreviewProgress(0);
+    const draft = key ? useMediaDraftStore.getState().take(key) : null;
+    setPendingFiles(draft?.files ?? []);
+    setActiveFileIndex(draft?.activeFileIndex ?? 0);
+    setPendingLocation(draft?.location ? { lat: draft.location.lat, lng: draft.location.lng } : null);
+    setCaption(draft?.location?.caption ?? "");
+    const audio = draft?.audio;
+    if (!audio?.pieces.length) {
+      setRecordingState("idle");
+      setRecordSeconds(0);
+      setWaveformLevels([]);
+      return;
+    }
+    audioPiecesRef.current = audio.pieces;
+    audioMimeRef.current = audio.mimeType;
+    setRecordSeconds(audio.seconds);
+    setWaveformLevels(audio.waveform);
+    setRecordingState("paused");
+    void (async () => {
+      const blob = audio.pieces.length > 1 ? await mergeAudioBlobs(audio.pieces).catch(() => audio.pieces[0]) : audio.pieces[0];
+      setPreviewUrl(URL.createObjectURL(blob));
+    })();
+  }
+
+  const mediaDraftKeyRef = useRef(currentDraftKey);
+  // Opening the box in a conversation that has a draft waiting puts it back.
   useEffect(() => {
-    return () => {
-      const recorder = mediaRecorderRef.current;
-      if (recorder && recorder.state !== "inactive") {
-        recorder.stream.getTracks().forEach((t) => t.stop());
-        recorder.stop();
-      }
-      if (waveformTimerRef.current) clearInterval(waveformTimerRef.current);
-      if (timerRef.current) clearInterval(timerRef.current);
-      audioContextRef.current?.close().catch(() => undefined);
-    };
+    restoreMediaDraft(currentDraftKey);
+    return () => stashMediaDraft(mediaDraftKeyRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // The text draft: saved as it's typed, swapped when the box moves to another conversation (with the rest above).
+  useEffect(() => {
+    if (textDraftKeyRef.current) useDraftStore.getState().setDraft(textDraftKeyRef.current, text);
+  }, [text]);
+  useEffect(() => {
+    if (mediaDraftKeyRef.current !== currentDraftKey) {
+      stashMediaDraft(mediaDraftKeyRef.current);
+      mediaDraftKeyRef.current = currentDraftKey;
+      restoreMediaDraft(currentDraftKey);
+    }
+    if (textDraftKeyRef.current === currentDraftKey) return;
+    textDraftKeyRef.current = currentDraftKey;
+    setText(currentDraftKey ? (useDraftStore.getState().drafts[currentDraftKey] ?? "") : "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentDraftKey]);
 
   // Grows the textarea with its content, capped at MAX_TEXTAREA_LINES so a
   // very long message doesn't push the rest of the chat off screen.
@@ -443,7 +542,7 @@ export const Composer = forwardRef<
     setRecordingState("idle");
   }
 
-  async function startRecording() {
+  async function startRecording(continueDraft = false) {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       // Safari has no MediaRecorder support for webm at all — let the
@@ -454,6 +553,8 @@ export const Composer = forwardRef<
         ? new MediaRecorder(stream, { mimeType: "audio/webm" })
         : new MediaRecorder(stream);
       chunksRef.current = [];
+      if (!continueDraft) audioPiecesRef.current = [];
+      audioMimeRef.current = recorder.mimeType || "audio/webm";
       recorder.ondataavailable = (e) => {
         if (e.data.size > 0) chunksRef.current.push(e.data);
       };
@@ -473,8 +574,10 @@ export const Composer = forwardRef<
       analyserRef.current = analyser;
 
       setRecordingState("recording");
-      setRecordSeconds(0);
-      setWaveformLevels([]);
+      if (!continueDraft) {
+        setRecordSeconds(0);
+        setWaveformLevels([]);
+      }
       timerRef.current = setInterval(() => setRecordSeconds((s) => s + 1), 1000);
       startWaveformSampling();
     } catch {
@@ -493,8 +596,9 @@ export const Composer = forwardRef<
     // task below, which is what lets the preview include audio captured
     // right up to this exact pause click instead of stopping one chunk short.
     recorder.requestData();
-    setTimeout(() => {
-      const blob = new Blob(chunksRef.current, { type: mimeType });
+    setTimeout(async () => {
+      const current = new Blob(chunksRef.current, { type: mimeType });
+      const blob = audioPiecesRef.current.length ? await mergeAudioBlobs([...audioPiecesRef.current, current]).catch(() => current) : current;
       setPreviewUrl((old) => {
         if (old) URL.revokeObjectURL(old);
         return URL.createObjectURL(blob);
@@ -506,7 +610,19 @@ export const Composer = forwardRef<
 
   function resumeRecording() {
     const recorder = mediaRecorderRef.current;
-    if (!recorder || recorder.state !== "paused") return;
+    if (!recorder) {
+      // A recording brought back from a draft: the mic was released when the attendant left, so recording goes on in a
+      // new piece, joined to the earlier ones when it's sent.
+      setPreviewUrl((old) => {
+        if (old) URL.revokeObjectURL(old);
+        return null;
+      });
+      setPreviewPlaying(false);
+      setPreviewProgress(0);
+      void startRecording(true);
+      return;
+    }
+    if (recorder.state !== "paused") return;
     setPreviewUrl((old) => {
       if (old) URL.revokeObjectURL(old);
       return null;
@@ -520,6 +636,7 @@ export const Composer = forwardRef<
   }
 
   function cancelRecording() {
+    audioPiecesRef.current = [];
     const recorder = mediaRecorderRef.current;
     recorder?.stream.getTracks().forEach((t) => t.stop());
     if (recorder && recorder.state !== "inactive") recorder.stop();
@@ -536,24 +653,38 @@ export const Composer = forwardRef<
     }
   }
 
+  async function sendAudioPieces(pieces: Blob[], mimeType: string) {
+    setSending(true);
+    try {
+      // One piece goes as recorded; several (a draft that was continued) are joined into one WAV first — the server
+      // re-encodes either into the WhatsApp voice-note format.
+      const blob = pieces.length > 1 ? await mergeAudioBlobs(pieces) : pieces[0];
+      const extension = blob.type === "audio/wav" ? "wav" : mimeType.includes("mp4") ? "m4a" : "webm";
+      await onSendAudio(new File([blob], `audio-${Date.now()}.${extension}`, { type: blob.type || mimeType }));
+    } catch {
+      toast.error("Não foi possível preparar o áudio para envio. Tente de novo.");
+    } finally {
+      setSending(false);
+    }
+  }
+
   function finishAndSend() {
     const recorder = mediaRecorderRef.current;
-    if (!recorder) return;
+    const earlier = audioPiecesRef.current;
+    audioPiecesRef.current = [];
+    if (!recorder) {
+      // A draft brought back and sent as it was.
+      if (earlier.length) void sendAudioPieces(earlier, audioMimeRef.current);
+      releaseRecordingResources();
+      return;
+    }
     const mimeType = recorder.mimeType || "audio/webm";
-    recorder.onstop = async () => {
+    recorder.onstop = () => {
       // recorder.mimeType is whatever the browser actually recorded with
       // (see startRecording) — labeling the Blob with anything else would
       // just be wrong, even though the backend also re-encodes it before
       // it reaches WhatsApp regardless of what's claimed here.
-      const extension = mimeType.includes("mp4") ? "m4a" : "webm";
-      const blob = new Blob(chunksRef.current, { type: mimeType });
-      const file = new File([blob], `audio-${Date.now()}.${extension}`, { type: mimeType });
-      setSending(true);
-      try {
-        await onSendAudio(file);
-      } finally {
-        setSending(false);
-      }
+      void sendAudioPieces([...earlier, new Blob(chunksRef.current, { type: mimeType })], mimeType);
     };
     recorder.stream.getTracks().forEach((t) => t.stop());
     // .stop() works from both "recording" and "paused" — either way it
@@ -1026,7 +1157,7 @@ export const Composer = forwardRef<
             <Send className="h-5 w-5" />
           </button>
         ) : (
-          <button onClick={startRecording} disabled={disabled} className="focus-ring shrink-0 rounded-full p-2.5 text-muted hover:bg-surface-alt" aria-label="Gravar áudio" type="button">
+          <button onClick={() => void startRecording()} disabled={disabled} className="focus-ring shrink-0 rounded-full p-2.5 text-muted hover:bg-surface-alt" aria-label="Gravar áudio" type="button">
             <Mic className="h-5 w-5" />
           </button>
         )}

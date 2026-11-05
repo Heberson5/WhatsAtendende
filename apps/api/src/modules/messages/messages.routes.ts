@@ -20,6 +20,8 @@ import { toMessageDTO } from "./messages.mapper";
 import * as whatsappService from "../whatsapp/whatsapp.service";
 import { realtimeEvents } from "../../realtime/realtime";
 import { assertAgentCanAccessConversation, getConversationOrThrow } from "../conversations/conversations.service";
+import { createUpload } from "../../lib/upload";
+import { contentDisposition } from "../../lib/content-disposition";
 
 export const messagesRouter = Router();
 
@@ -67,7 +69,7 @@ messagesRouter.get(
     const filePath = path.join(env.UPLOAD_DIR, attachment.storageKey);
     if (!fs.existsSync(filePath)) throw Errors.notFound("Arquivo nao encontrado no armazenamento");
     res.setHeader("Content-Type", attachment.mimeType);
-    res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(attachment.fileName)}"`);
+    res.setHeader("Content-Disposition", contentDisposition("inline", attachment.fileName));
     res.sendFile(path.resolve(filePath));
   })
 );
@@ -105,13 +107,18 @@ const ALLOWED_MIME_TYPES = new Set([
   "application/zip",
 ]);
 
+// A voice note continued from a draft is recorded in pieces and joined in the browser as one WAV (see the web app's
+// lib/audio-merge). Accepted only on the voice-note route, which always re-encodes it to OGG/Opus — never as an
+// attached file, since WhatsApp itself doesn't take WAV.
+const VOICE_NOTE_ONLY_MIME_TYPES = new Set(["audio/wav", "audio/x-wav", "audio/wave"]);
+
 fs.mkdirSync(env.UPLOAD_DIR, { recursive: true });
 
-const upload = multer({
+const upload = createUpload({
   storage: multer.memoryStorage(),
   limits: { fileSize: env.UPLOAD_MAX_SIZE_MB * 1024 * 1024 },
-  fileFilter: (_req, file, cb) => {
-    if (!ALLOWED_MIME_TYPES.has(file.mimetype)) {
+  fileFilter: (req, file, cb) => {
+    if (!ALLOWED_MIME_TYPES.has(file.mimetype) && !(req.path.endsWith("/audio") && VOICE_NOTE_ONLY_MIME_TYPES.has(file.mimetype))) {
       return cb(new Error("Tipo de arquivo nao permitido"));
     }
     cb(null, true);

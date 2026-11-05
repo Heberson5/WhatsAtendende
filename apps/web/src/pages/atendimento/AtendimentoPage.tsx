@@ -11,6 +11,9 @@ import { ConnectionFilter } from "../../components/common/ConnectionFilter";
 import { NovaConversaModal } from "../../components/atendimento/NovaConversaModal";
 import { useActiveConversationStore } from "../../store/active-conversation-store";
 import { useAuthStore } from "../../store/auth-store";
+import { useDraftStore } from "../../store/draft-store";
+import { useMediaDraftStore } from "../../store/media-draft-store";
+import { useEscapeKey } from "../../hooks/useEscapeKey";
 
 export default function AtendimentoPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -74,6 +77,27 @@ export default function AtendimentoPage() {
   });
 
   const selectedConversation = mineQuery.data?.find((c) => c.id === selectedId) ?? null;
+
+  // Drafts (text, a paused recording, files waiting) of conversations that left this person's list are dropped.
+  useEffect(() => {
+    if (!user?.id || !mineQuery.data) return;
+    const ids = mineQuery.data.map((c) => c.id);
+    useDraftStore.getState().prune(user.id, ids);
+    useMediaDraftStore.getState().prune(user.id, ids);
+  }, [user?.id, mineQuery.data]);
+
+  // Esc closes the open conversation exactly like clicking its card again, even with the cursor in the message box:
+  // the text stays as the draft, and a recording or files waiting in the preview are kept too (the Composer pauses
+  // them into a draft, WhatsApp-style). It's the bottom Esc layer (hooks/useEscapeKey): anything opened over the
+  // conversation — transfer, the picture viewer, the emoji panel — closes first, and fields with an Esc of their own
+  // (the search in the conversation, the quick-reply list) take it before this.
+  function closeOpenChat() {
+    const cardId = selectedId;
+    setSelectedId(null);
+    // Focus back on the card it came from, so the keyboard carries on from the list.
+    if (cardId) requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-card-id="${CSS.escape(cardId)}"]`)?.focus());
+  }
+  useEscapeKey(closeOpenChat, Boolean(selectedConversation));
 
   return (
     <div className="grid h-full overflow-hidden md:grid-cols-[340px_1fr]">
