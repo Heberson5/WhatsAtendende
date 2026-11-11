@@ -3,11 +3,11 @@ import cors from "cors";
 import helmet from "helmet";
 import compression from "compression";
 import cookieParser from "cookie-parser";
-import rateLimit from "express-rate-limit";
 import path from "node:path";
 import pinoHttp from "pino-http";
 import { env } from "./config/env";
 import { logger } from "./lib/logger";
+import { apiLimiter } from "./lib/rate-limit";
 import { errorHandler } from "./middleware/error-handler";
 import { authRouter } from "./modules/auth/auth.routes";
 import { usersRouter } from "./modules/users/users.routes";
@@ -31,9 +31,11 @@ export function createApp() {
   // this is set, removing a free hint of the backend stack to a scanner.
   app.disable("x-powered-by");
 
-  // Only meaningful (and only safe) when a trusted reverse proxy is the
-  // sole path to this process — see the TRUST_PROXY comment in env.ts/.env.example.
-  if (env.TRUST_PROXY) app.set("trust proxy", 1);
+  // The visitor's real IP (Auditoria, login attempts) comes in X-Forwarded-For from the proxies in front of the
+  // API: the web container's nginx and, on a VPS, the host's HTTPS proxy. Only hops on private/loopback addresses
+  // are trusted — trusting a single hop stopped at the host's proxy, so every visitor looked like the same address.
+  // Off unless a trusted proxy is the sole path to this process — see TRUST_PROXY in env.ts/.env.example.
+  if (env.TRUST_PROXY) app.set("trust proxy", "loopback, linklocal, uniquelocal");
 
   app.use(
     helmet({
@@ -78,14 +80,8 @@ export function createApp() {
     })
   );
 
-  app.use(
-    rateLimit({
-      windowMs: env.RATE_LIMIT_WINDOW_MS,
-      max: env.RATE_LIMIT_MAX,
-      standardHeaders: true,
-      legacyHeaders: false,
-    })
-  );
+  // Counted per signed-in user, not per IP — see lib/rate-limit.ts.
+  app.use(apiLimiter());
 
   app.use("/uploads/branding", express.static(path.join(env.UPLOAD_DIR, "branding")));
   app.use("/uploads/profile", express.static(path.join(env.UPLOAD_DIR, "profile")));

@@ -54,12 +54,13 @@ services:
       WHATSAPP_LOG_LEVEL: ${WHATSAPP_LOG_LEVEL:-silent}
       WEB_APP_URL: ${WEB_APP_URL:-http://localhost:8080}
       UPLOAD_DIR: /data/uploads
-      # Left false (the default) on purpose: this stack still publishes the
-      # api container's port directly (see `ports` below), so a client could
-      # reach it without going through the nginx container and spoof
-      # X-Forwarded-For. Only set TRUST_PROXY=true once that direct port
-      # mapping is removed and nginx is the sole path to the API.
-      TRUST_PROXY: ${TRUST_PROXY:-false}
+      # On in this stack: the api container publishes no host port (see the
+      # note under `volumes` below), so the web container's nginx is the
+      # sole path to it and X-Forwarded-For can be trusted. Without it every
+      # visitor looked like the nginx container's own address — one shared
+      # identity for login-attempt limits, and the wrong IP in Auditoria.
+      # Set TRUST_PROXY=false in .env only if you publish the api port.
+      TRUST_PROXY: ${TRUST_PROXY:-true}
     volumes:
       - api_uploads:/data/uploads
       - whatsapp_sessions:/data/whatsapp-sessions

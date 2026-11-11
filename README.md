@@ -156,7 +156,8 @@ Principais variáveis da API:
 | `WHATSAPP_AUTH_DIR` | Diretório onde o Baileys persiste a sessão pareada |
 | `UPLOAD_DIR` / `UPLOAD_MAX_SIZE_MB` | Armazenamento local de anexos e limite de tamanho |
 | `WEB_APP_URL` | Origem permitida no CORS e nos cookies; também usada para montar o link de redefinição de senha enviado por e-mail |
-| `TRUST_PROXY` | `false` por padrão — só ativar atrás de um proxy reverso confiável (ver comentário em `.env.example`) |
+| `TRUST_PROXY` | `false` por padrão fora do Docker; o `docker-compose.yml` liga (`true`), porque ali o nginx é o único caminho até a API. Só ativar atrás de um proxy reverso confiável (ver comentário em `.env.example`) |
+| `RATE_LIMIT_MAX` / `RATE_LIMIT_ANON_MAX` | Requisições por minuto de cada usuário logado (300) e de cada IP sem sessão (600) |
 
 ## Banco de dados e migrações
 
@@ -256,9 +257,9 @@ Em **Configurações → E-mail** (perfil Administrador), configure um servidor 
 - **Tokens JWT com algoritmo fixo** (`HS256` explícito em sign/verify — evita confusão de algoritmo) e **`jti` aleatório no refresh token** (duas emissões no mesmo segundo nunca colidem no hash único salvo no banco — corrigiu uma falha real encontrada durante os testes deste projeto: recarregar a página podia derrubar a sessão por colisão de hash).
 - **Sem enumeração de usuário por tempo de resposta**: login e "esqueci minha senha" fazem o mesmo trabalho de bcrypt/crypto tanto para e-mail existente quanto inexistente, para que o tempo de resposta não revele quais contas existem.
 - Toda rota sensível usa `requireAuth` + `requireRole(...)` no backend — o menu lateral apenas *esconde* itens que o usuário não pode acessar; a proteção real está nas rotas Express.
-- Cabeçalhos de segurança via `helmet` (com `X-Powered-By` também desabilitado explicitamente); rate limiting global, limite mais agressivo no login, e limite dedicado em `forgot-password`/`reset-password`/teste de SMTP (`express-rate-limit`).
+- Cabeçalhos de segurança via `helmet` (com `X-Powered-By` também desabilitado explicitamente); rate limiting global contado por usuário logado (por IP só para quem não tem sessão — um escritório inteiro sai pelo mesmo IP), limite de login que conta só senhas erradas (10 por e-mail, 100 por IP, a cada 15 min), e limite dedicado em `forgot-password`/`reset-password`/teste de SMTP (`express-rate-limit`).
 - **Logs nunca contêm segredos**: `Authorization`, `Cookie` e `Set-Cookie` são redigidos nos logs de requisição (`pino-http` com `redact`) — sem isso, o access/refresh token de cada request apareceria em texto puro no log.
-- `TRUST_PROXY` desligado por padrão — só deve ser ativado quando a API é alcançável exclusivamente através de um proxy reverso confiável (evita que um cliente falsifique seu próprio IP para burlar o rate limit ou poluir a auditoria).
+- `TRUST_PROXY` desligado por padrão fora do Docker (ligado no `docker-compose.yml`) — só deve ser ativado quando a API é alcançável exclusivamente através de um proxy reverso confiável (evita que um cliente falsifique seu próprio IP para burlar o rate limit ou poluir a auditoria).
 - Upload de anexos valida MIME type contra uma allowlist e respeita um tamanho máximo configurável (`UPLOAD_MAX_SIZE_MB`); uploads de identidade visual (logo/favicon) usam uma allowlist só de formatos raster (SVG é recusado — evita o vetor de XSS de SVG com `<script>` embutido) e o nome do arquivo salvo é derivado do MIME type validado, nunca do nome enviado pelo cliente.
 - Prisma usa consultas parametrizadas (sem SQL bruto concatenado); a única query raw do projeto (contagem de não lidas) usa `Prisma.sql`/`Prisma.join` parametrizados.
 - Configurações de negócio (`PATCH /settings/business`) e de e-mail (`PATCH /settings/email`) são validadas com Zod (`.strict()` no primeiro caso) — não persistem JSON arbitrário enviado pelo cliente.
