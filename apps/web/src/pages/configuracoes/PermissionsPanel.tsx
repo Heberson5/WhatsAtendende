@@ -8,7 +8,8 @@ import { useAuthStore } from "../../store/auth-store";
 
 interface PermissionsResponse {
   definitions: PermissionDefinition[];
-  matrix: Record<Role, Record<Permission, boolean>>;
+  // The Administrador gets every profile; a Gestor only the Atendente's column (and only the permissions they may give).
+  matrix: Partial<Record<Role, Record<Permission, boolean>>>;
 }
 
 const EDITABLE_ROLES: { role: Role; label: string }[] = [
@@ -27,7 +28,7 @@ export function PermissionsPanel() {
 
   // Local edit buffer — only sent to the server on "Salvar alterações", so a
   // toggle can be reverted mid-edit without round-tripping every click.
-  const [draft, setDraft] = useState<Record<Role, Record<Permission, boolean>> | null>(null);
+  const [draft, setDraft] = useState<PermissionsResponse["matrix"] | null>(null);
 
   useEffect(() => {
     if (data) setDraft(data.matrix);
@@ -39,9 +40,11 @@ export function PermissionsPanel() {
     mutationFn: () => {
       const entries: { role: Role; permission: Permission; allowed: boolean }[] = [];
       for (const { role } of EDITABLE_ROLES) {
+        const saved = data!.matrix[role];
+        const edited = draft![role];
+        if (!saved || !edited) continue; // a profile this person doesn't get to see
         for (const def of data!.definitions) {
-          const allowed = draft![role][def.key];
-          if (allowed !== data!.matrix[role][def.key]) entries.push({ role, permission: def.key, allowed });
+          if (edited[def.key] !== saved[def.key]) entries.push({ role, permission: def.key, allowed: edited[def.key] });
         }
       }
       return api.put<PermissionsResponse>("/permissions", { entries });
@@ -53,14 +56,18 @@ export function PermissionsPanel() {
       // editing MANAGER/AGENT rows never affects themselves, but keeping
       // this unconditional is harmless and covers the rare case of an admin
       // testing this from a MANAGER account with configuracoes.gerenciar).
-      if (accessToken && user) setSession(accessToken, user, res.data.matrix[user.role]);
+      const own = res.data.matrix[user?.role ?? "ADMIN"];
+      if (accessToken && user && own) setSession(accessToken, user, own);
       toast.success("Permissões atualizadas.");
     },
     onError: (err) => toast.error(getApiErrorMessage(err)),
   });
 
   function toggle(role: Role, permission: Permission) {
-    setDraft((prev) => (prev ? { ...prev, [role]: { ...prev[role], [permission]: !prev[role][permission] } } : prev));
+    setDraft((prev) => {
+      const current = prev?.[role];
+      return prev && current ? { ...prev, [role]: { ...current, [permission]: !current[permission] } } : prev;
+    });
   }
 
   if (isLoading || !data || !draft) {
@@ -68,15 +75,18 @@ export function PermissionsPanel() {
   }
 
   const groups = Array.from(new Set(data.definitions.map((d) => d.group)));
+  const isAdmin = user?.role === "ADMIN";
+  // Only the profiles the API sent: for a Gestor that is the Atendente alone — no Gestor column, no Administrador column.
+  const shownRoles = EDITABLE_ROLES.filter(({ role }) => draft[role] !== undefined);
 
   return (
     <div className="shadow-soft max-w-3xl space-y-6 rounded-card border border-border bg-surface p-6">
       <div>
         <h2 className="text-base font-semibold">Permissões por perfil</h2>
         <p className="mt-1 text-sm text-muted">
-          Controle, em detalhe, o que cada perfil de usuário pode acessar e fazer. O perfil Administrador sempre tem
-          acesso total — por segurança, isso não pode ser alterado, para que nunca seja possível ficar sem acesso a
-          esta própria tela.
+          {isAdmin
+            ? "Controle, em detalhe, o que cada perfil de usuário pode acessar e fazer. O perfil Administrador sempre tem acesso total — por segurança, isso não pode ser alterado, para que nunca seja possível ficar sem acesso a esta própria tela."
+            : "Controle, em detalhe, o que o perfil Atendente pode acessar e fazer. Aparecem aqui as permissões que o seu próprio perfil tem."}
         </p>
       </div>
 
@@ -85,16 +95,19 @@ export function PermissionsPanel() {
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-muted">
               <th className="px-2 py-2">Permissão</th>
-              <th className="px-2 py-2 text-center">Atendente</th>
-              <th className="px-2 py-2 text-center">Gestor</th>
-              <th className="px-2 py-2 text-center">Administrador</th>
+              {shownRoles.map(({ role, label }) => (
+                <th key={role} className="px-2 py-2 text-center">
+                  {label}
+                </th>
+              ))}
+              {isAdmin && <th className="px-2 py-2 text-center">Administrador</th>}
             </tr>
           </thead>
           <tbody>
             {groups.map((group) => (
               <Fragment key={group}>
                 <tr className="bg-surface-alt/60">
-                  <td colSpan={4} className="px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
+                  <td colSpan={shownRoles.length + (isAdmin ? 2 : 1)} className="px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
                     {group}
                   </td>
                 </tr>
@@ -106,21 +119,24 @@ export function PermissionsPanel() {
                         <p className="font-medium">{def.label}</p>
                         <p className="text-xs text-muted">{def.description}</p>
                       </td>
-                      {EDITABLE_ROLES.map(({ role }) => (
+                      {shownRoles.map(({ role }) => (
                         <td key={role} className="px-2 py-2.5 text-center">
-                          <input
-                            type="checkbox"
-                            checked={draft[role][def.key]}
-                            onChange={() => toggle(role, def.key)}
-                            aria-label={`${def.label} - ${role}`}
-                          />
+                          {def.editableRoles.includes(role) ? (
+                            <input type="checkbox" checked={draft[role]?.[def.key] ?? false} onChange={() => toggle(role, def.key)} aria-label={`${def.label} - ${role}`} />
+                          ) : (
+                            <span className="text-xs text-muted" title="Não disponível para este perfil">
+                              —
+                            </span>
+                          )}
                         </td>
                       ))}
-                      <td className="px-2 py-2.5 text-center">
-                        <span title="Administrador sempre tem acesso total">
-                          <ShieldCheck className="mx-auto h-4 w-4 text-primary" />
-                        </span>
-                      </td>
+                      {isAdmin && (
+                        <td className="px-2 py-2.5 text-center">
+                          <span title="Administrador sempre tem acesso total">
+                            <ShieldCheck className="mx-auto h-4 w-4 text-primary" />
+                          </span>
+                        </td>
+                      )}
                     </tr>
                   ))}
               </Fragment>

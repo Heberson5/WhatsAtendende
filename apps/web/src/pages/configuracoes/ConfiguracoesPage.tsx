@@ -8,6 +8,7 @@ import { EmailTemplatesPanel } from "./EmailTemplatesPanel";
 import { PermissionsPanel } from "./PermissionsPanel";
 import { SecuritySettingsPanel } from "./SecuritySettingsPanel";
 import { useAuthStore } from "../../store/auth-store";
+import { PERMISSION } from "@whatsatendende/types";
 
 type Tab = "whatsapp" | "branding" | "email" | "email-templates" | "feriados" | "seguranca" | "permissoes";
 
@@ -24,6 +25,7 @@ const TABS: { key: Tab; label: string }[] = [
 export default function ConfiguracoesPage() {
   const [tab, setTab] = useState<Tab>("whatsapp");
   const role = useAuthStore((s) => s.user?.role);
+  const permissions = useAuthStore((s) => s.permissions);
   // Configurações itself can be reached by a MANAGER granted the
   // "configuracoes.gerenciar" permission, but the permissions matrix and
   // session/security settings are always ADMIN-only — hiding these tabs for
@@ -32,7 +34,9 @@ export default function ConfiguracoesPage() {
   // permissions.routes.ts; PATCH /settings/business is enforced only by the
   // configuracoes.gerenciar permission, same as the other Configurações
   // tabs — this is a UI-only restriction, not a backend one.)
-  const visibleTabs = TABS.filter((t) => (t.key !== "permissoes" && t.key !== "seguranca") || role === "ADMIN");
+  // A Gestor with "Editar as permissões do Atendente" sees Permissões too — only the Atendente's column (the API sends nothing else).
+  const managerEditsAgent = role === "MANAGER" && Boolean(permissions?.[PERMISSION.CONFIGURACOES_PERMISSOES_ATENDENTE_EDITAR]);
+  const visibleTabs = TABS.filter((t) => (t.key === "permissoes" ? role === "ADMIN" || managerEditsAgent : t.key !== "seguranca" || role === "ADMIN"));
 
   return (
     <div className="h-full overflow-auto p-3 sm:p-6">
@@ -59,7 +63,7 @@ export default function ConfiguracoesPage() {
       {tab === "email-templates" && <EmailTemplatesPanel />}
       {tab === "feriados" && <FeriadosPanel />}
       {tab === "seguranca" && role === "ADMIN" && <SecuritySettingsPanel />}
-      {tab === "permissoes" && role === "ADMIN" && <PermissionsPanel />}
+      {tab === "permissoes" && (role === "ADMIN" || managerEditsAgent) && <PermissionsPanel />}
     </div>
   );
 }

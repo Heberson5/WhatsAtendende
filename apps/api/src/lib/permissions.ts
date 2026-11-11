@@ -11,6 +11,11 @@ function defaultAllowed(role: Role, permission: Permission): boolean {
   return DEFINITION_BY_KEY.get(permission)?.defaultAllowed[role] ?? false;
 }
 
+/** A permission is only ever offered to the roles in its editableRoles (e.g. editing the Atendente's permissions: Gestor, never Atendente). */
+function isOffered(role: Role, permission: Permission): boolean {
+  return role === "ADMIN" || (DEFINITION_BY_KEY.get(permission)?.editableRoles.includes(role) ?? false);
+}
+
 /**
  * ADMIN is checked first and short-circuits without touching the DB — it
  * always has every permission, hardcoded, so an admin can never lock
@@ -20,6 +25,7 @@ function defaultAllowed(role: Role, permission: Permission): boolean {
  */
 export async function isPermissionAllowed(role: Role, permission: Permission): Promise<boolean> {
   if (role === "ADMIN") return true;
+  if (!isOffered(role, permission)) return false;
   const row = await prisma.rolePermission.findUnique({ where: { role_permission: { role, permission } } });
   return row ? row.allowed : defaultAllowed(role, permission);
 }
@@ -43,7 +49,7 @@ export async function getPermissionMatrix(): Promise<Record<Role, PermissionMap>
   for (const role of roles) {
     const map = {} as PermissionMap;
     for (const def of PERMISSION_DEFINITIONS) {
-      map[def.key] = role === "ADMIN" ? true : (overrides.get(`${role}:${def.key}`) ?? defaultAllowed(role, def.key));
+      map[def.key] = role === "ADMIN" ? true : isOffered(role, def.key) && (overrides.get(`${role}:${def.key}`) ?? defaultAllowed(role, def.key));
     }
     matrix[role] = map;
   }
@@ -64,7 +70,7 @@ export interface PermissionPatchEntry {
 
 /** Persists a batch of edits. ADMIN entries are silently ignored — its permissions are never stored, only ever hardcoded true. */
 export async function savePermissionPatch(entries: PermissionPatchEntry[]): Promise<void> {
-  const editable = entries.filter((e) => e.role !== "ADMIN" && DEFINITION_BY_KEY.has(e.permission));
+  const editable = entries.filter((e) => e.role !== "ADMIN" && DEFINITION_BY_KEY.has(e.permission) && isOffered(e.role, e.permission));
   await prisma.$transaction(
     editable.map((e) =>
       prisma.rolePermission.upsert({
@@ -74,4 +80,19 @@ export async function savePermissionPatch(entries: PermissionPatchEntry[]): Prom
       })
     )
   );
+}
+
+/**
+ * Configurações › Permissões as a Gestor sees it — see PROMPT: "as permissões de administrador não aparecem para o
+ * gestor na guia de permissões, também não deve aparecer as permissões que são exclusivas para o administrador".
+ * Only the Atendente's column, and only the permissions a Gestor could give: the ones offered to an Atendente that the
+ * Gestor's own profile has right now. Nothing about the Gestor's own profile or the Administrador's is in the answer —
+ * a Gestor who could edit their own column could give themselves anything.
+ */
+export async function getAgentPermissionsForManager(): Promise<{ definitions: typeof PERMISSION_DEFINITIONS; matrix: { AGENT: Partial<PermissionMap> } }> {
+  const matrix = await getPermissionMatrix();
+  const definitions = PERMISSION_DEFINITIONS.filter((d) => d.editableRoles.includes("AGENT") && matrix.MANAGER[d.key]);
+  const agent: Partial<PermissionMap> = {};
+  for (const def of definitions) agent[def.key] = matrix.AGENT[def.key];
+  return { definitions, matrix: { AGENT: agent } };
 }

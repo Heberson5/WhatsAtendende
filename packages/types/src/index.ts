@@ -342,6 +342,8 @@ export const PERMISSION = {
   RELATORIOS_ACESSAR: "relatorios.acessar",
   USUARIOS_GERENCIAR: "usuarios.gerenciar",
   CONFIGURACOES_GERENCIAR: "configuracoes.gerenciar",
+  // Configurações › Permissões for a Gestor: only the Atendente's column, and only what the Gestor's own profile has.
+  CONFIGURACOES_PERMISSOES_ATENDENTE_EDITAR: "configuracoes.permissoes_atendente.editar",
   AUDITORIA_ACESSAR: "auditoria.acessar",
   RESPOSTAS_RAPIDAS_GERENCIAR: "respostas_rapidas.gerenciar",
 } as const;
@@ -420,6 +422,15 @@ export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
     description: "Gerenciar conexões de WhatsApp, identidade visual e e-mail/SMTP.",
     editableRoles: ["AGENT", "MANAGER"],
     defaultAllowed: { AGENT: false, MANAGER: false },
+  },
+  {
+    key: PERMISSION.CONFIGURACOES_PERMISSOES_ATENDENTE_EDITAR,
+    group: "Configurações",
+    label: "Editar as permissões do Atendente",
+    description:
+      "Abre Configurações › Permissões para o Gestor, mostrando só o perfil Atendente e só as permissões que o próprio Gestor tem. As permissões do Gestor e as exclusivas do Administrador não aparecem para ele.",
+    editableRoles: ["MANAGER"],
+    defaultAllowed: { MANAGER: true },
   },
   {
     key: PERMISSION.AUDITORIA_ACESSAR,
