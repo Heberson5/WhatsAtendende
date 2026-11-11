@@ -3,6 +3,8 @@ import { prisma } from "../../lib/prisma";
 import { Errors } from "../../lib/http-error";
 import { writeAudit } from "../../lib/audit";
 import { realtimeEvents } from "../../realtime/realtime";
+import { getBusinessSettings } from "../settings/settings.service";
+import { isGratitudeMessage } from "../../lib/gratitude";
 import type { Role } from "@prisma/client";
 
 const TRANSFER_OFFLINE_GRACE_MS = 2 * 60 * 60 * 1000; // 2h — see PROMPT: transfer to an offline agent auto-reverts if they don't log in in time.
@@ -362,12 +364,79 @@ export async function findMentionedAgent(body: string | null | undefined): Promi
   return tied ? null : best;
 }
 
-export async function findOrOpenConversationForInboundMessage(connectionId: string, contactId: string, body?: string | null) {
+// How long after a close a plain thank-you ("obrigado", 👍...) still belongs to that closed conversation.
+const THANKS_AFTER_CLOSE_MS = 24 * 3_600_000;
+
+/**
+ * The customer wrote right after a person closed their conversation (within Configurações › Sessão's minutes of the
+ * close, or of the last message sent after it). See PROMPT: "a conversa não deve ser encerrada, deve voltar para o
+ * mesmo atendente". Returns that conversation and whether its attendant is logged in (a pause counts) — with the
+ * attendant offline or inactive the customer goes to the queue as always. Null = the usual path.
+ */
+async function recentCloseByPerson(contactId: string, connectionId: string, now: Date) {
+  const last = await prisma.conversation.findFirst({
+    where: { contactId },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      status: true,
+      closedAt: true,
+      whatsappConnectionId: true,
+      assignedAgent: { select: { id: true, displayName: true, presence: true, status: true } },
+    },
+  });
+  if (!last || last.status !== "CLOSED" || !last.closedAt || last.whatsappConnectionId !== connectionId) return null;
+  const lastSent = await prisma.message.findFirst({
+    where: { conversationId: last.id, direction: "OUTBOUND", createdAt: { gt: last.closedAt } },
+    orderBy: { createdAt: "desc" },
+    select: { createdAt: true },
+  });
+  const sinceMs = now.getTime() - Math.max(last.closedAt.getTime(), lastSent?.createdAt.getTime() ?? 0);
+  const minutes = Number((await getBusinessSettings()).reopenAfterCloseMinutes);
+  const agent = last.assignedAgent;
+  return {
+    conversationId: last.id,
+    sinceMs,
+    agent,
+    reopens: Number.isFinite(minutes) && minutes > 0 && sinceMs <= minutes * 60_000 && agent !== null,
+    available: agent !== null && agent.status === "ACTIVE" && agent.presence !== "OFFLINE",
+  };
+}
+
+/**
+ * `isText`: only the text of a text message can be a plain thank-you — a picture or an audio is somebody who wants to talk.
+ */
+export async function findOrOpenConversationForInboundMessage(connectionId: string, contactId: string, body?: string | null, isText = true) {
   const active = await findActiveConversationForContact(contactId);
   if (active) return { conversation: active, isNewConversation: false, autoAssignedAgentId: null as string | null };
 
-  const mentionedAgent = await findMentionedAgent(body);
   const now = new Date();
+  const recentClose = await recentCloseByPerson(contactId, connectionId, now);
+  // A plain "obrigado" after the close stays on the closed conversation: nothing reopens, nothing opens in the queue.
+  if (recentClose && isText && recentClose.sinceMs <= THANKS_AFTER_CLOSE_MS && isGratitudeMessage(body)) {
+    const conversation = await prisma.conversation.findUniqueOrThrow({ where: { id: recentClose.conversationId } });
+    return { conversation, isNewConversation: false, autoAssignedAgentId: null as string | null, keptOnClosed: true };
+  }
+  if (recentClose?.reopens && recentClose.available && recentClose.agent) {
+    // One statement, only while still closed: two messages arriving together reopen it once.
+    const reopened = await prisma.conversation.updateMany({
+      where: { id: recentClose.conversationId, status: "CLOSED" },
+      data: { status: "IN_PROGRESS", closedAt: null, closedByUserId: null, assignedAgentReadAt: null },
+    });
+    if (reopened.count > 0) {
+      await prisma.conversationEvent.create({
+        data: { conversationId: recentClose.conversationId, type: "REOPENED", payload: { byCustomer: true, agentId: recentClose.agent.id } },
+      });
+      const conversation = await prisma.conversation.findUniqueOrThrow({ where: { id: recentClose.conversationId } });
+      return { conversation, isNewConversation: false, autoAssignedAgentId: null as string | null, reopenedForAgentId: recentClose.agent.id };
+    }
+    const taken = await findActiveConversationForContact(contactId);
+    if (taken) return { conversation: taken, isNewConversation: false, autoAssignedAgentId: null as string | null };
+  }
+  // Same case with the attendant offline (or inactive): the queue as always, with what happened kept on the conversation.
+  const returnedToQueue = recentClose?.reopens && !recentClose.available ? recentClose.agent : null;
+
+  const mentionedAgent = await findMentionedAgent(body);
   const conversation = await prisma.conversation.create({
     data: mentionedAgent
       ? {
@@ -393,7 +462,7 @@ export async function findOrOpenConversationForInboundMessage(connectionId: stri
     ]);
   } else {
     await prisma.conversationEvent.create({
-      data: { conversationId: conversation.id, type: "CREATED" },
+      data: { conversationId: conversation.id, type: "CREATED", ...(returnedToQueue && { payload: { returnedAfterCloseBy: returnedToQueue.displayName } }) },
     });
   }
 

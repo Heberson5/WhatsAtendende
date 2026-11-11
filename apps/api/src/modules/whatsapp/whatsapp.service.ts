@@ -266,11 +266,12 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
           .then((photoUrl) => (photoUrl ? conversationsService.updateContactPhoto(contact.id, photoUrl) : undefined))
           .catch(() => undefined);
       }
-      const { conversation, isNewConversation, autoAssignedAgentId } = await conversationsService.findOrOpenConversationForInboundMessage(
-        connectionId,
-        contact.id,
-        event.body
-      );
+      const opened = await conversationsService.findOrOpenConversationForInboundMessage(connectionId, contact.id, event.body, event.type === "TEXT");
+      const { conversation, isNewConversation, autoAssignedAgentId } = opened;
+      // Written right after a person closed the conversation: it is back with that same attendant.
+      const reopenedForAgentId = "reopenedForAgentId" in opened ? opened.reopenedForAgentId : null;
+      // A plain thank-you after the close: kept on the closed conversation, nobody is called for it.
+      const keptOnClosed = "keptOnClosed" in opened && opened.keptOnClosed === true;
 
       const message = await messagesService.createInboundMessage({
         conversationId: conversation.id,
@@ -289,6 +290,11 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
 
       await addAttachmentsFromEvent(message.id, event);
 
+      if (keptOnClosed) {
+        realtimeEvents.newMessage(conversation.id, null);
+        return;
+      }
+
       const contactLabel = contact.name ?? contact.phone;
       if (isNewConversation) {
         if (autoAssignedAgentId) {
@@ -300,6 +306,7 @@ function wireProviderEvents(connectionId: string, provider: WhatsAppProvider) {
           realtimeEvents.newQueueConversation(connectionId, conversation.id, contactLabel);
         }
       } else {
+        if (reopenedForAgentId) realtimeEvents.conversationReopened(conversation.id, connectionId, reopenedForAgentId);
         realtimeEvents.newMessage(conversation.id, conversation.assignedAgentId);
         if (conversation.assignedAgentId) {
           const preview = event.body ?? (event.type === "LOCATION" ? "Localizacao" : event.type === "CONTACT" ? "Contato" : "Anexo recebido");

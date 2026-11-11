@@ -223,6 +223,7 @@ const businessSettingsSchema = z
       .optional(),
     greetingMessage: z.string().max(1000).nullable().optional(),
     awayMessage: z.string().max(1000).nullable().optional(),
+    reopenAfterCloseMinutes: z.number().int().min(1).max(60).optional(),
   })
   // Rejects unknown keys — this is an admin-only endpoint, but without
   // .strict() it would still happily persist arbitrary attacker-shaped JSON

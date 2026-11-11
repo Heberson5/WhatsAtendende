@@ -6,7 +6,11 @@ import { api, getApiErrorMessage } from "../../lib/api";
 
 interface BusinessSettings {
   inactivityTimeoutMinutes?: number;
+  reopenAfterCloseMinutes?: number;
 }
+
+const MIN_REOPEN_MINUTES = 1;
+const MAX_REOPEN_MINUTES = 60; // matches the backend's zod schema
 
 const MIN_HOURS = 1 / 60; // matches the backend's 1-minute floor
 const MAX_HOURS = 24; // matches the backend's 1440-minute ceiling
@@ -22,16 +26,20 @@ export function SecuritySettingsPanel() {
   // the client-side idle-logout timer — see useIdleLogout), shown here in
   // hours per PROMPT: "inativo por xx horas".
   const [hours, setHours] = useState(8);
+  const [reopenMinutes, setReopenMinutes] = useState(5);
 
   useEffect(() => {
     if (data?.inactivityTimeoutMinutes) setHours(Number((data.inactivityTimeoutMinutes / 60).toFixed(2)));
+    if (data?.reopenAfterCloseMinutes) setReopenMinutes(data.reopenAfterCloseMinutes);
   }, [data]);
 
+  const reopenValid = Number.isInteger(reopenMinutes) && reopenMinutes >= MIN_REOPEN_MINUTES && reopenMinutes <= MAX_REOPEN_MINUTES;
+
   const saveMutation = useMutation({
-    mutationFn: () => api.patch("/settings/business", { inactivityTimeoutMinutes: Math.round(hours * 60) }),
+    mutationFn: () => api.patch("/settings/business", { inactivityTimeoutMinutes: Math.round(hours * 60), reopenAfterCloseMinutes: reopenMinutes }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["business-settings"] });
-      toast.success("Tempo de inatividade salvo.");
+      toast.success("Configuração salva.");
     },
     onError: (err) => toast.error(getApiErrorMessage(err)),
   });
@@ -60,9 +68,30 @@ export function SecuritySettingsPanel() {
         />
       </label>
 
+      <div className="border-t border-border pt-6">
+        <h2 className="text-base font-semibold">Cliente responde após o encerramento</h2>
+        <p className="mt-1 text-sm text-muted">
+          Se o cliente escrever logo depois de a conversa ser encerrada, ela é reaberta com o mesmo atendente em vez de abrir uma nova na
+          fila. Um “obrigado” não reabre a conversa. Com o atendente offline, o cliente vai para a fila.
+        </p>
+        <label className="mt-3 block max-w-xs">
+          <span className="mb-1 block text-sm font-medium">Reabrir com o mesmo atendente por (minutos)</span>
+          <input
+            type="number"
+            min={MIN_REOPEN_MINUTES}
+            max={MAX_REOPEN_MINUTES}
+            step={1}
+            value={reopenMinutes}
+            onChange={(e) => setReopenMinutes(Number(e.target.value))}
+            className="focus-ring w-full rounded-card border border-border bg-transparent px-3 py-2 text-sm"
+          />
+        </label>
+        {!reopenValid && <p className="mt-2 text-xs text-danger">Informe de {MIN_REOPEN_MINUTES} a {MAX_REOPEN_MINUTES} minutos.</p>}
+      </div>
+
       <button
         onClick={() => saveMutation.mutate()}
-        disabled={saveMutation.isPending || !(hours >= MIN_HOURS && hours <= MAX_HOURS)}
+        disabled={saveMutation.isPending || !(hours >= MIN_HOURS && hours <= MAX_HOURS) || !reopenValid}
         className="focus-ring rounded-card bg-primary px-4 py-2 text-sm font-semibold text-primary-fg disabled:opacity-60"
       >
         Salvar configuração

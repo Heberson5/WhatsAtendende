@@ -99,6 +99,9 @@ const DEFAULT_BUSINESS_SETTINGS = {
   businessHours: null as { start: string; end: string; days: number[] } | null,
   greetingMessage: null as string | null,
   awayMessage: null as string | null,
+  // Configurações › Sessão: the customer writes within this many minutes of a person closing the conversation — it
+  // goes back to the same attendant instead of opening a new one in the queue.
+  reopenAfterCloseMinutes: 5,
 };
 
 export async function updateBusinessSettings(patch: Record<string, unknown>) {
