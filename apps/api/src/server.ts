@@ -7,6 +7,7 @@ import { runHolidaySyncIfDue } from "./modules/holidays/holidays.service";
 import { env } from "./config/env";
 import { logger } from "./lib/logger";
 import { prisma } from "./lib/prisma";
+import { purgeOldLoginAttempts } from "./lib/login-guard";
 
 const TRANSFER_SWEEP_INTERVAL_MS = 5 * 60 * 1000; // see PROMPT: revert an unaccepted offline transfer after 2h
 // Cheap to check daily — runHolidaySyncIfDue itself only does real work
@@ -44,6 +45,13 @@ async function main() {
   // Also checked once right at boot — a deploy that stays up for weeks at a
   // time shouldn't have to wait a full day for the first check.
   runHolidaySyncIfDue().catch((err) => logger.error({ err }, "failed to run the startup holiday sync check"));
+
+  // Login attempts too old to matter (lib/login-guard.ts) — at boot and once a day.
+  const loginAttemptsTimer = setInterval(() => {
+    purgeOldLoginAttempts().catch((err) => logger.error({ err }, "failed to purge old login attempts"));
+  }, 24 * 60 * 60 * 1000);
+  loginAttemptsTimer.unref();
+  purgeOldLoginAttempts().catch((err) => logger.error({ err }, "failed to purge old login attempts"));
 
   httpServer.listen(env.PORT, () => {
     logger.info(`API listening on port ${env.PORT} (env=${env.NODE_ENV}, whatsapp=${env.WHATSAPP_PROVIDER})`);

@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { PERMISSION } from "@whatsatendende/types";
 import { asyncHandler } from "../../lib/async-handler";
-import { requireAuth, requireRole } from "../../middleware/auth";
+import { requireAuth, requireRole, passwordChangePending } from "../../middleware/auth";
 import { requirePermission } from "../../lib/permissions";
 import { verifyAccessToken } from "../auth/jwt";
 import { isSessionActive } from "../../lib/session";
@@ -46,6 +46,7 @@ async function requireAuthFromHeaderOrQuery(req: Request, _res: Response, next: 
     if (!(await isSessionActive(payload.sid))) {
       return next(Errors.unauthorized("Sessao encerrada — login realizado em outro dispositivo"));
     }
+    if (passwordChangePending(payload, req)) return next(Errors.passwordChangeRequired());
     req.auth = { userId: payload.sub, role: payload.role, displayName: payload.displayName };
     next();
   } catch {
