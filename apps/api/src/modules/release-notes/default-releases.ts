@@ -11,6 +11,29 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.37.8",
+    date: "16 nov 2026",
+    name: "Erro ao salvar diz o motivo",
+    summary: "Quando um cadastro é recusado ao salvar, a mensagem agora diz o que precisa ser corrigido, em vez de só \"Dados inválidos\".",
+    notes: [
+      {
+        type: "correcao",
+        area: "dados",
+        title: "Fonte de dados recusada sem dizer o motivo",
+        text: "Ao salvar uma fonte de dados, por exemplo um banco SQL Server, com algum campo faltando ou fora do limite, aparecia só \"Dados invalidos\", sem dizer qual. Agora a mensagem diz o que corrigir, como \"Dados inválidos: Preencha o servidor; Preencha a consulta\". O nome e a consulta também ganharam mensagens próprias: \"Preencha o nome\" e o limite de 8000 caracteres da consulta.",
+        where: "Dados › Fontes de dados",
+        roles: ["ADMIN", "MANAGER"],
+      },
+      {
+        type: "correcao",
+        area: "geral",
+        title: "O mesmo vale para os outros cadastros",
+        text: "Qualquer tela do sistema que recusar um cadastro ao salvar passa a mostrar o campo e o motivo, em português, em vez de \"Dados invalidos\".",
+        where: "Todas as telas de cadastro",
+      },
+    ],
+  },
+  {
     version: "2.37.7",
     date: "13 nov 2026",
     name: "Desenvolvido por Sauberlich System",
