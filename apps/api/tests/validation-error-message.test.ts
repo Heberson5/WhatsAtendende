@@ -42,9 +42,16 @@ describe("a recusa de um formulário diz o motivo", () => {
   });
 
   it("consulta longa demais: diz o limite", async () => {
-    const res = await save({ name: "ERP", kind: "DATABASE", config: { dialect: "sqlserver", host: "srv", port: 1433, database: "erp", user: "leitura", query: `select ${"a,".repeat(5000)} 1` } });
+    const res = await save({ name: "ERP", kind: "DATABASE", config: { dialect: "sqlserver", host: "srv", port: 1433, database: "erp", user: "leitura", query: `select ${"a,".repeat(30_000)} 1` } });
     expect(res.status).toBe(400);
-    expect(res.body.message).toContain("8000");
+    expect(res.body.message).toContain("50.000");
+  });
+
+  it("a consulta de um ERP, com mais de 8000 caracteres, é aceita", async () => {
+    const query = `select 1 as telefone_whatsapp, ${Array.from({ length: 400 }, (_, i) => `[coluna_com_nome_comprido_${i}]`).join(", ")} from tabela`;
+    expect(query.length).toBeGreaterThan(8000);
+    const res = await save({ name: "ERP longo", kind: "DATABASE", config: { dialect: "sqlserver", host: "srv", port: 1433, database: "erp", user: "leitura", query }, secrets: { password: "x" } });
+    expect(res.status).toBe(201);
   });
 
   it("cadastro completo continua sendo salvo", async () => {

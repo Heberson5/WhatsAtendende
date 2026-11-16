@@ -11,6 +11,22 @@ import { PERMISSION, type ReleaseContent } from "@whatsatendende/types";
  */
 export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
+    version: "2.37.9",
+    date: "16 nov 2026",
+    name: "Consulta do banco de dados maior",
+    summary: "A consulta de uma fonte de dados do tipo banco de dados passa a aceitar até 50.000 caracteres, o bastante para o script do ERP.",
+    notes: [
+      {
+        type: "melhoria",
+        area: "dados",
+        title: "Consulta do banco de dados com até 50.000 caracteres",
+        text: "O campo Consulta de uma fonte de dados do tipo banco de dados aceitava até 8000 caracteres, pouco para o script de um ERP, cheio de nomes longos de tabelas e colunas. Agora aceita até 50.000. Continua valendo a regra de segurança: a consulta precisa ser um único SELECT (ou WITH … SELECT), que só lê os dados.",
+        where: "Dados › Fontes de dados › Banco de dados",
+        roles: ["ADMIN", "MANAGER"],
+      },
+    ],
+  },
+  {
     version: "2.37.8",
     date: "16 nov 2026",
     name: "Erro ao salvar diz o motivo",
@@ -20,7 +36,7 @@ export const DEFAULT_RELEASES: ReleaseContent[] = [
         type: "correcao",
         area: "dados",
         title: "Fonte de dados recusada sem dizer o motivo",
-        text: "Ao salvar uma fonte de dados, por exemplo um banco SQL Server, com algum campo faltando ou fora do limite, aparecia só \"Dados invalidos\", sem dizer qual. Agora a mensagem diz o que corrigir, como \"Dados inválidos: Preencha o servidor; Preencha a consulta\". O nome e a consulta também ganharam mensagens próprias: \"Preencha o nome\" e o limite de 8000 caracteres da consulta.",
+        text: "Ao salvar uma fonte de dados, por exemplo um banco SQL Server, com algum campo faltando ou fora do limite, aparecia só \"Dados invalidos\", sem dizer qual. Agora a mensagem diz o que corrigir, como \"Dados inválidos: Preencha o servidor; Preencha a consulta\". O nome e a consulta também ganharam mensagens próprias, como \"Preencha o nome\".",
         where: "Dados › Fontes de dados",
         roles: ["ADMIN", "MANAGER"],
       },
