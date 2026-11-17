@@ -65,7 +65,7 @@ Object.defineProperty(navigator, "mediaDevices", { value: { getUserMedia }, conf
 function composer(draftId: string, onSendAudio = vi.fn().mockResolvedValue(undefined)) {
   return (
     <Composer
-      conversationId={draftId}
+      draftId={draftId}
       onSendText={vi.fn().mockResolvedValue(undefined)}
       onSendFile={vi.fn().mockResolvedValue(undefined)}
       onSendAudio={onSendAudio}
@@ -76,7 +76,7 @@ function composer(draftId: string, onSendAudio = vi.fn().mockResolvedValue(undef
   );
 }
 
-const pickFile = (file: File) => fireEvent.change(document.querySelector('input[type="file"]')!, { target: { files: [file] } });
+const paste = (target: HTMLElement, file: File) => fireEvent.paste(target, { clipboardData: { files: [file], getData: () => "" } });
 
 beforeEach(() => {
   useAuthStore.setState({ user: { id: "u1" } as UserDTO });
@@ -90,7 +90,7 @@ beforeEach(() => {
 describe("Composer: rascunho ao sair da conversa, como no WhatsApp", () => {
   it("arquivo na prévia fica como rascunho da conversa e volta ao reabrir", async () => {
     const { rerender } = render(composer("c1"));
-    pickFile(new File(["%PDF"], "contrato.pdf", { type: "application/pdf" }));
+    paste(screen.getByPlaceholderText("Digite uma mensagem"), new File(["%PDF"], "contrato.pdf", { type: "application/pdf" }));
     expect(await screen.findAllByText("contrato.pdf")).not.toHaveLength(0);
 
     rerender(composer("c2")); // another conversation: empty box

@@ -1,5 +1,6 @@
 import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { ShieldCheck, Wrench } from "lucide-react";
+import { sauberlichCopyright } from "@whatsatendende/types";
 
 /**
  * Full-screen "system in maintenance" experience shown to AGENT/MANAGER on
@@ -28,7 +29,7 @@ export function MaintenanceScreen({ message, onAdminAccess }: { message: string 
     <div
       onPointerMove={handlePointerMove}
       onPointerLeave={() => setTilt({ x: 0, y: 0 })}
-      className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#05060f] px-4 py-10"
+      className="relative flex min-h-dvh items-center justify-center overflow-hidden bg-[#05060f] px-4 py-10"
       style={{ perspective: "1400px" }}
     >
       <MaintenanceScreenStyles />
@@ -80,6 +81,9 @@ export function MaintenanceScreen({ message, onAdminAccess }: { message: string 
           <ShieldCheck className="h-3.5 w-3.5" />
           Acesso administrativo
         </button>
+        <p className="mt-6 text-center text-[11px] text-white/45" data-testid="sauberlich-copyright">
+          {sauberlichCopyright()}
+        </p>
       </div>
     </div>
   );

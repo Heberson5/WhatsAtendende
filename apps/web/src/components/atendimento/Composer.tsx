@@ -1,40 +1,27 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useEffect, useId, useImperativeHandle, useRef, useState } from "react";
 import clsx from "clsx";
-import { Mic, Paperclip, Pause, Play, Plus, Send, Trash2, X, MapPin, Bold, Italic, Strikethrough, Code } from "lucide-react";
-import type { MessageDTO } from "@whatsatendende/types";
+import { CalendarClock, Mic, Paperclip, Pause, Play, Plus, Send, Trash2, X, MapPin, Bold, Italic, Strikethrough, Code, FileText, Image as ImageIcon, Video } from "lucide-react";
+import type { MessageDTO, ReplyMediaDTO } from "@whatsatendende/types";
 import { toast } from "sonner";
+import { DataTagPreview, useDataTagAssist } from "./DataTagAssist";
+import { api } from "../../lib/api";
 import { useAuthStore } from "../../store/auth-store";
 import { draftKey, useDraftStore } from "../../store/draft-store";
+import { useComposerActivityStore } from "../../store/composer-activity-store";
 import { useMediaDraftStore, type MediaDraft } from "../../store/media-draft-store";
 import { mergeAudioBlobs } from "../../lib/audio-merge";
 import { useEscapeKey } from "../../hooks/useEscapeKey";
+import { WhenPicker } from "./WhenPicker";
+import { EmojiPicker } from "../common/EmojiPicker";
 
 // How many bars the live/frozen waveform keeps — older samples scroll off
 // the left, matching WhatsApp Web's own recording indicator.
 const MAX_WAVEFORM_BARS = 42;
 
-// A compact but representative slice of the WhatsApp Web emoji panel —
-// grouped so the picker reads as categories, not one undifferentiated wall.
-const EMOJI_GROUPS: { label: string; emojis: string[] }[] = [
-  {
-    label: "Sorrisos",
-    emojis: ["😀", "😃", "😄", "😁", "😆", "😅", "🤣", "😂", "🙂", "😉", "😊", "😇", "🥰", "😍", "😘", "😋", "😜", "🤪", "🤔", "🤨"],
-  },
-  {
-    label: "Gestos",
-    emojis: ["👍", "👎", "👏", "🙌", "🙏", "👋", "🤝", "💪", "✌️", "🤞", "👌", "✋", "🖐️", "🤙", "👆", "👉"],
-  },
-  {
-    label: "Corações",
-    emojis: ["❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "💔", "💕", "💖", "💗"],
-  },
-  {
-    label: "Outros",
-    emojis: ["🎉", "🔥", "✨", "⭐", "😢", "😭", "😮", "😱", "😴", "🤗", "😎", "🥳", "✅", "❌", "⚠️", "❓"],
-  },
-];
-
 const MAX_TEXTAREA_LINES = 10;
+// The customer's "digitando…" is told again this often while it lasts, and ends after this long without typing.
+const PRESENCE_REPEAT_MS = 8_000;
+const PRESENCE_IDLE_MS = 5_000;
 
 // Mirrors the textarea's own text box in an invisible off-screen div so we
 // can measure where a given character offset actually lands on screen —
@@ -97,6 +84,12 @@ export interface QuickReplyOption {
   name: string;
   shortcut: string;
   text: string;
+  /** An image, video or PDF registered with the reply — staged in the preview with the text as its caption. */
+  media?: ReplyMediaDTO | null;
+  /** The text with {{dados.*}} already filled for this client. */
+  filledText?: string;
+  /** Uses {{dados.*}} but no data source is usable — shown to managers only, can't be used. */
+  dataUnavailable?: boolean;
 }
 
 /** One file staged for sending, alongside the caption typed for it specifically — see the pendingFiles filmstrip below. */
@@ -105,15 +98,40 @@ interface PendingAttachment {
   caption: string;
 }
 
+export interface MentionCandidate {
+  jid: string;
+  name: string;
+  phone: string | null;
+}
+
+/** Group "@": who was marked in the text being sent, and whether "@todos" was used. */
+export interface ComposerMentions {
+  mentions: { jid: string; label: string }[];
+  mentionAll: boolean;
+}
+
+const ALL_LABEL = "todos";
+const TYPING_MENTION = /@([^\s@]*)$/;
+const fold = (v: string) => v.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
 export interface ComposerHandle {
   /** Stages one or more files for sending, exactly like picking them via the paperclip button — used by ChatPanel's drag-and-drop-from-folder handler so a drop anywhere over the conversation feeds the same preview/caption flow. */
   addFiles: (files: File[]) => void;
+  /** Fills the box with a quick reply's text (the chips under the composer), ready to edit or send. */
+  applyQuickReply: (reply: QuickReplyOption) => void;
+  /** Puts the cursor in the box, optionally typing something first (the "/" shortcut opens the quick replies this way). */
+  focus: (insert?: string) => void;
 }
+
+// Programs and scripts: they go like any other file (WhatsApp sends them as documents), with a warning first.
+const EXECUTABLE_FILE = /\.(exe|msi|bat|cmd|com|scr|ps1|vbs|js|jar|apk|sh|app|dmg)$/i;
 
 export const Composer = forwardRef<
   ComposerHandle,
   {
-    onSendText: (text: string, replyToMessageId?: string) => Promise<void>;
+    onSendText: (text: string, replyToMessageId?: string, mentions?: ComposerMentions) => Promise<void>;
+    /** WhatsApp groups: who can be marked with "@" (plus "@todos"), asked for the first time "@" is typed. */
+    loadMentionCandidates?: () => Promise<MentionCandidate[]>;
     onSendFile: (file: File, caption?: string) => Promise<void>;
     /** A recorded voice note (mic button) — sent as WhatsApp's native PTT bubble, distinct from an attached audio file via onSendFile. */
     onSendAudio: (file: File) => Promise<void>;
@@ -123,20 +141,27 @@ export const Composer = forwardRef<
     replyTo: MessageDTO | null;
     onCancelReply: () => void;
     disabled?: boolean;
-    /** The conversation this box writes in — what's typed, recorded or attached and not sent stays as its draft. */
+    /** The conversation this box writes in — what's typed and not sent stays as its draft. */
     conversationId?: string;
+    /** Where the drafts (text, voice recording, files) are kept when it isn't a customer conversation — a group's id. */
+    draftId?: string;
+    /** "Agendar envio": the text goes out at that time, as this attendant. */
+    onScheduleText?: (text: string, sendAt: Date) => Promise<void>;
+    /** What the customer's WhatsApp shows of the attendant: "digitando…" while writing, "gravando áudio…" while recording. */
+    onPresence?: (presence: "composing" | "recording" | "paused") => void;
   }
 >(function Composer(
-  { onSendText, onSendFile, onSendAudio, onSendLocation, quickReplies = [], replyTo, onCancelReply, disabled, conversationId },
+  { onSendText, onSendFile, onSendAudio, onSendLocation, quickReplies = [], replyTo, onCancelReply, disabled, conversationId, draftId, onScheduleText, loadMentionCandidates, onPresence },
   ref
 ) {
   const userId = useAuthStore((s) => s.user?.id);
-  const currentDraftKey = userId && conversationId ? draftKey(userId, conversationId) : null;
-  // What's typed and not sent is kept per conversation (store/draft-store): closing it (Esc, its card) or opening
-  // another one no longer throws the text away.
+  const draftOwner = draftId ?? conversationId;
+  const currentDraftKey = userId && draftOwner ? draftKey(userId, draftOwner) : null;
   const [text, setText] = useState(() => (currentDraftKey ? (useDraftStore.getState().drafts[currentDraftKey] ?? "") : ""));
   // Which conversation the text in the box belongs to — saved under that key, even in the render right after switching.
   const textDraftKeyRef = useRef(currentDraftKey);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [scheduling, setScheduling] = useState(false);
   const [showEmoji, setShowEmoji] = useState(false);
   // The emoji panel takes Esc before the conversation does (hooks/useEscapeKey).
   useEscapeKey(() => setShowEmoji(false), showEmoji);
@@ -162,8 +187,52 @@ export const Composer = forwardRef<
   const [caption, setCaption] = useState("");
   const [selectionBubble, setSelectionBubble] = useState<{ top: number; left: number } | null>(null);
   const [quickReplyActiveIndex, setQuickReplyActiveIndex] = useState(0);
+  // Something not sent yet: the "Nova versão" popup waits until it goes.
+  const composerId = useId();
+  const setComposerBusy = useComposerActivityStore((s) => s.setBusy);
+  const unsent = Boolean(text.trim()) || recordingState !== "idle" || Boolean(previewUrl) || pendingFiles.length > 0 || Boolean(pendingLocation) || sending;
+  useEffect(() => setComposerBusy(composerId, unsent), [composerId, unsent, setComposerBusy]);
+  useEffect(() => () => setComposerBusy(composerId, false), [composerId, setComposerBusy]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [caret, setCaret] = useState(0);
+  const dataTags = useDataTagAssist(conversationId, text, caret);
+  const [pickedMentions, setPickedMentions] = useState<{ jid: string; label: string }[]>([]);
+  const [mentionCandidates, setMentionCandidates] = useState<MentionCandidate[] | null>(null);
+  const typingMention = loadMentionCandidates ? TYPING_MENTION.exec(text.slice(0, caret)) : null;
+  const isTypingMention = Boolean(typingMention);
+  useEffect(() => {
+    if (!isTypingMention || mentionCandidates || !loadMentionCandidates) return;
+    loadMentionCandidates()
+      .then(setMentionCandidates)
+      .catch(() => setMentionCandidates([]));
+  }, [isTypingMention, mentionCandidates, loadMentionCandidates]);
+  const mentionQuery = typingMention ? fold(typingMention[1]) : null;
+  const mentionOptions =
+    mentionQuery === null
+      ? []
+      : [
+          ...(ALL_LABEL.startsWith(mentionQuery) ? [{ jid: "", name: ALL_LABEL, phone: null }] : []),
+          ...(mentionCandidates ?? []).filter((p) => fold(p.name).includes(mentionQuery) || (p.phone ?? "").includes(mentionQuery)),
+        ].slice(0, 8);
+
+  function chooseMention(option: { jid: string; name: string }) {
+    const before = text.slice(0, caret).replace(TYPING_MENTION, `@${option.name} `);
+    const next = before + text.slice(caret);
+    setText(next);
+    setCaret(before.length);
+    if (option.jid) setPickedMentions((prev) => [...prev.filter((m) => m.jid !== option.jid), { jid: option.jid, label: option.name }]);
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(before.length, before.length);
+    });
+  }
+
+  /** The mentions still present in the text being sent. */
+  function currentMentions(value: string): ComposerMentions | undefined {
+    if (!loadMentionCandidates) return undefined;
+    return { mentions: pickedMentions.filter((m) => value.includes(`@${m.label}`)), mentionAll: value.includes(`@${ALL_LABEL}`) };
+  }
   const emojiPanelRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -213,14 +282,49 @@ export const Composer = forwardRef<
     setQuickReplyActiveIndex(0);
   }, [quickReplyFilter]);
 
+  function insertEmoji(emoji: string) {
+    const el = textareaRef.current;
+    const start = el?.selectionStart ?? text.length;
+    const end = el?.selectionEnd ?? text.length;
+    setText(text.slice(0, start) + emoji + text.slice(end));
+    requestAnimationFrame(() => {
+      el?.focus();
+      el?.setSelectionRange(start + emoji.length, start + emoji.length);
+    });
+  }
+
   function selectQuickReply(reply: QuickReplyOption) {
-    setText(reply.text);
+    if (reply.dataUnavailable) {
+      toast.error("Indisponível: nenhuma fonte de dados ativa");
+      return;
+    }
+    const replyText = reply.filledText ?? reply.text;
+    if (reply.media) {
+      void stageQuickReplyMedia({ ...reply, text: replyText }, reply.media);
+      return;
+    }
+    setText(replyText);
     requestAnimationFrame(() => {
       const el = textareaRef.current;
       if (!el) return;
       el.focus();
       el.setSelectionRange(el.value.length, el.value.length);
     });
+  }
+
+  // A reply with an attachment goes to the preview — file plus its text as the caption — for the agent to review and send,
+  // same as a file picked by hand; nothing goes out by itself. The "/atalho" typed so far is cleared.
+  async function stageQuickReplyMedia(reply: QuickReplyOption, media: ReplyMediaDTO) {
+    setText("");
+    try {
+      const { data } = await api.get<Blob>(`/quick-replies/${reply.id}/media`, { responseType: "blob" });
+      const file = new File([data], media.fileName, { type: media.mimeType });
+      setActiveFileIndex(pendingFiles.length);
+      setPendingFiles((prev) => [...prev, { file, caption: reply.text }]);
+    } catch {
+      // The attachment couldn't be loaded — at least the text is there to send.
+      setText(reply.text);
+    }
   }
 
   // Closes the emoji panel on any click outside it — it was staying open and
@@ -246,6 +350,7 @@ export const Composer = forwardRef<
 
   function stashMediaDraft(key: string | null) {
     const latest = latestRef.current;
+    const store = useMediaDraftStore.getState();
     const draft: MediaDraft = {};
     if (latest.pendingFiles.length) draft.files = latest.pendingFiles;
     if (latest.pendingFiles.length) draft.activeFileIndex = latest.activeFileIndex;
@@ -255,7 +360,7 @@ export const Composer = forwardRef<
     const base = { mimeType: audioMimeRef.current, seconds: latest.recordSeconds, waveform: latest.waveformLevels };
     const recording = latest.recordingState !== "idle" && recorder && recorder.state !== "inactive" ? recorder : null;
     if (latest.recordingState !== "idle" && !recording && earlier.length) draft.audio = { ...base, pieces: earlier };
-    if (key) useMediaDraftStore.getState().put(key, draft);
+    if (key) store.put(key, draft);
     if (recording) {
       // The last piece only exists once the recorder stops — it's added to the draft stored just above.
       const chunks = chunksRef.current;
@@ -316,22 +421,6 @@ export const Composer = forwardRef<
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // The text draft: saved as it's typed, swapped when the box moves to another conversation (with the rest above).
-  useEffect(() => {
-    if (textDraftKeyRef.current) useDraftStore.getState().setDraft(textDraftKeyRef.current, text);
-  }, [text]);
-  useEffect(() => {
-    if (mediaDraftKeyRef.current !== currentDraftKey) {
-      stashMediaDraft(mediaDraftKeyRef.current);
-      mediaDraftKeyRef.current = currentDraftKey;
-      restoreMediaDraft(currentDraftKey);
-    }
-    if (textDraftKeyRef.current === currentDraftKey) return;
-    textDraftKeyRef.current = currentDraftKey;
-    setText(currentDraftKey ? (useDraftStore.getState().drafts[currentDraftKey] ?? "") : "");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentDraftKey]);
-
   // Grows the textarea with its content, capped at MAX_TEXTAREA_LINES so a
   // very long message doesn't push the rest of the chat off screen.
   useEffect(() => {
@@ -344,12 +433,43 @@ export const Composer = forwardRef<
     el.style.overflowY = el.scrollHeight > maxHeight ? "auto" : "hidden";
   }, [text]);
 
+  useEffect(() => {
+    if (textDraftKeyRef.current) useDraftStore.getState().setDraft(textDraftKeyRef.current, text);
+  }, [text]);
+  useEffect(() => {
+    if (mediaDraftKeyRef.current !== currentDraftKey) {
+      stashMediaDraft(mediaDraftKeyRef.current);
+      mediaDraftKeyRef.current = currentDraftKey;
+      restoreMediaDraft(currentDraftKey);
+    }
+    if (textDraftKeyRef.current === currentDraftKey) return;
+    textDraftKeyRef.current = currentDraftKey;
+    setText(currentDraftKey ? (useDraftStore.getState().drafts[currentDraftKey] ?? "") : "");
+    setScheduleOpen(false);
+  }, [currentDraftKey]);
+
+  async function handleSchedule(sendAt: Date) {
+    if (!onScheduleText || !text.trim()) return;
+    setScheduling(true);
+    try {
+      await onScheduleText(text.trim(), sendAt);
+      setText("");
+      setScheduleOpen(false);
+    } finally {
+      setScheduling(false);
+    }
+  }
+
   async function handleSend() {
     if (!text.trim() || sending) return;
+    const ready = dataTags.finalize(text.trim());
+    if (ready === null) return;
     setSending(true);
     try {
-      await onSendText(text.trim(), replyTo?.id);
+      await onSendText(ready, replyTo?.id, currentMentions(ready));
       setText("");
+      setPickedMentions([]);
+      dataTags.reset();
       onCancelReply();
       // Otherwise focus lands nowhere after a send and the agent has to
       // click back into the field before typing the next message.
@@ -369,6 +489,25 @@ export const Composer = forwardRef<
     setPendingFiles((prev) => [...prev, ...files.map((file) => ({ file, caption: "" }))]);
   }
 
+  // Ctrl+V of an image (a screenshot, "Copiar imagem" in a browser) or of files copied in the file explorer:
+  // staged in the preview like the paperclip, the text typed so far becoming the caption — WhatsApp Web parity.
+  // A copy that also carries text (Word, Excel — they add a picture of the selection) is pasted as text, as always.
+  function handlePaste(e: React.ClipboardEvent) {
+    const data = e.clipboardData;
+    const files = Array.from(data.files ?? []);
+    if (files.length === 0 || data.getData("text/plain").trim()) return;
+    e.preventDefault();
+    // A pasted screenshot has no name of its own ("image.png") — it gets one with the moment it was pasted.
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "");
+    const named = files.map((f, i) =>
+      f.name && f.name !== "image.png" ? f : new File([f], `imagem-colada-${stamp}${files.length > 1 ? `-${i + 1}` : ""}.${f.type.split("/")[1] || "png"}`, { type: f.type })
+    );
+    const caption = pendingFiles.length === 0 ? text.trim() : "";
+    setActiveFileIndex(pendingFiles.length);
+    setPendingFiles((prev) => [...prev, ...named.map((file, i) => ({ file, caption: i === 0 ? caption : "" }))]);
+    if (caption) setText("");
+  }
+
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     addFiles(Array.from(e.target.files ?? []));
     e.target.value = "";
@@ -386,8 +525,8 @@ export const Composer = forwardRef<
   async function confirmSendFiles() {
     if (pendingFiles.length === 0) return;
     setSending(true);
-    setSendingFileProgress({ done: 0, total: pendingFiles.length });
     try {
+      setSendingFileProgress({ done: 0, total: pendingFiles.length });
       // Sent one at a time (not Promise.all) so they land in the chat — and
       // on WhatsApp itself — in the same order they were staged, same as
       // WhatsApp Web's own batch-send behavior.
@@ -405,7 +544,50 @@ export const Composer = forwardRef<
     }
   }
 
-  useImperativeHandle(ref, () => ({ addFiles }));
+  // "digitando…" / "gravando áudio…" on the customer's phone: repeated while it lasts (WhatsApp drops it after a few
+  // seconds), "paused" when the attendant stops, clears the box, sends, or leaves the conversation.
+  const presenceRef = useRef<{ state: "composing" | "recording" | "paused"; at: number }>({ state: "paused", at: 0 });
+  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onPresenceRef = useRef(onPresence);
+  onPresenceRef.current = onPresence;
+  function announce(state: "composing" | "recording" | "paused") {
+    const last = presenceRef.current;
+    if (last.state === state && (state === "paused" || Date.now() - last.at < PRESENCE_REPEAT_MS)) return;
+    presenceRef.current = { state, at: Date.now() };
+    onPresenceRef.current?.(state);
+  }
+  useEffect(() => {
+    if (recordingState === "recording") {
+      announce("recording");
+      const repeat = setInterval(() => announce("recording"), PRESENCE_REPEAT_MS);
+      return () => clearInterval(repeat);
+    }
+    if (presenceRef.current.state === "recording") announce("paused");
+  }, [recordingState]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (recordingState === "recording") return;
+    if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+    if (!text.trim()) return announce("paused");
+    announce("composing");
+    idleTimerRef.current = setTimeout(() => announce("paused"), PRESENCE_IDLE_MS);
+  }, [text]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(
+    () => () => {
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+      if (presenceRef.current.state !== "paused") onPresenceRef.current?.("paused");
+      presenceRef.current = { state: "paused", at: 0 };
+    },
+    [conversationId]
+  );
+
+  useImperativeHandle(ref, () => ({
+    addFiles,
+    applyQuickReply: selectQuickReply,
+    focus: (insert) => {
+      if (insert) setText((t) => (t ? t : insert));
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    },
+  }));
 
   // Revokes the object URL for any file removed from (or sent out of)
   // pendingFiles — the cache would otherwise hold every staged file for the
@@ -725,7 +907,27 @@ export const Composer = forwardRef<
     setSelectionBubble({ top: top - 44, left });
   }
 
+  function chooseDataTag(column: string) {
+    const next = dataTags.insertTag(text, column);
+    setText(next.text);
+    setCaret(next.caret);
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(next.caret, next.caret);
+    });
+  }
+
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (mentionOptions.length > 0 && (e.key === "Enter" || e.key === "Tab") && !e.shiftKey) {
+      e.preventDefault();
+      chooseMention(mentionOptions[0]);
+      return;
+    }
+    if (dataTags.suggestions.length > 0 && (e.key === "Enter" || e.key === "Tab") && !e.shiftKey) {
+      e.preventDefault();
+      chooseDataTag(dataTags.suggestions[0]);
+      return;
+    }
     if (quickReplyMenuOpen) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -893,8 +1095,15 @@ export const Composer = forwardRef<
     const activeUrl = active ? getPreviewUrl(active.file) : null;
     const activeIsImage = active?.file.type.startsWith("image/");
     const activeIsVideo = active?.file.type.startsWith("video/");
+    const executables = pendingFiles.filter((entry) => EXECUTABLE_FILE.test(entry.file.name));
     return (
       <div className="border-t border-border bg-surface p-4">
+        {executables.length > 0 && (
+          <p role="alert" className="mb-3 rounded-card bg-warning-soft px-3 py-2 text-xs text-warning">
+            {executables.length === 1 ? `"${executables[0].file.name}" é um programa` : `${executables.length} arquivos são programas`}: confira se é seguro antes de
+            enviar. O cliente recebe como documento.
+          </p>
+        )}
         {/* Filmstrip — only worth showing once there's more than one file to
             switch between, same as WhatsApp Web's own multi-attachment picker. */}
         {pendingFiles.length > 1 && (
@@ -967,12 +1176,13 @@ export const Composer = forwardRef<
             value={active?.caption ?? ""}
             onChange={(e) => updateActiveCaption(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && confirmSendFiles()}
+            onPaste={handlePaste}
             placeholder={pendingFiles.length > 1 ? "Adicionar legenda a este anexo (opcional)" : "Adicionar legenda (opcional)"}
             autoFocus
             className="focus-ring flex-1 rounded-full border border-border bg-transparent px-4 py-2 text-sm"
           />
           <button
-            onClick={confirmSendFiles}
+            onClick={() => confirmSendFiles()}
             disabled={sending}
             className="focus-ring flex shrink-0 items-center gap-2 rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-primary-fg disabled:opacity-60"
           >
@@ -1018,6 +1228,28 @@ export const Composer = forwardRef<
       )}
 
       <div className="relative border-t border-border bg-surface">
+        {mentionOptions.length > 0 && (
+          <div className="shadow-elevated absolute bottom-full left-3 z-20 mb-1 w-72 overflow-hidden rounded-card border border-border bg-surface" onMouseDown={(e) => e.preventDefault()}>
+            <p className="border-b border-border px-3 py-1.5 text-[11px] font-semibold text-muted">Marcar no grupo</p>
+            {mentionOptions.map((option) => (
+              <button key={option.jid || ALL_LABEL} type="button" onClick={() => chooseMention(option)} className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-sm hover:bg-surface-alt">
+                <span className="truncate">{option.jid ? option.name : "Todos do grupo"}</span>
+                <span className="shrink-0 text-xs text-muted">{option.jid ? (option.phone ? `+${option.phone}` : "") : `@${ALL_LABEL}`}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        {dataTags.suggestions.length > 0 && (
+          <div className="shadow-elevated absolute bottom-full left-3 z-20 mb-1 w-64 overflow-hidden rounded-card border border-border bg-surface" onMouseDown={(e) => e.preventDefault()}>
+            <p className="border-b border-border px-3 py-1.5 text-[11px] font-semibold text-muted">Dados do cliente</p>
+            {dataTags.suggestions.map((column) => (
+              <button key={column} type="button" onClick={() => chooseDataTag(column)} className="block w-full px-3 py-1.5 text-left text-sm hover:bg-surface-alt">
+                <code className="text-xs">{`{{dados.${column}}}`}</code>
+              </button>
+            ))}
+          </div>
+        )}
+        <DataTagPreview render={dataTags.render} freeFields={dataTags.freeFields} freeValues={dataTags.freeValues} onFreeValue={dataTags.setFreeValue} />
         {quickReplyMenuOpen && (
           <div
             className="shadow-elevated absolute bottom-full left-3 right-3 z-20 mb-1 max-h-64 overflow-y-auto rounded-card border border-border bg-surface"
@@ -1037,10 +1269,12 @@ export const Composer = forwardRef<
                 )}
               >
                 <span className="flex items-center gap-2">
+                  {qr.media && <MediaKindIcon kind={qr.media.kind} />}
                   <span className="font-medium">{qr.name}</span>
                   <code className="rounded bg-surface px-1 text-xs text-muted">/{qr.shortcut}</code>
                 </span>
-                <span className="line-clamp-1 w-full text-xs text-muted">{qr.text}</span>
+                {qr.dataUnavailable && <span className="text-[11px] font-semibold text-danger">Indisponível: nenhuma fonte de dados ativa</span>}
+                <span className="line-clamp-1 w-full text-xs text-muted">{qr.filledText ?? qr.text}</span>
               </button>
             ))}
           </div>
@@ -1086,29 +1320,8 @@ export const Composer = forwardRef<
             🙂
           </button>
           {showEmoji && (
-            <div className="shadow-elevated absolute bottom-12 left-0 z-10 w-72 rounded-card border border-border bg-surface p-2">
-              <div className="max-h-64 space-y-2 overflow-y-auto">
-                {EMOJI_GROUPS.map((group) => (
-                  <div key={group.label}>
-                    <p className="px-1 text-[10px] font-semibold uppercase tracking-wide text-muted">{group.label}</p>
-                    <div className="grid grid-cols-8 gap-0.5">
-                      {group.emojis.map((emoji) => (
-                        <button
-                          key={emoji}
-                          type="button"
-                          onClick={() => {
-                            setText((t) => t + emoji);
-                            textareaRef.current?.focus();
-                          }}
-                          className="focus-ring rounded p-1 text-lg transition-transform hover:scale-125 hover:bg-surface-alt"
-                        >
-                          {emoji}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
+            <div className="shadow-elevated absolute bottom-12 left-0 z-10 w-80">
+              <EmojiPicker className="h-96" onPick={insertEmoji} />
             </div>
           )}
         </div>
@@ -1134,21 +1347,50 @@ export const Composer = forwardRef<
           value={text}
           onChange={(e) => {
             setText(e.target.value);
+            setCaret(e.target.selectionStart);
             updateSelectionBubble();
           }}
+          onKeyUp={(e) => setCaret(e.currentTarget.selectionStart)}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           onSelect={updateSelectionBubble}
           onMouseUp={updateSelectionBubble}
           onBlur={() => setSelectionBubble(null)}
           disabled={disabled}
           rows={1}
+          spellCheck
+          lang="pt-BR"
           placeholder="Digite uma mensagem"
           className="focus-ring mx-1 flex-1 resize-none rounded-2xl border border-border bg-transparent px-4 py-2 text-sm leading-5 disabled:opacity-60"
         />
 
+        {text.trim() && onScheduleText && (
+          <div className="relative shrink-0">
+            <button
+              onClick={() => setScheduleOpen((o) => !o)}
+              disabled={sending || disabled}
+              className="focus-ring rounded-full p-2.5 text-muted hover:bg-surface-alt disabled:opacity-60"
+              aria-label="Agendar envio"
+              title="Agendar envio"
+              type="button"
+            >
+              <CalendarClock className="h-5 w-5" />
+            </button>
+            {scheduleOpen && (
+              <WhenPicker
+                title="Agendar envio"
+                confirmLabel="Agendar"
+                busy={scheduling}
+                className="bottom-12 right-0"
+                onConfirm={(at) => handleSchedule(at)}
+                onClose={() => setScheduleOpen(false)}
+              />
+            )}
+          </div>
+        )}
         {text.trim() ? (
           <button
-            onClick={handleSend}
+            onClick={() => handleSend()}
             disabled={sending || disabled}
             className="focus-ring shrink-0 rounded-full bg-primary p-2.5 text-primary-fg disabled:opacity-60"
             aria-label="Enviar mensagem"
@@ -1166,3 +1408,9 @@ export const Composer = forwardRef<
     </>
   );
 });
+
+function MediaKindIcon({ kind }: { kind: ReplyMediaDTO["kind"] }) {
+  const label = kind === "IMAGE" ? "Com imagem" : kind === "VIDEO" ? "Com vídeo" : "Com PDF";
+  const Icon = kind === "IMAGE" ? ImageIcon : kind === "VIDEO" ? Video : FileText;
+  return <Icon className="h-3.5 w-3.5 shrink-0 text-primary" aria-label={label} />;
+}

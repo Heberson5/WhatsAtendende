@@ -60,6 +60,17 @@ authRouter.post(
   })
 );
 
+// The browser reports that the person is using the system (mouse, keyboard, touch) — at most every 30 seconds.
+// Background requests don't count: without these reports the session ends at the inactivity limit.
+authRouter.post(
+  "/activity",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    if (req.auth!.sessionId) await authService.recordSessionActivity(req.auth!.sessionId);
+    res.status(204).end();
+  })
+);
+
 authRouter.post(
   "/logout",
   requireAuth,

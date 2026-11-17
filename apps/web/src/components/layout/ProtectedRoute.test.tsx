@@ -46,6 +46,8 @@ describe("ProtectedRoute", () => {
         status: "ACTIVE",
         presence: "ONLINE",
         createdAt: "",
+      deactivatedAt: null,
+      deactivatedByName: null,
         lastAccessAt: null,
         whatsappConnectionId: null,
         whatsappConnectionName: null,
@@ -54,6 +56,17 @@ describe("ProtectedRoute", () => {
         workCity: null,
         accessSchedule: null,
         photoUrl: null,
+        pauseReasonId: null,
+        pauseReasonName: null,
+        pausedAt: null,
+        presenceChartStartHour: null,
+        presenceChartEndHour: null,
+      arrivalsChartStartHour: null,
+      arrivalsChartEndHour: null,
+        releaseNotesSeenVersion: null,
+      soundNewMessage: true,
+      soundNewQueue: true,
+      soundVolume: 70,
       },
       hydrated: true,
     });
@@ -82,6 +95,8 @@ describe("ProtectedRoute", () => {
         status: "ACTIVE",
         presence: "ONLINE",
         createdAt: "",
+      deactivatedAt: null,
+      deactivatedByName: null,
         lastAccessAt: null,
         whatsappConnectionId: null,
         whatsappConnectionName: null,
@@ -90,15 +105,26 @@ describe("ProtectedRoute", () => {
         workCity: null,
         accessSchedule: null,
         photoUrl: null,
+        pauseReasonId: null,
+        pauseReasonName: null,
+        pausedAt: null,
+        presenceChartStartHour: null,
+        presenceChartEndHour: null,
+      arrivalsChartStartHour: null,
+      arrivalsChartEndHour: null,
+        releaseNotesSeenVersion: null,
+      soundNewMessage: true,
+      soundNewQueue: true,
+      soundVolume: 70,
       },
-      permissions: { [PERMISSION.USUARIOS_GERENCIAR]: false } as never,
+      permissions: { [PERMISSION.USUARIOS_VISUALIZAR]: false } as never,
       hydrated: true,
     });
     render(
       <MemoryRouter initialEntries={["/usuarios"]}>
         <Routes>
           <Route path="/" element={<Home />} />
-          <Route element={<PermissionRoute permission={PERMISSION.USUARIOS_GERENCIAR} />}>
+          <Route element={<PermissionRoute permission={PERMISSION.USUARIOS_VISUALIZAR} />}>
             <Route path="/usuarios" element={<Secret />} />
           </Route>
         </Routes>

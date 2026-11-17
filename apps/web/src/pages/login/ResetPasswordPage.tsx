@@ -1,3 +1,4 @@
+import { sauberlichCopyright } from "@whatsatendende/types";
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { CheckCircle2, Eye, EyeOff, Loader2 } from "lucide-react";
@@ -37,7 +38,7 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[var(--color-bg)] px-4">
+    <div className="flex min-h-dvh items-center justify-center bg-[var(--color-bg)] px-4">
       <div className="shadow-soft w-full max-w-md rounded-card border border-border bg-surface p-8">
         <div className="mb-8 flex flex-col items-center gap-3 text-center">
           {branding?.logoUrl ? (
@@ -51,7 +52,7 @@ export default function ResetPasswordPage() {
         </div>
 
         {!token && (
-          <p className="rounded-card bg-red-50 px-3 py-2 text-center text-sm text-red-700">
+          <p className="rounded-card bg-danger-soft px-3 py-2 text-center text-sm text-danger">
             Link de redefinição inválido. Solicite um novo link na tela de login.
           </p>
         )}
@@ -108,7 +109,7 @@ export default function ResetPasswordPage() {
             </div>
 
             {error && (
-              <p role="alert" className="rounded-card bg-red-50 px-3 py-2 text-sm text-red-700">
+              <p role="alert" className="rounded-card bg-danger-soft px-3 py-2 text-sm text-danger">
                 {error}
               </p>
             )}
@@ -128,6 +129,9 @@ export default function ResetPasswordPage() {
           <Link to="/login" className="focus-ring text-primary hover:underline">
             Voltar ao login
           </Link>
+        </p>
+        <p className="mt-6 text-center text-[11px] text-muted" data-testid="sauberlich-copyright">
+          {sauberlichCopyright()}
         </p>
       </div>
     </div>

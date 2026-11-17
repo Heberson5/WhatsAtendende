@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -13,7 +13,7 @@ import {
 } from "recharts";
 import { BarChart3, ChartPie, CircleDot } from "lucide-react";
 import { ChartTypeMenu } from "./ChartTypeMenu";
-import { CHART_CARD_SHADOW, CHART_DEPTH_FILTER, darken, gradientId, lighten } from "../../lib/chart-theme";
+import { CHART_CARD_SHADOW, CHART_DEPTH_FILTER, CHART_TOOLTIP_PROPS, darken, gradientId, lighten } from "../../lib/chart-theme";
 
 type DistributionKind = "donut" | "pie" | "bar";
 
@@ -40,6 +40,7 @@ export function DistributionChartCard({
   data,
   colors,
   defaultKind = "donut",
+  onSaveDefaultKind,
   height = 240,
   emptyMessage = "Sem dados no período selecionado.",
 }: {
@@ -47,10 +48,14 @@ export function DistributionChartCard({
   data: DistributionDatum[];
   colors: string[];
   defaultKind?: DistributionKind;
+  /** Administrators: makes the type on screen everyone's default. */
+  onSaveDefaultKind?: (kind: DistributionKind) => void;
   height?: number;
   emptyMessage?: string;
 }) {
   const [kind, setKind] = useState<DistributionKind>(defaultKind);
+  // The default arrives after the first paint (and changes when an administrator sets it): the chart follows it.
+  useEffect(() => setKind(defaultKind), [defaultKind]);
   const total = data.reduce((sum, d) => sum + d.value, 0);
   const radialIds = colors.map((c) => gradientId("radial", c));
   const linearIds = colors.map((c) => gradientId("linear", c));
@@ -59,7 +64,7 @@ export function DistributionChartCard({
     <div className={`rounded-card border border-border bg-surface p-4 ${CHART_CARD_SHADOW}`}>
       <div className="mb-2 flex items-center justify-between">
         <p className="text-xs font-medium text-muted">{title}</p>
-        <ChartTypeMenu value={kind} onChange={setKind} options={KIND_OPTIONS} />
+        <ChartTypeMenu value={kind} onChange={setKind} options={KIND_OPTIONS} defaultKey={defaultKind} onSaveDefault={onSaveDefaultKind} />
       </div>
 
       {total === 0 ? (
@@ -78,7 +83,7 @@ export function DistributionChartCard({
               </defs>
               <XAxis dataKey="name" tick={{ fontSize: 12 }} />
               <YAxis tick={{ fontSize: 12 }} allowDecimals={false} />
-              <Tooltip />
+              <Tooltip {...CHART_TOOLTIP_PROPS} />
               <Bar dataKey="value" radius={[6, 6, 0, 0]}>
                 {data.map((entry, i) => (
                   <Cell key={entry.name} fill={`url(#${linearIds[i % linearIds.length]})`} />
@@ -110,7 +115,7 @@ export function DistributionChartCard({
                 ))}
               </Pie>
               <Legend verticalAlign="bottom" height={24} wrapperStyle={{ fontSize: 12 }} />
-              <Tooltip />
+              <Tooltip {...CHART_TOOLTIP_PROPS} />
             </PieChart>
           )}
         </ResponsiveContainer>

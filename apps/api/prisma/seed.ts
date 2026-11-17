@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { seedEmail, seedPassword } from "./seed-credentials";
+import { seedDemo } from "./seed-demo";
 
 const prisma = new PrismaClient();
 
@@ -21,10 +22,10 @@ async function upsertUser(input: {
   whatsappConnectionId?: string;
 }) {
   const passwordHash = await bcrypt.hash(input.password, 12);
-  return prisma.user.upsert({
-    where: { email: input.email },
-    update: { whatsappConnectionId: input.whatsappConnectionId },
-    create: {
+  const existing = await prisma.user.findFirst({ where: { email: input.email, status: "ACTIVE" } });
+  if (existing) return prisma.user.update({ where: { id: existing.id }, data: { whatsappConnectionId: input.whatsappConnectionId } });
+  return prisma.user.create({
+    data: {
       email: input.email,
       fullName: input.fullName,
       displayName: input.displayName,
@@ -72,13 +73,20 @@ async function main() {
     const name = process.env.SEED_ADMIN_NAME ?? "Administrador";
     const forceReset = process.env.SEED_ADMIN_FORCE_RESET === "true";
     const passwordHash = await bcrypt.hash(process.env.SEED_ADMIN_PASSWORD, 12);
-    await prisma.user.upsert({
-      where: { email },
-      update: forceReset ? { passwordHash, role: "ADMIN", status: "ACTIVE" } : {},
-      create: { email, fullName: name, displayName: name, role: "ADMIN", passwordHash, status: "ACTIVE" },
-    });
+    // The active admin with this e-mail (e-mails only repeat across inactive users), or the most recent one.
+    const existing =
+      (await prisma.user.findFirst({ where: { email, status: "ACTIVE" } })) ?? (await prisma.user.findFirst({ where: { email }, orderBy: { createdAt: "desc" } }));
+    if (existing) {
+      if (forceReset) await prisma.user.update({ where: { id: existing.id }, data: { passwordHash, role: "ADMIN", status: "ACTIVE", deactivatedAt: null, deactivatedById: null } });
+    } else {
+      await prisma.user.create({ data: { email, fullName: name, displayName: name, role: "ADMIN", passwordHash, status: "ACTIVE" } });
+    }
     console.log(`Admin provisionado a partir de variaveis de ambiente: ${email}${forceReset ? " (senha redefinida)" : ""}`);
   }
+
+  // WhatsUnivida: conversas, grupos, chat interno e contatos de exemplo para
+  // apresentação. SEED_DEMO=false pula esta parte.
+  if (process.env.SEED_DEMO !== "false") await seedDemo(prisma);
 
   console.log("Seed completed.");
 }

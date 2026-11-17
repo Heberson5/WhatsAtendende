@@ -41,7 +41,7 @@ export function HorizontalScrollArea({ children, className, innerClassName }: { 
           <button
             type="button"
             onClick={() => ref.current?.scrollBy({ left: ref.current.clientWidth * 0.7, behavior: "smooth" })}
-            className="focus-ring absolute bottom-3 right-3 z-[3] inline-flex items-center gap-0.5 rounded-full bg-[var(--color-text)] py-1 pl-2.5 pr-1.5 text-[11.5px] font-semibold text-surface shadow-lg hover:opacity-90"
+            className="focus-ring absolute bottom-3 right-3 z-[3] inline-flex items-center gap-0.5 rounded-full bg-[var(--color-text)] py-1 pl-2.5 pr-1.5 text-[11.5px] font-semibold text-surface shadow-elevated hover:opacity-90"
           >
             Mais colunas <ChevronRight className="h-3.5 w-3.5" />
           </button>

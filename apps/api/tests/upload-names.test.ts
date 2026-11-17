@@ -2,12 +2,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
 
-// Records the name each file is sent to the customer's WhatsApp with.
+// Records the name each file is sent to the customer's WhatsApp with (and answers "the number exists").
 const sentNames: string[] = [];
 vi.mock("../src/modules/whatsapp/whatsapp.service", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/modules/whatsapp/whatsapp.service")>();
   return {
     ...actual,
+    lookupNumber: vi.fn(async (_connectionId: string, phone: string) => ({ phone })),
     sendOutboundFile: vi.fn(async (...args: Parameters<typeof actual.sendOutboundFile>) => {
       sentNames.push(args[4]);
       return actual.sendOutboundFile(...args);
@@ -56,8 +57,22 @@ describe("nome de arquivo com acento (o upload lia o nome do navegador como Lati
 
     const download = await request(app).get(`/api/messages/attachments/${sent.body.attachments[0].id}/download`).set("Authorization", `Bearer ${token}`);
     expect(download.headers["content-disposition"]).toBe(
-      `inline; filename="Manutencao de Atendimentos Funerarios 04-11.xlsx"; filename*=UTF-8''${encodeURIComponent(NAME)}`
+      `attachment; filename="Manutencao de Atendimentos Funerarios 04-11.xlsx"; filename*=UTF-8''${encodeURIComponent(NAME)}`
     );
+  });
+
+  it("no chat interno: o nome aparece certo para quem recebe", async () => {
+    await createTestUser({ email: "ana@test.dev", role: "AGENT", displayName: "Ana" });
+    const token = await loginAs("ana@test.dev");
+    const general = (await request(app).get("/api/internal-chat/rooms").set("Authorization", `Bearer ${token}`)).body[0];
+    const sent = await request(app)
+      .post(`/api/internal-chat/rooms/${general.id}/files`)
+      .set("Authorization", `Bearer ${token}`)
+      .attach("file", Buffer.from("planilha"), { filename: NAME, contentType: XLSX });
+    expect(sent.status).toBe(201);
+    expect(sent.body.attachment.name).toBe(NAME);
+    const stored = await prisma.chatMessage.findUniqueOrThrow({ where: { id: sent.body.id } });
+    expect(stored.attachmentName).toBe(NAME);
   });
 
   it("todo upload da API passa pela configuração que lê o nome em UTF-8 (lib/upload.ts)", () => {

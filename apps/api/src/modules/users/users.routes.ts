@@ -6,15 +6,27 @@ import { requireAuth, requireRole } from "../../middleware/auth";
 import { requirePermission } from "../../lib/permissions";
 import { writeAudit } from "../../lib/audit";
 import { Errors } from "../../lib/http-error";
+import { prisma } from "../../lib/prisma";
 import { realtimeEvents } from "../../realtime/realtime";
 import { toUserDTO } from "./users.mapper";
 import * as usersService from "./users.service";
+import { profilePhotoUpload, saveProfilePhoto } from "../../lib/profile-photo";
+import { updateOwnPhoto as setUserPhoto } from "../profile/profile.service";
 
 export const usersRouter = Router();
 
-usersRouter.use(requireAuth, requirePermission(PERMISSION.USUARIOS_GERENCIAR));
+// The Assistente Virtual's own user (see ai-assistant.service getAssistantUser) is never edited, activated, deleted
+// or given a password here.
+usersRouter.param("id", (_req, _res, next, id: string) => {
+  prisma.user
+    .findUnique({ where: { id }, select: { isAssistant: true } })
+    .then((user) => next(user?.isAssistant ? Errors.badRequest("O Assistente Virtual é configurado em Configurações › Assistente Virtual") : undefined))
+    .catch(next);
+});
 
-// USUARIOS_GERENCIAR can be granted to a MANAGER, unlike every other
+usersRouter.use(requireAuth);
+
+// USUARIOS_ADICIONAR/EDITAR can be granted to a MANAGER, unlike every other
 // permission gate in this file, which is a real capability change: a
 // delegated (non-ADMIN) user manager must never be able to create a new
 // ADMIN, promote anyone to ADMIN, or touch an existing ADMIN account —
@@ -31,9 +43,22 @@ async function assertNoAdminEscalation(req: Request, targetUserId?: string, requ
 
 usersRouter.get(
   "/",
+  requirePermission(PERMISSION.USUARIOS_VISUALIZAR),
   asyncHandler(async (_req, res) => {
     const users = await usersService.listUsers();
     res.json(users.map(toUserDTO));
+  })
+);
+
+const emailUseSchema = z.object({ email: z.string().trim().email(), exceptUserId: z.string().uuid().optional() });
+
+// For the e-mail field of the user form: who already has it (an active user blocks saving).
+usersRouter.get(
+  "/email-use",
+  requirePermission(PERMISSION.USUARIOS_VISUALIZAR),
+  asyncHandler(async (req, res) => {
+    const { email, exceptUserId } = emailUseSchema.parse(req.query);
+    res.json(await usersService.describeEmailUse(email, exceptUserId));
   })
 );
 
@@ -71,6 +96,7 @@ const createSchema = z.object({
 
 usersRouter.post(
   "/",
+  requirePermission(PERMISSION.USUARIOS_ADICIONAR),
   asyncHandler(async (req, res) => {
     const input = createSchema.parse(req.body);
     if (input.password !== input.confirmPassword) {
@@ -98,6 +124,7 @@ const updateSchema = z.object({
 
 usersRouter.patch(
   "/:id",
+  requirePermission(PERMISSION.USUARIOS_EDITAR),
   asyncHandler(async (req, res) => {
     const { confirmPassword, ...input } = updateSchema.parse(req.body);
     if (input.password && input.password !== confirmPassword) {
@@ -117,28 +144,59 @@ usersRouter.patch(
   })
 );
 
+// A manager/admin setting or clearing someone else's photo from Usuários —
+// the user can still change their own in Meu Perfil. Same upload rules.
 usersRouter.post(
-  "/:id/activate",
+  "/:id/photo",
+  requirePermission(PERMISSION.USUARIOS_EDITAR),
+  profilePhotoUpload.single("file"),
   asyncHandler(async (req, res) => {
     await assertNoAdminEscalation(req, req.params.id);
-    const user = await usersService.setUserStatus(req.params.id, "ACTIVE");
-    await writeAudit({ userId: req.auth!.userId, action: "USER_ACTIVATED", entity: "User", entityId: user.id, ipAddress: req.ip ?? null });
+    if (!req.file) throw Errors.badRequest("Nenhum arquivo enviado");
+    await usersService.getUser(req.params.id);
+    const user = await setUserPhoto(req.params.id, saveProfilePhoto(req.params.id, req.file));
+    await writeAudit({ userId: req.auth!.userId, action: "USER_PHOTO_UPDATED", entity: "User", entityId: user.id, ipAddress: req.ip ?? null });
+    res.json(toUserDTO(user));
+  })
+);
+
+usersRouter.delete(
+  "/:id/photo",
+  requirePermission(PERMISSION.USUARIOS_EDITAR),
+  asyncHandler(async (req, res) => {
+    await assertNoAdminEscalation(req, req.params.id);
+    await usersService.getUser(req.params.id);
+    const user = await setUserPhoto(req.params.id, null);
+    await writeAudit({ userId: req.auth!.userId, action: "USER_PHOTO_REMOVED", entity: "User", entityId: user.id, ipAddress: req.ip ?? null });
+    res.json(toUserDTO(user));
+  })
+);
+
+usersRouter.post(
+  "/:id/activate",
+  requirePermission(PERMISSION.USUARIOS_INATIVAR),
+  asyncHandler(async (req, res) => {
+    await assertNoAdminEscalation(req, req.params.id);
+    const user = await usersService.setUserStatus(req.params.id, "ACTIVE", req.auth!.userId);
+    await writeAudit({ userId: req.auth!.userId, action: "USER_ACTIVATED", entity: "User", entityId: user.id, ipAddress: req.ip ?? null, metadata: { name: user.fullName, email: user.email } });
     res.json(toUserDTO(user));
   })
 );
 
 usersRouter.post(
   "/:id/deactivate",
+  requirePermission(PERMISSION.USUARIOS_INATIVAR),
   asyncHandler(async (req, res) => {
     await assertNoAdminEscalation(req, req.params.id);
-    const user = await usersService.setUserStatus(req.params.id, "INACTIVE");
-    await writeAudit({ userId: req.auth!.userId, action: "USER_DEACTIVATED", entity: "User", entityId: user.id, ipAddress: req.ip ?? null });
+    const user = await usersService.setUserStatus(req.params.id, "INACTIVE", req.auth!.userId);
+    await writeAudit({ userId: req.auth!.userId, action: "USER_DEACTIVATED", entity: "User", entityId: user.id, ipAddress: req.ip ?? null, metadata: { name: user.fullName, email: user.email } });
     res.json(toUserDTO(user));
   })
 );
 
 usersRouter.post(
   "/:id/force-logout",
+  requirePermission(PERMISSION.USUARIOS_EDITAR),
   asyncHandler(async (req, res) => {
     await assertNoAdminEscalation(req, req.params.id);
     await usersService.forceLogoutUser(req.params.id);
@@ -149,7 +207,7 @@ usersRouter.post(
 );
 
 // ADMIN-only, checked directly via requireRole rather than the configurable
-// USUARIOS_GERENCIAR permission — that one's grantable to a MANAGER, but
+// USUARIOS_INATIVAR permission — that one's grantable to a MANAGER, but
 // deleting an account is irreversible (unlike deactivate, which already
 // exists and stays available to a delegated user manager), so it stays out
 // of that matrix entirely. See PROMPT: "somente para o acesso Administrador".
@@ -165,6 +223,7 @@ usersRouter.delete(
 
 usersRouter.post(
   "/:id/reset-password",
+  requirePermission(PERMISSION.USUARIOS_EDITAR),
   asyncHandler(async (req, res) => {
     await assertNoAdminEscalation(req, req.params.id);
     const result = await usersService.resetUserPassword(req.params.id);

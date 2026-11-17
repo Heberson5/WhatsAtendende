@@ -17,3 +17,8 @@ apps/api/uploads-test/
 *.tsbuildinfo
 .vscode/
 .idea/
+
+
+# Login e senha do primeiro administrador, criados pelo deploy automático na VPS.
+CREDENCIAIS-INICIAIS.txt
+.env.antes-da-restauracao-*

@@ -27,7 +27,7 @@ export function InstallAppButton({ variant = "button", onDone }: { variant?: "bu
 
   if (variant === "menuitem") {
     return (
-      <button role="menuitem" onClick={handleClick} className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-surface-alt">
+      <button role="menuitem" onClick={handleClick} className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-sm hover:bg-surface-alt">
         <Download className="h-4 w-4" /> Instalar aplicativo
       </button>
     );

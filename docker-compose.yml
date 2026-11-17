@@ -52,17 +52,25 @@ services:
       # happen entirely inside Baileys — needed to diagnose anything at the
       # WhatsApp-protocol level instead of guessing from the outside.
       WHATSAPP_LOG_LEVEL: ${WHATSAPP_LOG_LEVEL:-silent}
-      WEB_APP_URL: ${WEB_APP_URL:-http://localhost:8080}
+      WEB_APP_URL: ${WEB_APP_URL:-https://atendimento.sauberlich.com.br}
       UPLOAD_DIR: /data/uploads
-      # Left false (the default) on purpose: this stack still publishes the
-      # api container's port directly (see `ports` below), so a client could
-      # reach it without going through the nginx container and spoof
-      # X-Forwarded-For. Only set TRUST_PROXY=true once that direct port
-      # mapping is removed and nginx is the sole path to the API.
-      TRUST_PROXY: ${TRUST_PROXY:-false}
+      # Largest single file an agent can attach in Atendimento (any type) —
+      # the API answers "Arquivo muito grande" above it. Set
+      # UPLOAD_MAX_SIZE_MB in .env to change it; nginx.conf lets up to 300 MB
+      # through to the API, so keep it at or below that. The whole file is
+      # held in memory while it is sent, so a small VPS wants this modest.
+      UPLOAD_MAX_SIZE_MB: ${UPLOAD_MAX_SIZE_MB:-100}
+      # Configurações › Backup › Google Drive: the nightly backup starts at this local hour (business time zone),
+      # and is skipped (administrators told) with less than BACKUP_MIN_FREE_MB free for its temporary copy.
+      BACKUP_HOUR: ${BACKUP_HOUR:-3}
+      BACKUP_MIN_FREE_MB: ${BACKUP_MIN_FREE_MB:-1024}
     volumes:
       - api_uploads:/data/uploads
       - whatsapp_sessions:/data/whatsapp-sessions
+    # "ia-local": rede do Assistente Virtual (infrastructure/ia-local), compartilhada
+    # pelos dois sistemas da VPS. Criada aqui se ainda não existir; sem a IA no ar,
+    # o assistente só passa as conversas para a fila.
+    networks: [default, ia-local]
     # No host port published: the web container's nginx already proxies
     # /api, /uploads and /socket.io to this service internally (see
     # infrastructure/docker/nginx.conf) — the browser never needs to reach
@@ -80,9 +88,21 @@ services:
       - api
     ports:
       - "8080:80"
+    volumes:
+      # Holds the installable Android app (.apk) — see nginx.conf's
+      # /downloads/ location. A named volume, not part of the image build,
+      # so uploading the file once (see infrastructure/vps/README.md)
+      # survives every future `git pull` + rebuild, the same way
+      # api_uploads/whatsapp_sessions already do for the api service.
+      - app_downloads:/usr/share/nginx/downloads
+
+networks:
+  ia-local:
+    name: ia-local
 
 volumes:
   postgres_data:
   redis_data:
   api_uploads:
   whatsapp_sessions:
+  app_downloads:

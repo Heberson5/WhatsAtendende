@@ -5,7 +5,7 @@ import clsx from "clsx";
  * "Carregando..." line that then jumps. Screen readers still hear "Carregando…" once (role="status").
  */
 export function Skeleton({ className }: { className?: string }) {
-  return <span className={clsx("block animate-pulse rounded-md bg-gray-200 dark:bg-gray-700 motion-reduce:animate-none", className)} aria-hidden />;
+  return <span className={clsx("block animate-pulse rounded-md bg-border/70 motion-reduce:animate-none", className)} aria-hidden />;
 }
 
 const ROW_WIDTHS = ["w-3/4", "w-1/2", "w-2/3", "w-5/6", "w-2/5"];

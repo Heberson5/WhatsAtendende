@@ -6,28 +6,9 @@
  * company palette (Configurações > Identidade visual) carries through.
  */
 
-function hexToRgb(hex: string): [number, number, number] {
-  const clean = hex.replace("#", "");
-  const full = clean.length === 3 ? clean.split("").map((c) => c + c).join("") : clean;
-  const num = parseInt(full, 16);
-  return [(num >> 16) & 255, (num >> 8) & 255, num & 255];
-}
-
-function rgbToHex([r, g, b]: [number, number, number]): string {
-  return "#" + [r, g, b].map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0")).join("");
-}
-
-/** Mixes a color toward white (amount 0-1) — used for the lighter gradient stop / glossy highlight. */
-export function lighten(hex: string, amount: number): string {
-  const [r, g, b] = hexToRgb(hex);
-  return rgbToHex([r + (255 - r) * amount, g + (255 - g) * amount, b + (255 - b) * amount]);
-}
-
-/** Mixes a color toward black (amount 0-1) — used for the darker gradient stop / shadowed edge. */
-export function darken(hex: string, amount: number): string {
-  const [r, g, b] = hexToRgb(hex);
-  return rgbToHex([r * (1 - amount), g * (1 - amount), b * (1 - amount)]);
-}
+// Same mixing as the presentation's slides (packages/presentation), so the deck and the charts share their shades.
+import { darken, lighten } from "@whatsatendende/presentation/colors";
+export { darken, lighten };
 
 /** A neutral slate used as the third/overflow series color when a chart needs more colors than the brand provides. */
 export const NEUTRAL_SERIES_COLOR = "#64748B";
@@ -43,6 +24,27 @@ export function gradientId(prefix: string, color: string): string {
 
 /** Soft elevation shared by every chart card — the "profundidade" the flat cards were missing. */
 export const CHART_CARD_SHADOW = "shadow-[0_1px_2px_rgba(0,0,0,0.06),0_12px_28px_-8px_rgba(0,0,0,0.18)]";
+
+/**
+ * Recharts' <Tooltip> renders with hardcoded light colors by default (white
+ * background, dark text) — in dark mode that comes out as a jarring white
+ * box instead of following the theme. Spread onto every <Tooltip> in the
+ * Dashboard's chart cards so it reads the same CSS vars as the rest of the
+ * app (and any custom branding palette) in both themes. See PROMPT: "ao
+ * passar o mouse em cima dos gráficos, no tema escuro não está aparecendo
+ * corretamente as informações".
+ */
+export const CHART_TOOLTIP_PROPS = {
+  contentStyle: {
+    background: "var(--color-surface)",
+    border: "1px solid var(--color-border)",
+    borderRadius: "8px",
+    color: "var(--color-text)",
+    fontSize: "12px",
+  },
+  itemStyle: { color: "var(--color-text)" },
+  labelStyle: { color: "var(--color-muted)" },
+};
 
 /** CSS filter applied to the whole plotted area so bars/slices/lines look like they're floating above the card, matching the reference screenshot. */
 export const CHART_DEPTH_FILTER = "drop-shadow(0 10px 14px rgba(0,0,0,0.16))";
