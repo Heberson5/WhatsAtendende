@@ -355,15 +355,58 @@ describe("API Oficial: botões e listas", () => {
   });
 });
 
-describe("Fluxos que vêm com o sistema", () => {
+describe("Fluxos que vêm com o sistema (Univida)", () => {
+  let connectionId: string;
+
   beforeEach(async () => {
     await resetDatabase();
+    sent.length = 0;
+    official = false;
+    connectionId = (await createTestConnection("Univida")).id;
+    await createTestUser({ email: "admin-seed@test.dev", role: "ADMIN" });
   });
 
-  // The WhatsAtendende ships no ready-made flow (the Univida ones belong to the WhatsUnivida): nothing is created.
-  it("nenhum fluxo pronto é instalado", async () => {
+  it("come in once, switched off and with no connection — a deleted one never comes back", async () => {
     const { syncDefaultFlows } = await import("../src/modules/flows/default-flows");
+    expect(await syncDefaultFlows()).toBe(2);
+    const flows = await prisma.flow.findMany({ include: { connections: true, nodes: true }, orderBy: { name: "asc" } });
+    expect(flows.map((f) => [f.name, f.active, f.connections.length, f.nodes.length])).toEqual([
+      ["Univida · API Oficial", false, 0, 42],
+      ["Univida · QR Code", false, 0, 42],
+    ]);
     expect(await syncDefaultFlows()).toBe(0);
-    expect(await prisma.flow.count()).toBe(0);
+    await prisma.flow.delete({ where: { id: flows[0].id } });
+    expect(await syncDefaultFlows()).toBe(0);
+    expect(await prisma.flow.count()).toBe(1);
+  });
+
+  it("the QR Code one runs Guias › Laboratório › Campo Novo to the Guias · Exames queue", async () => {
+    const { syncDefaultFlows } = await import("../src/modules/flows/default-flows");
+    await syncDefaultFlows();
+    const qr = await prisma.flow.findFirstOrThrow({ where: { name: "Univida · QR Code" } });
+    await flowsService.updateFlowMeta(qr.id, { connectionIds: [connectionId], active: true });
+
+    const contact = await prisma.contact.create({ data: { phone: "5565999112233", name: "Ana", whatsappConnectionId: connectionId } });
+    const say = async (text: string) => {
+      const opened = await conversationsService.findOrOpenConversationForInboundMessage(connectionId, contact.id, text);
+      if (opened.conversation.status === "IN_FLOW") await handleInboundForFlow(opened.conversation.id, opened.flowId, text);
+      return prisma.conversation.findUniqueOrThrow({ where: { id: opened.conversation.id } });
+    };
+    await say("Oi");
+    expect(sent[0].text).toMatch(/^Olá! 😊\nQue bom ter você aqui na Univida!/);
+    expect(sent[0].text).toMatch(/1\. Por Ligação\n2\. Pelo WhatsApp\n3\. Encerrar atendimento$/);
+    await say("2");
+    await say("1");
+    await say("Guias");
+    expect(sent.at(-1)).toMatchObject({ kind: "file" });
+    expect(sent.at(-1)!.text).toMatch(/Você selecionou a opção \*Guias\*\./);
+    await say("2");
+    await say("3");
+    expect(sent.at(-1)!.text).toMatch(/1\. Lab\. Alvim\n2\. Lab\. Bioanálise/);
+    const done = await say("1");
+    expect(sent.at(-1)!.text).toMatch(/^Tudo certo! 😊\nEstou te encaminhando/);
+    expect(done.status).toBe("NEW");
+    const note = await prisma.conversationNote.findFirstOrThrow({ where: { conversationId: done.id } });
+    expect(note.body).toBe("Escolhas no fluxo: Pelo WhatsApp › Guias ou Ortopédicos › Guias › Exames de Laboratório › Campo Novo do Parecis › Lab. Alvim");
   });
 });

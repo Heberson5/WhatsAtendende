@@ -10,17 +10,14 @@ name: Deploy VPS
 #   VPS_USER    usuário SSH (ubuntu)
 #   VPS_SSH_KEY conteúdo inteiro da chave privada (.key) usada no gerenciador-vps.bat
 
-permissions:
-  contents: read
-
 on:
   push:
-    branches: [claude/whatsapp-multiuser-support-web-02oo3i]
+    branches: [deploy-vps-fixes]
   workflow_dispatch:
 
 env:
   VPS_PROJECT: whatsatendende
-  VPS_BRANCH: claude/whatsapp-multiuser-support-web-02oo3i
+  VPS_BRANCH: deploy-vps-fixes
   VPS_WEB_PORT: "8080"
 
 # Um deploy por vez; um push novo espera o anterior terminar (nunca corta um deploy no meio).
@@ -30,7 +27,7 @@ concurrency:
 
 jobs:
   test:
-    if: github.ref == 'refs/heads/claude/whatsapp-multiuser-support-web-02oo3i'
+    if: github.ref == 'refs/heads/deploy-vps-fixes'
     uses: ./.github/workflows/ci.yml
 
   deploy:
@@ -67,12 +64,9 @@ jobs:
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
-          # Token temporário do próprio job (só leitura, expira quando o job termina): a VPS busca o código do
-          # repositório privado com ele, sem guardar senha nenhuma lá.
-          GH_TOKEN: ${{ github.token }}
         run: |
           ssh -i ~/.ssh/vps_key -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ConnectTimeout=30 \
-            "$VPS_USER@$VPS_HOST" "GH_TOKEN=$GH_TOKEN REPO_URL=https://github.com/$GITHUB_REPOSITORY.git bash -s -- $VPS_PROJECT $VPS_BRANCH $VPS_WEB_PORT $GITHUB_SHA" \
+            "$VPS_USER@$VPS_HOST" "bash -s -- $VPS_PROJECT $VPS_BRANCH $VPS_WEB_PORT $GITHUB_SHA" \
             < infrastructure/vps/auto-deploy.sh
 
       - name: Apagar a chave

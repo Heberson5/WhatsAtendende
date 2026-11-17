@@ -1,9 +1,10 @@
 name: CI
 
-# Push na main não roda aqui: o Deploy VPS (deploy.yml) já roda estes testes antes de atualizar a VPS.
 on:
+  push:
+    branches: [main]
   pull_request:
-    branches: [claude/whatsapp-multiuser-support-web-02oo3i]
+    branches: [main]
   # Deploy VPS (deploy.yml) roda estes mesmos testes antes de atualizar a VPS.
   workflow_call:
 

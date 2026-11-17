@@ -52,7 +52,7 @@ services:
       # happen entirely inside Baileys — needed to diagnose anything at the
       # WhatsApp-protocol level instead of guessing from the outside.
       WHATSAPP_LOG_LEVEL: ${WHATSAPP_LOG_LEVEL:-silent}
-      WEB_APP_URL: ${WEB_APP_URL:-https://atendimento.sauberlich.com.br}
+      WEB_APP_URL: ${WEB_APP_URL:-http://localhost:8080}
       UPLOAD_DIR: /data/uploads
       # Largest single file an agent can attach in Atendimento (any type) —
       # the API answers "Arquivo muito grande" above it. Set

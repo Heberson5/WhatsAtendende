@@ -300,7 +300,7 @@ Cobertura atual (17 testes de backend + 7 de frontend, todos passando neste repo
 npm run build   # compila packages/types, packages/whatsapp, apps/api, apps/web nessa ordem
 ```
 
-Build e lint validados neste repositório (`npm run lint`, `npm run build`) sem erros. O workflow `.github/workflows/ci.yml` reproduz os mesmos passos em CI (instala, builda os pacotes compartilhados, aplica migrations num Postgres de serviço, lint, testes, build) a cada PR para a branch principal (e o `deploy.yml` antes de cada deploy).
+Build e lint validados neste repositório (`npm run lint`, `npm run build`) sem erros. O workflow `.github/workflows/ci.yml` reproduz os mesmos passos em CI (instala, builda os pacotes compartilhados, aplica migrations num Postgres de serviço, lint, testes, build) a cada push/PR para `main`.
 
 Para produção: `docker compose up --build` (ver [Docker](#docker)) ou build manual de cada Dockerfile em `infrastructure/docker/`.
 

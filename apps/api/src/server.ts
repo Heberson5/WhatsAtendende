@@ -72,7 +72,7 @@ async function main() {
   await fillShippedNoteImages().catch((err) => logger.error({ err }, "failed to fill in the screenshots of shipped release notes"));
   // Dados › Layouts and Mensagens do boleto start with the Banco do Brasil layouts and "Instruções padrão".
   await ensureBoletoDefaults();
-  // Flows shipped with this version (prisma/default-flows, none in the WhatsAtendende) — copied in once, switched off.
+  // Flows shipped with this version (e.g. Univida) — copied in once, switched off and with no connection.
   await syncDefaultFlows().catch((err) => logger.error({ err }, "failed to copy the shipped flows"));
 
   const app = createApp();

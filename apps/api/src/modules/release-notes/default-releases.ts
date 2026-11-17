@@ -76,6 +76,53 @@ export const DEFAULT_RELEASES: ReleaseContent[] = [
     ],
   },
   {
+    version: "2.37.9",
+    date: "16 nov 2026",
+    name: "Script do ERP na consulta do banco de dados",
+    summary: "A consulta do SQL Server passa a aceitar o próprio script do ERP, com tabelas temporárias, e até 50.000 caracteres. Ele continua sem poder alterar nada no banco.",
+    notes: [
+      {
+        type: "melhoria",
+        area: "dados",
+        title: "Consulta do banco de dados com até 50.000 caracteres",
+        text: "O campo Consulta de uma fonte de dados do tipo banco de dados aceitava até 8000 caracteres, pouco para o script de um ERP, cheio de nomes longos de tabelas e colunas. Agora aceita até 50.000. Continua valendo a regra de segurança: a consulta precisa ser um único SELECT (ou WITH … SELECT), que só lê os dados.",
+        where: "Dados › Fontes de dados › Banco de dados",
+        roles: ["ADMIN", "MANAGER"],
+      },
+      {
+        type: "melhoria",
+        area: "dados",
+        title: "Script do ERP direto na consulta do SQL Server",
+        text: "No SQL Server, a consulta pode ser o próprio script do ERP, como o whatsatendente.sql, com DECLARE, SET e tabelas temporárias (#...), que é bem mais leve para o banco do que a mesma coisa escrita como um único SELECT. Ele é conferido ao salvar: só pode criar, alterar e apagar as próprias tabelas temporárias, nunca uma tabela do banco. Além disso, roda dentro de uma transação que é sempre desfeita no fim. A leitura do banco pode levar até 10 minutos e acontece em segundo plano.",
+        where: "Dados › Fontes de dados › Banco de dados",
+        roles: ["ADMIN", "MANAGER"],
+      },
+    ],
+  },
+  {
+    version: "2.37.8",
+    date: "16 nov 2026",
+    name: "Erro ao salvar diz o motivo",
+    summary: "Quando um cadastro é recusado ao salvar, a mensagem agora diz o que precisa ser corrigido, em vez de só \"Dados inválidos\".",
+    notes: [
+      {
+        type: "correcao",
+        area: "dados",
+        title: "Fonte de dados recusada sem dizer o motivo",
+        text: "Ao salvar uma fonte de dados, por exemplo um banco SQL Server, com algum campo faltando ou fora do limite, aparecia só \"Dados invalidos\", sem dizer qual. Agora a mensagem diz o que corrigir, como \"Dados inválidos: Preencha o servidor; Preencha a consulta\". O nome e a consulta também ganharam mensagens próprias, como \"Preencha o nome\".",
+        where: "Dados › Fontes de dados",
+        roles: ["ADMIN", "MANAGER"],
+      },
+      {
+        type: "correcao",
+        area: "geral",
+        title: "O mesmo vale para os outros cadastros",
+        text: "Qualquer tela do sistema que recusar um cadastro ao salvar passa a mostrar o campo e o motivo, em português, em vez de \"Dados invalidos\".",
+        where: "Todas as telas de cadastro",
+      },
+    ],
+  },
+  {
     version: "2.37.7",
     date: "13 nov 2026",
     name: "Desenvolvido por Sauberlich System",
@@ -2278,9 +2325,17 @@ export const DEFAULT_RELEASES: ReleaseContent[] = [
   {
     version: "2.13.0",
     date: "16 out 2026",
-    name: "Fotos e botões no Fluxo, transferência por pessoas e fila de Abandonados",
+    name: "Fluxo Univida, fotos e botões no Fluxo, transferência por pessoas e fila de Abandonados",
     summary: "O Fluxo ganhou nome em cada passo, foto nas mensagens e nos menus, botões e listas na API Oficial, a variável {{opcao}} e o aviso de horário no começo. A transferência pode ir para pessoas escolhidas de qualquer conexão, e quem para de responder vai para a nova fila Abandonados. Os fluxos Univida (QR Code e API Oficial) já vêm cadastrados, desligados.",
     notes: [
+      {
+        type: "novo",
+        area: "fluxo",
+        title: "Fluxos Univida já cadastrados",
+        text: "Em Fluxo aparecem \"Univida · QR Code\" e \"Univida · API Oficial\", com todos os menus, textos e fotos do atendimento Univida. Os dois chegam desligados e sem conexão: abra o fluxo, vincule a conexão no botão Conexões, escolha as pessoas de cada passo de transferência e ligue quando quiser. Se apagar um deles, ele não volta.",
+        where: "Fluxo",
+        requires: [PERMISSION.FLUXO_VISUALIZAR],
+      },
       {
         type: "novo",
         area: "fluxo",

@@ -73,7 +73,7 @@ para isso, além do que o sistema já usa.
 
 ## Deploy automático (GitHub Actions)
 
-Cada push na branch `claude/whatsapp-multiuser-support-web-02oo3i` roda os testes e, se passarem, atualiza a VPS
+Cada push na branch `deploy-vps-fixes` roda os testes e, se passarem, atualiza a VPS
 sozinho (`.github/workflows/deploy.yml` → `infrastructure/vps/auto-deploy.sh`):
 
 1. espera outro deploy terminar (os dois sistemas nunca constroem ao mesmo tempo);
@@ -153,25 +153,6 @@ Fica guardado num volume Docker próprio (`app_downloads`, veja
 `git pull` + rebuild seguinte, sem precisar reenviar o arquivo de novo.
 Só repita o `docker cp` acima se gerar uma versão nova do `.apk`.
 
-## WhatsAtendende — porta 8080, domínio e branch
-
-O WhatsAtendende roda na pasta `~/whatsatendende` da VPS, publica o container `web` na porta **8080** do host
-(`docker-compose.yml`) e usa `WEB_APP_URL=https://atendimento.sauberlich.com.br` por padrão. O proxy do host
-(nginx/Caddy) encaminha o domínio para `http://127.0.0.1:8080`, com os cabeçalhos de WebSocket (`Upgrade` e
-`Connection`) para o `/socket.io`.
-
-A VPS segue a branch **`claude/whatsapp-multiuser-support-web-02oo3i`** (a principal deste repositório): é nela
-que o deploy automático roda. Na mesma VPS também ficam o WhatsUnivida (porta 8086) e o WhatsImagem (porta 8087); a
-IA local (`ia-local`) é uma só para todos.
-
-**Atualização para o código atual (vinda da versão antiga, de 5/11/2026):** o primeiro deploy aplica sozinho as
-migrações novas do banco (tabelas e colunas novas; nada é apagado), mantém usuários, conversas, contatos, arquivos e
-as sessões do WhatsApp (volumes `postgres_data`, `api_uploads` e `whatsapp_sessions`, com os mesmos nomes) e faz
-antes o backup do banco e das sessões em `~/backups-auto/whatsatendende/`.
-
-O seed (opção **[21]**) só cria usuários de exemplo num banco vazio; numa instalação em uso não cria nada novo além
-dos dados de demonstração, que podem ser pulados com `SEED_DEMO=false`.
-
 ## Backup no Google Drive (Configurações › Backup)
 
 O backup completo (banco, arquivos e, se marcadas, as sessões do WhatsApp) vai para a sua conta Google, sozinho,
@@ -227,7 +208,7 @@ bash restaurar-backup.sh ~/backups-recebidos/whatsatendende/AAAAMMDD-HHMMSS what
 O script confere o SHA256, clona o código se a pasta não existir, volta o código
 para o **mesmo commit do backup**, restaura `.env`, banco, arquivos e sessões,
 reconstrói e só termina quando `/api/health` responde. Depois disso o deploy
-automático (ou `git checkout claude/whatsapp-multiuser-support-web-02oo3i && git pull` + rebuild) atualiza normalmente.
+automático (ou `git checkout deploy-vps-fixes && git pull` + rebuild) atualiza normalmente.
 Desligue o servidor antigo (`docker compose down`) **antes** de subir o novo: duas
 cópias no ar com as mesmas sessões do WhatsApp derrubam a conexão.
 Lembre de apontar o DNS e o proxy HTTPS do domínio para o servidor novo.

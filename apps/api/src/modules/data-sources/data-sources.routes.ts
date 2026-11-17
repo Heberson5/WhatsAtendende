@@ -9,7 +9,7 @@ import { requirePermission } from "../../lib/permissions";
 import { writeAudit } from "../../lib/audit";
 import { Errors } from "../../lib/http-error";
 import { prisma } from "../../lib/prisma";
-import { microsoftAuthorizeUrl, microsoftToken } from "./data-source-fetch";
+import { assertReadOnlyQuery, microsoftAuthorizeUrl, microsoftToken } from "./data-source-fetch";
 import * as service from "./data-sources.service";
 import { createUpload } from "../../lib/upload";
 
@@ -61,10 +61,11 @@ const requireAdd = requirePermission(PERMISSION.FONTES_DADOS_ADICIONAR);
 const requireEdit = requirePermission(PERMISSION.FONTES_DADOS_EDITAR);
 const requireDelete = requirePermission(PERMISSION.FONTES_DADOS_EXCLUIR);
 
-const configSchema = z.record(z.union([z.string().max(8000), z.number(), z.null()]));
+// The query of a database source is the long one: an ERP's script, with its long table and column names, easily passes 8000.
+const configSchema = z.record(z.union([z.string().max(50_000, "A consulta e cada campo da configuração podem ter até 50.000 caracteres"), z.number(), z.null()]));
 const sourceSchema = z
   .object({
-    name: z.string().trim().min(1).max(80),
+    name: z.string().trim().min(1, "Preencha o nome").max(80, "O nome pode ter até 80 caracteres"),
     kind: z.enum(["LINK", "MICROSOFT", "UPLOAD", "DATABASE"]),
     config: configSchema.default({}),
     secrets: z.object({ clientSecret: z.string().max(500).optional(), password: z.string().max(500).optional() }).optional(),
@@ -94,6 +95,14 @@ const sourceSchema = z
       need("database", "o banco");
       need("user", "o usuário");
       need("query", "a consulta");
+      // Refused on save, with the reason, instead of only when the source is first read.
+      if (c.query && ["sqlserver", "postgres", "mysql"].includes(String(c.dialect))) {
+        try {
+          assertReadOnlyQuery(String(c.query), c.dialect as "sqlserver" | "postgres" | "mysql");
+        } catch (err) {
+          ctx.addIssue({ code: "custom", message: (err as Error).message, path: ["config", "query"] });
+        }
+      }
     }
   });
 
